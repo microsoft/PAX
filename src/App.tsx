@@ -632,43 +632,69 @@ export default function App(){
   function onCancelWizard(){
     console.log('onCancelWizard called!');
     queueLogLine('stderr', 'Cancel button was clicked');
+    
     // Use Tauri confirmDialog with proper allowlist configuration
-    confirmDialog('Are you sure you want to cancel?\n\nThe export will be cancelled and the wizard will return to the first step with your selections preserved.', { title: 'Cancel export', type: 'warning' })
-      .then(ok => {
-        console.log('confirmDialog result:', ok);
-        if(!ok) {
-          queueLogLine('stderr', 'User cancelled the cancel dialog');
-          return;
-        }
-        queueLogLine('stderr', 'User confirmed Cancel - terminating PowerShell process');
-        
-        // Immediately update UI state to prevent further actions
-        setRunning(false);
-        setCanCancel(false);
-        setStatus('idle');
-        
-        // Cancel the PowerShell process
-        invoke('cancel_current_run')
-          .then(() => {
-            queueLogLine('stderr', 'PowerShell process terminated successfully');
-          })
-          .catch((err) => {
-            queueLogLine('stderr', `Error terminating process: ${err}`);
-          });
-        
-        appWindow.setAlwaysOnTop(false).catch(() => {});
-        
-        // Return to first step with existing inputs
-        setPercent(0);
-        setOverallPercent(0);
-        setPhase('unknown');
-        setCsvPath(null);
-        setStep(0);
-      })
-      .catch(err => {
-        console.error('confirmDialog error:', err);
-        queueLogLine('stderr', `Cancel dialog error: ${err}`);
+    confirmDialog('Are you sure you want to cancel?\n\nThe export will be cancelled and the wizard will return to the first step with your selections preserved.', { 
+      title: 'Cancel export', 
+      type: 'warning' 
+    })
+    .then(ok => {
+      console.log('confirmDialog result:', ok);
+      if (!ok) {
+        queueLogLine('stderr', 'User cancelled the cancel dialog');
+        return;
+      }
+      
+      queueLogLine('stderr', 'User confirmed Cancel - terminating PowerShell process');
+      
+      // Immediately update UI state to prevent further actions
+      setRunning(false);
+      setCanCancel(false);
+      setStatus('idle');
+      
+      // Cancel the PowerShell process
+      invoke('cancel_current_run')
+        .then(() => {
+          queueLogLine('stderr', 'PowerShell process terminated successfully');
+        })
+        .catch((err) => {
+          queueLogLine('stderr', `Error terminating process: ${err}`);
+          console.error('Cancel error:', err);
+        });
+      
+      // Reset window state
+      appWindow.setAlwaysOnTop(false).catch(() => {});
+      
+      // Return to first step with existing inputs preserved
+      setPercent(0);
+      setOverallPercent(0);
+      setPhase('unknown');
+      setCsvPath(null);
+      setStep(0);
+      
+      queueLogLine('stderr', 'Export cancelled - returned to first step');
+    })
+    .catch(err => {
+      console.error('confirmDialog error:', err);
+      queueLogLine('stderr', `Cancel dialog error: ${err}`);
+      
+      // Fallback: cancel without confirmation if dialog fails
+      queueLogLine('stderr', 'Dialog failed - forcing cancellation');
+      setRunning(false);
+      setCanCancel(false);
+      setStatus('idle');
+      
+      invoke('cancel_current_run').catch((cancelErr) => {
+        queueLogLine('stderr', `Fallback cancel error: ${cancelErr}`);
       });
+      
+      appWindow.setAlwaysOnTop(false).catch(() => {});
+      setPercent(0);
+      setOverallPercent(0);
+      setPhase('unknown');
+      setCsvPath(null);
+      setStep(0);
+    });
   }
 
   // Close the app (used on steps 0–2 and on step 3 when not running)
@@ -761,6 +787,21 @@ export default function App(){
           }
         });
         unsubs.push(un4);
+        
+        const un5 = await listen('ps-cancelled', (ev:any)=>{
+          const payload = ev?.payload || {};
+          console.log('PowerShell process cancelled:', payload);
+          queueLogLine('stderr', 'PowerShell process cancellation confirmed');
+          setRunning(false);
+          setCanCancel(false);
+          setStatus('idle');
+          setPercent(0);
+          setOverallPercent(0);
+          setPhase('unknown');
+          setCsvPath(null);
+        });
+        unsubs.push(un5);
+        
         g.__ps_unlisten__ = () => { unsubs.forEach(u=>{ try { u(); } catch {} }); g.__ps_unlisten__ = null; };
       } catch {}
     })();

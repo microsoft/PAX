@@ -603,6 +603,12 @@ async fn cancel_current_run(window: Window, state: tauri::State<'_, RunState>) -
     }
     // Clear PID after attempting kill
     if let Ok(mut g) = state.pid.lock() { *g = None; }
+    
+    // Emit cancellation complete event
+    let _ = window.emit("ps-cancelled", serde_json::json!({"success": true, "pid": pid}));
+    let _ = window.emit("ps-log", serde_json::json!({"type":"stderr","line":"PowerShell process has been terminated"}));
+  } else {
+    let _ = window.emit("ps-log", serde_json::json!({"type":"stderr","line":"No running PowerShell process found to cancel"}));
   }
   Ok(())
 }

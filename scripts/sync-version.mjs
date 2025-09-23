@@ -81,40 +81,60 @@ function updateWorkflowFileNames(version) {
     
     // Update Windows portable executable name
     content = content.replace(
-      /Rename-Item "windows-dist\/\$exePath" "PAX-Windows-Portable\.exe"/g,
+      /Rename-Item "windows-dist\/\$exePath" "PAX-v[\d\.]+-Windows-Portable\.exe"/g,
       `Rename-Item "windows-dist/\\$exePath" "PAX-v${version}-Windows-Portable.exe"`
     );
     
-    // Update artifact search patterns
+    // Update Windows MSI installer name
     content = content.replace(
-      /find \. -name "PAX-Windows-Portable\.exe"/g,
+      /Rename-Item "windows-dist\/\$msiPath" "PAX-v[\d\.]+-Windows-Installer\.msi"/g,
+      `Rename-Item "windows-dist/\\$msiPath" "PAX-v${version}-Windows-Installer.msi"`
+    );
+    
+    // Update artifact search patterns - Windows EXE
+    content = content.replace(
+      /find \. -name "PAX-v[\d\.]+-Windows-Portable\.exe"/g,
       `find . -name "PAX-v${version}-Windows-Portable.exe"`
+    );
+    
+    // Update artifact search patterns - Windows MSI
+    content = content.replace(
+      /find \. -name "PAX-v[\d\.]+-Windows-Installer\.msi"/g,
+      `find . -name "PAX-v${version}-Windows-Installer.msi"`
     );
     
     // Update macOS artifact name
     content = content.replace(
-      /zip -r "PAX-macOS-Universal\.zip"/g,
+      /zip -r "PAX-v[\d\.]+-macOS-Universal\.zip"/g,
       `zip -r "PAX-v${version}-macOS-Universal.zip"`
     );
     
     content = content.replace(
-      /find \. -name "PAX-macOS-Universal\.zip"/g,
+      /find \. -name "PAX-v[\d\.]+-macOS-Universal\.zip"/g,
       `find . -name "PAX-v${version}-macOS-Universal.zip"`
     );
     
-    // Update release description
+    // Update release description - Windows EXE
     content = content.replace(
-      /- `PAX-Windows-Portable\.exe`/g,
+      /- `PAX-v[\d\.]+-Windows-Portable\.exe`/g,
       `- \`PAX-v${version}-Windows-Portable.exe\``
     );
     
+    // Update release description - Windows MSI
     content = content.replace(
-      /- `PAX-macOS-Universal\.zip`/g,
+      /- `PAX-v[\d\.]+-Windows-Installer\.msi`/g,
+      `- \`PAX-v${version}-Windows-Installer.msi\``
+    );
+    
+    // Update release description - macOS
+    content = content.replace(
+      /- `PAX-v[\d\.]+-macOS-Universal\.zip`/g,
       `- \`PAX-v${version}-macOS-Universal.zip\``
     );
     
     writeFileSync(workflowPath, content);
     console.log(`✅ Updated GitHub workflow to use versioned filenames`);
+    console.log(`✅ Updated MSI installer to use versioned filename`);
   } catch (e) {
     console.warn(`⚠️  Could not update workflow file: ${e.message}`);
   }
