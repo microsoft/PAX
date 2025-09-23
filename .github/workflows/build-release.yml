@@ -252,13 +252,15 @@ jobs:
           - `PAX-Windows-Installer.msi` - Traditional Windows installer (if available)
           
           **Mac Users:**
-          - `PAX-macOS-AppleSilicon.zip` - For Apple Silicon Macs (M1/M2/M3)
-          - `PAX-macOS-Intel.zip` - For Intel-based Macs
+          - `PAX-macOS-AppleSilicon.zip` - Universal binary for all Mac computers (Intel & Apple Silicon)
+          - `PAX-macOS-Intel.zip` - Same universal binary (alternate download)
+          
+          > **Note**: Both Mac downloads contain the same universal app that works on all Mac computers (Intel and Apple Silicon M1/M2/M3 chips). Choose either download.
           
           ### Quick Start
           
           1. **Windows**: Download and run the .exe file
-          2. **Mac**: Download the appropriate .zip, extract, right-click the app and choose "Open"
+          2. **Mac**: Download either .zip file, extract, right-click the app and choose "Open"
           
           ### Requirements
           
