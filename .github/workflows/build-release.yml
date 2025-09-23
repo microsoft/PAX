@@ -177,11 +177,10 @@ jobs:
         cp -r "$APP_PATH" "macos-dist-native/"
         cd "macos-dist-native"
         
-        # Create ZIP files for both architectures (universal binary approach)
-        zip -r "PAX-macOS-AppleSilicon.zip" "$APP_NAME"
-        zip -r "PAX-macOS-Intel.zip" "$APP_NAME"
+        # Create single universal ZIP file (works on all Macs)
+        zip -r "PAX-macOS-Universal.zip" "$APP_NAME"
         
-        echo "Created universal macOS app bundles"
+        echo "Created universal macOS app bundle"
 
     - name: Upload macOS artifacts
       uses: actions/upload-artifact@v4
@@ -219,7 +218,7 @@ jobs:
         find . -name "PAX-Windows-Portable.exe" -exec cp {} release-assets/ \; 2>/dev/null || echo "No Windows exe found"
         find . -name "*.msi" -exec cp {} release-assets/ \; 2>/dev/null || echo "No Windows msi found"
         # Copy macOS artifacts
-        find . -name "PAX-macOS-*.zip" -exec cp {} release-assets/ \; 2>/dev/null || echo "No macOS zip found"
+        find . -name "PAX-macOS-Universal.zip" -exec cp {} release-assets/ \; 2>/dev/null || echo "No macOS universal zip found"
         # Copy any other artifacts
         find . -name "*.zip" -path "*/PAX-*" -exec cp {} release-assets/ \; 2>/dev/null || echo "No other zips found"
         
@@ -252,15 +251,12 @@ jobs:
           - `PAX-Windows-Installer.msi` - Traditional Windows installer (if available)
           
           **Mac Users:**
-          - `PAX-macOS-AppleSilicon.zip` - Universal binary for all Mac computers (Intel & Apple Silicon)
-          - `PAX-macOS-Intel.zip` - Same universal binary (alternate download)
-          
-          > **Note**: Both Mac downloads contain the same universal app that works on all Mac computers (Intel and Apple Silicon M1/M2/M3 chips). Choose either download.
+          - `PAX-macOS-Universal.zip` - Universal app for all Mac computers (Intel & Apple Silicon)
           
           ### Quick Start
           
           1. **Windows**: Download and run the .exe file
-          2. **Mac**: Download either .zip file, extract, right-click the app and choose "Open"
+          2. **Mac**: Download the .zip file, extract, right-click the app and choose "Open"
           
           ### Requirements
           
