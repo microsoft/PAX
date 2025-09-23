@@ -60,9 +60,13 @@ jobs:
   build-macos:
     strategy:
       matrix:
-        target:
-          - aarch64-apple-darwin  # Apple Silicon (M1/M2/M3)
-          - x86_64-apple-darwin   # Intel Macs
+        include:
+          - target: aarch64-apple-darwin
+            arch: arm64
+            name: AppleSilicon
+          - target: x86_64-apple-darwin  
+            arch: x86_64
+            name: Intel
     
     runs-on: macos-latest
 
@@ -86,43 +90,68 @@ jobs:
     - name: Install Tauri CLI
       run: npm install -g @tauri-apps/cli
 
-    - name: Build Tauri app for ${{ matrix.target }}
-      run: npm run tauri build -- --target ${{ matrix.target }}
-
-    - name: List build output for debugging
+    - name: Install Rust target and verify
       run: |
-        echo "Listing target directory contents:"
-        ls -la "src-tauri/target/${{ matrix.target }}/release/" || true
-        echo "Listing bundle directory contents:"
-        ls -la "src-tauri/target/${{ matrix.target }}/release/bundle/" || true
-        echo "Listing macos bundle directory contents:"
-        ls -la "src-tauri/target/${{ matrix.target }}/release/bundle/macos/" || true
+        rustup target add ${{ matrix.target }}
+        rustup target list --installed
+
+    - name: Build frontend first
+      run: npm run build
+
+    - name: Build Tauri app for ${{ matrix.target }}
+      run: |
+        echo "Building for target: ${{ matrix.target }}"
+        npm run tauri build -- --target ${{ matrix.target }} --verbose
+
+    - name: Debug build output
+      run: |
+        echo "=== Build completed, checking output ==="
+        echo "Target directory structure:"
+        find src-tauri/target/${{ matrix.target }} -type f -name "*.app" 2>/dev/null || echo "No .app bundles found"
+        find src-tauri/target/${{ matrix.target }} -type d -name "*.app" 2>/dev/null || echo "No .app directories found"
+        echo "Full release directory contents:"
+        ls -la "src-tauri/target/${{ matrix.target }}/release/" 2>/dev/null || echo "Release directory not found"
+        echo "Bundle directory contents:"
+        ls -la "src-tauri/target/${{ matrix.target }}/release/bundle/" 2>/dev/null || echo "Bundle directory not found"
+        echo "macOS bundle directory contents:"
+        ls -la "src-tauri/target/${{ matrix.target }}/release/bundle/macos/" 2>/dev/null || echo "macOS bundle directory not found"
+        echo "=== End debug output ==="
 
     - name: Create macOS distribution
       run: |
         mkdir -p macos-dist-${{ matrix.target }}
         
-        # Find the .app bundle (it might have a slightly different name)
-        APP_PATH=$(find "src-tauri/target/${{ matrix.target }}/release/bundle/macos/" -name "*.app" -type d | head -1)
+        # First try to find .app bundle in target-specific directory
+        APP_PATH=$(find "src-tauri/target/${{ matrix.target }}/release/bundle/macos/" -name "*.app" -type d 2>/dev/null | head -1)
+        
+        # If not found, try the default release directory (for native builds)
+        if [ -z "$APP_PATH" ]; then
+          echo "No app bundle found in target-specific directory, trying default release directory..."
+          APP_PATH=$(find "src-tauri/target/release/bundle/macos/" -name "*.app" -type d 2>/dev/null | head -1)
+        fi
+        
+        # If still not found, try universal directory
+        if [ -z "$APP_PATH" ]; then
+          echo "No app bundle found in default directory, trying universal directory..."
+          APP_PATH=$(find "src-tauri/target/universal-apple-darwin/release/bundle/macos/" -name "*.app" -type d 2>/dev/null | head -1)
+        fi
         
         if [ -z "$APP_PATH" ]; then
-          echo "Error: No .app bundle found!"
+          echo "Error: No .app bundle found in any expected location!"
+          echo "Available files in src-tauri/target/:"
+          find src-tauri/target/ -name "*.app" -type d 2>/dev/null || echo "No .app bundles found anywhere"
           exit 1
         fi
         
         APP_NAME=$(basename "$APP_PATH")
-        echo "Found app bundle: $APP_NAME"
+        echo "Found app bundle: $APP_NAME at $APP_PATH"
         
         # Copy the app bundle
         cp -r "$APP_PATH" "macos-dist-${{ matrix.target }}/"
         cd "macos-dist-${{ matrix.target }}"
         
         # Create ZIP with appropriate name
-        if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
-          zip -r "PAX-macOS-AppleSilicon.zip" "$APP_NAME"
-        else
-          zip -r "PAX-macOS-Intel.zip" "$APP_NAME"
-        fi
+        zip -r "PAX-macOS-${{ matrix.name }}.zip" "$APP_NAME"
 
     - name: Upload macOS artifacts
       uses: actions/upload-artifact@v4
