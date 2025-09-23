@@ -11,10 +11,13 @@
   },
   "tauri": {
     "allowlist": {
+      "all": false,
       "shell": {
+        "all": false,
         "open": true
       },
       "dialog": {
+        "all": false,
         "open": true,
         "save": true,
         "confirm": true
@@ -27,6 +30,20 @@
         "all": true
       }
     },
+    "bundle": {
+      "active": true,
+      "identifier": "com.microsoft.pax",
+      "icon": [
+        "icons/icon.png",
+        "icons/icon.ico",
+        "icons/icon.icns"
+      ],
+      "resources": [],
+      "targets": "all"
+    },
+    "security": {
+      "csp": null
+    },
     "windows": [
       {
         "title": "Purview Audit eXporter (PAX) (1.0.0)",
@@ -35,18 +52,6 @@
         "minHeight": 560,
         "resizable": true
       }
-    ],
-    "bundle": {
-      "identifier": "com.microsoft.pax",
-      "icon": [
-        "icons/icon.png",
-        "icons/icon.ico",
-        "icons/icon.icns"
-      ],
-      "resources": []
-    },
-    "security": {
-      "csp": null
-    }
+    ]
   }
 }
