@@ -1,6 +1,6 @@
 {
   "build": {
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "",
     "beforeDevCommand": "node scripts/copy-script.cjs && npm run dev",
     "devPath": "http://localhost:5173",
     "distDir": "../dist"
@@ -27,16 +27,7 @@
         "icons/icon.icns"
       ],
       "resources": [],
-      "macOS": {
-        "entitlements": null,
-        "exceptionDomain": "",
-        "frameworks": [],
-        "providerShortName": null,
-        "signingIdentity": null,
-        "hardenedRuntime": false,
-        "minimumSystemVersion": "10.13"
-      },
-      "targets": ["app"]
+      "targets": "all"
     }
   }
 }
