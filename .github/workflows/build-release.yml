@@ -48,16 +48,25 @@ jobs:
       shell: pwsh
       run: |
         mkdir windows-dist
+        # Extract version from git tag
+        $version = if ($env:GITHUB_REF -like "refs/tags/*") { 
+          $env:GITHUB_REF -replace "refs/tags/", "" 
+        } elseif ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
+          "${{ github.event.inputs.version }}"
+        } else {
+          "v1.0.19"
+        }
+        
         $exePath = Get-ChildItem "src-tauri/target/release" -Name "*.exe" | Where-Object { $_ -like "*Purview*" }
         if ($exePath) {
           Copy-Item "src-tauri/target/release/$exePath" "windows-dist/"
-          Rename-Item "windows-dist/\$exePath" "PAX-v1.0.18-Windows-Portable.exe"
+          Rename-Item "windows-dist/\$exePath" "PAX-$version-Windows-Portable.exe"
         }
         # Also include MSI installer if available
         $msiPath = Get-ChildItem "src-tauri/target/release/bundle/msi" -Name "*.msi" -ErrorAction SilentlyContinue
         if ($msiPath) {
           Copy-Item "src-tauri/target/release/bundle/msi/$msiPath" "windows-dist/"
-          Rename-Item "windows-dist/\$msiPath" "PAX-v1.0.18-Windows-Installer.msi"
+          Rename-Item "windows-dist/\$msiPath" "PAX-$version-Windows-Installer.msi"
         }
 
     - name: Upload Windows artifacts
@@ -159,6 +168,15 @@ jobs:
 
     - name: Create macOS distribution (native build)
       run: |
+        # Extract version from git tag
+        VERSION=$(if [[ "$GITHUB_REF" == refs/tags/* ]]; then 
+          echo "${GITHUB_REF#refs/tags/}"
+        elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+          echo "${{ github.event.inputs.version }}"
+        else
+          echo "v1.0.19"
+        fi)
+        
         # Look for app bundle in the native release directory
         APP_PATH=$(find "src-tauri/target/release/bundle/macos/" -name "*.app" -type d 2>/dev/null | head -1)
         
@@ -179,7 +197,7 @@ jobs:
         cd "macos-dist-native"
         
         # Create single universal ZIP file (works on all Macs)
-        zip -r "PAX-v1.0.19-macOS-Universal.zip" "$APP_NAME"
+        zip -r "PAX-${VERSION}-macOS-Universal.zip" "$APP_NAME"
         
         echo "Created universal macOS app bundle"
 
@@ -214,12 +232,21 @@ jobs:
 
     - name: Prepare release assets
       run: |
+        # Extract version from git tag or workflow input
+        VERSION=$(if [[ "$GITHUB_REF" == refs/tags/* ]]; then 
+          echo "${GITHUB_REF#refs/tags/}"
+        elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+          echo "${{ github.event.inputs.version }}"
+        else
+          echo "v1.0.19"
+        fi)
+        
         mkdir release-assets
-        # Copy Windows artifacts
-        find . -name "PAX-v1.0.19-Windows-Portable.exe" -exec cp {} release-assets/ \; 2>/dev/null || echo "No Windows exe found"
-        find . -name "PAX-v1.0.19-Windows-Installer.msi" -exec cp {} release-assets/ \; 2>/dev/null || echo "No Windows msi found"
-        # Copy macOS artifacts
-        find . -name "PAX-v1.0.19-macOS-Universal.zip" -exec cp {} release-assets/ \; 2>/dev/null || echo "No macOS universal zip found"
+        # Copy Windows artifacts with dynamic version
+        find . -name "PAX-${VERSION}-Windows-Portable.exe" -exec cp {} release-assets/ \; 2>/dev/null || echo "No Windows exe found"
+        find . -name "PAX-${VERSION}-Windows-Installer.msi" -exec cp {} release-assets/ \; 2>/dev/null || echo "No Windows msi found"
+        # Copy macOS artifacts with dynamic version  
+        find . -name "PAX-${VERSION}-macOS-Universal.zip" -exec cp {} release-assets/ \; 2>/dev/null || echo "No macOS universal zip found"
         # Copy any other artifacts
         find . -name "*.zip" -path "*/PAX-*" -exec cp {} release-assets/ \; 2>/dev/null || echo "No other zips found"
         
@@ -248,11 +275,11 @@ jobs:
           ### Downloads
           
           **Windows Users:**
-          - `PAX-v1.0.19-Windows-Portable.exe` - Single executable, no installation required
-          - `PAX-v1.0.19-Windows-Installer.msi` - Traditional Windows installer
+          - `PAX-${{ github.event.inputs.version || github.ref_name }}-Windows-Portable.exe` - Single executable, no installation required
+          - `PAX-${{ github.event.inputs.version || github.ref_name }}-Windows-Installer.msi` - Traditional Windows installer
           
           **Mac Users:**
-          - `PAX-v1.0.19-macOS-Universal.zip` - Universal app for all Mac computers (Intel & Apple Silicon)
+          - `PAX-${{ github.event.inputs.version || github.ref_name }}-macOS-Universal.zip` - Universal app for all Mac computers (Intel & Apple Silicon)
           
           ### Quick Start
           
