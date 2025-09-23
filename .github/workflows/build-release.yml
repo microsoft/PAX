@@ -196,15 +196,36 @@ jobs:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
 
+    - name: Debug downloaded artifacts
+      run: |
+        echo "=== All downloaded content ==="
+        find . -type f -name "*.exe" -o -name "*.zip" -o -name "*.msi" -o -name "*.app" 2>/dev/null || echo "No app files found"
+        echo "=== Directory structure ==="
+        ls -la
+        echo "=== Subdirectories ==="
+        find . -type d -maxdepth 2
+        echo "=== All files ==="
+        find . -type f -maxdepth 3
+
     - name: Prepare release assets
       run: |
         mkdir release-assets
         # Copy Windows artifacts
-        cp PAX-Windows/* release-assets/ 2>/dev/null || true
-        # Copy macOS artifacts (universal build)
-        cp PAX-macOS-Universal/* release-assets/ 2>/dev/null || true
-        # List what we have
+        find . -name "PAX-Windows-Portable.exe" -exec cp {} release-assets/ \; 2>/dev/null || echo "No Windows exe found"
+        find . -name "*.msi" -exec cp {} release-assets/ \; 2>/dev/null || echo "No Windows msi found"
+        # Copy macOS artifacts
+        find . -name "PAX-macOS-*.zip" -exec cp {} release-assets/ \; 2>/dev/null || echo "No macOS zip found"
+        # Copy any other artifacts
+        find . -name "*.zip" -path "*/PAX-*" -exec cp {} release-assets/ \; 2>/dev/null || echo "No other zips found"
+        
+        echo "=== Release assets prepared ==="
         ls -la release-assets/
+        
+        if [ -z "$(ls -A release-assets/)" ]; then
+          echo "ERROR: No release assets found!"
+          echo "This means the build artifacts were not properly created or uploaded."
+          exit 1
+        fi
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
