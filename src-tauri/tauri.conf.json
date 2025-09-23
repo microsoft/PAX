@@ -19,8 +19,7 @@
       "dialog": {
         "all": false,
         "open": true,
-        "save": true,
-        "confirm": true
+        "save": true
       },
       "fs": {
         "all": true,
@@ -38,8 +37,7 @@
         "icons/icon.ico",
         "icons/icon.icns"
       ],
-      "resources": [],
-      "targets": "all"
+      "resources": []
     },
     "security": {
       "csp": null

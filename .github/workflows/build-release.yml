@@ -31,7 +31,7 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
 
     - name: Install Tauri CLI
-      run: npm install -g @tauri-apps/cli@latest
+      run: npm install -g @tauri-apps/cli@1.6.0
 
     - name: Build Tauri app for Windows
       run: npm run tauri build
@@ -81,7 +81,7 @@ jobs:
         echo "Installing system dependencies..."
 
     - name: Install Tauri CLI
-      run: npm install -g @tauri-apps/cli@latest
+      run: npm install -g @tauri-apps/cli@1.6.0
 
     - name: Verify Tauri CLI installation
       run: |
