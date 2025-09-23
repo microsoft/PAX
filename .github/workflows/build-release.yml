@@ -14,18 +14,7 @@ on:
 permissions:
   contents: write
   actions: read
-  packages: writeMulti-Platform Release
-
-on:
-  push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to build (e.g., v1.0.0)'
-        required: false
-        default: 'manual-build'
+  packages: write
 
 jobs:
   build-windows:
