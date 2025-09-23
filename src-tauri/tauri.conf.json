@@ -1,4 +1,5 @@
 {
+  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
   "build": {
     "beforeBuildCommand": "",
     "beforeDevCommand": "node scripts/copy-script.cjs && npm run dev",
@@ -11,13 +12,30 @@
   },
   "tauri": {
     "allowlist": {
-      "shell": { "open": true },
-      "dialog": { "open": true, "save": true, "confirm": true },
-      "fs": { "all": true, "scope": ["**"] },
-      "path": { "all": true }
+      "shell": {
+        "open": true
+      },
+      "dialog": {
+        "open": true,
+        "save": true,
+        "confirm": true
+      },
+      "fs": {
+        "all": true,
+        "scope": ["**"]
+      },
+      "path": {
+        "all": true
+      }
     },
     "windows": [
-      { "title": "Purview Audit eXporter (PAX) (1.0.0)", "width": 640, "height": 860, "minHeight": 560, "resizable": true }
+      {
+        "title": "Purview Audit eXporter (PAX) (1.0.0)",
+        "width": 640,
+        "height": 860,
+        "minHeight": 560,
+        "resizable": true
+      }
     ],
     "bundle": {
       "identifier": "com.microsoft.pax",
@@ -27,6 +45,9 @@
         "icons/icon.icns"
       ],
       "resources": []
+    },
+    "security": {
+      "csp": null
     }
   }
 }
