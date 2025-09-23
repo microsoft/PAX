@@ -87,6 +87,8 @@ jobs:
       run: |
         npm list -g @tauri-apps/cli
         tauri --version
+        echo "Validating Tauri configuration..."
+        tauri info || echo "Tauri info failed, but continuing..."
 
     - name: Verify frontend build
       run: |
