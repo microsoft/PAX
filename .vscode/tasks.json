@@ -1,0 +1,109 @@
+{
+	"$schema": "vscode://schemas/tasks",
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Dev (Tauri)",
+			"type": "shell",
+			"command": "npm run tauri dev"
+		},
+		{
+			"label": "Build frontend",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"if (Test-Path package.json) { if (Test-Path node_modules) { npm run build } else { npm ci; npm run build } } else { Write-Host 'No frontend package.json found' }"
+			],
+			"problemMatcher": [
+				"$eslint-stylish"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Build tauri dev",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"if (Test-Path src-tauri\\Cargo.toml) { cd src-tauri; cargo build --quiet; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } } else { Write-Host 'No Tauri Cargo.toml found' }"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Build tauri dev (recompile)",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"cd src-tauri; cargo build"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Rebuild after Close+cleanup",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"npm run build --silent; cd src-tauri; cargo build"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Rebuild with quit_app",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"npm run build --silent; cd src-tauri; cargo build"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Build after auth change",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"npm run build --silent"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Rebuild after splat fix",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"npm run build --silent"
+			],
+			"group": "build"
+		},
+			{
+				"label": "Build release (portable exe)",
+				"type": "shell",
+				"command": "pwsh",
+				"args": [
+					"-NoLogo",
+					"-NoProfile",
+					"-Command",
+					"npm run tauri build"
+				]
+			}
+	]
+}

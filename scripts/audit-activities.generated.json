@@ -1,0 +1,4364 @@
+{
+  "version": "2025-09-22",
+  "source": "https://learn.microsoft.com/en-us/purview/audit-log-activities",
+  "categories": [
+    {
+      "key": "application_administration_activities",
+      "label": "Application administration activities",
+      "items": [
+        {
+          "op": "Added credentials to a service principal",
+          "label": "Add service principal credentials."
+        },
+        {
+          "op": "Added delegation entry",
+          "label": "Add delegation entry."
+        },
+        {
+          "op": "Added service principal",
+          "label": "Add service principal."
+        },
+        {
+          "op": "Removed a service principal from the directory",
+          "label": "Remove service principal."
+        },
+        {
+          "op": "Removed credentials from a service principal",
+          "label": "Remove service principal credentials."
+        },
+        {
+          "op": "Removed delegation entry",
+          "label": "Remove delegation entry."
+        },
+        {
+          "op": "Set delegation entry",
+          "label": "Set delegation entry."
+        }
+      ]
+    },
+    {
+      "key": "briefing_email_activities",
+      "label": "Briefing email activities",
+      "items": [
+        {
+          "op": "Updated organization privacy settings",
+          "label": "UpdatedOrganizationBriefingSettings"
+        },
+        {
+          "op": "Updated user privacy settings",
+          "label": "UpdatedUserBriefingSettings"
+        }
+      ]
+    },
+    {
+      "key": "communication_compliance_activities",
+      "label": "Communication compliance activities",
+      "items": [
+        {
+          "op": "Policy match",
+          "label": "SupervisionRuleMatch"
+        },
+        {
+          "op": "Policy update",
+          "label": "SupervisionPolicyCreated, SupervisionPolicyUpdated, SupervisionPolicyDeleted"
+        },
+        {
+          "op": "Tag applied to messages",
+          "label": "SupervisoryReviewTag"
+        }
+      ]
+    },
+    {
+      "key": "compliance_manager_activities",
+      "label": "Compliance Manager activities",
+      "items": [
+        {
+          "op": "Roles change",
+          "label": "ComplianceManagerRolesChange"
+        },
+        {
+          "op": "Tenant automation level change",
+          "label": "ComplianceManagerAutomationLevelChange"
+        },
+        {
+          "op": "Testing source automation change",
+          "label": "ComplianceManagerAutomationChange"
+        }
+      ]
+    },
+    {
+      "key": "content_explorer_activities",
+      "label": "Content explorer activities",
+      "items": [
+        {
+          "op": "Accessed item",
+          "label": "LabelContentExplorerAccessedItem"
+        }
+      ]
+    },
+    {
+      "key": "data_security_investigations_preview_activities",
+      "label": "Data security investigations (preview) activities",
+      "items": [
+        {
+          "op": "Canceled DSI sample view",
+          "label": "DSISampleViewCancelled"
+        },
+        {
+          "op": "Canceled DSI statistics view",
+          "label": "DSIStatisticsViewCancelled"
+        },
+        {
+          "op": "Created DSI Investigation",
+          "label": "CreatedDSIInvestigation"
+        },
+        {
+          "op": "Deleted DSI Investigation",
+          "label": "DeletedDSIInvestigation"
+        },
+        {
+          "op": "DSI AI feedback provided",
+          "label": "DSIAIFeedbackProvided"
+        },
+        {
+          "op": "DSI investigation list viewed",
+          "label": "DSIInvestigationListViewed"
+        },
+        {
+          "op": "DSI search added",
+          "label": "DSIPurviewSearchAdded"
+        },
+        {
+          "op": "DSI search updated",
+          "label": "DSIPurviewSearchUpdated"
+        },
+        {
+          "op": "DSIProbeJobResutsViewed",
+          "label": "DSIProbeJobResultsViewed"
+        },
+        {
+          "op": "Get DSI Investigation",
+          "label": "GetDSIInvestigation"
+        },
+        {
+          "op": "Get DSI search",
+          "label": "GetSearchDSIInvestigation"
+        },
+        {
+          "op": "Investigation created from Defender XDR",
+          "label": "DSIInvestigationCreatedFromXDR"
+        },
+        {
+          "op": "Investigation created from Purview IRM",
+          "label": "DSIInvestigationCreatedFromIRM"
+        },
+        {
+          "op": "Item added to mitigation",
+          "label": "DSIItemAddedToMitigation"
+        },
+        {
+          "op": "Mitigation plan list viewed",
+          "label": "DSIMitigationPlanListVIewed"
+        },
+        {
+          "op": "Started categorization job",
+          "label": "DSIInvestigationCategorizationJobSubmitted"
+        },
+        {
+          "op": "Started probing job",
+          "label": "DSIProbeJobSubmitted"
+        },
+        {
+          "op": "Started vectorization job",
+          "label": "DSIinvestigationVectorizationJobSubmitted"
+        },
+        {
+          "op": "Submitted DSI search add to evidence set job",
+          "label": "DSIPurviewSearchAddToEvidenceSetJobSubmitted"
+        },
+        {
+          "op": "Submitted DSI search sample job",
+          "label": "DSIPurviewSearchSampleJobSubmitted"
+        },
+        {
+          "op": "Submitted DSI search statistics job",
+          "label": "DSIPurviewSearchStatisticsJobSubmitted"
+        },
+        {
+          "op": "Updated DSI Investigation",
+          "label": "UpdatedDSIInvestigation"
+        },
+        {
+          "op": "Updated DSI Investigation members",
+          "label": "DSIInvestigationMembersUpdated"
+        },
+        {
+          "op": "Updated status on item from mitigation plan",
+          "label": "DSIMitigationItemStatusUpdated"
+        },
+        {
+          "op": "Uploaded file for DSI search",
+          "label": "DSIPurviewSearchUploadFile"
+        },
+        {
+          "op": "Vector search started",
+          "label": "DSIVectorSearchStarted"
+        },
+        {
+          "op": "Viewed data processing errors for a DSI evidence set",
+          "label": "DSIInvestigationSettingsUpdated"
+        },
+        {
+          "op": "Viewed default DSI investigation settings",
+          "label": "DSIInvestigationSettingsDefaultViewed"
+        },
+        {
+          "op": "Viewed DSI evidence set document",
+          "label": "DSIEvidenceSetDocumentViewed"
+        },
+        {
+          "op": "Viewed DSI investigation settings",
+          "label": "DSIInvestigationSettingsViewed"
+        },
+        {
+          "op": "Viewed DSI sample results",
+          "label": "DSISampleResultsViewed"
+        },
+        {
+          "op": "Viewed DSI sample status",
+          "label": "DSISampleStatusViewed"
+        },
+        {
+          "op": "Viewed DSI statistics results",
+          "label": "DSIStatisticsResultsViewed"
+        },
+        {
+          "op": "Viewed item from mitigation plan",
+          "label": "DSIItemViewedFromMitigation"
+        }
+      ]
+    },
+    {
+      "key": "directory_administration_activities",
+      "label": "Directory administration activities",
+      "items": [
+        {
+          "op": "Added a partner to the directory",
+          "label": "Add partner to company."
+        },
+        {
+          "op": "Added domain to company",
+          "label": "Add domain to company."
+        },
+        {
+          "op": "Removed a partner from the directory",
+          "label": "Remove partner from company."
+        },
+        {
+          "op": "Removed domain from company",
+          "label": "Remove domain from company."
+        },
+        {
+          "op": "Set company information",
+          "label": "Set company information."
+        },
+        {
+          "op": "Set domain authentication",
+          "label": "Set domain authentication."
+        },
+        {
+          "op": "Set password policy",
+          "label": "Set password policy."
+        },
+        {
+          "op": "Turned on Azure AD Sync",
+          "label": "Set DirSyncEnabled flag."
+        },
+        {
+          "op": "Updated domain",
+          "label": "Update domain."
+        },
+        {
+          "op": "Updated the federation settings for a domain",
+          "label": "Set federation settings on domain."
+        },
+        {
+          "op": "Verified domain",
+          "label": "Verify domain."
+        },
+        {
+          "op": "Verified email verified domain",
+          "label": "Verify email verified domain."
+        }
+      ]
+    },
+    {
+      "key": "disposition_review_activities",
+      "label": "Disposition review activities",
+      "items": [
+        {
+          "op": "Added reviewers",
+          "label": "AddReviewer"
+        },
+        {
+          "op": "Approved disposal",
+          "label": "ApproveDisposal"
+        },
+        {
+          "op": "Extended retention period",
+          "label": "ExtendRetention"
+        },
+        {
+          "op": "Relabeled item",
+          "label": "RelabelItem"
+        }
+      ]
+    },
+    {
+      "key": "ediscovery_activities",
+      "label": "eDiscovery activities",
+      "items": [
+        {
+          "op": "Added favorite",
+          "label": "FavoriteSet"
+        },
+        {
+          "op": "Added Purview search",
+          "label": "PurviewSearchAdded"
+        },
+        {
+          "op": "Added review set",
+          "label": "ReviewSetAdded"
+        },
+        {
+          "op": "Added saved search for a review set",
+          "label": "ReviewSetSavedSearchAdded"
+        },
+        {
+          "op": "Added tag template",
+          "label": "TagTemplateAdded"
+        },
+        {
+          "op": "Cancelled sample view",
+          "label": "SampleViewCancelled"
+        },
+        {
+          "op": "Cancelled statistics view",
+          "label": "StatisticsViewCancelled"
+        },
+        {
+          "op": "Changed eDiscovery case",
+          "label": "CaseUpdated"
+        },
+        {
+          "op": "Changed hold in eDiscovery case",
+          "label": "HoldUpdated"
+        },
+        {
+          "op": "Closed eDiscovery case",
+          "label": "CaseClosed"
+        },
+        {
+          "op": "Copied review set",
+          "label": "ReviewSetCopied"
+        },
+        {
+          "op": "Created eDiscovery case",
+          "label": "CaseAdded"
+        },
+        {
+          "op": "Created hold in eDiscovery case",
+          "label": "HoldCreated"
+        },
+        {
+          "op": "Deleted eDiscovery case",
+          "label": "CaseRemoved"
+        },
+        {
+          "op": "Deleted file for Purview search",
+          "label": "PurviewSearchDeleteFile"
+        },
+        {
+          "op": "Deleted hold in eDiscovery case",
+          "label": "HoldRemoved"
+        },
+        {
+          "op": "Deleted Purview search",
+          "label": "PurviewSearchDeleted"
+        },
+        {
+          "op": "Deleted Purview Search export job",
+          "label": "PurviewSearchExportJobDeleted"
+        },
+        {
+          "op": "Removed favorite",
+          "label": "FavoriteRemoved"
+        },
+        {
+          "op": "Removed saved search for a review set",
+          "label": "ReviewSetSavedSearchRemoved"
+        },
+        {
+          "op": "Removed tag template",
+          "label": "TagTemplateRemoved"
+        },
+        {
+          "op": "Reopened eDiscovery case",
+          "label": "CaseReopened"
+        },
+        {
+          "op": "Retried distribution sync for hold",
+          "label": "HoldRetryDistributionSync"
+        },
+        {
+          "op": "Retrieved actions for all review sets",
+          "label": "GetActionsForAllReviewSets"
+        },
+        {
+          "op": "Retrieved all action for hold",
+          "label": "GetActionsForAllHolds"
+        },
+        {
+          "op": "Retrieved all action for search",
+          "label": "GetActionsForSearch"
+        },
+        {
+          "op": "Retrieved all actions for all exports",
+          "label": "GetActionsForAllExports"
+        },
+        {
+          "op": "Retrieved all actions for case",
+          "label": "GetActionsForCase"
+        },
+        {
+          "op": "Retrieved all actions for hold",
+          "label": "GetActionsForHold"
+        },
+        {
+          "op": "Retrieved all actions for review set",
+          "label": "GetActionsForReviewSet"
+        },
+        {
+          "op": "Retrieved single action for case",
+          "label": "GetSingleActionForCase"
+        },
+        {
+          "op": "Retrieved single action for hold",
+          "label": "GetSingleActionForHold"
+        },
+        {
+          "op": "Retrieved single action for review set",
+          "label": "GetSingleActionForReviewSet"
+        },
+        {
+          "op": "Retrieved single action for search",
+          "label": "GetSingleActionForSearch"
+        },
+        {
+          "op": "Submitted new algo job",
+          "label": "AlgoJobSubmitted"
+        },
+        {
+          "op": "Submitted new burn job",
+          "label": "BurnJobSubmitted"
+        },
+        {
+          "op": "Submitted purview search add to review set job",
+          "label": "PurviewSearchAddToReviewSetJobSubmitted"
+        },
+        {
+          "op": "Submitted purview search export job",
+          "label": "PurviewSearchExportJobSubmitted"
+        },
+        {
+          "op": "Submitted purview search sample job",
+          "label": "PurviewSearchSampleJobSubmitted"
+        },
+        {
+          "op": "Submitted purview search statistics job",
+          "label": "PurviewSearchStatisticsJobSubmitted"
+        },
+        {
+          "op": "Submitted review set export job",
+          "label": "ReviewSetExportJobSubmitted"
+        },
+        {
+          "op": "Tagged documents by ID for a review set",
+          "label": "ReviewSetDocumentsTaggedById"
+        },
+        {
+          "op": "Tagged documents by query for a review set",
+          "label": "ReviewSetDocumentsTaggedByQuery"
+        },
+        {
+          "op": "Updated case members",
+          "label": "CaseMembersUpdated"
+        },
+        {
+          "op": "Updated case settings",
+          "label": "CaseSettingsUpdated"
+        },
+        {
+          "op": "Updated notes for a review set",
+          "label": "ReviewSetNotesUpdated"
+        },
+        {
+          "op": "Updated Purview search",
+          "label": "PurviewSearchUpdated"
+        },
+        {
+          "op": "Updated review set",
+          "label": "ReviewSetUpdated"
+        },
+        {
+          "op": "Updated review set annotation",
+          "label": "ReviewSetAnnotationsUpdated"
+        },
+        {
+          "op": "Updated saved search for a review set",
+          "label": "ReviewSetSavedSearchUpdated"
+        },
+        {
+          "op": "Updated tag template",
+          "label": "TagTemplateUpdated"
+        },
+        {
+          "op": "Updated tags",
+          "label": "TagsUpdated"
+        },
+        {
+          "op": "Updated tags for a tag template",
+          "label": "TagTemplateTagsUpdated"
+        },
+        {
+          "op": "Updated tenant settings",
+          "label": "TenantSettingsUpdated"
+        },
+        {
+          "op": "Uploaded file for Purview search",
+          "label": "PurviewSearchUploadFile"
+        },
+        {
+          "op": "Viewed analytics review set attachments report",
+          "label": "AlgoGetReviewSetAttachmentsReport"
+        },
+        {
+          "op": "Viewed analytics review set documents report",
+          "label": "AlgoGetReviewSetDocumentsReport"
+        },
+        {
+          "op": "Viewed analytics review set email report",
+          "label": "AlgoGetReviewSetEmailsReport"
+        },
+        {
+          "op": "Viewed analytics review set report",
+          "label": "AlgoGetReviewSetReport"
+        },
+        {
+          "op": "Viewed analytics review set report by file type",
+          "label": "AlgoGetReviewSetReportByFileType"
+        },
+        {
+          "op": "Viewed analytics review set report by source",
+          "label": "AlgoGetReviewSetReportBySource"
+        },
+        {
+          "op": "Viewed case metadata",
+          "label": "CaseMetadataViewed"
+        },
+        {
+          "op": "Viewed case settings",
+          "label": "CaseSettingsViewed"
+        },
+        {
+          "op": "Viewed data processing errors for a review set",
+          "label": "ReviewSetDataProcessingErrorViewed"
+        },
+        {
+          "op": "Viewed default case settings",
+          "label": "CaseSettingsDefaultViewed"
+        },
+        {
+          "op": "Viewed eDiscovery case",
+          "label": "CaseViewed"
+        },
+        {
+          "op": "Viewed eDiscovery case list",
+          "label": "CaseListViewed"
+        },
+        {
+          "op": "Viewed favorite list",
+          "label": "FavoriteListViewed"
+        },
+        {
+          "op": "Viewed hold",
+          "label": "HoldViewed"
+        },
+        {
+          "op": "Viewed hold list",
+          "label": "HoldListViewed"
+        },
+        {
+          "op": "Viewed hold results",
+          "label": "HoldResultsViewed"
+        },
+        {
+          "op": "Viewed hold status",
+          "label": "HoldStatusViewed"
+        },
+        {
+          "op": "Viewed if analytics settings are changed",
+          "label": "AlgoIsSettingChanged"
+        },
+        {
+          "op": "Viewed load count in case",
+          "label": "LoadCountInCaseViewed"
+        },
+        {
+          "op": "Viewed load list",
+          "label": "LoadListViewed"
+        },
+        {
+          "op": "Viewed Purview search",
+          "label": "PurviewSearchViewed"
+        },
+        {
+          "op": "Viewed Purview search list",
+          "label": "PurviewSearchListViewed"
+        },
+        {
+          "op": "Viewed query report for a review set",
+          "label": "ReviewSetQueryReportViewed"
+        },
+        {
+          "op": "Viewed review set document",
+          "label": "ReviewSetDocumentViewed"
+        },
+        {
+          "op": "Viewed review set list",
+          "label": "ReviewSetListViewed"
+        },
+        {
+          "op": "Viewed review set summary",
+          "label": "ReviewSetSummaryViewed"
+        },
+        {
+          "op": "Viewed sample results",
+          "label": "SampleResultsViewed"
+        },
+        {
+          "op": "Viewed sample status",
+          "label": "SampleStatusViewed"
+        },
+        {
+          "op": "Viewed saved search list for a review set",
+          "label": "ReviewSetSavedSearchListViewed"
+        },
+        {
+          "op": "Viewed search count for a review set",
+          "label": "ReviewSetSearchCountViewed"
+        },
+        {
+          "op": "Viewed search options for a review set",
+          "label": "ReviewSetSearchOptionsViewed"
+        },
+        {
+          "op": "Viewed search results for a review set",
+          "label": "ReviewSetSearchRun"
+        },
+        {
+          "op": "Viewed statistics results",
+          "label": "StatisticsResultsViewed"
+        },
+        {
+          "op": "Viewed statistics status",
+          "label": "StatisticsStatusViewed"
+        },
+        {
+          "op": "Viewed tag template list",
+          "label": "TagTemplateListViewed"
+        },
+        {
+          "op": "Viewed tags",
+          "label": "TagsViewed"
+        },
+        {
+          "op": "Viewed tags for a tag template",
+          "label": "TagTemplateTagsViewed"
+        },
+        {
+          "op": "Viewed tenant settings",
+          "label": "TenantSettingsViewed"
+        }
+      ]
+    },
+    {
+      "key": "detailed_properties_for_ediscovery_activities",
+      "label": "Detailed properties for eDiscovery activities",
+      "items": [
+        {
+          "op": "CaseId",
+          "label": "The identity (GUID) of the eDiscovery case that was created, changed, or deleted."
+        },
+        {
+          "op": "CaseName",
+          "label": "The name of the eDiscovery case that was created, changed, or deleted."
+        },
+        {
+          "op": "ClientApplication",
+          "label": "eDiscovery cmdlet activities have a value of EMC for this property. This indicates the activity was performed by using the Microsoft Purview portal GUI or running the cmdlet in PowerShell."
+        },
+        {
+          "op": "ClientIP",
+          "label": "The IP address of the device that was used when the activity was logged. The IP address is displayed in either an IPv4 or IPv6 address format."
+        },
+        {
+          "op": "ClientRequestId",
+          "label": "For eDiscovery activities, this property is typically blank."
+        },
+        {
+          "op": "CmdletVersion",
+          "label": "The build number for the version of the Microsoft Purview portal running in your organization."
+        },
+        {
+          "op": "CreationTime",
+          "label": "The date and time in Coordinated Universal Time (UTC) when the eDiscovery activity was completed."
+        },
+        {
+          "op": "DataSources",
+          "label": "A list of source ID, source name, and location details associated to the activity."
+        },
+        {
+          "op": "EffectiveOrganization",
+          "label": "The name of the Microsoft  365 organization."
+        },
+        {
+          "op": "ExportName",
+          "label": "Name of the eDiscovery export."
+        },
+        {
+          "op": "ExtendedProperties",
+          "label": "Additional properties related to the eDiscovery activity. For example, when case members are updated, this field contains the updated case member information; or when the review set description is updated, this field contains the updated review set description updated by the user."
+        },
+        {
+          "op": "ID",
+          "label": "The ID of the report entry. The ID uniquely identifies the audit log entry."
+        },
+        {
+          "op": "Item",
+          "label": "The name of the item associated with the activity. For example, this field would contain the name of the document viewed when user views a review set document."
+        },
+        {
+          "op": "JobId",
+          "label": "The GUID of the eDiscovery process."
+        },
+        {
+          "op": "ObjectId",
+          "label": "The GUID of the object (for example, a search, hold, or review set) that was created, accessed, or changed, by the activity listed in the Operation property."
+        },
+        {
+          "op": "ObjectName",
+          "label": "The name of the object (for example, a search, hold or review set) that was created, accessed, or changed, by the activity listed in the Operation property."
+        },
+        {
+          "op": "ObjectType",
+          "label": "The type of eDiscovery object that the user created, deleted, or modified. For example, a search action (generate sample results or trigger an export from search) are listed as Search in this field."
+        },
+        {
+          "op": "Operation",
+          "label": "The name of the operation that corresponds to the eDiscovery activity that was performed."
+        },
+        {
+          "op": "OrganizationId",
+          "label": "The GUID for your Microsoft 365 organization."
+        },
+        {
+          "op": "QueryFiles",
+          "label": "The name of the input file used to generate the query. This is specific to the search by file gesture."
+        },
+        {
+          "op": "QueryId",
+          "label": "The GUID of the query associated with the activity."
+        },
+        {
+          "op": "QueryText",
+          "label": "The query text associated with the activity, such as a search statistic process or add to review process."
+        },
+        {
+          "op": "RecordType",
+          "label": "The type of operation indicated by the record."
+        },
+        {
+          "op": "ResultStatus",
+          "label": "Indicates whether the action (specified in the Operation property) was successful or not."
+        },
+        {
+          "op": "Settings",
+          "label": "Settings applied to the eDiscovery activity."
+        },
+        {
+          "op": "StartTime",
+          "label": "The date and time in Coordinated Universal Time (UTC) when the eDiscovery activity was started."
+        },
+        {
+          "op": "UserCancelled",
+          "label": "Whether the specific activity was canceled by the user."
+        },
+        {
+          "op": "UserId",
+          "label": "The user who performed the activity (specified in the Operation property) that resulted in the record being logged."
+        },
+        {
+          "op": "UserKey",
+          "label": "An alternative ID for the user identified in the UserId property. For eDiscovery activities, the value for this property is typically the same as the UserId property."
+        },
+        {
+          "op": "UserServicePlan",
+          "label": "The  subscription used by your organization. For eDiscovery activities, this property is typically blank."
+        },
+        {
+          "op": "UserType",
+          "label": "The type of user that performed the operation. The following values indicate the user type.   0   A regular user. 2   An administrator in your organization. 3   A Microsoft datacenter administrator or datacenter system account. 4   A system account. 5   An application. 6   A service principal."
+        },
+        {
+          "op": "Version",
+          "label": "Indicates the version number of the activity (identified by the Operation property) that's logged."
+        },
+        {
+          "op": "Workload",
+          "label": "The service where the activity occurred."
+        }
+      ]
+    },
+    {
+      "key": "encrypted_message_portal_activities",
+      "label": "Encrypted message portal activities",
+      "items": [
+        {
+          "op": "Accessed mailbox items",
+          "label": "MailItemsAccessed"
+        },
+        {
+          "op": "Added delegate mailbox permissions",
+          "label": "Add-MailboxPermission"
+        },
+        {
+          "op": "Added or removed user with delegate access to calendar folder",
+          "label": "UpdateCalendarDelegation"
+        },
+        {
+          "op": "Added permissions to folder",
+          "label": "AddFolderPermissions"
+        },
+        {
+          "op": "Copied messages to another folder",
+          "label": "Copy"
+        },
+        {
+          "op": "Created mailbox item",
+          "label": "Create"
+        },
+        {
+          "op": "Created new inbox rule in Outlook web app",
+          "label": "New-InboxRule"
+        },
+        {
+          "op": "Deleted messages from Deleted Items folder",
+          "label": "SoftDelete"
+        },
+        {
+          "op": "Label message as a record",
+          "label": ""
+        },
+        {
+          "op": "Labeled message as a record",
+          "label": "ApplyRecordLabel"
+        },
+        {
+          "op": "Modified folder permission",
+          "label": "ModifyFolderPermissions"
+        },
+        {
+          "op": "Modified inbox rule from Outlook web app",
+          "label": "Set-InboxRule"
+        },
+        {
+          "op": "Moved messages to another folder",
+          "label": "Move"
+        },
+        {
+          "op": "Moved messages to Deleted Items folder",
+          "label": "MoveToDeletedItems"
+        },
+        {
+          "op": "Purged messages from the mailbox",
+          "label": "HardDelete"
+        },
+        {
+          "op": "Removed delegate mailbox permissions",
+          "label": "Remove-MailboxPermission"
+        },
+        {
+          "op": "Removed permissions from folder",
+          "label": "RemoveFolderPermissions"
+        },
+        {
+          "op": "Sent message",
+          "label": "Send"
+        },
+        {
+          "op": "Sent message using Send As permissions",
+          "label": "SendAs"
+        },
+        {
+          "op": "Sent message using Send On Behalf permissions",
+          "label": "SendOnBehalf"
+        },
+        {
+          "op": "Updated inbox rules from Outlook client",
+          "label": "UpdateInboxRules"
+        },
+        {
+          "op": "Updated message",
+          "label": "Update"
+        },
+        {
+          "op": "User signed in to mailbox",
+          "label": "MailboxLogin"
+        }
+      ]
+    },
+    {
+      "key": "system_accounts_in_exchange_mailbox_audit_records",
+      "label": "System accounts in Exchange mailbox audit records",
+      "items": [
+        {
+          "op": "(none)",
+          "label": "FileAccessedExtended"
+        },
+        {
+          "op": "Accessed file",
+          "label": "FileAccessed"
+        },
+        {
+          "op": "Changed record status to locked",
+          "label": "LockRecord"
+        },
+        {
+          "op": "Changed record status to unlocked",
+          "label": "UnlockRecord"
+        },
+        {
+          "op": "Changed retention label for a file",
+          "label": "ComplianceSettingChanged"
+        },
+        {
+          "op": "Checked in file",
+          "label": "FileCheckedIn"
+        },
+        {
+          "op": "Checked out file",
+          "label": "FileCheckedOut"
+        },
+        {
+          "op": "Copied file",
+          "label": "FileCopied"
+        },
+        {
+          "op": "Deleted file",
+          "label": "FileDeleted"
+        },
+        {
+          "op": "Deleted file from recycle bin",
+          "label": "FileDeletedFirstStageRecycleBin"
+        },
+        {
+          "op": "Deleted file from second-stage recycle bin",
+          "label": "FileDeletedSecondStageRecycleBin"
+        },
+        {
+          "op": "Deleted file marked as a record",
+          "label": "RecordDelete"
+        },
+        {
+          "op": "Detected document sensitivity mismatch",
+          "label": "DocumentSensitivityMismatchDetected"
+        },
+        {
+          "op": "Detected malware in file",
+          "label": "FileMalwareDetected"
+        },
+        {
+          "op": "Discarded file checkout",
+          "label": "FileCheckOutDiscarded"
+        },
+        {
+          "op": "Downloaded file",
+          "label": "FileDownloaded"
+        },
+        {
+          "op": "Modified file",
+          "label": "FileModified"
+        },
+        {
+          "op": "Moved file",
+          "label": "FileMoved"
+        },
+        {
+          "op": "Performed search query",
+          "label": "SearchQueryPerformed"
+        },
+        {
+          "op": "Recycled a file",
+          "label": "FileRecycled"
+        },
+        {
+          "op": "Recycled a folder",
+          "label": "FolderRecycled"
+        },
+        {
+          "op": "Recycled all minor versions of file",
+          "label": "FileVersionsAllMinorsRecycled"
+        },
+        {
+          "op": "Recycled all versions of file",
+          "label": "FileVersionsAllRecycled"
+        },
+        {
+          "op": "Recycled version of file",
+          "label": "FileVersionRecycled"
+        },
+        {
+          "op": "Renamed file",
+          "label": "FileRenamed"
+        },
+        {
+          "op": "Restored file",
+          "label": "FileRestored"
+        },
+        {
+          "op": "Uploaded file",
+          "label": "FileUploaded"
+        },
+        {
+          "op": "View signaled by client",
+          "label": "ClientViewSignaled"
+        },
+        {
+          "op": "Viewed page",
+          "label": "PageViewed"
+        }
+      ]
+    },
+    {
+      "key": "frequently_asked_questions_about_fileaccessed_and_filepreviewed_events",
+      "label": "Frequently asked questions about FileAccessed and FilePreviewed events",
+      "items": [
+        {
+          "op": "Copied folder",
+          "label": "FolderCopied"
+        },
+        {
+          "op": "Created folder",
+          "label": "FolderCreated"
+        },
+        {
+          "op": "Deleted folder",
+          "label": "FolderDeleted"
+        },
+        {
+          "op": "Deleted folder from recycle bin",
+          "label": "FolderDeletedFirstStageRecycleBin"
+        },
+        {
+          "op": "Deleted folder from second-stage recycle bin",
+          "label": "FolderDeletedSecondStageRecycleBin"
+        },
+        {
+          "op": "Modified folder",
+          "label": "FolderModified"
+        },
+        {
+          "op": "Moved folder",
+          "label": "FolderMoved"
+        },
+        {
+          "op": "Renamed folder",
+          "label": "FolderRenamed"
+        },
+        {
+          "op": "Restored folder",
+          "label": "FolderRestored"
+        }
+      ]
+    },
+    {
+      "key": "information_barriers_activities",
+      "label": "Information barriers activities",
+      "items": [
+        {
+          "op": "Applied information barrier mode to site",
+          "label": "SiteIBModeSet"
+        },
+        {
+          "op": "Applied segments to site",
+          "label": "SiteIBSegmentsSet"
+        },
+        {
+          "op": "Changed AppBypassInformationBarrier setting for the tenant",
+          "label": "AppBypassInformationBarrier"
+        },
+        {
+          "op": "Changed information barrier mode of site",
+          "label": "SiteIBModeChanged"
+        },
+        {
+          "op": "Changed segments of site",
+          "label": "SiteIBSegmentsChanged"
+        },
+        {
+          "op": "Disabled information barriers for SharePoint and OneDrive",
+          "label": "SPOIBIsDisabled"
+        },
+        {
+          "op": "Enabled information barriers for SharePoint and OneDrive",
+          "label": "SPOIBIsEnabled"
+        },
+        {
+          "op": "Information barriers insights report completed",
+          "label": "InformationBarriersInsightsReportCompleted"
+        },
+        {
+          "op": "Information barriers insights report OneDrive section queried",
+          "label": "InformationBarriersInsightsReportOneDriveSectionQueried"
+        },
+        {
+          "op": "Information barriers insights report scheduled",
+          "label": "InformationBarriersInsightsReportSchedule"
+        },
+        {
+          "op": "Information barriers insights report SharePoint section queried",
+          "label": "InformationBarriersInsightsReportSharePointSectionQueried"
+        },
+        {
+          "op": "Removed segment from site",
+          "label": "SiteIBSegmentsRemoved"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_365_apps_admin_services_cloud_update_activities",
+      "label": "Microsoft 365 Apps Admin Services cloud update activities",
+      "items": [
+        {
+          "op": "Device configuration updated",
+          "label": "updateddeviceconfiguration"
+        },
+        {
+          "op": "Profile configuration updated",
+          "label": "updatedprofileconfiguration"
+        },
+        {
+          "op": "Tenant configuration updated",
+          "label": "updatedtenantconfiguration"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_365_apps_admin_services_cloud_policy_activities",
+      "label": "Microsoft 365 Apps Admin Services cloud policy activities",
+      "items": [
+        {
+          "op": "Created policy configuration",
+          "label": "CreatedPolicyConfig"
+        },
+        {
+          "op": "Deleted policy configuration",
+          "label": "DeletedPolicyConfig"
+        },
+        {
+          "op": "Updated policy configuration",
+          "label": "UpdatedPolicyConfig"
+        },
+        {
+          "op": "Updated policy configuration priority",
+          "label": "UpdatedPolicyConfigPriority"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_365_backup_activities",
+      "label": "Microsoft 365 Backup activities",
+      "items": [
+        {
+          "op": "Activated a Backup Policy",
+          "label": "BackupPolicyActivated"
+        },
+        {
+          "op": "Activated Draft Restore Task",
+          "label": "RestoreTaskActivated"
+        },
+        {
+          "op": "Backup Item Created",
+          "label": "BackupItemAdded"
+        },
+        {
+          "op": "Backup Item Removed",
+          "label": "BackupItemRemoved"
+        },
+        {
+          "op": "Cancel Offboard Backup Item",
+          "label": "CancelOffboardBackupItem"
+        },
+        {
+          "op": "Completed Restore Task",
+          "label": "RestoreTaskCompleted"
+        },
+        {
+          "op": "Created Draft Restore Task",
+          "label": "DraftRestoreTaskCreated"
+        },
+        {
+          "op": "Created new Backup policy",
+          "label": "NewBackupPolicyCreated"
+        },
+        {
+          "op": "Deleted a Backup Policy",
+          "label": "BackupPolicyDeleted"
+        },
+        {
+          "op": "Deleted Draft Restore Task",
+          "label": "DraftRestoreTaskDeleted"
+        },
+        {
+          "op": "Edited a Backup Policy",
+          "label": "BackupPolicyEdited"
+        },
+        {
+          "op": "Edited Draft Restore Task",
+          "label": "DraftRestoreTaskEdited"
+        },
+        {
+          "op": "Offboard Backup Item",
+          "label": "OffboardBackupItem"
+        },
+        {
+          "op": "Paused a Backup Policy",
+          "label": "BackupPolicyPaused"
+        },
+        {
+          "op": "Programmatically got Backup Item",
+          "label": "GetBackupItem"
+        },
+        {
+          "op": "Programmatically got Details of Backup Policy",
+          "label": "ViewBackupPolicyDetails"
+        },
+        {
+          "op": "Programmatically got Details of Restore Task",
+          "label": "GetRestoreTaskDetails"
+        },
+        {
+          "op": "Programmatically got list of all Backup Policies",
+          "label": "ListAllBackupPolicies"
+        },
+        {
+          "op": "Programmatically got list of Backup Items in Backup Policies",
+          "label": "ListAllBackupItemsInPolicies"
+        },
+        {
+          "op": "Programmatically got list of Backup Items in Tenant",
+          "label": "ListAllBackupItemsInTenant"
+        },
+        {
+          "op": "Programmatically got list of Backup Items in Workload",
+          "label": "ListAllBackupItemsInWorkload"
+        },
+        {
+          "op": "Programmatically got list of Restore Items in Restore Task",
+          "label": "GetAllRestoreArtifactsInTask"
+        },
+        {
+          "op": "Programmatically got list of Restore Points",
+          "label": "ListAllRestorePoints"
+        },
+        {
+          "op": "Programmatically got list of Restore Tasks",
+          "label": "ListAllRestoreTasks"
+        },
+        {
+          "op": "Restore item restoration complete",
+          "label": "BackupItemRestoreCompleted"
+        },
+        {
+          "op": "Restore item restoration triggered",
+          "label": "BackupItemRestoreTriggered"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_365_copilot_admin_activities",
+      "label": "Microsoft 365 Copilot admin activities",
+      "items": [
+        {
+          "op": "Created a new Copilot plugin",
+          "label": "CreatePlugin"
+        },
+        {
+          "op": "Created a new Copilot promptbook",
+          "label": "CreatePromptBook"
+        },
+        {
+          "op": "Deleted a Copilot plugin",
+          "label": "DeletePlugin"
+        },
+        {
+          "op": "Deleted a Copilot promptbook",
+          "label": "DeletePromptBook"
+        },
+        {
+          "op": "Disabled a Copilot plugin",
+          "label": "DisableCopilotPlugin"
+        },
+        {
+          "op": "Disabled a Copilot promptbook",
+          "label": "DisablePromptBook"
+        },
+        {
+          "op": "Enabled a Copilot plugin",
+          "label": "EnablePlugin"
+        },
+        {
+          "op": "Enabled a Copilot promptbook",
+          "label": "EnablePromptBook"
+        },
+        {
+          "op": "Interacted with Copilot",
+          "label": "CopilotInteraction"
+        },
+        {
+          "op": "Updated a Copilot plugin setting",
+          "label": "UpdatePlugin"
+        },
+        {
+          "op": "Updated a Copilot promptbook setting",
+          "label": "UpdatePromptBook"
+        },
+        {
+          "op": "Updated a Copilot setting",
+          "label": "UpdateTenantSettings"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_365_copilot_scheduled_prompts_activities",
+      "label": "Microsoft 365 Copilot scheduled prompts activities",
+      "items": [
+        {
+          "op": "Created a scheduled prompt",
+          "label": "ScheduledPromptCreated"
+        },
+        {
+          "op": "Deleted a scheduled prompt",
+          "label": "ScheduledPromptDeleted"
+        },
+        {
+          "op": "Executed a scheduled prompt",
+          "label": "ScheduledPromptExecute"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_defender_for_endpoint_general_settings_activities",
+      "label": "Microsoft Defender for Endpoint general settings activities",
+      "items": [
+        {
+          "op": "Changed data retention",
+          "label": "ChangeDataRetention"
+        },
+        {
+          "op": "Downloaded offboarding package",
+          "label": "DownloadOffboardingPkg"
+        },
+        {
+          "op": "Downloaded onboarding package",
+          "label": "DownloadOnboardingPkg"
+        },
+        {
+          "op": "Set advanced features",
+          "label": "SetAdvancedFeatures"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_defender_for_endpoint_indicator_settings_activities",
+      "label": "Microsoft Defender for Endpoint indicator settings activities",
+      "items": [
+        {
+          "op": "Added indicator",
+          "label": "AddIndicator"
+        },
+        {
+          "op": "Deleted indicator",
+          "label": "DeleteIndicator"
+        },
+        {
+          "op": "Edited indicator",
+          "label": "EditIndicator"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_defender_for_endpoint_response_actions_activities",
+      "label": "Microsoft Defender for Endpoint response actions activities",
+      "items": [
+        {
+          "op": "Collected investigation package",
+          "label": "CollectInvestigationPackage"
+        },
+        {
+          "op": "Collected Logs",
+          "label": "LogsCollection"
+        },
+        {
+          "op": "Isolated device",
+          "label": "IsolateDevice"
+        },
+        {
+          "op": "Offboarded device",
+          "label": "DeviceOffBoarding"
+        },
+        {
+          "op": "Ran Antivirus scan",
+          "label": "RunAntiVirusScan"
+        },
+        {
+          "op": "Ran get Live response file link",
+          "label": "LiveResponseGetFile"
+        },
+        {
+          "op": "Ran Live response API",
+          "label": "RunLiveResponseApi"
+        },
+        {
+          "op": "Ran Live response session",
+          "label": "RunLiveResponseSession"
+        },
+        {
+          "op": "Released from isolation",
+          "label": "ReleaseFromIsolation"
+        },
+        {
+          "op": "Removed app restrictions",
+          "label": "RemoveAppRestrictions"
+        },
+        {
+          "op": "Restricted app execution",
+          "label": "RestrictAppExecution"
+        },
+        {
+          "op": "Stopped and quarantined file",
+          "label": "StopAndQuarantineFile"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_defender_for_endpoint_roles_settings_activities",
+      "label": "Microsoft Defender for Endpoint roles settings activities",
+      "items": [
+        {
+          "op": "Added role",
+          "label": "AddRole"
+        },
+        {
+          "op": "Deleted role",
+          "label": "DeleteRole"
+        },
+        {
+          "op": "Edited role",
+          "label": "EditRole"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_defender_for_experts_activities",
+      "label": "Microsoft Defender for Experts activities",
+      "items": [
+        {
+          "op": "Defender Experts analyst permission created",
+          "label": "DefenderExpertsAnalystPermissionCreated"
+        },
+        {
+          "op": "Defender Experts analyst permission modified",
+          "label": "DefenderExpertsAnalystPermissionModified"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_defender_for_identity_activities",
+      "label": "Microsoft Defender for Identity activities",
+      "items": [
+        {
+          "op": "Added alert notification recipient",
+          "label": "AlertNotificationsRecipientAdded"
+        },
+        {
+          "op": "Added exclusions configuration",
+          "label": "ExclusionConfigurationAdded"
+        },
+        {
+          "op": "Added health issues notification recipient",
+          "label": "MonitoringAlertNotificationRecipientAdded"
+        },
+        {
+          "op": "Added remediation action",
+          "label": "RemediationActionAdded"
+        },
+        {
+          "op": "Added sensor",
+          "label": "SensorCreated"
+        },
+        {
+          "op": "Created workspace",
+          "label": "WorkspaceCreated"
+        },
+        {
+          "op": "Deleted alert notification recipient",
+          "label": "AlertNotificationsRecipientDeleted"
+        },
+        {
+          "op": "Deleted exclusions configuration",
+          "label": "ExclusionConfigurationDeleted"
+        },
+        {
+          "op": "Deleted health issues notification recipient",
+          "label": "MonitoringAlertNotificationRecipientDeleted"
+        },
+        {
+          "op": "Deleted workspace",
+          "label": "WorkspaceDeleted"
+        },
+        {
+          "op": "Downloaded Domain Controller coverage Excel",
+          "label": "DomainControllerCoverageExcelDownloaded"
+        },
+        {
+          "op": "Downloaded report",
+          "label": "ReportDownloaded"
+        },
+        {
+          "op": "Downloaded security alert Excel",
+          "label": "AlertExcelDownloaded"
+        },
+        {
+          "op": "Regenerated sensor deployment key",
+          "label": "SensorDeploymentAccessKeyUpdated"
+        },
+        {
+          "op": "Removed sensor",
+          "label": "SensorDeleted"
+        },
+        {
+          "op": "Retrieved sensor deployment key",
+          "label": "SensorDeploymentAccessKeyReceived"
+        },
+        {
+          "op": "Updated alert threshold configuration",
+          "label": "WorkspaceAlertThresholdLevelUpdated"
+        },
+        {
+          "op": "Updated directory services account configuration",
+          "label": "DirectoryServicesAccountConfigurationUpdated"
+        },
+        {
+          "op": "Updated entity remediation configuration",
+          "label": "EntityRemediatorConfigurationUpdated"
+        },
+        {
+          "op": "Updated entity tags",
+          "label": "TaggingConfigurationUpdated"
+        },
+        {
+          "op": "Updated exclusions configuration",
+          "label": "ExclusionConfigurationUpdated"
+        },
+        {
+          "op": "Updated health issue",
+          "label": "MonitoringAlertUpdated"
+        },
+        {
+          "op": "Updated remediation action",
+          "label": "RemediationActionUpdated"
+        },
+        {
+          "op": "Updated remediation action configuration",
+          "label": "RemediationActionConfigurationUpdated"
+        },
+        {
+          "op": "Updated reporter configuration",
+          "label": "ReporterConfigurationUpdated"
+        },
+        {
+          "op": "Updated security notification configuration",
+          "label": "NotificationConfigurationUpdated"
+        },
+        {
+          "op": "Updated sensor configuration",
+          "label": "SensorConfigurationUpdated"
+        },
+        {
+          "op": "Updated sensors activation mode",
+          "label": "SensorActivationMethodConfigurationUpdated"
+        },
+        {
+          "op": "Updated syslog forwarding configuration",
+          "label": "SyslogServiceConfigurationUpdated"
+        },
+        {
+          "op": "Updated Unified RBAC configuration",
+          "label": "URbacAuthorizationStatusChanged"
+        },
+        {
+          "op": "Updated VPN configuration",
+          "label": "VpnConfigurationUpdated"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_defender_for_office_365_activities",
+      "label": "Microsoft Defender for Office 365 activities",
+      "items": [
+        {
+          "op": "Alert events",
+          "label": "SecurityComplianceAlerts"
+        },
+        {
+          "op": "Attack Simulation admin events",
+          "label": "AttackSimAdmin"
+        },
+        {
+          "op": "Attack Simulation training events",
+          "label": "UserTraining"
+        },
+        {
+          "op": "Attack Simulation user events",
+          "label": "AttackSim"
+        },
+        {
+          "op": "Automated incident response (AIR) events",
+          "label": "AirInvestigation"
+        },
+        {
+          "op": "Campaign events",
+          "label": "Campaign"
+        },
+        {
+          "op": "Content detection events",
+          "label": "ThreatIntelligenceAtpContent"
+        },
+        {
+          "op": "Outbound spam events",
+          "label": "HygieneEvent"
+        },
+        {
+          "op": "Phishing and malware events",
+          "label": "ThreatIntelligence"
+        },
+        {
+          "op": "Quarantine events",
+          "label": "Quarantine"
+        },
+        {
+          "op": "Submission events",
+          "label": "MailSubmission"
+        },
+        {
+          "op": "URL Click Events",
+          "label": "ThreatIntelligenceUrl"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_defender_xdr_custom_detection_activities",
+      "label": "Microsoft Defender XDR custom detection activities",
+      "items": [
+        {
+          "op": "Changed custom detection rule status",
+          "label": "ChangeCustomDetectionRuleStatus"
+        },
+        {
+          "op": "Created custom detection rule",
+          "label": "CreateCustomDetection"
+        },
+        {
+          "op": "Deleted custom detection rule",
+          "label": "DeleteCustomDetection"
+        },
+        {
+          "op": "Edited custom detection rule",
+          "label": "EditCustomDetection"
+        },
+        {
+          "op": "Ran custom detection rule",
+          "label": "RunCustomDetection"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_defender_xdr_incident_activities",
+      "label": "Microsoft Defender XDR incident activities",
+      "items": [
+        {
+          "op": "Added comment to incident",
+          "label": "AddCommentToIncident."
+        },
+        {
+          "op": "Added tags to incident",
+          "label": "AddTagsToIncident"
+        },
+        {
+          "op": "Assigned user to incident",
+          "label": "AssignUserToIncident"
+        },
+        {
+          "op": "Edit incident classification",
+          "label": "EditIncidentClassification"
+        },
+        {
+          "op": "Removed tags from incident",
+          "label": "RemoveTagsFromIncident"
+        },
+        {
+          "op": "Unassigned user to incident",
+          "label": "UnAssignUserFromIncident"
+        },
+        {
+          "op": "Updated incidents status",
+          "label": "UpdateIncidentStatus"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_defender_xdr_suppression_rule_activities",
+      "label": "Microsoft Defender XDR suppression rule activities",
+      "items": [
+        {
+          "op": "Created suppression rule",
+          "label": "CreateSuppressionRule"
+        },
+        {
+          "op": "Deleted suppression rule",
+          "label": "DeleteSuppressionRule"
+        },
+        {
+          "op": "Disabled suppression rule",
+          "label": "DisableSuppressionRule"
+        },
+        {
+          "op": "Edited suppression rule",
+          "label": "EditSuppressionRule"
+        },
+        {
+          "op": "Enabled suppression rule",
+          "label": "EnableSuppressionRule"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_edge_webcontentfiltering_activities",
+      "label": "Microsoft Edge WebContentFiltering activities",
+      "items": [
+        {
+          "op": "Allowed URL Navigation in Microsoft Edge",
+          "label": "URLNavigationAllowed"
+        },
+        {
+          "op": "Blocked URL Navigation in Microsoft Edge",
+          "label": "URLNavigationBlocked"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_entra_group_administration_activities",
+      "label": "Microsoft Entra group administration activities",
+      "items": [
+        {
+          "op": "Added group",
+          "label": "AddGroup"
+        },
+        {
+          "op": "Added member to group",
+          "label": "AddMemberToGroup."
+        },
+        {
+          "op": "Deleted group",
+          "label": "Delete group."
+        },
+        {
+          "op": "Removed member from group",
+          "label": "RemoveMemberFromGroup."
+        },
+        {
+          "op": "Updated group",
+          "label": "UpdateGroup."
+        }
+      ]
+    },
+    {
+      "key": "microsoft_entra_risk_detection_activities",
+      "label": "Microsoft Entra risk detection activities",
+      "items": [
+        {
+          "op": "Compromised sign-in detection",
+          "label": "CompromisedSignIn"
+        },
+        {
+          "op": "Compromised user detection",
+          "label": "CompromisedUser"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_fabric_activities",
+      "label": "Microsoft Fabric activities",
+      "items": [
+        {
+          "op": "Added form coauthor",
+          "label": "AddFormCoauthor"
+        },
+        {
+          "op": "Added specific responder",
+          "label": "AddSpecificResponder"
+        },
+        {
+          "op": "Allowed share form for copy",
+          "label": "AllowShareFormForCopy"
+        },
+        {
+          "op": "Connected to Excel workbook",
+          "label": "ConnectToExcelWorkbook"
+        },
+        {
+          "op": "Created a collection",
+          "label": "CollectionCreated"
+        },
+        {
+          "op": "Created comment",
+          "label": "CreateComment"
+        },
+        {
+          "op": "Created form",
+          "label": "CreateForm"
+        },
+        {
+          "op": "Created response",
+          "label": "CreateResponse"
+        },
+        {
+          "op": "Created summary link",
+          "label": "GetSummaryLink"
+        },
+        {
+          "op": "Deleted all responses",
+          "label": "DeleteAllResponses"
+        },
+        {
+          "op": "Deleted collection from the Recycle Bin",
+          "label": "CollectionHardDeleted"
+        },
+        {
+          "op": "Deleted form",
+          "label": "DeleteForm"
+        },
+        {
+          "op": "Deleted Response",
+          "label": "DeleteResponse"
+        },
+        {
+          "op": "Deleted summary link",
+          "label": "DeleteSummaryLink"
+        },
+        {
+          "op": "Disabled anyone can respond setting",
+          "label": "DisallowAnonymousResponse"
+        },
+        {
+          "op": "Disabled collaboration",
+          "label": "DisableCollaboration"
+        },
+        {
+          "op": "Disabled specific people can respond setting",
+          "label": "DisableSpecificResponse"
+        },
+        {
+          "op": "Disallowed share form for copy",
+          "label": "DisallowShareFormForCopy"
+        },
+        {
+          "op": "Edited form",
+          "label": "EditForm"
+        },
+        {
+          "op": "Enabled anyone can respond setting",
+          "label": "AllowAnonymousResponse"
+        },
+        {
+          "op": "Enabled Office 365 work or school account collaboration",
+          "label": "EnableWorkOrSchoolCollaboration"
+        },
+        {
+          "op": "Enabled people in my organization collaboration",
+          "label": "EnableSameOrgCollaboration"
+        },
+        {
+          "op": "Enabled specific people can respond setting",
+          "label": "EnableSpecificResponse"
+        },
+        {
+          "op": "Enabled specific people collaboration",
+          "label": "EnableSpecificCollaboaration"
+        },
+        {
+          "op": "Exported form",
+          "label": "ExportForm"
+        },
+        {
+          "op": "Listed forms",
+          "label": "ListForms"
+        },
+        {
+          "op": "Moved a form into collection",
+          "label": "MovedFormIntoCollection"
+        },
+        {
+          "op": "Moved a form out of collection",
+          "label": "MovedFormOutofCollection"
+        },
+        {
+          "op": "Moved collection to the Recycle Bin",
+          "label": "CollectionSoftDeleted"
+        },
+        {
+          "op": "Moved form",
+          "label": "MoveForm"
+        },
+        {
+          "op": "Previewed form",
+          "label": "PreviewForm"
+        },
+        {
+          "op": "Removed form coauthor",
+          "label": "RemoveFormCoauthor"
+        },
+        {
+          "op": "Removed specific responder",
+          "label": "RemoveSpecificResponder"
+        },
+        {
+          "op": "Renamed a collection",
+          "label": "CollectionRenamed"
+        },
+        {
+          "op": "Sent Forms Pro invitation",
+          "label": "ProInvitation"
+        },
+        {
+          "op": "Submitted response",
+          "label": "SubmitResponse"
+        },
+        {
+          "op": "Updated a collection",
+          "label": "CollectionUpdated"
+        },
+        {
+          "op": "Updated form phishing status",
+          "label": "UpdatePhishingStatus"
+        },
+        {
+          "op": "Updated form setting",
+          "label": "UpdateFormSetting"
+        },
+        {
+          "op": "Updated response",
+          "label": "UpdateResponse"
+        },
+        {
+          "op": "Updated user phishing status",
+          "label": "UpdateUserPhishingStatus"
+        },
+        {
+          "op": "Updated user setting",
+          "label": "UpdateUserSetting"
+        },
+        {
+          "op": "Viewed form (design time)",
+          "label": "ViewForm"
+        },
+        {
+          "op": "Viewed response",
+          "label": "ViewResponse"
+        },
+        {
+          "op": "Viewed response page",
+          "label": "ViewRuntimeForm"
+        },
+        {
+          "op": "Viewed responses",
+          "label": "ViewResponses"
+        }
+      ]
+    },
+    {
+      "key": "forms_activities_performed_by_coauthors_and_anonymous_responders",
+      "label": "Forms activities performed by coauthors and anonymous responders",
+      "items": [
+        {
+          "op": "Coauthoring activities",
+          "label": "External"
+        },
+        {
+          "op": "Response activities",
+          "label": "Anonymous"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_graph_data_connect",
+      "label": "Microsoft Graph Data Connect",
+      "items": [
+        {
+          "op": "Approved or denied an app",
+          "label": "ConsentModificationRequest"
+        },
+        {
+          "op": "Extraction ran",
+          "label": "DataAccessRequestOperation"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_places_directory_activities",
+      "label": "Microsoft Places Directory activities",
+      "items": [
+        {
+          "op": "Created a place",
+          "label": "CreatedPlace"
+        },
+        {
+          "op": "Deleted a place",
+          "label": "DeletedPlace"
+        },
+        {
+          "op": "Updated a place",
+          "label": "UpdatedPlace"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_planner_activities",
+      "label": "Microsoft Planner activities",
+      "items": [
+        {
+          "op": "Added a member to a roster",
+          "label": "RosterMemberAdded"
+        },
+        {
+          "op": "Assigned a task",
+          "label": "TaskAssigned"
+        },
+        {
+          "op": "Completed a task",
+          "label": "TaskCompleted"
+        },
+        {
+          "op": "Copied a plan",
+          "label": "PlanCopied"
+        },
+        {
+          "op": "Created a goal",
+          "label": "GoalCreated"
+        },
+        {
+          "op": "Created a plan",
+          "label": "PlanCreated"
+        },
+        {
+          "op": "Created a roster",
+          "label": "RosterCreated"
+        },
+        {
+          "op": "Created a task",
+          "label": "TaskCreated"
+        },
+        {
+          "op": "Deleted a goal",
+          "label": "GoalDeleted"
+        },
+        {
+          "op": "Deleted a plan",
+          "label": "PlanDeleted"
+        },
+        {
+          "op": "Deleted a roster",
+          "label": "RosterDeleted"
+        },
+        {
+          "op": "Deleted a task",
+          "label": "TaskDeleted"
+        },
+        {
+          "op": "Modified a goal",
+          "label": "GoalModified"
+        },
+        {
+          "op": "Modified a plan",
+          "label": "PlanModified"
+        },
+        {
+          "op": "Modified a task",
+          "label": "TaskModified"
+        },
+        {
+          "op": "Read a goal",
+          "label": "GoalRead"
+        },
+        {
+          "op": "Read a list of goals",
+          "label": "GoalListRead"
+        },
+        {
+          "op": "Read a list of plans",
+          "label": "PlanListRead"
+        },
+        {
+          "op": "Read a list of tasks",
+          "label": "TaskListRead"
+        },
+        {
+          "op": "Read a plan",
+          "label": "PlanRead"
+        },
+        {
+          "op": "Read a task",
+          "label": "TaskRead"
+        },
+        {
+          "op": "Removed a member to a roster",
+          "label": "RosterMemberDeleted"
+        },
+        {
+          "op": "Updated a roster's sensitivity label",
+          "label": "RosterSensitivityLabelUpdated"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_power_apps_activities",
+      "label": "Microsoft Power Apps activities",
+      "items": [
+        {
+          "op": "Created project",
+          "label": "ProjectCreated"
+        },
+        {
+          "op": "Created roadmap",
+          "label": "RoadmapCreated"
+        },
+        {
+          "op": "Created roadmap item",
+          "label": "RoadmapItemCreated"
+        },
+        {
+          "op": "Created task",
+          "label": "TaskCreated"
+        },
+        {
+          "op": "Deleted project",
+          "label": "ProjectDeleted"
+        },
+        {
+          "op": "Deleted roadmap",
+          "label": "RoadmapDeleted"
+        },
+        {
+          "op": "Deleted roadmap item",
+          "label": "RoadmapItemDeleted"
+        },
+        {
+          "op": "Deleted task",
+          "label": "TaskDeleted"
+        },
+        {
+          "op": "Project accessed",
+          "label": "ProjectAccessed"
+        },
+        {
+          "op": "Project home accessed",
+          "label": "ProjectListAccessed"
+        },
+        {
+          "op": "Roadmap accessed",
+          "label": "RoadmapAccessed"
+        },
+        {
+          "op": "Roadmap item accessed",
+          "label": "RoadmapItemAccessed"
+        },
+        {
+          "op": "Task accessed",
+          "label": "TaskAccessed"
+        },
+        {
+          "op": "Updated project",
+          "label": "ProjectUpdated"
+        },
+        {
+          "op": "Updated project settings",
+          "label": "ProjectForTheWebProjectSettings"
+        },
+        {
+          "op": "Updated roadmap",
+          "label": "RoadmapUpdated"
+        },
+        {
+          "op": "Updated roadmap item",
+          "label": "RoadmapItemUpdated"
+        },
+        {
+          "op": "Updated roadmap settings",
+          "label": "ProjectForTheWebRoadmaptSettings"
+        },
+        {
+          "op": "Updated task",
+          "label": "TaskUpdated"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_purview_audit_solution_activities",
+      "label": "Microsoft Purview Audit solution activities",
+      "items": [
+        {
+          "op": "Audit search canceled",
+          "label": "AuditSearchCancelled"
+        },
+        {
+          "op": "Audit search completed",
+          "label": "AuditSearchCompleted"
+        },
+        {
+          "op": "Audit search created",
+          "label": "AuditSearchCreated"
+        },
+        {
+          "op": "Audit search deleted",
+          "label": "AuditSearchDeleted"
+        },
+        {
+          "op": "Audit search export job completed",
+          "label": "AuditSearchExportJobCompleted"
+        },
+        {
+          "op": "Audit search export job created",
+          "label": "AuditSearchExportJobCreated"
+        },
+        {
+          "op": "Audit search export results downloaded",
+          "label": "AuditSearchExportResultsDownloaded"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_purview_governance_activities",
+      "label": "Microsoft Purview governance activities",
+      "items": [
+        {
+          "op": "Asset or entity created",
+          "label": "EntityCreated"
+        },
+        {
+          "op": "Classification added",
+          "label": "ClassificationAdded"
+        },
+        {
+          "op": "Classification definition created",
+          "label": "ClassificationDefinitionCreated"
+        },
+        {
+          "op": "Classification definition deleted",
+          "label": "ClassificationDefinitionDeleted"
+        },
+        {
+          "op": "Classification definition updated",
+          "label": "ClassificationDefinitionUpdated"
+        },
+        {
+          "op": "Classification deleted",
+          "label": "ClassificationDeleted"
+        },
+        {
+          "op": "Classification updated",
+          "label": "ClassificationUpdated"
+        },
+        {
+          "op": "Entity deleted",
+          "label": "EntityDeleted"
+        },
+        {
+          "op": "Entity updated",
+          "label": "EntityUpdated"
+        },
+        {
+          "op": "Glossary term assigned",
+          "label": "GlossaryTermAssigned"
+        },
+        {
+          "op": "Glossary term created",
+          "label": "GlossaryTermCreated"
+        },
+        {
+          "op": "Glossary term deleted",
+          "label": "GlossaryTermDeleted"
+        },
+        {
+          "op": "Glossary term disassociated",
+          "label": "GlossaryTermDisassociated"
+        },
+        {
+          "op": "Glossary term updated",
+          "label": "GlossaryTermUpdated"
+        },
+        {
+          "op": "Sensitivity label changed",
+          "label": "SensitivityLabelChanged"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_purview_on_demand_classification_activities",
+      "label": "Microsoft Purview on-demand classification activities",
+      "items": [
+        {
+          "op": "Classified file as part of an on-demand classification scan",
+          "label": "DataScanClassification"
+        },
+        {
+          "op": "Classified file on device as part of an on-demand classification scan",
+          "label": "SensitiveInfoDiscovered"
+        },
+        {
+          "op": "Declassified file as part of an on-demand classification scan",
+          "label": "DataScanDeClassification"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_security_copilot_agent_management",
+      "label": "Microsoft Security Copilot agent management",
+      "items": [
+        {
+          "op": "Created a new Security Copilot agent",
+          "label": "CreateCopilotAgent"
+        },
+        {
+          "op": "Created a new Security Copilot agent trigger",
+          "label": "CreateCopilotforSecurityAgentTrigger"
+        },
+        {
+          "op": "Deleted a Security Copilot agent",
+          "label": "DeleteCopilotAgent"
+        },
+        {
+          "op": "Deleted a Security Copilot agent trigger",
+          "label": "DeleteCopilotForSecurityAgentTrigger"
+        },
+        {
+          "op": "Updated a Security Copilot agent setting",
+          "label": "UpdateCopilotAgent"
+        },
+        {
+          "op": "Updated a Security Copilot agent trigger",
+          "label": "UpdateCopilotforSecurityAgentTrigger"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_sentinel_data_lake_notebook_activities",
+      "label": "Microsoft Sentinel data lake notebook activities",
+      "items": [
+        {
+          "op": "Deleted a custom table",
+          "label": "CustomTableDelete"
+        },
+        {
+          "op": "Read from table",
+          "label": "TableRead"
+        },
+        {
+          "op": "Started session",
+          "label": "SessionStarted"
+        },
+        {
+          "op": "Stopped session",
+          "label": "SessionStopped"
+        },
+        {
+          "op": "Wrote to a custom table",
+          "label": "CustomTableWrite"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_sentinel_data_lake_job_activities",
+      "label": "Microsoft Sentinel data lake job activities",
+      "items": [
+        {
+          "op": "Created job",
+          "label": "JobCreated"
+        },
+        {
+          "op": "Deleted job",
+          "label": "JobDeleted"
+        },
+        {
+          "op": "Disabled job",
+          "label": "JobDisabled"
+        },
+        {
+          "op": "Enabled job",
+          "label": "JobEnabled"
+        },
+        {
+          "op": "Ran a job adhoc",
+          "label": "JobRunAdhoc"
+        },
+        {
+          "op": "Ran a job on schedule",
+          "label": "JobRunScheduled"
+        },
+        {
+          "op": "Stopped a job run",
+          "label": "JobRunStopped"
+        },
+        {
+          "op": "Updated job",
+          "label": "JobUpdated"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_sentinel_data_lake_kql_activities",
+      "label": "Microsoft Sentinel data lake KQL activities",
+      "items": [
+        {
+          "op": "Completed KQL query",
+          "label": "KQLQueryCompleted"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_sentinel_data_lake_onboarding_activities",
+      "label": "Microsoft Sentinel data lake onboarding activities",
+      "items": [
+        {
+          "op": "Changed subscription of Sentinel lake",
+          "label": "SentinelLakeSubscriptionChanged"
+        },
+        {
+          "op": "Onboarded data for Sentinel lake",
+          "label": "SentinelLakeDefaultDataOnboarded"
+        },
+        {
+          "op": "Setup Sentinel lake",
+          "label": "SentinelLakeSetup"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_stream_activities",
+      "label": "Microsoft Stream activities",
+      "items": [
+        {
+          "op": "Accept message",
+          "label": "UserAccepted"
+        },
+        {
+          "op": "Added bot to team",
+          "label": "BotAddedToTeam"
+        },
+        {
+          "op": "Added channel",
+          "label": "ChannelAdded"
+        },
+        {
+          "op": "Added connector",
+          "label": "ConnectorAdded"
+        },
+        {
+          "op": "Added details about Teams meeting 9",
+          "label": "MeetingDetail"
+        },
+        {
+          "op": "Added information about meeting participants 9",
+          "label": "MeetingParticipantDetail"
+        },
+        {
+          "op": "Added members 6, 8",
+          "label": "MemberAdded"
+        },
+        {
+          "op": "Added tab",
+          "label": "TabAdded"
+        },
+        {
+          "op": "Applied sensitivity label",
+          "label": "SensitivityLabelApplied"
+        },
+        {
+          "op": "Approved request",
+          "label": "ApprovedRequest"
+        },
+        {
+          "op": "Block user",
+          "label": "UserBlocked"
+        },
+        {
+          "op": "Canceled approval request",
+          "label": "CanceledApprovalRequest"
+        },
+        {
+          "op": "Cancelled approval asynchronously",
+          "label": "CancelledApprovalAsync"
+        },
+        {
+          "op": "Changed channel setting",
+          "label": "ChannelSettingChanged"
+        },
+        {
+          "op": "Changed organization setting",
+          "label": "TeamsTenantSettingChanged"
+        },
+        {
+          "op": "Changed role of members in team",
+          "label": "MemberRoleChanged"
+        },
+        {
+          "op": "Changed sensitivity label",
+          "label": "SensitivityLabelChanged"
+        },
+        {
+          "op": "Changed team setting",
+          "label": "TeamSettingChanged"
+        },
+        {
+          "op": "Create org scoped template instance",
+          "label": "CreateOrgScopedTemplateInstance"
+        },
+        {
+          "op": "Create team scoped template instance",
+          "label": "CreateTeamScopedTemplateInstance"
+        },
+        {
+          "op": "Create update request",
+          "label": "CreateUpdateRequest"
+        },
+        {
+          "op": "Created a chat 1, 6",
+          "label": "ChatCreated"
+        },
+        {
+          "op": "Created approval",
+          "label": "CreatedApproval"
+        },
+        {
+          "op": "Created approval asynchronously",
+          "label": "CreatedApprovalAsync"
+        },
+        {
+          "op": "Created export job",
+          "label": "CreatedExportJob"
+        },
+        {
+          "op": "Created provisioning",
+          "label": "CreatedProvisioning"
+        },
+        {
+          "op": "Created team",
+          "label": "TeamCreated"
+        },
+        {
+          "op": "Delete update request",
+          "label": "DeleteUpdateRequest"
+        },
+        {
+          "op": "Deleted a message 2",
+          "label": "MessageDeleted"
+        },
+        {
+          "op": "Deleted all organization apps",
+          "label": "DeletedAllOrganizationApps"
+        },
+        {
+          "op": "Deleted app",
+          "label": "AppDeletedFromCatalog"
+        },
+        {
+          "op": "Deleted channel",
+          "label": "ChannelDeleted"
+        },
+        {
+          "op": "Deleted team",
+          "label": "TeamDeleted"
+        },
+        {
+          "op": "Detected impersonation attempt",
+          "label": "TeamsImpersonationDetected"
+        },
+        {
+          "op": "Edit org scoped template instance",
+          "label": "EditOrgScopedTemplateInstance"
+        },
+        {
+          "op": "Edit team scoped template instance",
+          "label": "EditTeamScopedTemplateInstance"
+        },
+        {
+          "op": "Edit update request",
+          "label": "EditUpdateRequest"
+        },
+        {
+          "op": "Edited a message with a URL link in Teams",
+          "label": "MessageEditedHasLink"
+        },
+        {
+          "op": "Edited approval request",
+          "label": "EditedApprovalRequest"
+        },
+        {
+          "op": "Exported messages 1,  2",
+          "label": "MessagesExported"
+        },
+        {
+          "op": "Exported recordings 1",
+          "label": "RecordingExported"
+        },
+        {
+          "op": "Exported transcripts 1",
+          "label": "TranscriptsExported"
+        },
+        {
+          "op": "Failed to validate invitation to shared channel 3",
+          "label": "FailedValidation"
+        },
+        {
+          "op": "Fetched all hosted content of a message1",
+          "label": "MessageHostedContentsListed"
+        },
+        {
+          "op": "Fetched chat 1",
+          "label": "ChatRetrieved"
+        },
+        {
+          "op": "Get org scoped template instance",
+          "label": "GetOrgScopedTemplateInstance"
+        },
+        {
+          "op": "Get team scoped template instance",
+          "label": "GetTeamScopedTemplateInstance"
+        },
+        {
+          "op": "Got async operation",
+          "label": "GotAsyncOperation"
+        },
+        {
+          "op": "Installed app",
+          "label": "AppInstalled"
+        },
+        {
+          "op": "Performed action on card",
+          "label": "PerformedCardAction"
+        },
+        {
+          "op": "Populate AI-generated notes in chat",
+          "label": "AINotesUpdate"
+        },
+        {
+          "op": "Populate AI-generated notes in live meetings",
+          "label": "LiveNotesUpdate"
+        },
+        {
+          "op": "Posted new message 3,  4,  6, 8",
+          "label": "MessageSent"
+        },
+        {
+          "op": "Published app",
+          "label": "AppPublishedToCatalog"
+        },
+        {
+          "op": "Read a message 1",
+          "label": "MessageRead"
+        },
+        {
+          "op": "Read hosted content of a message 1",
+          "label": "MessageHostedContentRead"
+        },
+        {
+          "op": "Reassigned approval request",
+          "label": "ReassignedApprovalRequest"
+        },
+        {
+          "op": "Rejected approval request",
+          "label": "RejectedApprovalRequest"
+        },
+        {
+          "op": "Removed bot from team",
+          "label": "BotRemovedFromTeam"
+        },
+        {
+          "op": "Removed connector",
+          "label": "ConnectorRemoved"
+        },
+        {
+          "op": "Removed members 6, 8",
+          "label": "MemberRemoved"
+        },
+        {
+          "op": "Removed sensitivity label",
+          "label": "SensitivityLabelRemoved"
+        },
+        {
+          "op": "Removed sharing of team channel 3",
+          "label": "TerminatedSharing"
+        },
+        {
+          "op": "Removed tab",
+          "label": "TabRemoved"
+        },
+        {
+          "op": "Responded to approval",
+          "label": "RespondedToApproval"
+        },
+        {
+          "op": "Responded to invitation for shared channel 3",
+          "label": "InviteeResponded"
+        },
+        {
+          "op": "Responded to invitee response to shared channel 3",
+          "label": "ChannelOwnerResponded"
+        },
+        {
+          "op": "Responded with custom response",
+          "label": "RespondedWithCustomResponse"
+        },
+        {
+          "op": "Restored sharing of team channel 3",
+          "label": "SharingRestored"
+        },
+        {
+          "op": "Retrieved messages 1",
+          "label": "MessagesListed"
+        },
+        {
+          "op": "Sensitive content shared",
+          "label": "SensitiveContentShared"
+        },
+        {
+          "op": "Sent a message with a URL link in Teams",
+          "label": "MessageCreatedHasLink"
+        },
+        {
+          "op": "Sent change notification for message creation 1",
+          "label": "MessageCreatedNotification"
+        },
+        {
+          "op": "Sent change notification for message deletion 1",
+          "label": "MessageDeletedNotification"
+        },
+        {
+          "op": "Sent change notification for message update 1",
+          "label": "MessageUpdatedNotification"
+        },
+        {
+          "op": "Sent invitation for shared channel 3",
+          "label": "InviteSent"
+        },
+        {
+          "op": "Submit update",
+          "label": "SubmitUpdate"
+        },
+        {
+          "op": "Subscribed to message change notifications 1",
+          "label": "SubscribedToMessages"
+        },
+        {
+          "op": "Teams Admin Action",
+          "label": "TeamsAdminAction"
+        },
+        {
+          "op": "Thread creation probed",
+          "label": "CreateThreadProbe"
+        },
+        {
+          "op": "Unblock User",
+          "label": "UserUnblocked"
+        },
+        {
+          "op": "Uninstalled app",
+          "label": "AppUninstalled"
+        },
+        {
+          "op": "Updated a chat 1",
+          "label": "ChatUpdated"
+        },
+        {
+          "op": "Updated a message 1",
+          "label": "MessageUpdated"
+        },
+        {
+          "op": "Updated app",
+          "label": "AppUpdatedInCatalog"
+        },
+        {
+          "op": "Updated approval request asynchronously",
+          "label": "UpdatedApprovalRequestAsync"
+        },
+        {
+          "op": "Updated connector",
+          "label": "ConnectorUpdated"
+        },
+        {
+          "op": "Updated tab",
+          "label": "TabUpdated"
+        },
+        {
+          "op": "Upgraded app",
+          "label": "AppUpgraded"
+        },
+        {
+          "op": "User signed in to Teams",
+          "label": "TeamsSessionStarted"
+        },
+        {
+          "op": "View approval request",
+          "label": "ViewApprovalRequest"
+        },
+        {
+          "op": "View update",
+          "label": "ViewUpdate"
+        },
+        {
+          "op": "Viewed approval request",
+          "label": "ViewedApprovalRequest"
+        },
+        {
+          "op": "Viewed approval with additional field",
+          "label": "ViewedApprovalWithAdditionalField"
+        },
+        {
+          "op": "Viewed approval with group request",
+          "label": "ViewedApprovalWithGroupRequest"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_teams_healthcare_activities",
+      "label": "Microsoft Teams Healthcare activities",
+      "items": [
+        {
+          "op": "Accepted off shift message",
+          "label": "OffShiftDialogAccepted"
+        },
+        {
+          "op": "Added open shift",
+          "label": "OpenShiftAdded"
+        },
+        {
+          "op": "Added scheduling group",
+          "label": "ScheduleGroupAdded"
+        },
+        {
+          "op": "Added shift",
+          "label": "ShiftAdded"
+        },
+        {
+          "op": "Added shift request",
+          "label": "RequestAdded"
+        },
+        {
+          "op": "Added Time clock entry",
+          "label": "TimeClockEntryAdded"
+        },
+        {
+          "op": "Added time off",
+          "label": "TimeOffAdded"
+        },
+        {
+          "op": "Added workforce integration",
+          "label": "WorkforceIntegrationAdded"
+        },
+        {
+          "op": "Canceled shift request",
+          "label": "RequestCancelled"
+        },
+        {
+          "op": "Changed schedule setting",
+          "label": "ScheduleSettingChanged"
+        },
+        {
+          "op": "Clocked in using Time clock",
+          "label": "ClockedIn"
+        },
+        {
+          "op": "Clocked out using Time clock",
+          "label": "ClockedOut"
+        },
+        {
+          "op": "Deleted open shift",
+          "label": "OpenShiftDeleted"
+        },
+        {
+          "op": "Deleted scheduling group",
+          "label": "ScheduleGroupDeleted"
+        },
+        {
+          "op": "Deleted shift",
+          "label": "ShiftDeleted"
+        },
+        {
+          "op": "Deleted Time clock entry",
+          "label": "TimeClockEntryDeleted"
+        },
+        {
+          "op": "Deleted time off",
+          "label": "TimeOffDeleted"
+        },
+        {
+          "op": "Edited open shift",
+          "label": "OpenShiftEdited"
+        },
+        {
+          "op": "Edited scheduling group",
+          "label": "ScheduleGroupEdited"
+        },
+        {
+          "op": "Edited shift",
+          "label": "ShiftEdited"
+        },
+        {
+          "op": "Edited Time clock entry",
+          "label": "TimeClockEntryEdited"
+        },
+        {
+          "op": "Edited time off",
+          "label": "TimeOffEdited"
+        },
+        {
+          "op": "Ended break using Time clock",
+          "label": "BreakEnded"
+        },
+        {
+          "op": "Responded to shift request",
+          "label": "RequestRespondedTo"
+        },
+        {
+          "op": "Shared schedule",
+          "label": "ScheduleShared"
+        },
+        {
+          "op": "Started break using Time clock",
+          "label": "BreakStarted"
+        },
+        {
+          "op": "Withdrew schedule",
+          "label": "ScheduleWithdrawn"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_teams_updates_activities",
+      "label": "Microsoft Teams Updates activities",
+      "items": [
+        {
+          "op": "Create an update request",
+          "label": "CreateUpdateRequest"
+        },
+        {
+          "op": "Edit an update request",
+          "label": "EditUpdateRequest"
+        },
+        {
+          "op": "Submit an update",
+          "label": "SubmitUpdate"
+        },
+        {
+          "op": "View the details of one update",
+          "label": "ViewUpdate"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_to_do_activities",
+      "label": "Microsoft To Do activities",
+      "items": [
+        {
+          "op": "Accepted sharing link on folder",
+          "label": "AcceptedSharingLinkOnFolder"
+        },
+        {
+          "op": "Attachment created",
+          "label": "AttachmentCreated"
+        },
+        {
+          "op": "Attachment deleted",
+          "label": "AttachmentDeleted"
+        },
+        {
+          "op": "Attachment updated",
+          "label": "AttachmentUpdated"
+        },
+        {
+          "op": "Folder sharing link shared",
+          "label": "FolderSharingLinkShared"
+        },
+        {
+          "op": "Linked entity created",
+          "label": "LinkedEntityCreated"
+        },
+        {
+          "op": "Linked entity deleted",
+          "label": "LinkedEntityDeleted"
+        },
+        {
+          "op": "Linked entity updated",
+          "label": "LinkedEntityUpdated"
+        },
+        {
+          "op": "SubTask created",
+          "label": "SubTaskCreated"
+        },
+        {
+          "op": "SubTask deleted",
+          "label": "SubTaskDeleted"
+        },
+        {
+          "op": "SubTask updated",
+          "label": "SubTaskUpdated"
+        },
+        {
+          "op": "Task created",
+          "label": "TaskCreated"
+        },
+        {
+          "op": "Task deleted",
+          "label": "TaskDeleted"
+        },
+        {
+          "op": "Task read",
+          "label": "TaskRead"
+        },
+        {
+          "op": "Task updated",
+          "label": "TaskUpdated"
+        },
+        {
+          "op": "TaskList created",
+          "label": "TaskListCreated"
+        },
+        {
+          "op": "TaskList read",
+          "label": "TaskListRead"
+        },
+        {
+          "op": "TaskList updated",
+          "label": "TaskListUpdated"
+        },
+        {
+          "op": "User invited",
+          "label": "UserInvited"
+        }
+      ]
+    },
+    {
+      "key": "microsoft_viva_insights_activities",
+      "label": "Microsoft Viva Insights activities",
+      "items": [
+        {
+          "op": "Accessed OData link",
+          "label": "AccessedOdataLink"
+        },
+        {
+          "op": "Added delegate access",
+          "label": "AddDelegates"
+        },
+        {
+          "op": "Canceled query",
+          "label": "CanceledQuery"
+        },
+        {
+          "op": "Created meeting exclusion",
+          "label": "MeetingExclusionCreated"
+        },
+        {
+          "op": "Deleted result",
+          "label": "DeletedResult"
+        },
+        {
+          "op": "Executed query",
+          "label": "ExecutedQuery"
+        },
+        {
+          "op": "Modified CXO Settings",
+          "label": "ModifiedCXOSettings"
+        },
+        {
+          "op": "Modified Exclusion List Using Entra Group",
+          "label": "ModifiedExclusionListUsingEntraGroup"
+        },
+        {
+          "op": "Modified Minimum Group Size",
+          "label": "ModifiedMinimumGroupSize"
+        },
+        {
+          "op": "Removed delegate access",
+          "label": "RemoveDelegates"
+        },
+        {
+          "op": "Updated data access setting",
+          "label": "UpdatedDataAccessSetting"
+        },
+        {
+          "op": "Uploaded organization data",
+          "label": "UploadedOrgData"
+        },
+        {
+          "op": "User logged in*",
+          "label": "UserLoggedIn"
+        },
+        {
+          "op": "Viewed Explore",
+          "label": "ViewedExplore"
+        }
+      ]
+    },
+    {
+      "key": "personal_insights_activities",
+      "label": "Personal insights activities",
+      "items": [
+        {
+          "op": "Updated organization MyAnalytics settings",
+          "label": "UpdatedOrganizationMyAnalyticsSettings"
+        },
+        {
+          "op": "Updated user MyAnalytics settings",
+          "label": "UpdatedUserMyAnalyticsSettings"
+        }
+      ]
+    },
+    {
+      "key": "quarantine_activities",
+      "label": "Quarantine activities",
+      "items": [
+        {
+          "op": "Deleted quarantine message",
+          "label": "QuarantineDeleteMessage"
+        },
+        {
+          "op": "Denied quarantine message release request",
+          "label": "QuarantineReleaseRequestDeny"
+        },
+        {
+          "op": "Exported quarantine message",
+          "label": "QuarantineExport"
+        },
+        {
+          "op": "Previewed quarantine message",
+          "label": "QuarantinePreview"
+        },
+        {
+          "op": "Release request quarantine message",
+          "label": "QuarantineReleaseRequest"
+        },
+        {
+          "op": "Released quarantine message",
+          "label": "QuarantineRelease"
+        },
+        {
+          "op": "Viewed quarantine message's header",
+          "label": "QuarantineViewHeader"
+        }
+      ]
+    },
+    {
+      "key": "report_activities",
+      "label": "Report activities",
+      "items": [
+        {
+          "op": "Updated usage report privacy settings",
+          "label": "UpdateUsageReportsPrivacySetting"
+        }
+      ]
+    },
+    {
+      "key": "retention_policy_and_retention_label_activities",
+      "label": "Retention policy and retention label activities",
+      "items": [
+        {
+          "op": "Changed adaptive scope membership",
+          "label": "ApplicableAdaptiveScopeChange"
+        },
+        {
+          "op": "Configured settings for a retention policy",
+          "label": "NewRetentionComplianceRule"
+        },
+        {
+          "op": "Created adaptive scope",
+          "label": "NewAdaptiveScope"
+        },
+        {
+          "op": "Created retention label",
+          "label": "NewComplianceTag"
+        },
+        {
+          "op": "Created retention policy",
+          "label": "NewRetentionCompliancePolicy"
+        },
+        {
+          "op": "Deleted adaptive scope",
+          "label": "RemoveAdaptiveScope"
+        },
+        {
+          "op": "Deleted retention label",
+          "label": "RemoveComplianceTag"
+        },
+        {
+          "op": "Deleted retention policy",
+          "label": "RemoveRetentionCompliancePolicy"
+        },
+        {
+          "op": "Deleted settings from a retention policy",
+          "label": "RemoveRetentionComplianceRule"
+        },
+        {
+          "op": "Enabled regulatory record option for retention labels",
+          "label": "SetRestrictiveRetentionUI"
+        },
+        {
+          "op": "Retained email item proactively",
+          "label": "PreservedMailItemProactively"
+        },
+        {
+          "op": "Retained file proactively",
+          "label": "FilePreservedProactively"
+        },
+        {
+          "op": "Updated adaptive scope",
+          "label": "SetAdaptiveScope"
+        },
+        {
+          "op": "Updated retention label",
+          "label": "SetComplianceTag"
+        },
+        {
+          "op": "Updated retention policy",
+          "label": "SetRetentionCompliancePolicy"
+        },
+        {
+          "op": "Updated settings for a retention policy",
+          "label": "SetRetentionComplianceRule"
+        }
+      ]
+    },
+    {
+      "key": "role_administration_activities",
+      "label": "Role administration activities",
+      "items": [
+        {
+          "op": "Add member to Role",
+          "label": "Add member to role."
+        },
+        {
+          "op": "Removed a user from a directory role",
+          "label": "Remove member from role."
+        },
+        {
+          "op": "Set company contact information",
+          "label": "Set company contact information."
+        }
+      ]
+    },
+    {
+      "key": "sensitive_information_types_activities",
+      "label": "Sensitive information types activities",
+      "items": [
+        {
+          "op": "Created new sensitive information type",
+          "label": "CreateRulePackage /  EditRulePackage*"
+        },
+        {
+          "op": "Deleted a sensitive information type",
+          "label": "EditRulePackage / RemoveRulePackage"
+        },
+        {
+          "op": "Edited a sensitive information type",
+          "label": "EditRulePackage"
+        }
+      ]
+    },
+    {
+      "key": "sensitivity_label_activities",
+      "label": "Sensitivity label activities",
+      "items": [
+        {
+          "op": "Applied sensitivity label to file",
+          "label": "FileSensitivityLabelApplied  SensitivityLabelApplied"
+        },
+        {
+          "op": "Applied sensitivity label to site",
+          "label": "SiteSensitivityLabelApplied"
+        },
+        {
+          "op": "Changed sensitivity label applied to file",
+          "label": "FileSensitivityLabelChangedSensitivityLabelUpdated"
+        },
+        {
+          "op": "Changed sensitivity label on a site",
+          "label": "SiteSensitivityLabelChanged"
+        },
+        {
+          "op": "Failed to apply file sensitivity label",
+          "label": "FileSensitivityLabelAppliedFailed"
+        },
+        {
+          "op": "Failed to change file sensitivity label",
+          "label": "FileSensitivityLabelChangedFailed"
+        },
+        {
+          "op": "Failed to remove file sensitivity label",
+          "label": "FileSensitivityLabelRemovedFailed"
+        },
+        {
+          "op": "Removed sensitivity label from file",
+          "label": "FileSensitivityLabelRemoved  SensitivityLabelRemoved"
+        },
+        {
+          "op": "Removed sensitivity label from site",
+          "label": "SiteSensitivityLabelRemoved"
+        }
+      ]
+    },
+    {
+      "key": "sharepoint_list_activities",
+      "label": "SharePoint list activities",
+      "items": [
+        {
+          "op": "Created list",
+          "label": "ListCreated"
+        },
+        {
+          "op": "Created list column",
+          "label": "ListColumnCreated"
+        },
+        {
+          "op": "Created list content type",
+          "label": "ListContentTypeCreated"
+        },
+        {
+          "op": "Created list item",
+          "label": "ListItemCreated"
+        },
+        {
+          "op": "Created site column",
+          "label": "SiteColumnCreated"
+        },
+        {
+          "op": "Created site content type",
+          "label": "Site ContentType Created"
+        },
+        {
+          "op": "Deleted list",
+          "label": "ListDeleted"
+        },
+        {
+          "op": "Deleted list column",
+          "label": "List Column Deleted"
+        },
+        {
+          "op": "Deleted list content type",
+          "label": "ListContentTypeDeleted"
+        },
+        {
+          "op": "Deleted list item",
+          "label": "List Item Deleted"
+        },
+        {
+          "op": "Deleted site column",
+          "label": "SiteColumnDeleted"
+        },
+        {
+          "op": "Deleted site content type",
+          "label": "SiteContentTypeDeleted"
+        },
+        {
+          "op": "Recycled list item",
+          "label": "ListItemRecycled"
+        },
+        {
+          "op": "Restored list",
+          "label": "ListRestored"
+        },
+        {
+          "op": "Restored list item",
+          "label": "ListItemRestored"
+        },
+        {
+          "op": "Updated list",
+          "label": "ListUpdated"
+        },
+        {
+          "op": "Updated list column",
+          "label": "ListColumnUpdated"
+        },
+        {
+          "op": "Updated list content type",
+          "label": "ListContentTypeUpdated"
+        },
+        {
+          "op": "Updated list item",
+          "label": "ListItemUpdated"
+        },
+        {
+          "op": "Updated list view",
+          "label": "ListViewUpdated"
+        },
+        {
+          "op": "Updated site column",
+          "label": "SiteColumnUpdated"
+        },
+        {
+          "op": "Updated site content type",
+          "label": "SiteContentTypeUpdated"
+        }
+      ]
+    },
+    {
+      "key": "sharing_and_access_request_activities",
+      "label": "Sharing and access request activities",
+      "items": [
+        {
+          "op": "Accepted access request",
+          "label": "AccessRequestAccepted"
+        },
+        {
+          "op": "Accepted sharing invitation",
+          "label": "SharingInvitationAccepted"
+        },
+        {
+          "op": "Added permission level to site collection",
+          "label": "PermissionLevelAdded"
+        },
+        {
+          "op": "Blocked sharing invitation",
+          "label": "SharingInvitationBlocked"
+        },
+        {
+          "op": "Created a company shareable link",
+          "label": "CompanyLinkCreated"
+        },
+        {
+          "op": "Created access request",
+          "label": "AccessRequestCreated"
+        },
+        {
+          "op": "Created an anonymous link",
+          "label": "AnonymousLinkCreated"
+        },
+        {
+          "op": "Created secure link",
+          "label": "SecureLinkCreated"
+        },
+        {
+          "op": "Created sharing invitation",
+          "label": "SharingInvitationCreated"
+        },
+        {
+          "op": "Deleted secure link",
+          "label": "SecureLinkDeleted"
+        },
+        {
+          "op": "Denied access request",
+          "label": "AccessRequestDenied"
+        },
+        {
+          "op": "Removed a company shareable link",
+          "label": "CompanyLinkRemoved"
+        },
+        {
+          "op": "Removed an anonymous link",
+          "label": "AnonymousLinkRemoved"
+        },
+        {
+          "op": "Shared file, folder, or site",
+          "label": "SharingSet"
+        },
+        {
+          "op": "Unshared file, folder, or site",
+          "label": "SharingRevoked"
+        },
+        {
+          "op": "Updated access request",
+          "label": "AccessRequestUpdated"
+        },
+        {
+          "op": "Updated an anonymous link",
+          "label": "AnonymousLinkUpdated"
+        },
+        {
+          "op": "Updated sharing invitation",
+          "label": "SharingInvitationUpdated"
+        },
+        {
+          "op": "Used a company shareable link",
+          "label": "CompanyLinkUsed"
+        },
+        {
+          "op": "Used an anonymous link",
+          "label": "AnonymousLinkUsed"
+        },
+        {
+          "op": "Used secure link",
+          "label": "SecureLinkUsed"
+        },
+        {
+          "op": "User added to secure link",
+          "label": "AddedToSecureLink"
+        },
+        {
+          "op": "User removed from secure link",
+          "label": "RemovedFromSecureLink"
+        },
+        {
+          "op": "Withdrew sharing invitation",
+          "label": "SharingInvitationRevoked"
+        }
+      ]
+    },
+    {
+      "key": "site_administration_activities",
+      "label": "Site administration activities",
+      "items": [
+        {
+          "op": "Added allowed data location",
+          "label": "AllowedDataLocationAdded"
+        },
+        {
+          "op": "Added exempt user agent",
+          "label": "ExemptUserAgentSet"
+        },
+        {
+          "op": "Added geo location admin",
+          "label": "GeoAdminAdded"
+        },
+        {
+          "op": "Allowed user to create groups",
+          "label": "AllowGroupCreationSet"
+        },
+        {
+          "op": "Canceled site geo move",
+          "label": "SiteGeoMoveCancelled"
+        },
+        {
+          "op": "Changed a sharing policy",
+          "label": "SharingPolicyChanged"
+        },
+        {
+          "op": "Changed device access policy",
+          "label": "DeviceAccessPolicyChanged"
+        },
+        {
+          "op": "Changed exempt user agents",
+          "label": "CustomizeExemptUsers"
+        },
+        {
+          "op": "Changed network access policy",
+          "label": "NetworkAccessPolicyChanged"
+        },
+        {
+          "op": "Completed migration job",
+          "label": "MigrationJobCompleted"
+        },
+        {
+          "op": "Completed site geo move",
+          "label": "SiteGeoMoveCompleted"
+        },
+        {
+          "op": "Created Sent To connection",
+          "label": "SendToConnectionAdded"
+        },
+        {
+          "op": "Created site collection",
+          "label": "SiteCollectionCreated"
+        },
+        {
+          "op": "Deleted orphaned hub site",
+          "label": "HubSiteOrphanHubDeleted"
+        },
+        {
+          "op": "Deleted Sent To connection",
+          "label": "SendToConnectionRemoved"
+        },
+        {
+          "op": "Deleted site",
+          "label": "SiteDeleted"
+        },
+        {
+          "op": "Enabled document preview",
+          "label": "PreviewModeEnabledSet"
+        },
+        {
+          "op": "Enabled legacy workflow",
+          "label": "LegacyWorkflowEnabledSet"
+        },
+        {
+          "op": "Enabled Office on Demand",
+          "label": "OfficeOnDemandSet"
+        },
+        {
+          "op": "Enabled result source for People Searches",
+          "label": "PeopleResultsScopeSet"
+        },
+        {
+          "op": "Enabled RSS feeds",
+          "label": "NewsFeedEnabledSet"
+        },
+        {
+          "op": "Joined site to hub site",
+          "label": "HubSiteJoined"
+        },
+        {
+          "op": "Modified site collection quota",
+          "label": "SiteCollectionQuotaModified"
+        },
+        {
+          "op": "Permanently delete site",
+          "label": "SitePermanentlyDeleted"
+        },
+        {
+          "op": "Registered hub site",
+          "label": "HubSiteRegistered"
+        },
+        {
+          "op": "Removed allowed data location",
+          "label": "AllowedDataLocationDeleted"
+        },
+        {
+          "op": "Removed geo location admin",
+          "label": "GeoAdminDeleted"
+        },
+        {
+          "op": "Renamed site",
+          "label": "SiteRenamed"
+        },
+        {
+          "op": "Restore Site",
+          "label": "SiteRestored"
+        },
+        {
+          "op": "Scheduled site geo move",
+          "label": "SiteGeoMoveScheduled"
+        },
+        {
+          "op": "Set host site",
+          "label": "HostSiteSet"
+        },
+        {
+          "op": "Set storage quota for geo location",
+          "label": "GeoQuotaAllocated"
+        },
+        {
+          "op": "Unjoined site from hub site",
+          "label": "HubSiteUnjoined"
+        },
+        {
+          "op": "Unregistered hub site",
+          "label": "HubSiteUnregistered"
+        },
+        {
+          "op": "Update DisableSiteBranding config",
+          "label": "UpdateDisableSiteBranding"
+        }
+      ]
+    },
+    {
+      "key": "site_permissions_activities",
+      "label": "Site permissions activities",
+      "items": [
+        {
+          "op": "Added site collection admin",
+          "label": "SiteCollectionAdminAdded"
+        },
+        {
+          "op": "Added user or group to SharePoint group",
+          "label": "AddedToGroup"
+        },
+        {
+          "op": "Broke permission level inheritance",
+          "label": "PermissionLevelsInheritanceBroken"
+        },
+        {
+          "op": "Broke sharing inheritance",
+          "label": "SharingInheritanceBroken"
+        },
+        {
+          "op": "Created group",
+          "label": "GroupAdded"
+        },
+        {
+          "op": "Modified 'Members Can Share' setting",
+          "label": "WebMembersCanShareModified"
+        },
+        {
+          "op": "Modified access request setting",
+          "label": "WebRequestAccessModified"
+        },
+        {
+          "op": "Modified permission level on a site collection",
+          "label": "PermissionLevelModified"
+        },
+        {
+          "op": "Modified site permissions",
+          "label": "SitePermissionsModified"
+        },
+        {
+          "op": "Removed permission level from site collection",
+          "label": "PermissionLevelRemoved"
+        },
+        {
+          "op": "Removed site collection admin",
+          "label": "SiteCollectionAdminRemoved"
+        },
+        {
+          "op": "Removed user or group from SharePoint group",
+          "label": "RemovedFromGroup"
+        },
+        {
+          "op": "Requested site admin permissions",
+          "label": "SiteAdminChangeRequest"
+        },
+        {
+          "op": "Restored sharing inheritance",
+          "label": "SharingInheritanceReset"
+        }
+      ]
+    },
+    {
+      "key": "synchronization_activities",
+      "label": "Synchronization activities",
+      "items": [
+        {
+          "op": "Allowed computer to sync files",
+          "label": "ManagedSyncClientAllowed"
+        },
+        {
+          "op": "Blocked computer from syncing files",
+          "label": "UnmanagedSyncClientBlocked"
+        },
+        {
+          "op": "Downloaded file changes to computer",
+          "label": "FileSyncDownloadedPartial"
+        },
+        {
+          "op": "Downloaded files to computer",
+          "label": "FileSyncDownloadedFull"
+        },
+        {
+          "op": "Uploaded file changes to document library",
+          "label": "FileSyncUploadedPartial"
+        },
+        {
+          "op": "Uploaded files to document library",
+          "label": "FileSyncUploadedFull"
+        }
+      ]
+    },
+    {
+      "key": "systemsync_activities",
+      "label": "SystemSync activities",
+      "items": [
+        {
+          "op": "Data Share Created",
+          "label": "DataShareCreated"
+        },
+        {
+          "op": "Data Share Deleted",
+          "label": "DataShareDeleted"
+        },
+        {
+          "op": "Download Copy Of Lake Data",
+          "label": "DownloadCopyOfLakeData"
+        },
+        {
+          "op": "Generate Copy Of Lake Data",
+          "label": "GenerateCopyOfLakeData"
+        }
+      ]
+    },
+    {
+      "key": "trainable_classifier_activities",
+      "label": "Trainable Classifier activities",
+      "items": [
+        {
+          "op": "Created Purview Data Classification model",
+          "label": "ModelCreate"
+        },
+        {
+          "op": "Deleted Purview Data Classification model",
+          "label": "ModelUpdate"
+        },
+        {
+          "op": "Published Purview Data Classification model",
+          "label": "ModelPublish"
+        },
+        {
+          "op": "Updated Purview Data Classification model",
+          "label": "ModelDelete"
+        }
+      ]
+    },
+    {
+      "key": "user_administration_activities",
+      "label": "User administration activities",
+      "items": [
+        {
+          "op": "Added user",
+          "label": "Add user."
+        },
+        {
+          "op": "Changed user license",
+          "label": "Change user license."
+        },
+        {
+          "op": "Changed user password",
+          "label": "Change user password."
+        },
+        {
+          "op": "Deleted user",
+          "label": "Delete user."
+        },
+        {
+          "op": "Reset user password",
+          "label": "Reset user password."
+        },
+        {
+          "op": "Set license properties",
+          "label": "Set license properties."
+        },
+        {
+          "op": "Set property that forces user to change password",
+          "label": "Set force change user password."
+        },
+        {
+          "op": "Updated user",
+          "label": "Update user."
+        }
+      ]
+    },
+    {
+      "key": "viva_glint_activities",
+      "label": "Viva Glint activities",
+      "items": [
+        {
+          "op": "Added Company Admin",
+          "label": "AddCompanyAdmin"
+        },
+        {
+          "op": "Added Support User",
+          "label": "AddSupportUser"
+        },
+        {
+          "op": "Assigned User Role",
+          "label": "AssignRole"
+        },
+        {
+          "op": "Changed Client Details",
+          "label": "ClientDetailsChanged"
+        },
+        {
+          "op": "Company Admin Logged In",
+          "label": "AdminLogin"
+        },
+        {
+          "op": "Company Admin Logged Out",
+          "label": "AdminLogout"
+        },
+        {
+          "op": "Created User Role",
+          "label": "RoleCreated"
+        },
+        {
+          "op": "Deleted Support Access",
+          "label": "GlintSupportAccessDeleted"
+        },
+        {
+          "op": "Deleted System",
+          "label": "GlintSystemDeleted"
+        },
+        {
+          "op": "Deleted User",
+          "label": "GlintUserDeleted"
+        },
+        {
+          "op": "Disabled Advanced Configuration Access",
+          "label": "UserAdvConfigDisabled"
+        },
+        {
+          "op": "Enabled Advanced Configuration Access",
+          "label": "UserAdvConfigEnabled"
+        },
+        {
+          "op": "Executed Data Apps Job",
+          "label": "GlintDataAppsJobRun"
+        },
+        {
+          "op": "Exported Glint 360 Feedback",
+          "label": "GlintFeedbackProgramExport"
+        },
+        {
+          "op": "Exported Glint Distribution Lists",
+          "label": "GlintUserGroupExport"
+        },
+        {
+          "op": "Exported Glint People",
+          "label": "GlintUserExport"
+        },
+        {
+          "op": "Exported Glint Pulse Program Response Rate",
+          "label": "GlintPulseProgramRespondentRateExport"
+        },
+        {
+          "op": "Exported Glint Question Library",
+          "label": "GlintQuestionExport"
+        },
+        {
+          "op": "Exported Glint Survey Program",
+          "label": "GlintPulseProgramExport"
+        },
+        {
+          "op": "Exported Glint User Role",
+          "label": "GlintRoleExport"
+        },
+        {
+          "op": "Exported Raw Survey Data",
+          "label": "RawSurveyReponseExport"
+        },
+        {
+          "op": "Exported User Data",
+          "label": "UserDataExport"
+        },
+        {
+          "op": "Imported Glint 360 Feedback",
+          "label": "GlintFeedbackProgramImport"
+        },
+        {
+          "op": "Imported Glint SFTP",
+          "label": "GlintRubiconImport"
+        },
+        {
+          "op": "Imported Glint User Data",
+          "label": "GlintUserImport"
+        },
+        {
+          "op": "Imported Glint User Role",
+          "label": "GlintRoleImport"
+        },
+        {
+          "op": "Removed Company Admin",
+          "label": "RemoveCompanyAdmin"
+        },
+        {
+          "op": "Reopened Survey",
+          "label": "SurveyReopen"
+        },
+        {
+          "op": "Set Data DSR Control",
+          "label": "DataDsrControlSet"
+        },
+        {
+          "op": "Set Discarding Employee IDs",
+          "label": "DiscardingEmployeeIdsSet"
+        },
+        {
+          "op": "Unassigned User Role",
+          "label": "UnassignRole"
+        },
+        {
+          "op": "Viewed As",
+          "label": "ViewAs"
+        }
+      ]
+    },
+    {
+      "key": "viva_goals_activities",
+      "label": "Viva Goals activities",
+      "items": [
+        {
+          "op": "Dashboard created",
+          "label": "Dashboard created"
+        },
+        {
+          "op": "Dashboard deleted",
+          "label": "Dashboard deleted"
+        },
+        {
+          "op": "Dashboard updated",
+          "label": "Dashboard updated"
+        },
+        {
+          "op": "Data exported",
+          "label": "Data exported"
+        },
+        {
+          "op": "Goals policy updated",
+          "label": "Goals policy updated"
+        },
+        {
+          "op": "OKR or Project created",
+          "label": "OKR or Project created"
+        },
+        {
+          "op": "OKR or Project deleted",
+          "label": "OKR or Project deleted"
+        },
+        {
+          "op": "OKR or Project updated",
+          "label": "OKR or Project updated"
+        },
+        {
+          "op": "Organization created",
+          "label": "Organization created"
+        },
+        {
+          "op": "Organization integrations updated",
+          "label": "Organization integrations updated"
+        },
+        {
+          "op": "Organization settings updated",
+          "label": "Organization settings updated"
+        },
+        {
+          "op": "Team added",
+          "label": "Team added"
+        },
+        {
+          "op": "Team deleted",
+          "label": "Team deleted"
+        },
+        {
+          "op": "Team updated",
+          "label": "Team updated"
+        },
+        {
+          "op": "User added",
+          "label": "User added"
+        },
+        {
+          "op": "User deactivated",
+          "label": "User deactivated"
+        },
+        {
+          "op": "User deleted",
+          "label": "User deleted"
+        },
+        {
+          "op": "User logged in",
+          "label": "User logged in"
+        }
+      ]
+    },
+    {
+      "key": "viva_engage_activities",
+      "label": "Viva Engage activities",
+      "items": [
+        {
+          "op": "Added corporate communicator",
+          "label": "AddUserRole"
+        },
+        {
+          "op": "Changed custom usage policy",
+          "label": "UsagePolicyUpdated"
+        },
+        {
+          "op": "Changed data retention policy",
+          "label": "SoftDeleteSettingsUpdated"
+        },
+        {
+          "op": "Changed network configuration",
+          "label": "NetworkConfigurationUpdated"
+        },
+        {
+          "op": "Changed network profile settings",
+          "label": "ProcessProfileFields"
+        },
+        {
+          "op": "Changed private content mode",
+          "label": "SupervisorAdminToggled"
+        },
+        {
+          "op": "Changed security configuration",
+          "label": "NetworkSecurityConfigurationUpdated"
+        },
+        {
+          "op": "Conversation closed",
+          "label": "CloseConversation"
+        },
+        {
+          "op": "Conversation opened",
+          "label": "OpenConversation"
+        },
+        {
+          "op": "Created file",
+          "label": "FileCreated"
+        },
+        {
+          "op": "Created message",
+          "label": "MessageCreation"
+        },
+        {
+          "op": "Deleted message",
+          "label": "MessageDeleted"
+        },
+        {
+          "op": "Event content exported",
+          "label": "EventContentExported"
+        },
+        {
+          "op": "Exported data",
+          "label": "DataExport"
+        },
+        {
+          "op": "Failed to access file",
+          "label": "FileAccessFailure"
+        },
+        {
+          "op": "Failed to access group",
+          "label": "GroupAccessFailure"
+        },
+        {
+          "op": "Failed to access thread",
+          "label": "ThreadAccessFailure"
+        },
+        {
+          "op": "Reacted to message",
+          "label": "MarkedMessageChanged"
+        },
+        {
+          "op": "Remove curated topic*",
+          "label": "RemoveCuratedTopic"
+        },
+        {
+          "op": "Removed Corporate Communicator",
+          "label": "RemoveUserRole"
+        },
+        {
+          "op": "Shared file",
+          "label": "FileShared"
+        },
+        {
+          "op": "Suspended network user",
+          "label": "NetworkUserSuspended"
+        },
+        {
+          "op": "Suspended user",
+          "label": "UserSuspension"
+        },
+        {
+          "op": "Tenant Usage Policy Acceptance",
+          "label": "UsagePolicyAcceptance"
+        },
+        {
+          "op": "Thread Muted",
+          "label": "AdminThreadMuted"
+        },
+        {
+          "op": "Thread Unmuted",
+          "label": "AdminThreadUnmuted"
+        },
+        {
+          "op": "Updated file description",
+          "label": "FileUpdateDescription"
+        },
+        {
+          "op": "Updated file name",
+          "label": "FileUpdateName"
+        },
+        {
+          "op": "Updated role assignment for Network Admin",
+          "label": "NetworkAdminUpdated"
+        },
+        {
+          "op": "Updated role assignment for Verified Admin",
+          "label": "NetworkVerifiedAdminUpdated"
+        },
+        {
+          "op": "Viewed file",
+          "label": "FileVisited"
+        },
+        {
+          "op": "Viewed thread",
+          "label": "ThreadViewed"
+        }
+      ]
+    },
+    {
+      "key": "viva_pulse_activities",
+      "label": "Viva Pulse activities",
+      "items": [
+        {
+          "op": "Admin deleted a user's data",
+          "label": "PulseDeleteUserData"
+        },
+        {
+          "op": "Admin updated tenant's settings",
+          "label": "PulseTenantSettingsUpdate"
+        },
+        {
+          "op": "Confidential conversation started",
+          "label": "PulseConfidentialConversationStarted"
+        },
+        {
+          "op": "Conversation message deleted",
+          "label": "PulseConfidentialConversationMessageDeleted"
+        },
+        {
+          "op": "Conversation response added",
+          "label": "PulseConfidentialConversationResponded"
+        },
+        {
+          "op": "User canceled a Pulse survey",
+          "label": "PulseCancel"
+        },
+        {
+          "op": "User created a Pulse draft",
+          "label": "PulseCreateDraft"
+        },
+        {
+          "op": "User created a Pulse survey",
+          "label": "PulseCreate"
+        },
+        {
+          "op": "User deleted a Pulse draft",
+          "label": "PulseDeleteDraft"
+        },
+        {
+          "op": "User deleted a question for Library",
+          "label": "PulseQuestionDeleted"
+        },
+        {
+          "op": "User extended their pulse survey deadline",
+          "label": "PulseExtendDeadline"
+        },
+        {
+          "op": "User invited additional users to Pulse survey",
+          "label": "PulseInvite"
+        },
+        {
+          "op": "User request a pulse data export",
+          "label": "PulseDataExport"
+        },
+        {
+          "op": "User shared a pulse report",
+          "label": "PulseShareResults"
+        },
+        {
+          "op": "User submitted response to a pulse survey",
+          "label": "PulseSubmit"
+        }
+      ]
+    },
+    {
+      "key": "windows_365_customer_lockbox_activities",
+      "label": "Windows 365 Customer Lockbox activities",
+      "items": [
+        {
+          "op": "Backfill CMD Agent",
+          "label": "AddDevicesToBackfill Operation"
+        },
+        {
+          "op": "Bulk reinstall CMD Agent",
+          "label": "TriggerClientAgentCheckBulkAction Operation"
+        },
+        {
+          "op": "Check PowerShell Execution Policy",
+          "label": "Check PowerShell Execution Policy"
+        },
+        {
+          "op": "Create LogCollection Request",
+          "label": "Create LogCollection Request"
+        },
+        {
+          "op": "Create new work items (Scheduler)",
+          "label": "Create new work items (Scheduler)"
+        },
+        {
+          "op": "Create Remote Action Operation in ActionModeratorService",
+          "label": "Create Remote Action Operation in ActionModeratorService"
+        },
+        {
+          "op": "Create VmExtension Request",
+          "label": "Create VmExtention Request"
+        },
+        {
+          "op": "Execute AppHealthPlugin",
+          "label": "Execute AppHealthPlugin"
+        },
+        {
+          "op": "Install RD agent",
+          "label": "Install RD agent"
+        },
+        {
+          "op": "OCE Run Commands on VM",
+          "label": "OCE Run Commands on VM"
+        },
+        {
+          "op": "Post Remote Action Operation",
+          "label": "Post Remote Action Operation"
+        },
+        {
+          "op": "Reinstall CMD Agent",
+          "label": "AddDevicesToReinstall Operation"
+        },
+        {
+          "op": "Run hybrid AADJ extension",
+          "label": "Run hybrid AADJ extension"
+        },
+        {
+          "op": "Trigger CMD Agent Canary check.",
+          "label": "Trigger CMD Agent Canary check."
+        },
+        {
+          "op": "Trigger device remediation",
+          "label": "Trigger device remediation"
+        },
+        {
+          "op": "Trigger generic action",
+          "label": "Trigger generic action"
+        },
+        {
+          "op": "Trigger generic action by SaaF",
+          "label": "Trigger generic action by SaaF"
+        },
+        {
+          "op": "Trigger generic action with options",
+          "label": "Trigger generic action with options"
+        },
+        {
+          "op": "Trigger orchestrator",
+          "label": "Trigger orchestrator"
+        },
+        {
+          "op": "Upload folder to blob",
+          "label": "Upload folder to blob"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { font-family: 'Segoe UI', 'Inter', sans-serif; }
+
+/* Prevent horizontal overflow caused by long labels in large lists */
+html, body, #root { overflow-x: hidden; }

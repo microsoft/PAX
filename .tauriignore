@@ -1,0 +1,12 @@
+# Exclude synthetic data generation/validation and outputs from Tauri bundle
+scripts/generate-synthetic.mjs
+scripts/validate-synthetic.mjs
+output/**
+
+# Keep build tools & scripts unrelated to prod runtime safe
+scripts/*.ps1
+scripts/*.mjs
+scripts/*.cjs
+
+# But explicitly allow runtime resources copied by copy-script if needed
+!scripts/copy-script.cjs
