@@ -8,6 +8,22 @@ on:
     inputs:
       version:
         description: 'Version to build (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+  actions: read
+  packages: writeMulti-Platform Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g., v1.0.0)'
         required: false
         default: 'manual-build'
 
@@ -228,13 +244,15 @@ jobs:
         fi
 
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         files: release-assets/*
         draft: false
         prerelease: false
         generate_release_notes: true
+        fail_on_unmatched_files: false
         tag_name: ${{ github.event.inputs.version || github.ref_name }}
+        name: "PAX ${{ github.event.inputs.version || github.ref_name }}"
         body: |
           ## PAX (Purview Audit eXporter) Release
           
