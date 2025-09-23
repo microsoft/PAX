@@ -75,8 +75,18 @@ jobs:
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
 
+    - name: Install system dependencies
+      run: |
+        # Install system dependencies that might be needed for Tauri on macOS
+        echo "Installing system dependencies..."
+
     - name: Install Tauri CLI
       run: npm install -g @tauri-apps/cli
+
+    - name: Verify Tauri CLI installation
+      run: |
+        npm list -g @tauri-apps/cli
+        tauri --version
 
     - name: Build frontend first
       run: npm run build
@@ -84,7 +94,15 @@ jobs:
     - name: Build Tauri app for native macOS (no cross-compilation)
       run: |
         echo "Building for native macOS architecture..."
-        npm run tauri build --verbose
+        echo "Current working directory: $(pwd)"
+        echo "Tauri config file exists: $(test -f src-tauri/tauri.conf.json && echo 'yes' || echo 'no')"
+        echo "Cargo.toml exists: $(test -f src-tauri/Cargo.toml && echo 'yes' || echo 'no')"
+        echo "Running tauri build..."
+        npm run tauri build 2>&1 | tee tauri-build.log
+        echo "Tauri build exit code: ${PIPESTATUS[0]}"
+        echo "=== Tauri build output ==="
+        cat tauri-build.log
+        echo "=== End Tauri build output ==="
 
     - name: Debug native build output
       run: |

@@ -33,10 +33,10 @@
         "frameworks": [],
         "providerShortName": null,
         "signingIdentity": null,
-        "hardenedRuntime": true,
+        "hardenedRuntime": false,
         "minimumSystemVersion": "10.13"
       },
-      "targets": ["app", "dmg"]
+      "targets": ["app"]
     }
   }
 }
