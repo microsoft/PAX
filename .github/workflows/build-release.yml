@@ -89,17 +89,39 @@ jobs:
     - name: Build Tauri app for ${{ matrix.target }}
       run: npm run tauri build -- --target ${{ matrix.target }}
 
+    - name: List build output for debugging
+      run: |
+        echo "Listing target directory contents:"
+        ls -la "src-tauri/target/${{ matrix.target }}/release/" || true
+        echo "Listing bundle directory contents:"
+        ls -la "src-tauri/target/${{ matrix.target }}/release/bundle/" || true
+        echo "Listing macos bundle directory contents:"
+        ls -la "src-tauri/target/${{ matrix.target }}/release/bundle/macos/" || true
+
     - name: Create macOS distribution
       run: |
         mkdir -p macos-dist-${{ matrix.target }}
+        
+        # Find the .app bundle (it might have a slightly different name)
+        APP_PATH=$(find "src-tauri/target/${{ matrix.target }}/release/bundle/macos/" -name "*.app" -type d | head -1)
+        
+        if [ -z "$APP_PATH" ]; then
+          echo "Error: No .app bundle found!"
+          exit 1
+        fi
+        
+        APP_NAME=$(basename "$APP_PATH")
+        echo "Found app bundle: $APP_NAME"
+        
+        # Copy the app bundle
+        cp -r "$APP_PATH" "macos-dist-${{ matrix.target }}/"
+        cd "macos-dist-${{ matrix.target }}"
+        
+        # Create ZIP with appropriate name
         if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
-          cp -r "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Purview Audit eXporter (PAX).app" "macos-dist-${{ matrix.target }}/"
-          cd "macos-dist-${{ matrix.target }}"
-          zip -r "PAX-macOS-AppleSilicon.zip" "Purview Audit eXporter (PAX).app"
+          zip -r "PAX-macOS-AppleSilicon.zip" "$APP_NAME"
         else
-          cp -r "src-tauri/target/x86_64-apple-darwin/release/bundle/macos/Purview Audit eXporter (PAX).app" "macos-dist-${{ matrix.target }}/"
-          cd "macos-dist-${{ matrix.target }}"
-          zip -r "PAX-macOS-Intel.zip" "Purview Audit eXporter (PAX).app"
+          zip -r "PAX-macOS-Intel.zip" "$APP_NAME"
         fi
 
     - name: Upload macOS artifacts
