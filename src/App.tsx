@@ -636,14 +636,29 @@ export default function App(){
     confirmDialog('Are you sure you want to cancel?\n\nThe export will be cancelled and the wizard will return to the first step with your selections preserved.', { title: 'Cancel export', type: 'warning' })
       .then(ok => {
         console.log('confirmDialog result:', ok);
-        if(!ok) return;
-        queueLogLine('stderr', 'User confirmed Cancel');
-        invoke('cancel_current_run').catch(() => {});
-        appWindow.setAlwaysOnTop(false).catch(() => {});
-        // Return to first step with existing inputs
-        setStatus('idle');
+        if(!ok) {
+          queueLogLine('stderr', 'User cancelled the cancel dialog');
+          return;
+        }
+        queueLogLine('stderr', 'User confirmed Cancel - terminating PowerShell process');
+        
+        // Immediately update UI state to prevent further actions
         setRunning(false);
         setCanCancel(false);
+        setStatus('idle');
+        
+        // Cancel the PowerShell process
+        invoke('cancel_current_run')
+          .then(() => {
+            queueLogLine('stderr', 'PowerShell process terminated successfully');
+          })
+          .catch((err) => {
+            queueLogLine('stderr', `Error terminating process: ${err}`);
+          });
+        
+        appWindow.setAlwaysOnTop(false).catch(() => {});
+        
+        // Return to first step with existing inputs
         setPercent(0);
         setOverallPercent(0);
         setPhase('unknown');

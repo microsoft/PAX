@@ -51,7 +51,7 @@ jobs:
         $exePath = Get-ChildItem "src-tauri/target/release" -Name "*.exe" | Where-Object { $_ -like "*Purview*" }
         if ($exePath) {
           Copy-Item "src-tauri/target/release/$exePath" "windows-dist/"
-          Rename-Item "windows-dist/$exePath" "PAX-Windows-Portable.exe"
+          Rename-Item "windows-dist/\$exePath" "PAX-v1.0.17-Windows-Portable.exe"
         }
         # Also include MSI installer if available
         $msiPath = Get-ChildItem "src-tauri/target/release/bundle/msi" -Name "*.msi" -ErrorAction SilentlyContinue
@@ -178,7 +178,7 @@ jobs:
         cd "macos-dist-native"
         
         # Create single universal ZIP file (works on all Macs)
-        zip -r "PAX-macOS-Universal.zip" "$APP_NAME"
+        zip -r "PAX-v1.0.17-macOS-Universal.zip" "$APP_NAME"
         
         echo "Created universal macOS app bundle"
 
@@ -215,10 +215,10 @@ jobs:
       run: |
         mkdir release-assets
         # Copy Windows artifacts
-        find . -name "PAX-Windows-Portable.exe" -exec cp {} release-assets/ \; 2>/dev/null || echo "No Windows exe found"
+        find . -name "PAX-v1.0.17-Windows-Portable.exe" -exec cp {} release-assets/ \; 2>/dev/null || echo "No Windows exe found"
         find . -name "*.msi" -exec cp {} release-assets/ \; 2>/dev/null || echo "No Windows msi found"
         # Copy macOS artifacts
-        find . -name "PAX-macOS-Universal.zip" -exec cp {} release-assets/ \; 2>/dev/null || echo "No macOS universal zip found"
+        find . -name "PAX-v1.0.17-macOS-Universal.zip" -exec cp {} release-assets/ \; 2>/dev/null || echo "No macOS universal zip found"
         # Copy any other artifacts
         find . -name "*.zip" -path "*/PAX-*" -exec cp {} release-assets/ \; 2>/dev/null || echo "No other zips found"
         
@@ -247,11 +247,11 @@ jobs:
           ### Downloads
           
           **Windows Users:**
-          - `PAX-Windows-Portable.exe` - Single executable, no installation required
+          - `PAX-v1.0.17-Windows-Portable.exe` - Single executable, no installation required
           - `PAX-Windows-Installer.msi` - Traditional Windows installer (if available)
           
           **Mac Users:**
-          - `PAX-macOS-Universal.zip` - Universal app for all Mac computers (Intel & Apple Silicon)
+          - `PAX-v1.0.17-macOS-Universal.zip` - Universal app for all Mac computers (Intel & Apple Silicon)
           
           ### Quick Start
           
