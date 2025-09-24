@@ -1,6 +1,6 @@
 {
   "name": "purview-audit-exporter",
-  "version": "1.0.21",
+  "version": "1.0.23",
   "description": "Cross-platform Purview audit export wizard (Tauri + React + TypeScript).",
   "license": "MIT",
   "private": true,
