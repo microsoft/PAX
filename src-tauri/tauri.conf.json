@@ -7,7 +7,7 @@
   },
   "package": {
     "productName": "Purview Audit eXporter (PAX)",
-    "version": "1.0.23"
+    "version": "1.0.24"
   },
   "tauri": {
     "allowlist": {
@@ -47,7 +47,7 @@
     },
     "windows": [
       {
-        "title": "Purview Audit eXporter (PAX) v1.0.23",
+        "title": "Purview Audit eXporter (PAX) v1.0.24",
         "width": 640,
         "height": 860,
         "minHeight": 560,
