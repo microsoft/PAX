@@ -1,0 +1,130 @@
+{
+  "DataSources": {
+    "CopilotUsage": "C:\\Users\\bmiddendorf\\OneDrive - Microsoft\\Documents\\Copilot Analytics Team\\PurviewAPI\\output\\CopilotUsageUserDetail.csv",
+    "PurviewAudit": "C:\\Users\\bmiddendorf\\OneDrive - Microsoft\\Documents\\Copilot Analytics Team\\PurviewAPI\\output\\PurviewUserActivityDetail.csv"
+  },
+  "Methodology": {
+    "Description": "This analysis recreates the Viva Insights 'Feature Usage Distribution' metric using only MS Graph data sources (Microsoft 365 usage reports and Purview audit logs). No direct Viva Insights data required.",
+    "DataSource": "Microsoft Graph API via Microsoft 365 Admin Center Reports",
+    "Features": [
+      "Loop",
+      "Excel",
+      "Teams",
+      "PowerPoint",
+      "Outlook",
+      "Word",
+      "Chat",
+      "OneNote"
+    ],
+    "Calculation": "Percentage = (Users with activity in feature / Total active Copilot users) * 100"
+  },
+  "TopFeatureCombinations": [
+    {
+      "Key": "Chat+Outlook+Teams+Word",
+      "Value": 986,
+      "Name": "Chat+Outlook+Teams+Word"
+    },
+    {
+      "Key": "Chat+Outlook+Teams",
+      "Value": 726,
+      "Name": "Chat+Outlook+Teams"
+    },
+    {
+      "Key": "Chat+Teams+Word",
+      "Value": 435,
+      "Name": "Chat+Teams+Word"
+    },
+    {
+      "Key": "Chat+Excel+Outlook+Teams+Word",
+      "Value": 413,
+      "Name": "Chat+Excel+Outlook+Teams+Word"
+    },
+    {
+      "Key": "Chat+Outlook+PowerPoint+Teams",
+      "Value": 413,
+      "Name": "Chat+Outlook+PowerPoint+Teams"
+    },
+    {
+      "Key": "Outlook+Teams+Word",
+      "Value": 411,
+      "Name": "Outlook+Teams+Word"
+    },
+    {
+      "Key": "Excel+Outlook+Teams+Word",
+      "Value": 374,
+      "Name": "Excel+Outlook+Teams+Word"
+    },
+    {
+      "Key": "Chat+Excel+Teams+Word",
+      "Value": 329,
+      "Name": "Chat+Excel+Teams+Word"
+    },
+    {
+      "Key": "Chat+Teams",
+      "Value": 296,
+      "Name": "Chat+Teams"
+    },
+    {
+      "Key": "Chat+Excel+Outlook+Teams",
+      "Value": 280,
+      "Name": "Chat+Excel+Outlook+Teams"
+    }
+  ],
+  "GeneratedDate": "2025-09-23 13:19:54",
+  "Summary": {
+    "TotalLicensedUsers": 12615,
+    "TotalActiveUsers": 12615,
+    "VivaInsightsRecreation": "Teams: 84.3%, Outlook: 67.9%, Chat: 66%",
+    "AdoptionRate": 100.0
+  },
+  "FeatureUsage": [
+    {
+      "Feature": "Teams",
+      "Users": 10640,
+      "Percentage": 84.3,
+      "PercentageText": "84.3%"
+    },
+    {
+      "Feature": "Outlook",
+      "Users": 8570,
+      "Percentage": 67.9,
+      "PercentageText": "67.9%"
+    },
+    {
+      "Feature": "Chat",
+      "Users": 8320,
+      "Percentage": 66.0,
+      "PercentageText": "66%"
+    },
+    {
+      "Feature": "Word",
+      "Users": 7046,
+      "Percentage": 55.9,
+      "PercentageText": "55.9%"
+    },
+    {
+      "Feature": "Excel",
+      "Users": 4472,
+      "Percentage": 35.4,
+      "PercentageText": "35.4%"
+    },
+    {
+      "Feature": "PowerPoint",
+      "Users": 3735,
+      "Percentage": 29.6,
+      "PercentageText": "29.6%"
+    },
+    {
+      "Feature": "OneNote",
+      "Users": 2630,
+      "Percentage": 20.8,
+      "PercentageText": "20.8%"
+    },
+    {
+      "Feature": "Loop",
+      "Users": 1478,
+      "Percentage": 11.7,
+      "PercentageText": "11.7%"
+    }
+  ]
+}
