@@ -202,8 +202,12 @@ function Start-VisibleReexecForAuth {
         [string]$OverrideAuth
     )
         try {
-        $ps = (Get-Command pwsh -ErrorAction SilentlyContinue)?.Source
-        if (-not $ps) { $ps = (Get-Command powershell -ErrorAction SilentlyContinue)?.Source }
+        $pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue
+        if ($pwshCmd) { $ps = $pwshCmd.Source }
+        else {
+            $psCmd = Get-Command powershell -ErrorAction SilentlyContinue
+            if ($psCmd) { $ps = $psCmd.Source }
+        }
         if (-not $ps) { throw "Cannot locate PowerShell executable to launch authentication." }
 
         # Use $PSCommandPath as primary source (reliable when invoked via -Command)

@@ -21,7 +21,7 @@ struct RunState {
   pid: Mutex<Option<u32>>, // store child PID for cancellation
 }
 
-// Embedded resources for release builds (single-file distribution)
+// E
 #[cfg(not(debug_assertions))]
 const EMBEDDED_DATASET_MERGED: &str = include_str!("../../scripts/audit-activities.merged.json");
 #[cfg(not(debug_assertions))]
@@ -30,6 +30,8 @@ const EMBEDDED_DATASET_GENERATED: &str = include_str!("../../scripts/audit-activ
 const EMBEDDED_DATASET_CURATED: &str = include_str!("../../scripts/audit-activities.json");
 #[cfg(not(debug_assertions))]
 const EMBEDDED_PS1: &str = include_str!("../../scripts/CopilotAuditExport.ps1");
+#[cfg(not(debug_assertions))]
+const EMBEDDED_SIMPLE_PS1: &str = include_str!("../../scripts/SimpleCopilotAuditExport.ps1");
 
 #[cfg(not(debug_assertions))]
 fn embedded_dataset_value() -> Option<serde_json::Value> {
@@ -149,8 +151,18 @@ async fn load_bundled_dataset(window: Window) -> Result<Value, String> {
 
 #[tauri::command]
 async fn preflight_exchange_module(window: Window) -> Result<(), String> {
-  let pwsh = if cfg!(windows) { "pwsh.exe" } else { "pwsh" };
-  let pwsh_path = which::which(pwsh).map_err(|_| "PowerShell 7 (pwsh) not found in PATH".to_string())?;
+  // Try PowerShell 7 first, fall back to PowerShell 5.1 for compatibility
+  let pwsh_path = if cfg!(windows) {
+    // On Windows, try pwsh.exe first, then powershell.exe
+    which::which("pwsh.exe")
+      .or_else(|_| which::which("powershell.exe"))
+      .map_err(|_| "PowerShell not found. Please install PowerShell 5.1+ or PowerShell 7.\nInstall PowerShell 7: winget install --id Microsoft.Powershell -e\nDocs: https://learn.microsoft.com/powershell/".to_string())?
+  } else {
+    // On non-Windows, try pwsh first, then powershell
+    which::which("pwsh")
+      .or_else(|_| which::which("powershell"))
+      .map_err(|_| "PowerShell not found. Please install PowerShell.\n  macOS:   brew install --cask powershell\n  Ubuntu:  sudo apt-get install -y powershell\n  Docs:    https://learn.microsoft.com/powershell/".to_string())?
+  };
   // Execution policy (configurable). Priority:
   // 1) Runtime env: PURVIEW_EXEC_POLICY
   // 2) Build-time default: PURVIEW_EXEC_POLICY_DEFAULT (set at compile time)
@@ -225,10 +237,18 @@ async fn run_purview_script(
   resultSize: Option<u64>,
   pacingMs: Option<u64>,
 ) -> Result<(), String> {
-  let pwsh = if cfg!(windows) { "pwsh.exe" } else { "pwsh" };
-  let pwsh_path = which::which(pwsh).map_err(|_| {
-    "PowerShell 7 (pwsh) was not found in PATH.\nInstall instructions:\n  Windows: winget install --id Microsoft.Powershell -e\n  macOS:   brew install --cask powershell\n  Ubuntu:  sudo apt-get install -y powershell (after MS repo)\n  Docs:    https://learn.microsoft.com/powershell/\n".to_string()
-  })?;
+  // Try PowerShell 7 first, fall back to PowerShell 5.1 for compatibility
+  let pwsh_path = if cfg!(windows) {
+    // On Windows, try pwsh.exe first, then powershell.exe
+    which::which("pwsh.exe")
+      .or_else(|_| which::which("powershell.exe"))
+      .map_err(|_| "PowerShell not found. Please install PowerShell 5.1+ or PowerShell 7.\nInstall PowerShell 7: winget install --id Microsoft.Powershell -e\nDocs: https://learn.microsoft.com/powershell/".to_string())?
+  } else {
+    // On non-Windows, try pwsh first, then powershell
+    which::which("pwsh")
+      .or_else(|_| which::which("powershell"))
+      .map_err(|_| "PowerShell not found. Please install PowerShell.\n  macOS:   brew install --cask powershell\n  Ubuntu:  sudo apt-get install -y powershell\n  Docs:    https://learn.microsoft.com/powershell/".to_string())?
+  };
 
   // Prefer the real repo script in dev; fall back to bundled resource otherwise
   let script_path: PathBuf = {
@@ -628,7 +648,7 @@ async fn export_hardcoded_script(
   detailedPost: Option<bool>,
   targetPath: String,
 ) -> Result<(), String> {
-  // Get source script contents
+  // Use the full-featured original script (with PS 5.1 compatibility fixes)
   let src: String = {
     #[cfg(debug_assertions)]
     {
@@ -642,7 +662,7 @@ async fn export_hardcoded_script(
     }
   };
 
-  // Prepare header with hard-coded config
+  // Prepare header with hard-coded config (preserving full functionality)
   let esc = |s: &str| s.replace("'", "''");
   let acts: Vec<String> = activityTypes.iter().map(|a| format!("'{}'", esc(a))).collect();
   let bh = blockHours.unwrap_or(8);
@@ -666,23 +686,31 @@ async fn export_hardcoded_script(
   header_with_detail.push_str(detailed_switch);
   header_with_detail.push_str("Write-Host ('  DetailedPost: ' + $DetailedPost)\n\n");
 
-  // Strip param() block, Show-Help function, and the help-if guard from the source
+  // Process the full-featured script while preserving all functionality
   let mut out = String::new();
   out.push_str(&header_with_detail);
+  
   // Ensure exported script accepts the helper switch used for visible re-exec
   let replacement_param = "param([switch]$InHelper)\n\n";
-  let mut skip = false;
-  let mut brace_depth: i32 = 0;
+  let mut skip_show_help = false;
+  let mut skip_help_guard = false;
   let mut in_param = false;
-  let mut in_help_guard = false;
+  let mut param_paren_depth: i32 = 0;
   let mut injected_replacement_param = false;
+  
   for line in src.lines() {
     let trimmed = line.trim();
+    
+    // Handle param block with proper parenthesis counting
     if !in_param && trimmed.starts_with("param(") {
-      in_param = true; continue;
+      in_param = true;
+      param_paren_depth = line.matches('(').count() as i32 - line.matches(')').count() as i32;
+      continue;
     }
     if in_param {
-      if trimmed.ends_with(")") {
+      param_paren_depth += line.matches('(').count() as i32;
+      param_paren_depth -= line.matches(')').count() as i32;
+      if param_paren_depth <= 0 {
         in_param = false;
         if !injected_replacement_param {
           out.push_str(replacement_param);
@@ -691,21 +719,32 @@ async fn export_hardcoded_script(
       }
       continue;
     }
-    if !skip && trimmed.starts_with("function Show-Help") { skip = true; continue; }
-    if skip {
-      // track braces until function ends
-      brace_depth += line.matches('{').count() as i32;
-      brace_depth -= line.matches('}').count() as i32;
-      if brace_depth <= 0 { skip = false; brace_depth = 0; }
+    
+    // Skip Show-Help function (preserve complex functionality by removing only the help)
+    if !skip_show_help && trimmed.starts_with("function Show-Help") {
+      skip_show_help = true;
       continue;
     }
-    if !in_help_guard && trimmed.starts_with("if ($Help") { in_help_guard = true; brace_depth = 0; continue; }
-    if in_help_guard {
-      brace_depth += line.matches('{').count() as i32;
-      brace_depth -= line.matches('}').count() as i32;
-      if brace_depth <= 0 { in_help_guard = false; }
+    if skip_show_help {
+      if trimmed == "}" {
+        skip_show_help = false;
+      }
       continue;
     }
+    
+    // Skip help guard (preserve complex functionality by removing only the help check)
+    if !skip_help_guard && trimmed.starts_with("if ($Help") {
+      skip_help_guard = true;
+      continue;
+    }
+    if skip_help_guard {
+      if trimmed == "}" {
+        skip_help_guard = false;
+      }
+      continue;
+    }
+    
+    // Preserve all other functionality - authentication, retry logic, data transformation, etc.
     out.push_str(line);
     out.push('\n');
   }
