@@ -120,15 +120,20 @@ update_package_json() {
 update_tauri_conf() {
     local new_version="$1"
     
+    # Update package version
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
         sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$new_version\"/" "$TAURI_CONF"
+        # Update window title
+        sed -i '' "s/\"title\": \"Purview Audit eXporter (PAX) v[^\"]*\"/\"title\": \"Purview Audit eXporter (PAX) v$new_version\"/" "$TAURI_CONF"
     else
-        # Linux/Windows (Git Bash)
+        # Linux/Windows (Git Bash)  
         sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$new_version\"/" "$TAURI_CONF"
+        # Update window title
+        sed -i "s/\"title\": \"Purview Audit eXporter (PAX) v[^\"]*\"/\"title\": \"Purview Audit eXporter (PAX) v$new_version\"/" "$TAURI_CONF"
     fi
     
-    print_success "Updated $TAURI_CONF to version $new_version"
+    print_success "Updated $TAURI_CONF to version $new_version (including window title)"
 }
 
 # Function to validate git status

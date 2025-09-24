@@ -127,6 +127,17 @@ function Update-JsonVersion {
         } elseif ($content.PSObject.Properties['package']) {
             # Nested under package (tauri.conf.json)
             $content.package.version = $NewVersion
+            
+            # Also update window title in tauri.conf.json
+            if ($content.PSObject.Properties['tauri'] -and 
+                $content.tauri.PSObject.Properties['windows'] -and 
+                $content.tauri.windows.Count -gt 0) {
+                $currentTitle = $content.tauri.windows[0].title
+                # Replace version in title (matches v1.0.xx pattern)
+                $newTitle = $currentTitle -replace 'v\d+\.\d+\.\d+', "v$NewVersion"
+                $content.tauri.windows[0].title = $newTitle
+                Write-Status "Updated window title to: $newTitle"
+            }
         } else {
             throw "No version property found in $FilePath"
         }
