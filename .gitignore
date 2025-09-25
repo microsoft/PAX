@@ -19,6 +19,7 @@ src-tauri/WixTools/
 
 # Generated output files (keep structure, exclude data)
 output/*.csv
+output/SyntheticData/
 !output/.gitkeep
 
 # Development and cache
