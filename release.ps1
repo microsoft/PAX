@@ -81,7 +81,7 @@ function Get-CurrentVersion {
 }
 
 # Function to increment version based on type
-function Increment-Version {
+function Step-Version {
     param(
         [string]$CurrentVersion,
         [string]$BumpType
@@ -271,7 +271,7 @@ function Main {
     Write-Status "Current version: v$currentVersion"
     
     # Calculate new version
-    $newVersion = Increment-Version -CurrentVersion $currentVersion -BumpType $bumpType
+    $newVersion = Step-Version -CurrentVersion $currentVersion -BumpType $bumpType
     Write-Status "New version: v$newVersion"
     
     # Prepare commit message
