@@ -9,64 +9,65 @@ param(
     [string[]]$ActivityTypes = @(
         "CopilotChatAccessed",                # User accessed Copilot chat
         "CopilotPromptUsed",                  # User subm                    } catch {
-                        # DisableWAM parameter not available, use standard authentication fallback
-                        try {
-                            Write-Host "DisableWAM not available in this Exchange module version, using standard authentication fallback..." -ForegroundColor Yellow
-                            Connect-ExchangeOnline -ShowBanner:$false -ErrorAction Stop | Out-Null
-                            $ConnectSuccessful = $true
-                            Write-Host "Successfully connected with standard authentication fallback!" -ForegroundColor Green
-                        } catch {
-                            Write-Host ("Standard authentication fallback failed: " + $_.Exception.Message) -ForegroundColor DarkYellow
-                            throw "Authentication failed"
-                        }
-                    }pt to Copilot
-        "CopilotQuerySentToBing",             # Copilot sent a query to Bing
-        "CopilotInteractionSummaryViewed",    # User viewed Copilot interaction summary
-        "MessageSent",                        # Message sent (Teams, Exchange)
-        "MessageRead",                        # Message read (Teams, Exchange)
-        "FileAccessed",                       # File accessed (SharePoint, OneDrive)
-        "FileModified",                       # File modified (SharePoint, OneDrive)
-        "FileDeleted",                        # File deleted (SharePoint, OneDrive)
-        "UserLoggedIn",                       # User signed in (all products)
-        "MeetingJoined",                      # User joined a Teams meeting
-        "MeetingCreated",                     # User created a Teams meeting
-        "ChannelMessageSent",                 # Message sent in a Teams channel
-        "TeamCreated",                        # New Team created
-        "SiteAccessed",                       # SharePoint site accessed
-        "MailboxLogin",                       # User logged into mailbox (Exchange)
-        "MailItemsAccessed",                  # Mail item accessed (Exchange)
-        "MailItemsDeleted",                   # Mail item deleted (Exchange)
-        "MailItemsSent",                      # Mail item sent (Exchange)
-        "DocumentShared",                     # Document shared (SharePoint, OneDrive)
-        "DocumentDownloaded"                  # Document downloaded (SharePoint, OneDrive)
-        # ...add more as needed
-    ),
-    [Parameter(Mandatory = $false)]
-    [string]$OutputFile = "CopilotMetrics_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv",
-    [Parameter(Mandatory = $false)]
-    [ValidateSet('WebLogin','DeviceCode','Credential','Silent')]
-    [string]$Auth = 'WebLogin',
-    [Parameter(Mandatory = $false)]
-    [ValidateSet(2,4,6,8,12,24)]
-    [int]$BlockHours = 8,
-    [Parameter(Mandatory = $false)]
-    [ValidateRange(1,5000)]
-    [int]$ResultSize = 5000,
-    [Parameter(Mandatory = $false)]
-    [ValidateRange(0,10000)]
-    [int]$PacingMs = 0,
-    [Parameter(Mandatory = $false)]
-    [switch]$DetailedPost,
-    [Parameter(Mandatory = $false)]
-    [string]$LogFile,
-    [Parameter(Mandatory = $false)]
-    [switch]$Help,
-    [Parameter(Mandatory = $false)]
-    [switch]$InHelper
+        # DisableWAM parameter not available, use standard authentication fallback
+        try {
+            Write-Host "DisableWAM not available in this Exchange module version, using standard authentication fallback..." -ForegroundColor Yellow
+            Connect-ExchangeOnline -ShowBanner:$false -ErrorAction Stop | Out-Null
+            $ConnectSuccessful = $true
+            Write-Host "Successfully connected with standard authentication fallback!" -ForegroundColor Green
+        }
+        catch {
+            Write-Host ("Standard authentication fallback failed: " + $_.Exception.Message) -ForegroundColor DarkYellow
+            throw "Authentication failed"
+        }
+    }pt to Copilot
+    "CopilotQuerySentToBing",             # Copilot sent a query to Bing
+    "CopilotInteractionSummaryViewed",    # User viewed Copilot interaction summary
+    "MessageSent",                        # Message sent (Teams, Exchange)
+    "MessageRead",                        # Message read (Teams, Exchange)
+    "FileAccessed",                       # File accessed (SharePoint, OneDrive)
+    "FileModified",                       # File modified (SharePoint, OneDrive)
+    "FileDeleted",                        # File deleted (SharePoint, OneDrive)
+    "UserLoggedIn",                       # User signed in (all products)
+    "MeetingJoined",                      # User joined a Teams meeting
+    "MeetingCreated",                     # User created a Teams meeting
+    "ChannelMessageSent",                 # Message sent in a Teams channel
+    "TeamCreated",                        # New Team created
+    "SiteAccessed",                       # SharePoint site accessed
+    "MailboxLogin",                       # User logged into mailbox (Exchange)
+    "MailItemsAccessed",                  # Mail item accessed (Exchange)
+    "MailItemsDeleted",                   # Mail item deleted (Exchange)
+    "MailItemsSent",                      # Mail item sent (Exchange)
+    "DocumentShared",                     # Document shared (SharePoint, OneDrive)
+    "DocumentDownloaded"                  # Document downloaded (SharePoint, OneDrive)
+    # ...add more as needed
+),
+[Parameter(Mandatory = $false)]
+[string]$OutputFile = "$([System.IO.Path]::GetTempPath())Purview_Export_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv",
+[Parameter(Mandatory = $false)]
+[ValidateSet('WebLogin', 'DeviceCode', 'Credential', 'Silent')]
+[string]$Auth = 'WebLogin',
+[Parameter(Mandatory = $false)]
+[ValidateSet(2, 4, 6, 8, 12, 24)]
+[int]$BlockHours = 8,
+[Parameter(Mandatory = $false)]
+[ValidateRange(1, 5000)]
+[int]$ResultSize = 5000,
+[Parameter(Mandatory = $false)]
+[ValidateRange(0, 10000)]
+[int]$PacingMs = 0,
+[Parameter(Mandatory = $false)]
+[switch]$DetailedPost,
+[Parameter(Mandatory = $false)]
+[string]$LogFile,
+[Parameter(Mandatory = $false)]
+[switch]$Help,
+[Parameter(Mandatory = $false)]
+[switch]$InHelper
 )
 
 function Show-Help {
-@"
+    @"
 Microsoft 365 Copilot & AI Purview Audit Log Extractor
 -------------------------------------------------------
 This script exports Microsoft 365 Copilot, AI, and user activity records from Purview audit logs to CSV with comprehensive logging.
@@ -96,7 +97,7 @@ PARAMETERS:
 -StartDate        (Required)  Start date for search (yyyy-MM-dd format). Inclusive - data from this date is included.
 -EndDate          (Required)  End date for search (yyyy-MM-dd format). Exclusive - data up to but not including this date.
 -ActivityTypes    (Optional)  Array of activity types to search. Default: 32 curated activities across Copilot, Teams, Files, and Exchange tiers.
--OutputFile       (Optional)  Path for CSV output. Default: Purview_Export_<timestamp>.csv in current directory.
+-OutputFile       (Optional)  Path for CSV output. Default: Purview_Export_<timestamp>.csv in system temp folder.
 -LogFile          (Optional)  Path for transcript log. Default: auto-generated .log file in same directory as CSV.
 -Auth             (Optional)  Authentication: WebLogin (default, recommended), DeviceCode, Credential, or Silent.
                                • WebLogin: Opens native Microsoft sign-in window; best for admin accounts with MFA/CA
@@ -239,7 +240,7 @@ function Start-VisibleReexecForAuth {
         [string]$Reason,
         [string]$OverrideAuth
     )
-        try {
+    try {
         $pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue
         if ($pwshCmd) { $ps = $pwshCmd.Source }
         else {
@@ -259,21 +260,21 @@ function Start-VisibleReexecForAuth {
             if ($StartDate.StartsWith("'") -and $StartDate.EndsWith("'")) {
                 $parts += "-StartDate " + $StartDate
             } else {
-                $parts += "-StartDate '" + ($StartDate -replace "'","''") + "'"
+                $parts += "-StartDate '" + ($StartDate -replace "'", "''") + "'"
             }
         }
         if ($EndDate) { 
             if ($EndDate.StartsWith("'") -and $EndDate.EndsWith("'")) {
                 $parts += "-EndDate " + $EndDate
             } else {
-                $parts += "-EndDate '" + ($EndDate -replace "'","''") + "'"
+                $parts += "-EndDate '" + ($EndDate -replace "'", "''") + "'"
             }
         }
         if ($ActivityTypes -and $ActivityTypes.Count -gt 0) {
             # For command line, join activities with comma and let the receiving script parse
             $escapedTypes = @()
             foreach ($act in $ActivityTypes) {
-                $escapedTypes += ($act -replace "'","''")
+                $escapedTypes += ($act -replace "'", "''")
             }
             $activityString = ($escapedTypes -join ',')
             $parts += "-ActivityTypes '" + $activityString + "'"
@@ -282,7 +283,7 @@ function Start-VisibleReexecForAuth {
             if ($OutputFile.StartsWith("'") -and $OutputFile.EndsWith("'")) {
                 $parts += "-OutputFile " + $OutputFile
             } else {
-                $parts += "-OutputFile '" + ($OutputFile -replace "'","''") + "'"
+                $parts += "-OutputFile '" + ($OutputFile -replace "'", "''") + "'"
             }
         }
         if ($OverrideAuth) {
@@ -297,9 +298,9 @@ function Start-VisibleReexecForAuth {
         $parts += "-InHelper"
 
         $argStr = "-NoLogo -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" " + ($parts -join ' ')
-            Write-Host "Launching visible host for authentication and export ($Reason)..." -ForegroundColor Yellow
-    Write-Host ("Spawn: '" + $ps + "' " + $argStr) -ForegroundColor DarkGray
-    Write-Host ("Args parts: " + ($parts -join ' ')) -ForegroundColor DarkGray
+        Write-Host "Launching visible host for authentication and export ($Reason)..." -ForegroundColor Yellow
+        Write-Host ("Spawn: '" + $ps + "' " + $argStr) -ForegroundColor DarkGray
+        Write-Host ("Args parts: " + ($parts -join ' ')) -ForegroundColor DarkGray
         
         # Launch with visible window using shell execute to provide proper window handle for WAM
         $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -457,12 +458,12 @@ function Connect-ToComplianceCenter {
 
 function Invoke-SearchUnifiedAuditLogWithRetry {
     param(
-        [Parameter(Mandatory=$true)] [datetime]$Start,
-        [Parameter(Mandatory=$true)] [datetime]$End,
-        [Parameter(Mandatory=$false)] [string]$Operation,
-        [Parameter(Mandatory=$true)] [int]$ResultSize,
-        [Parameter(Mandatory=$true)] [int]$PacingMs,
-        [Parameter(Mandatory=$false)] [int]$MaxRetries = 5
+        [Parameter(Mandatory = $true)] [datetime]$Start,
+        [Parameter(Mandatory = $true)] [datetime]$End,
+        [Parameter(Mandatory = $false)] [string]$Operation,
+        [Parameter(Mandatory = $true)] [int]$ResultSize,
+        [Parameter(Mandatory = $true)] [int]$PacingMs,
+        [Parameter(Mandatory = $false)] [int]$MaxRetries = 5
     )
     $attempt = 0
     while ($attempt -le $MaxRetries) {
@@ -476,7 +477,7 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
             $msg = $_.Exception.Message
             $status = $null
             try { $status = $_.Exception.Response.StatusCode.Value__ } catch {}
-            $isThrottle = ($msg -match '429' -or $msg -match 'Too\s*Many\s*Requests' -or $msg -match 'throttl' -or $msg -match '503' -or $msg -match 'Service\s*Unavailable' -or $status -in 429,503)
+            $isThrottle = ($msg -match '429' -or $msg -match 'Too\s*Many\s*Requests' -or $msg -match 'throttl' -or $msg -match '503' -or $msg -match 'Service\s*Unavailable' -or $status -in 429, 503)
             if (-not $isThrottle -or $attempt -ge $MaxRetries) {
                 Write-Host ("  Request failed: " + $msg) -ForegroundColor DarkYellow
                 break
@@ -485,7 +486,7 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
             $base = 0.5
             $delay = [math]::Min(30.0, $base * [math]::Pow(2, $attempt - 1))
             $jitter = (Get-Random -Minimum 0 -Maximum 250) / 1000.0
-            $total = $delay + $jitter + ([double]$PacingMs/1000.0)
+            $total = $delay + $jitter + ([double]$PacingMs / 1000.0)
             $ms = [int]([math]::Round($total * 1000))
             Write-Host ("  Throttled (attempt $attempt/$MaxRetries). Backing off for ${ms}ms...") -ForegroundColor Yellow
             Start-Sleep -Milliseconds $ms
@@ -545,12 +546,12 @@ function Get-WorkloadFromRecordType {
     param([string]$RecordType)
     # Map RecordType to Office 365 service names per Microsoft Learn
     $workloadMap = @{
-        "ExchangeItem" = "Exchange"
+        "ExchangeItem"            = "Exchange"
         "SharePointFileOperation" = "SharePoint"
-        "OneDrive" = "OneDrive"
-        "MicrosoftTeams" = "MicrosoftTeams"
-        "CopilotInteraction" = "MicrosoftCopilot"
-        "261" = "MicrosoftCopilot"  # CopilotInteraction RecordType
+        "OneDrive"                = "OneDrive"
+        "MicrosoftTeams"          = "MicrosoftTeams"
+        "CopilotInteraction"      = "MicrosoftCopilot"
+        "261"                     = "MicrosoftCopilot"  # CopilotInteraction RecordType
     }
     return $workloadMap[$RecordType] -or "Office365"
 }
@@ -601,44 +602,44 @@ function Convert-ToMetricsRecord {
     param([object]$AuditLogEntry)
     $auditData = Parse-AuditData -AuditDataJson $AuditLogEntry.AuditData
     return [PSCustomObject]@{
-        RecordId                             = $AuditLogEntry.Identity
-        CreationDate                         = $AuditLogEntry.CreationDate
-        RecordType                           = $AuditLogEntry.RecordType
-        CreationDateIsoUtc                   = if ($AuditLogEntry.CreationDate) { $AuditLogEntry.CreationDate.ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null }
-        OrganizationId                       = Get-NestedProperty $auditData "OrganizationId" -Default "b1234567-89ab-cdef-0123-456789abcdef"
-        UserType                             = Get-UserType -UserId $AuditLogEntry.UserIds -AuditData $auditData
-        UserKey                              = Get-UserKey -UserId $AuditLogEntry.UserIds
-        Workload                             = Get-WorkloadFromRecordType -RecordType $AuditLogEntry.RecordType
-        Operation                            = $AuditLogEntry.Operations
-        UserId                               = $AuditLogEntry.UserIds
-        AssociatedAdminUnits                 = Get-NestedProperty $auditData "AssociatedAdminUnits"
-        AssociatedAdminUnitsNames            = Get-NestedProperty $auditData "AssociatedAdminUnitsNames"
-        AgentId                              = Get-NestedProperty $auditData "AgentId"
-        AgentName                            = Get-NestedProperty $auditData "AgentName"
-        AppIdentity_AppId                    = Get-NestedProperty $auditData "AppIdentity.AppId"
-        AppIdentity_DisplayName              = Get-NestedProperty $auditData "AppIdentity.DisplayName"
-        AppIdentity_PublisherId              = Get-NestedProperty $auditData "AppIdentity.PublisherId"
-        ApplicationName                      = Get-NestedProperty $auditData "ApplicationName"
-        CreationTime                         = Get-NestedProperty $auditData "CreationTime"
-        CreationTimeIsoUtc                   = if ($auditData.CreationTime) { ([DateTime]$auditData.CreationTime).ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null }
-        ClientIP                             = Get-NestedProperty $auditData "ClientIP" -Default (Get-SyntheticClientIP -UserId $AuditLogEntry.UserIds)
-        ObjectId                             = Get-NestedProperty $auditData "ObjectId" -Default (Get-SyntheticObjectId -Operation $AuditLogEntry.Operations -RecordType $AuditLogEntry.RecordType -AuditData $auditData)
-        ResultStatus                         = Get-NestedProperty $auditData "ResultStatus" -Default "Succeeded"
-        ClientRegion                         = Get-NestedProperty $auditData "ClientRegion"
-        Audit_UserId                         = Get-NestedProperty $auditData "UserId"
-        AppHost                              = Get-NestedProperty $auditData "AppHost"
-        ThreadId                             = Get-NestedProperty $auditData "ThreadId"
-        Context_Id                           = Get-NestedProperty $auditData "Context.Id"
-        Context_Type                         = Get-NestedProperty $auditData "Context.Type"
-        Message_Id                           = Get-NestedProperty $auditData "Message.Id"
-        Message_isPrompt                     = Get-NestedProperty $auditData "Message.isPrompt"
-        AccessedResource_Action              = Get-NestedProperty $auditData "AccessedResource.Action"
-        AccessedResource_PolicyDetails       = Get-NestedProperty $auditData "AccessedResource.PolicyDetails"
-        AccessedResource_SiteUrl             = Get-NestedProperty $auditData "AccessedResource.SiteUrl"
-        AISystemPlugin_Id                    = Get-NestedProperty $auditData "AISystemPlugin.Id"
-        AISystemPlugin_Name                  = Get-NestedProperty $auditData "AISystemPlugin.Name"
-        ModelTransparencyDetails_ModelName   = Get-NestedProperty $auditData "ModelTransparencyDetails.ModelName"
-        MessageIds                           = (Get-NestedProperty $auditData "MessageIds" -join ",")
+        RecordId                           = $AuditLogEntry.Identity
+        CreationDate                       = $AuditLogEntry.CreationDate
+        RecordType                         = $AuditLogEntry.RecordType
+        CreationDateIsoUtc                 = if ($AuditLogEntry.CreationDate) { $AuditLogEntry.CreationDate.ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null }
+        OrganizationId                     = Get-NestedProperty $auditData "OrganizationId" -Default "b1234567-89ab-cdef-0123-456789abcdef"
+        UserType                           = Get-UserType -UserId $AuditLogEntry.UserIds -AuditData $auditData
+        UserKey                            = Get-UserKey -UserId $AuditLogEntry.UserIds
+        Workload                           = Get-WorkloadFromRecordType -RecordType $AuditLogEntry.RecordType
+        Operation                          = $AuditLogEntry.Operations
+        UserId                             = $AuditLogEntry.UserIds
+        AssociatedAdminUnits               = Get-NestedProperty $auditData "AssociatedAdminUnits"
+        AssociatedAdminUnitsNames          = Get-NestedProperty $auditData "AssociatedAdminUnitsNames"
+        AgentId                            = Get-NestedProperty $auditData "AgentId"
+        AgentName                          = Get-NestedProperty $auditData "AgentName"
+        AppIdentity_AppId                  = Get-NestedProperty $auditData "AppIdentity.AppId"
+        AppIdentity_DisplayName            = Get-NestedProperty $auditData "AppIdentity.DisplayName"
+        AppIdentity_PublisherId            = Get-NestedProperty $auditData "AppIdentity.PublisherId"
+        ApplicationName                    = Get-NestedProperty $auditData "ApplicationName"
+        CreationTime                       = Get-NestedProperty $auditData "CreationTime"
+        CreationTimeIsoUtc                 = if ($auditData.CreationTime) { ([DateTime]$auditData.CreationTime).ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null }
+        ClientIP                           = Get-NestedProperty $auditData "ClientIP" -Default (Get-SyntheticClientIP -UserId $AuditLogEntry.UserIds)
+        ObjectId                           = Get-NestedProperty $auditData "ObjectId" -Default (Get-SyntheticObjectId -Operation $AuditLogEntry.Operations -RecordType $AuditLogEntry.RecordType -AuditData $auditData)
+        ResultStatus                       = Get-NestedProperty $auditData "ResultStatus" -Default "Succeeded"
+        ClientRegion                       = Get-NestedProperty $auditData "ClientRegion"
+        Audit_UserId                       = Get-NestedProperty $auditData "UserId"
+        AppHost                            = Get-NestedProperty $auditData "AppHost"
+        ThreadId                           = Get-NestedProperty $auditData "ThreadId"
+        Context_Id                         = Get-NestedProperty $auditData "Context.Id"
+        Context_Type                       = Get-NestedProperty $auditData "Context.Type"
+        Message_Id                         = Get-NestedProperty $auditData "Message.Id"
+        Message_isPrompt                   = Get-NestedProperty $auditData "Message.isPrompt"
+        AccessedResource_Action            = Get-NestedProperty $auditData "AccessedResource.Action"
+        AccessedResource_PolicyDetails     = Get-NestedProperty $auditData "AccessedResource.PolicyDetails"
+        AccessedResource_SiteUrl           = Get-NestedProperty $auditData "AccessedResource.SiteUrl"
+        AISystemPlugin_Id                  = Get-NestedProperty $auditData "AISystemPlugin.Id"
+        AISystemPlugin_Name                = Get-NestedProperty $auditData "AISystemPlugin.Name"
+        ModelTransparencyDetails_ModelName = Get-NestedProperty $auditData "ModelTransparencyDetails.ModelName"
+        MessageIds                         = (Get-NestedProperty $auditData "MessageIds" -join ",")
     }
 }
 
@@ -708,10 +709,10 @@ try {
             $percentKeywordComplete = [math]::Round(($keywordQueryCount / $totalKeywordQueries) * 100, 1)
             Write-Host "[$percentKeywordComplete%] Keyword Query $keywordQueryCount/$totalKeywordQueries - $($startBlock.ToString('yyyy-MM-dd HH:mm'))" -ForegroundColor Gray
             $additionalLogs = Invoke-SearchUnifiedAuditLogWithRetry -Start $startBlock -End $endBlock -Operation $null -ResultSize $ResultSize -PacingMs $PacingMs |
-                Where-Object {
-                    $_.AuditData -match "Copilot|AI|ChatGPT|Assistant" -or
-                    $_.Operations -match "Copilot|AI|Chat"
-                }
+            Where-Object {
+                $_.AuditData -match "Copilot|AI|ChatGPT|Assistant" -or
+                $_.Operations -match "Copilot|AI|Chat"
+            }
             if ($additionalLogs) {
                 $allLogs += $additionalLogs
                 Write-Host "  Found $($additionalLogs.Count) keyword records at $($startBlock.ToString('yyyy-MM-dd HH:mm'))" -ForegroundColor Green
@@ -735,11 +736,11 @@ try {
 
     # Post-processing phase: summarize tasks as categories (convert, export, sample, stats, finalize)
     $postCategories = @{
-        convert = [int]$uniqueLogs.Count
-        export  = 1
-        sample  = 1
-        stats   = 1
-        finalize= 1
+        convert  = [int]$uniqueLogs.Count
+        export   = 1
+        sample   = 1
+        stats    = 1
+        finalize = 1
     }
     $postTotal = ($postCategories.Values | Measure-Object -Sum).Sum
     $postCount = 0
@@ -777,9 +778,9 @@ try {
     if ($metricsData.Count -gt 0) {
         $first = $metricsData[0]
         # Summarize sample without dumping all fields
-        $sampleUser   = ($first.PSObject.Properties["UserId"].Value)
-        $sampleOp     = ($first.PSObject.Properties["Operation"].Value)
-        $sampleTime   = ($first.PSObject.Properties["CreationDate"].Value)
+        $sampleUser = ($first.PSObject.Properties["UserId"].Value)
+        $sampleOp = ($first.PSObject.Properties["Operation"].Value)
+        $sampleTime = ($first.PSObject.Properties["CreationDate"].Value)
         Write-Host "Sample captured: User='$sampleUser' Operation='$sampleOp' Time='$sampleTime'" -ForegroundColor Cyan
         if ($DetailedPost) {
             Write-Host "Detailed sample (first entry):" -ForegroundColor Cyan

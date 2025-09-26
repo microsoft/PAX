@@ -60,7 +60,7 @@ async function getTempDir(){
       return await mod.tempDir();
     }
   } catch {}
-  // Fallback
+  // Fallback - create temp directory if C:\Temp doesn't exist
   return 'C:\\Temp';
 }
 async function defaultOutputPath(){

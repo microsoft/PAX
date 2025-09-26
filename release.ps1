@@ -163,22 +163,23 @@ function Test-GitStatus {
         exit 1
     }
     
-    # Check if we have uncommitted changes (excluding the files we're about to change)
+    # Check for uncommitted changes and show what will be included in the release
     $status = git status --porcelain
-    $filteredStatus = $status | Where-Object { 
-        $_ -notmatch "package\.json" -and $_ -notmatch "src-tauri/tauri\.conf\.json" 
-    }
     
-    if ($filteredStatus) {
+    if ($status) {
         Write-Warning "You have uncommitted changes other than version files."
+        Write-Host "Files that will be included in this release:" -ForegroundColor Yellow
+        $status | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+        Write-Host ""
         $response = Read-Host "Do you want to continue? [y/N]"
         if ($response -notmatch "^[Yy]$") {
             Write-Error "Aborting due to uncommitted changes"
             exit 1
         }
+        Write-Status "Will commit all changes as part of this release"
     }
     else {
-        Write-Status "Git working directory is clean (except version files)"
+        Write-Status "Git working directory is clean"
     }
 }
 
@@ -190,8 +191,9 @@ function New-CommitAndTag {
         [string]$CustomMessage
     )
     
-    # Add the version files
-    git add $PackageJson $TauriConf
+    # Add all uncommitted changes to ensure GitHub workflow has access to everything
+    git add .
+    Write-Status "Staged all uncommitted changes for release"
     
     # Create commit message - use custom message if provided, otherwise auto-generate
     $commitMsg = if ($CustomMessage) {

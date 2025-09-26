@@ -143,18 +143,24 @@ check_git_status() {
         exit 1
     fi
     
-    # Check if we have uncommitted changes (excluding the files we're about to change)
-    if git diff --quiet HEAD -- . ':!package.json' ':!src-tauri/tauri.conf.json' && 
-       git diff --cached --quiet HEAD -- . ':!package.json' ':!src-tauri/tauri.conf.json'; then
-        print_status "Git working directory is clean (except version files)"
-    else
+    # Check for uncommitted changes and show what will be included in the release
+    local status_output
+    status_output=$(git status --porcelain)
+    
+    if [[ -n "$status_output" ]]; then
         print_warning "You have uncommitted changes other than version files."
+        echo -e "${YELLOW}Files that will be included in this release:${NC}"
+        echo "$status_output" | sed 's/^/  /'
+        echo ""
         echo -n "Do you want to continue? [y/N]: "
         read -r response
         if [[ ! "$response" =~ ^[Yy]$ ]]; then
             print_error "Aborting due to uncommitted changes"
             exit 1
         fi
+        print_status "Will commit all changes as part of this release"
+    else
+        print_status "Git working directory is clean"
     fi
 }
 
@@ -164,8 +170,9 @@ commit_and_tag() {
     local bump_type="$2"
     local custom_message="$3"
     
-    # Add the version files
-    git add "$PACKAGE_JSON" "$TAURI_CONF"
+    # Add all uncommitted changes to ensure GitHub workflow has access to everything
+    git add .
+    print_status "Staged all uncommitted changes for release"
     
     # Create commit message - use custom message if provided, otherwise auto-generate
     local commit_msg
