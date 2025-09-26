@@ -802,6 +802,24 @@ export default function App(){
         });
         unsubs.push(un5);
         
+        // Add window close event handler to ensure proper cleanup when "X" button is clicked
+        // Note: Using beforeunload event instead of onCloseRequested to avoid blocking close behavior
+        const handleBeforeUnload = () => {
+          console.log('Window closing - performing cleanup');
+          try {
+            if (running) {
+              console.log('Export is running - attempting cancel');
+              // Fire and forget - don't wait for cleanup to complete
+              invoke('cancel_current_run').catch(() => {});
+            }
+          } catch (e) {
+            console.error('Error during close cleanup:', e);
+          }
+        };
+        
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        unsubs.push(() => window.removeEventListener('beforeunload', handleBeforeUnload));
+        
         g.__ps_unlisten__ = () => { unsubs.forEach(u=>{ try { u(); } catch {} }); g.__ps_unlisten__ = null; };
       } catch {}
     })();
@@ -1194,7 +1212,40 @@ export default function App(){
             <div><span className="font-semibold">Remember Settings:</span> {form.remember ? 'Yes' : 'No'}</div>
           </div>
           <div className="flex justify-between items-center">
-            <Button variant="soft" onClick={()=>setStep(1)}>Back</Button>
+            <div className="flex gap-2">
+              <Button variant="soft" onClick={()=>setStep(1)}>Back</Button>
+              <Button 
+                variant="ghost" 
+                className="bg-blue-50 text-blue-700 border border-blue-300 hover:bg-blue-100" 
+                onClick={async ()=>{
+                  const def = (await getTempDir()) + `\\Purview_Export_Script_${timestamp()}.ps1`;
+                  const file = await saveDialog({ defaultPath: def, filters:[{name:'PowerShell script', extensions:['ps1']}] });
+                  if(!file) return;
+                  try {
+                    await invoke('export_hardcoded_script', {
+                      startDate: form.startDate,
+                      endDate: form.endDate,
+                      activityTypes: form.activityIds,
+                      outputFile: form.outputFile,
+                      authMode: form.authMode,
+                      blockHours: form.blockHours,
+                      resultSize: form.resultSize,
+                      pacingMs: form.pacingMs,
+                      detailedPost: form.detailedPost,
+                      targetPath: file,
+                    });
+                    // Show success message or navigate somewhere
+                    alert(`PowerShell script exported to: ${file}`);
+                  } catch(err:any){
+                    const emsg = err?.message || String(err);
+                    alert(`Export script failed: ${emsg}`);
+                  }
+                }}
+                title="Generate a standalone PowerShell script with these exact settings"
+              >
+                📄 Export to .ps1
+              </Button>
+            </div>
             <div className="flex gap-2">
               <Button variant="ghost" className="bg-gray-50 text-gray-700 hover:bg-gray-100" onClick={onCloseApp}>Close</Button>
               <Button disabled={running} onClick={()=>{ setStep(3); runExport(); }}>Run Export</Button>

@@ -47,6 +47,8 @@ param(
     [Parameter(Mandatory = $false)]
     [switch]$DetailedPost,
     [Parameter(Mandatory = $false)]
+    [string]$LogFile,
+    [Parameter(Mandatory = $false)]
     [switch]$Help,
     [Parameter(Mandatory = $false)]
     [switch]$InHelper
@@ -54,79 +56,104 @@ param(
 
 function Show-Help {
 @"
-Copilot/AI Purview Audit Log Extractor
---------------------------------------
-This script exports Copilot/AI and user-facing activity records from Microsoft Purview (M365) audit logs and saves them to CSV for analysis.
+Microsoft 365 Copilot & AI Purview Audit Log Extractor
+-------------------------------------------------------
+This script exports Microsoft 365 Copilot, AI, and user activity records from Purview audit logs to CSV with comprehensive logging.
 
 USAGE EXAMPLES:
 ---------------
-- Default (all Copilot/AI activities, default output file):
-  .\YourScriptName.ps1 -StartDate "2025-09-01" -EndDate "2025-09-02"
+- Basic export with recommended activities (tiers 1-3: Copilot core, Teams, Files):
+  .\CopilotAuditExport.ps1 -StartDate "2025-09-01" -EndDate "2025-09-02"
 
-- Custom output file location:
-  .\YourScriptName.ps1 -StartDate "2025-09-01" -EndDate "2025-09-02" -OutputFile "C:\Reports\CopilotUsage.csv"
+- Custom output location with automatic log file:
+  .\CopilotAuditExport.ps1 -StartDate "2025-09-01" -EndDate "2025-09-02" -OutputFile "C:\Reports\CopilotUsage.csv"
 
-- Custom activity types (e.g., only CopilotChatAccessed and CopilotPromptUsed):
-  .\YourScriptName.ps1 -StartDate "2025-09-01" -EndDate "2025-09-02" -ActivityTypes "CopilotChatAccessed","CopilotPromptUsed"
+- Specific activities (Copilot interactions and file access):
+  .\CopilotAuditExport.ps1 -StartDate "2025-09-01" -EndDate "2025-09-02" -ActivityTypes "CopilotInteraction","FileAccessed","FileModified"
+
+- Large dataset with smaller time windows and throttle control:
+  .\CopilotAuditExport.ps1 -StartDate "2025-09-01" -EndDate "2025-09-10" -BlockHours 4 -PacingMs 1000
 
 - Show help:
-  .\YourScriptName.ps1 -help
-  .\YourScriptName.ps1 /help
+  .\CopilotAuditExport.ps1 -Help
+  .\CopilotAuditExport.ps1 /Help
 
 
 
-OPTIONS:
---------
--StartDate        (Required)  Start date for the search (format: yyyy-MM-dd)
--EndDate          (Required)  End date for the search (format: yyyy-MM-dd, exclusive)
--ActivityTypes    (Optional)  List of activity types to search for (default: most relevant Copilot/AI and user-facing actions)
--OutputFile       (Optional)  Path for the output CSV file (default: CopilotMetrics_<timestamp>.csv)
--Auth             (Optional)  Authentication mode: WebLogin (recommended), DeviceCode, Credential, or Silent. Default: WebLogin
--BlockHours       (Optional)  Hours per query window (choose 2,4,6,8,12,24). Default: 8 hours
--ResultSize       (Optional)  Max rows per API call to Purview audit. Range 1–5000. Default: 5000
--PacingMs         (Optional)  Milliseconds to sleep between API calls (0–10000). Default: 0 (no delay)
--DetailedPost     (Optional)  Show additional post-processing details (sample entry, field stats). Toggle does not change CSV contents.
--Help or /Help    (Optional)  Show this help message and exit
+PARAMETERS:
+-----------
+-StartDate        (Required)  Start date for search (yyyy-MM-dd format). Inclusive - data from this date is included.
+-EndDate          (Required)  End date for search (yyyy-MM-dd format). Exclusive - data up to but not including this date.
+-ActivityTypes    (Optional)  Array of activity types to search. Default: 32 curated activities across Copilot, Teams, Files, and Exchange tiers.
+-OutputFile       (Optional)  Path for CSV output. Default: Purview_Export_<timestamp>.csv in current directory.
+-LogFile          (Optional)  Path for transcript log. Default: auto-generated .log file in same directory as CSV.
+-Auth             (Optional)  Authentication: WebLogin (default, recommended), DeviceCode, Credential, or Silent.
+                               • WebLogin: Opens native Microsoft sign-in window; best for admin accounts with MFA/CA
+                               • DeviceCode: Shows code to enter at microsoft.com/devicelogin; useful if windows are blocked
+                               • Credential: Username/password prompt; may fail with MFA/CA policies; not recommended
+                               • Silent: Reuses existing cached session if available; fails otherwise
+                               Note: Script validates account permissions before starting the full export.
+-BlockHours       (Optional)  Time window per query: 2,4,6,8,12,24 hours. Default: 24. Smaller = more queries, better for large datasets.
+-ResultSize       (Optional)  Records per API call (1-5000). Default: 5000. Reduce if hitting throttling limits.
+-PacingMs         (Optional)  Delay between API calls in milliseconds (0-10000). Default: 0. Use 500-2000 to reduce throttling.
+-DetailedPost     (Optional)  Show extra post-processing details (sample records, field statistics). Does not change CSV output.
+-Help or /Help    (Optional)  Display this help message and exit.
 
-MOST RELEVANT ACTIVITY TYPES (not a complete list):
----------------------------------------------------
-- CopilotChatAccessed: User accessed Copilot chat
-- CopilotPromptUsed: User submitted a prompt to Copilot
-- CopilotQuerySentToBing: Copilot sent a query to Bing
-- CopilotInteractionSummaryViewed: User viewed Copilot interaction summary
-- MessageSent: Message sent (Teams, Exchange)
-- MessageRead: Message read (Teams, Exchange)
-- FileAccessed: File accessed (SharePoint, OneDrive)
-- FileModified: File modified (SharePoint, OneDrive)
-- FileDeleted: File deleted (SharePoint, OneDrive)
-- UserLoggedIn: User signed in (all products)
-- MeetingJoined: User joined a Teams meeting
-- MeetingCreated: User created a Teams meeting
-- ChannelMessageSent: Message sent in a Teams channel
-- TeamCreated: New Team created
-- SiteAccessed: SharePoint site accessed
-- MailboxLogin: User logged into mailbox (Exchange)
-- MailItemsAccessed: Mail item accessed (Exchange)
-- MailItemsDeleted: Mail item deleted (Exchange)
-- MailItemsSent: Mail item sent (Exchange)
-- DocumentShared: Document shared (SharePoint, OneDrive)
-- DocumentDownloaded: Document downloaded (SharePoint, OneDrive)
+DEFAULT ACTIVITY TYPES (CURATED TIERS 1-3):
+--------------------------------------------
+TIER 1 - Microsoft 365 Copilot Core (15 activities):
+- CopilotInteraction: User interacted with Copilot
+- CreatePlugin, EnablePlugin, DisableCopilotPlugin, DeletePlugin, UpdatePlugin: Plugin management
+- CreatePromptBook, EnablePromptBook, DisablePromptBook, DeletePromptBook, UpdatePromptBook: Prompt book management
+- ScheduledPromptCreated, ScheduledPromptDeleted, ScheduledPromptExecute: Scheduled prompts
+- UpdateTenantSettings: Copilot tenant configuration changes
+
+TIER 2 - Microsoft Teams Context (7 activities):
+- MessageSent: Messages posted in Teams
+- MessageRead: Messages read in Teams  
+- MeetingDetail: Meeting details and participation
+- MeetingParticipantDetail: Meeting participant information
+- AINotesUpdate: AI-generated notes in chat
+- LiveNotesUpdate: AI notes in live meetings
+- TeamsSessionStarted: Teams sign-in events
+
+TIER 3 - SharePoint/OneDrive Files Context (7 activities):
+- FileAccessed: File access events
+- FileAccessedExtended: Extended file access details
+- FilePreviewed, FileDownloaded, FileUploaded, FileModified: File operations
+- PageViewed: SharePoint page views
+- SearchQueryPerformed: Search queries performed
+
+OPTIONAL TIERS (not in default selection):
+- TIER 4 - Exchange (MailItemsAccessed, Send, MailboxLogin)
+- TIER 5 - Governance (Sensitivity labels, sharing, secure links)
 
 For the full, up-to-date list of all activity types, visit:
 https://learn.microsoft.com/en-us/purview/audit-log-activities
 
 WHAT DOES THE SCRIPT DO?
 ------------------------
-- Checks for and installs the ExchangeOnlineManagement module if needed
-- Connects to Microsoft Purview (the official Microsoft 365 audit log system)
-- Searches for Copilot, AI, and other user-facing activities in your organization, checking every $BlockHours hours in the date range you choose (EndDate is exclusive)
-- Collects all relevant records and organizes them into a simple spreadsheet
-- Saves the results as a CSV file in the location you specify
+- Connects to Microsoft 365 Purview audit log system with your chosen authentication method
+- Validates account permissions by testing audit log access before starting full export
+- Searches for Copilot/AI activities and related user events using time-windowed queries (BlockHours intervals)
+- Downloads matching audit records and processes them into structured CSV format
+- Creates automatic transcript logs (.log files) alongside CSV output for troubleshooting
+- Uses exponential backoff and optional pacing to handle Microsoft 365 throttling gracefully
 
-RESILIENCE & THROTTLING
------------------------
-- Applies exponential backoff with jitter on transient errors (429/503) and supports optional pacing between calls via -PacingMs.
-- Tip: Add a small pacing value (e.g., 150–300ms) in busy tenants to reduce throttling.
+AUTHENTICATION & PERMISSIONS
+----------------------------
+- Requires Exchange Online management permissions and Purview audit log access
+- Script tests permissions with sample Search-UnifiedAuditLog call before proceeding
+- If wrong account or insufficient permissions detected, authentication can be restarted manually
+- Authentication sessions are properly managed and cleaned up on script completion
+
+IMPORTANT: QUERY TIMING BEHAVIOR
+-------------------------------
+- Individual queries may appear to "hang" for 30-120 seconds - this is NORMAL Microsoft 365 behavior
+- Purview processes complex audit queries server-side, which takes time for large datasets
+- Progress shows "[25%] Query 5/20 - ActivityName" then waits while Microsoft processes the request
+- Be patient during apparent hangs - the service is working. True timeouts are rare (10+ minutes)
+- Use PacingMs (500-2000) and smaller BlockHours (2-4) in busy tenants to reduce throttling risk
 
 PROGRESS & MARKERS
 ----------------
@@ -318,77 +345,6 @@ Import-Module ExchangeOnlineManagement -ErrorAction Stop
 function Connect-ToComplianceCenter {
     try {
         Write-Host "Connecting to Microsoft 365 Security & Compliance Center..." -ForegroundColor Cyan
-        # Clean up any stale sessions that can block new web logins
-        try { Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue } catch {}
-        try { Get-PSSession | Where-Object { $_.ConfigurationName -like 'IPPS*' } | Remove-PSSession -ErrorAction SilentlyContinue } catch {}
-
-        function Invoke-WebAuth {
-            param()
-            function Test-Param($cmd, $param) {
-                try {
-                    $c = Get-Command $cmd -ErrorAction SilentlyContinue
-                    if (-not $c) { return $false }
-                    return $c.Parameters.ContainsKey($param)
-                } catch { return $false }
-            }
-            $exoCmd = Get-Command Connect-ExchangeOnline -ErrorAction SilentlyContinue
-            $hasOpenWebPage = $false
-            $hasUseWAM = $false
-            if ($exoCmd) {
-                $hasOpenWebPage = $exoCmd.Parameters.ContainsKey('OpenWebPage')
-                $hasUseWAM = $exoCmd.Parameters.ContainsKey('UseWAM')
-            }
-            $useWamArgs = @{}
-            if ($hasUseWAM) { $useWamArgs['UseWAM'] = $false }
-            $attempts = @()
-            if ($exoCmd) {
-                if ($hasOpenWebPage) { 
-                    $args = @{ ShowBanner = $false; OpenWebPage = $true }
-                    foreach ($k in $useWamArgs.Keys) { $args[$k] = $useWamArgs[$k] }
-                    $attempts += @{ Cmd = 'Connect-ExchangeOnline'; Args = $args; Name = 'EXO OpenWebPage' } 
-                } elseif (Test-Param 'Connect-ExchangeOnline' 'UseWebLogin') {
-                    $args = @{ ShowBanner = $false; UseWebLogin = $true }
-                    foreach ($k in $useWamArgs.Keys) { $args[$k] = $useWamArgs[$k] }
-                    $attempts += @{ Cmd = 'Connect-ExchangeOnline'; Args = $args; Name = 'EXO UseWebLogin' }
-                }
-            }
-            foreach ($a in $attempts) {
-                try {
-                    $cmdName = [string]$a.Cmd
-                    $args = [hashtable]$a.Args
-                    Write-Host ("Opening web authentication (" + $a.Name + ")...") -ForegroundColor Yellow
-                    & $cmdName @args -ErrorAction Stop | Out-Null
-                    return $true
-                } catch {
-                    $msg = $_.Exception.Message
-                    Write-Host ("Attempt '" + $a.Name + "' failed: " + $msg) -ForegroundColor DarkYellow
-                }
-            }
-            return $false
-        }
-
-        function Ensure-ModernEXOModule {
-            # Update only if neither '-OpenWebPage' nor '-UseWebLogin' is available
-            $exo = Get-Command Connect-ExchangeOnline -ErrorAction SilentlyContinue
-            $hasOpenWebPage = $exo -and $exo.Parameters.ContainsKey('OpenWebPage')
-            $hasUseWebLogin = $exo -and $exo.Parameters.ContainsKey('UseWebLogin')
-            if ($hasOpenWebPage -or $hasUseWebLogin) { return }
-            Write-Host "Updating ExchangeOnlineManagement module to enable modern auth switches..." -ForegroundColor Yellow
-            try {
-                # Attempt to unload in-use modules to avoid update locks
-                try { Remove-Module ExchangeOnlineManagement -Force -ErrorAction SilentlyContinue } catch {}
-                try { Remove-Module PackageManagement -Force -ErrorAction SilentlyContinue } catch {}
-                if (Get-Command Update-Module -ErrorAction SilentlyContinue) {
-                    Update-Module ExchangeOnlineManagement -Scope CurrentUser -Force -ErrorAction Stop
-                } else {
-                    Install-Module ExchangeOnlineManagement -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
-                }
-                Import-Module ExchangeOnlineManagement -Force -ErrorAction Stop
-            } catch {
-                Write-Host ("Module update failed: " + $_.Exception.Message) -ForegroundColor DarkYellow
-            }
-        }
-            # Note: Using Connect-IPPSSession for interactive web auth to SCC.
 
         function Show-EXOParamInfo {
             try {
@@ -406,34 +362,34 @@ function Connect-ToComplianceCenter {
         switch ($Auth.ToLower()) {
             'weblogin' {
                 Show-EXOParamInfo
-                # Try authentication in hidden process first with DisableWAM
+                # Smart authentication with automatic fallback based on module version
                 $connected = $false
                 $exoCmd = Get-Command Connect-ExchangeOnline -ErrorAction SilentlyContinue
                 
                 if ($exoCmd) {
-                    try {
-                        Write-Host "Attempting Connect-ExchangeOnline authentication with DisableWAM..." -ForegroundColor Yellow
-                        Connect-ExchangeOnline -ShowBanner:$false -DisableWAM -ErrorAction Stop | Out-Null
-                        $connected = $true
-                        Write-Host "Successfully connected with Connect-ExchangeOnline!" -ForegroundColor Green
-                    } catch {
-                        Write-Host ("Connect-ExchangeOnline with DisableWAM failed: " + $_.Exception.Message) -ForegroundColor DarkYellow
-                        
-                        # If DisableWAM fails, only then launch visible helper for authentication
-                        if (-not $InHelper) { 
-                            Write-Host "Launching visible helper for browser authentication..." -ForegroundColor Yellow
-                            Start-VisibleReexecForAuth -Reason "browser authentication required" 
-                        }
-                        
-                        # In helper process, try standard browser auth
+                    # Check if DisableWAM parameter exists in this version of Exchange module
+                    $hasDisableWAM = $exoCmd.Parameters.ContainsKey('DisableWAM')
+                    
+                    if ($hasDisableWAM) {
                         try {
-                            Write-Host "Attempting browser authentication in visible window..." -ForegroundColor Yellow
-                            Connect-ExchangeOnline -ShowBanner:$false -ErrorAction Stop | Out-Null
+                            Write-Host "Attempting Connect-ExchangeOnline authentication with DisableWAM..." -ForegroundColor Yellow
+                            Connect-ExchangeOnline -ShowBanner:$false -DisableWAM -ErrorAction Stop | Out-Null
                             $connected = $true
-                            Write-Host "Successfully connected with browser authentication!" -ForegroundColor Green
+                            Write-Host "Successfully connected with Connect-ExchangeOnline!" -ForegroundColor Green
                         } catch {
-                            Write-Host ("Browser authentication failed: " + $_.Exception.Message) -ForegroundColor Red
-                            throw "WebLogin authentication failed"
+                            Write-Host ("Connect-ExchangeOnline with DisableWAM failed: " + $_.Exception.Message) -ForegroundColor DarkYellow
+                            throw "DisableWAM authentication failed"
+                        }
+                    } else {
+                        # DisableWAM parameter not available, use UseWebLogin fallback
+                        try {
+                            Write-Host "DisableWAM not available in this Exchange module version, using UseWebLogin fallback..." -ForegroundColor Yellow
+                            Connect-ExchangeOnline -ShowBanner:$false -UseWebLogin -ErrorAction Stop | Out-Null
+                            $connected = $true
+                            Write-Host "Successfully connected with UseWebLogin fallback!" -ForegroundColor Green
+                        } catch {
+                            Write-Host ("UseWebLogin fallback failed: " + $_.Exception.Message) -ForegroundColor DarkYellow
+                            throw "UseWebLogin authentication failed"
                         }
                     }
                 }
@@ -482,13 +438,6 @@ function Connect-ToComplianceCenter {
             }
         }
         Write-Host "Connected successfully!" -ForegroundColor Green
-        
-        # If this is a helper process, exit after successful authentication
-        if ($InHelper) {
-            Write-Host "=== HELPER AUTHENTICATION COMPLETE ===" -ForegroundColor Green
-            Write-Host "Authentication successful. Helper process exiting..." -ForegroundColor Green
-            exit 0
-        }
     } catch {
         Write-Error "Failed to connect: $($_.Exception.Message)"
         exit 1
@@ -683,6 +632,16 @@ function Convert-ToMetricsRecord {
 }
 
 try {
+    # Start transcript logging if LogFile parameter is provided
+    if ($LogFile) {
+        try {
+            Start-Transcript -Path $LogFile -Force
+            Write-Host "Transcript logging started: $LogFile" -ForegroundColor Green
+        } catch {
+            Write-Warning "Failed to start transcript logging to '$LogFile': $($_.Exception.Message)"
+        }
+    }
+    
     Write-Host "=== Copilot Metrics Extraction ===" -ForegroundColor Cyan
     Connect-ToComplianceCenter
 
@@ -855,6 +814,7 @@ try {
     # Finalize
     Write-Host "PA:POST start finalize total=1" -ForegroundColor Yellow
     try { Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue } catch {}
+    try { Disconnect-IPPSSession -Confirm:$false -ErrorAction SilentlyContinue } catch {}
     $postCount = [math]::Min($postCount + 1, $postTotal)
     $percentPost = [math]::Round(($postCount / $postTotal) * 100, 1)
     Write-Host "[$percentPost%] Post $postCount/$postTotal - Finalizing" -ForegroundColor Gray
@@ -868,6 +828,7 @@ try {
     Write-Host "File size: $([math]::Round((Get-Item $OutputFile).Length / 1KB, 2)) KB" -ForegroundColor White
     # Signal complete
     Write-Host "=== Extraction Complete (done) ===" -ForegroundColor Green
+    Write-Host "CSV export completed: $OutputFile" -ForegroundColor Cyan
     Write-Host "PA:DONE"
     exit 0
 } catch {
@@ -876,7 +837,18 @@ try {
 } finally {
     try {
         Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue
+        Disconnect-IPPSSession -Confirm:$false -ErrorAction SilentlyContinue
     } catch {
         # Ignore disconnection errors
+    }
+    
+    # Stop transcript logging if it was started
+    if ($LogFile) {
+        try {
+            Stop-Transcript
+            Write-Host "Transcript log saved: $LogFile" -ForegroundColor Green
+        } catch {
+            # Transcript might not be running, ignore errors
+        }
     }
 }
