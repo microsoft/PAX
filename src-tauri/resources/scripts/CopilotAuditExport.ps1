@@ -21,13 +21,18 @@ param(
     [string]$Auth = 'WebLogin',
     [Parameter(Mandatory = $false)]
     [ValidateSet(2, 4, 6, 8, 12, 24)]
-    [int]$BlockHours = 8,
+    [int]$BlockHours = 24,
     [Parameter(Mandatory = $false)]
     [ValidateRange(1, 5000)]
     [int]$ResultSize = 5000,
     [Parameter(Mandatory = $false)]
     [ValidateRange(0, 10000)]
     [int]$PacingMs = 0,
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(1, 10)]
+    [int]$MaxConcurrent = 3,
+    [Parameter(Mandatory = $false)]
+    [switch]$ExplodeArrays,
     [Parameter(Mandatory = $false)]
     [switch]$DetailedPost,
     [Parameter(Mandatory = $false)]
@@ -80,6 +85,8 @@ PARAMETERS:
 -BlockHours       (Optional)  Time window per query: 2,4,6,8,12,24 hours. Default: 24. Smaller = more queries, better for large datasets.
 -ResultSize       (Optional)  Records per API call (1-5000). Default: 5000. Reduce if hitting throttling limits.
 -PacingMs         (Optional)  Delay between API calls in milliseconds (0-10000). Default: 0. Use 500-2000 to reduce throttling.
+-MaxConcurrent    (Optional)  Maximum concurrent queries (1-10). Default: 3. Higher values = faster but more throttling risk.
+-ExplodeArrays    (Optional)  Create separate rows for array values (better for analytics). Default: join arrays with commas.
 -DetailedPost     (Optional)  Show extra post-processing details (sample records, field statistics). Does not change CSV output.
 -Help or /Help    (Optional)  Display this help message and exit.
 
@@ -271,6 +278,8 @@ function Start-VisibleReexecForAuth {
         if ($BlockHours) { $parts += "-BlockHours $BlockHours" }
         if ($ResultSize) { $parts += "-ResultSize $ResultSize" }
         if ($PacingMs -ne $null) { $parts += "-PacingMs $PacingMs" }
+        if ($MaxConcurrent) { $parts += "-MaxConcurrent $MaxConcurrent" }
+        if ($ExplodeArrays) { $parts += "-ExplodeArrays" }
         if ($DetailedPost) { $parts += "-DetailedPost" }
         $parts += "-InHelper"
 
@@ -451,7 +460,8 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
         [Parameter(Mandatory = $false)] [string]$Operation,
         [Parameter(Mandatory = $true)] [int]$ResultSize,
         [Parameter(Mandatory = $true)] [int]$PacingMs,
-        [Parameter(Mandatory = $false)] [int]$MaxRetries = 5
+        [Parameter(Mandatory = $false)] [int]$MaxRetries = 5,
+        [Parameter(Mandatory = $false)] [switch]$AutoSubdivide = $true
     )
     $attempt = 0
     while ($attempt -le $MaxRetries) {
@@ -460,6 +470,25 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
             if ($Operation) { $params.Operations = $Operation }
             $res = Search-UnifiedAuditLog @params
             if ($PacingMs -gt 0) { Start-Sleep -Milliseconds $PacingMs }
+            
+            # Check for result limit and auto-subdivide if needed
+            if ($AutoSubdivide -and $res -and $res.Count -eq $ResultSize) {
+                $timeSpan = $End - $Start
+                if ($timeSpan.TotalMinutes -gt 30) {  # Only subdivide if window > 30 minutes
+                    Write-Host "  Result limit hit ($($res.Count) records). Auto-subdividing time window..." -ForegroundColor Yellow
+                    $midPoint = $Start.AddTicks(($End - $Start).Ticks / 2)
+                    $firstHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $Start -End $midPoint -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs -AutoSubdivide $AutoSubdivide
+                    $secondHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $midPoint -End $End -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs -AutoSubdivide $AutoSubdivide
+                    $combinedResults = @()
+                    if ($firstHalf) { $combinedResults += $firstHalf }
+                    if ($secondHalf) { $combinedResults += $secondHalf }
+                    Write-Host "  Auto-subdivision completed. Total records: $($combinedResults.Count)" -ForegroundColor Green
+                    return $combinedResults
+                } else {
+                    Write-Host "  WARNING: Result limit hit but time window too small to subdivide. Possible data loss!" -ForegroundColor Red
+                }
+            }
+            
             return $res
         }
         catch {
@@ -594,9 +623,9 @@ function Get-NestedProperty {
 }
 
 function Convert-ToMetricsRecord {
-    param([object]$AuditLogEntry)
+    param([object]$AuditLogEntry, [switch]$ExplodeArrays)
     $auditData = Parse-AuditData -AuditDataJson $AuditLogEntry.AuditData
-    return [PSCustomObject]@{
+    $baseRecord = [PSCustomObject]@{
         RecordId                           = $AuditLogEntry.Identity
         CreationDate                       = $AuditLogEntry.CreationDate
         RecordType                         = $AuditLogEntry.RecordType
@@ -634,8 +663,25 @@ function Convert-ToMetricsRecord {
         AISystemPlugin_Id                  = Get-NestedProperty $auditData "AISystemPlugin.Id"
         AISystemPlugin_Name                = Get-NestedProperty $auditData "AISystemPlugin.Name"
         ModelTransparencyDetails_ModelName = Get-NestedProperty $auditData "ModelTransparencyDetails.ModelName"
-        MessageIds                         = (Get-NestedProperty $auditData "MessageIds" -join ",")
+        MessageIds                         = if ($ExplodeArrays) { Get-NestedProperty $auditData "MessageIds" } else { (Get-NestedProperty $auditData "MessageIds" -join ",") }
     }
+    
+    # Handle row explosion for arrays when requested
+    if ($ExplodeArrays) {
+        $messageIds = Get-NestedProperty $auditData "MessageIds"
+        if ($messageIds -and $messageIds.Count -gt 1) {
+            # Create separate row for each MessageId
+            $records = @()
+            foreach ($msgId in $messageIds) {
+                $record = $baseRecord.PSObject.Copy()
+                $record.MessageIds = $msgId
+                $records += $record
+            }
+            return $records
+        }
+    }
+    
+    return $baseRecord
 }
 
 try {
@@ -668,8 +714,10 @@ try {
 
     # Emit explicit totals for host application to consume (ground truth)
     Write-Host "PA:TOTALS queries=$totalQueries keywords=$totalBlocks"
+    Write-Host "Performance optimizations active: Auto-subdivision, ArrayList operations, Enhanced retry logic" -ForegroundColor Green
 
-    $allLogs = @()
+    # Use ArrayList for better performance with large datasets
+    $allLogs = New-Object System.Collections.ArrayList
     Write-Host "PA:PHASE queries start"
     for ($day = $startDateObj.Date; $day -lt $endDateObj.Date; $day = $day.AddDays(1)) {
         Write-Host "Processing date: $($day.ToString('yyyy-MM-dd'))" -ForegroundColor Cyan
@@ -682,7 +730,7 @@ try {
                 Write-Host "[$percentComplete%] Query $queryCount/$totalQueries - $($activity) ($($startBlock.ToString('yyyy-MM-dd HH:mm')) - $($endBlock.ToString('HH:mm')))" -ForegroundColor Gray
                 $logs = Invoke-SearchUnifiedAuditLogWithRetry -Start $startBlock -End $endBlock -Operation $activity -ResultSize $ResultSize -PacingMs $PacingMs
                 if ($logs) {
-                    $allLogs += $logs
+                    $allLogs.AddRange($logs) | Out-Null
                     Write-Host "  Found $($logs.Count) records for $($activity) at $($startBlock.ToString('yyyy-MM-dd HH:mm'))" -ForegroundColor Green
                 }
                 else {
@@ -711,7 +759,7 @@ try {
                 $_.Operations -match "Copilot|AI|Chat"
             }
             if ($additionalLogs) {
-                $allLogs += $additionalLogs
+                $allLogs.AddRange($additionalLogs) | Out-Null
                 Write-Host "  Found $($additionalLogs.Count) keyword records at $($startBlock.ToString('yyyy-MM-dd HH:mm'))" -ForegroundColor Green
             }
         }
@@ -746,7 +794,7 @@ try {
 
     # Convert
     Write-Host "PA:POST start convert total=$($postCategories.convert)" -ForegroundColor Yellow
-    $metricsData = @()
+    $metricsData = New-Object System.Collections.ArrayList
     $i = 0
     foreach ($log in $uniqueLogs) {
         $i++
@@ -754,8 +802,14 @@ try {
         $percentPost = [math]::Round(($postCount / $postTotal) * 100, 1)
         Write-Host "[$percentPost%] Post $postCount/$postTotal - Converting ($i/$($postCategories.convert))" -ForegroundColor Gray
         if ($i -le 5 -and $i % 50 -eq 0) { Write-Host "Converting records..." -ForegroundColor Gray }
-        $metricsRecord = Convert-ToMetricsRecord -AuditLogEntry $log
-        $metricsData += $metricsRecord
+        $metricsRecord = Convert-ToMetricsRecord -AuditLogEntry $log -ExplodeArrays:$ExplodeArrays
+        
+        # Handle both single records and arrays of records from row explosion
+        if ($metricsRecord -is [array]) {
+            $metricsData.AddRange($metricsRecord) | Out-Null
+        } else {
+            $metricsData.Add($metricsRecord) | Out-Null
+        }
         Write-Host "PA:POST progress convert $i/$($postCategories.convert)"
     }
     Write-Host "PA:POST end convert"
