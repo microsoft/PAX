@@ -7,35 +7,35 @@ param(
     [string]$EndDate,
     [Parameter(Mandatory = $false)]
     [string[]]$ActivityTypes = @(
-        "CreatePromptBook","CreatePlugin","ScheduledPromptCreated","DeletePlugin","DeletePromptBook","ScheduledPromptDeleted",
-        "DisableCopilotPlugin","DisablePromptBook","EnablePlugin","EnablePromptBook","ScheduledPromptExecute","CopilotInteraction",
-        "UpdatePlugin","UpdatePromptBook","UpdateTenantSettings","MeetingDetail","AINotesUpdate","LiveNotesUpdate",
-        "MeetingParticipantDetail","MessageSent","MessageRead","TeamsSessionStarted","FileAccessed","FileAccessedExtended",
-        "FileDownloaded","FileModified","SearchQueryPerformed","FilePreviewed","FileUploaded","PageViewed",
-        "MailItemsAccessed","MailboxLogin"
-),
-[Parameter(Mandatory = $false)]
-[string]$OutputFile = "$([System.IO.Path]::GetTempPath())Purview_Export_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv",
-[Parameter(Mandatory = $false)]
-[ValidateSet('WebLogin', 'DeviceCode', 'Credential', 'Silent')]
-[string]$Auth = 'WebLogin',
-[Parameter(Mandatory = $false)]
-[ValidateSet(2, 4, 6, 8, 12, 24)]
-[int]$BlockHours = 8,
-[Parameter(Mandatory = $false)]
-[ValidateRange(1, 5000)]
-[int]$ResultSize = 5000,
-[Parameter(Mandatory = $false)]
-[ValidateRange(0, 10000)]
-[int]$PacingMs = 0,
-[Parameter(Mandatory = $false)]
-[switch]$DetailedPost,
-[Parameter(Mandatory = $false)]
-[string]$LogFile,
-[Parameter(Mandatory = $false)]
-[switch]$Help,
-[Parameter(Mandatory = $false)]
-[switch]$InHelper
+        "CreatePromptBook", "CreatePlugin", "ScheduledPromptCreated", "DeletePlugin", "DeletePromptBook", "ScheduledPromptDeleted",
+        "DisableCopilotPlugin", "DisablePromptBook", "EnablePlugin", "EnablePromptBook", "ScheduledPromptExecute", "CopilotInteraction",
+        "UpdatePlugin", "UpdatePromptBook", "UpdateTenantSettings", "MeetingDetail", "AINotesUpdate", "LiveNotesUpdate",
+        "MeetingParticipantDetail", "MessageSent", "MessageRead", "TeamsSessionStarted", "FileAccessed", "FileAccessedExtended",
+        "FileDownloaded", "FileModified", "SearchQueryPerformed", "FilePreviewed", "FileUploaded", "PageViewed",
+        "MailItemsAccessed", "MailboxLogin"
+    ),
+    [Parameter(Mandatory = $false)]
+    [string]$OutputFile = "$([System.IO.Path]::GetTempPath())Purview_Export_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv",
+    [Parameter(Mandatory = $false)]
+    [ValidateSet('WebLogin', 'DeviceCode', 'Credential', 'Silent')]
+    [string]$Auth = 'WebLogin',
+    [Parameter(Mandatory = $false)]
+    [ValidateSet(2, 4, 6, 8, 12, 24)]
+    [int]$BlockHours = 8,
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(1, 5000)]
+    [int]$ResultSize = 5000,
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(0, 10000)]
+    [int]$PacingMs = 0,
+    [Parameter(Mandatory = $false)]
+    [switch]$DetailedPost,
+    [Parameter(Mandatory = $false)]
+    [string]$LogFile,
+    [Parameter(Mandatory = $false)]
+    [switch]$Help,
+    [Parameter(Mandatory = $false)]
+    [switch]$InHelper
 )
 
 function Show-Help {
@@ -198,7 +198,8 @@ if ($InHelper) {
     if ($ActivityTypes -and $ActivityTypes -is [string] -and $ActivityTypes.Contains(',')) {
         $ActivityTypes = $ActivityTypes.Split(',') | ForEach-Object { $_.Trim() }
         Write-Host "Converted ActivityTypes to array, count: $($ActivityTypes.Count)" -ForegroundColor Magenta
-    } elseif ($ActivityTypes -and $ActivityTypes.Count -eq 1 -and $ActivityTypes[0].Contains(',')) {
+    }
+    elseif ($ActivityTypes -and $ActivityTypes.Count -eq 1 -and $ActivityTypes[0].Contains(',')) {
         # Handle case where we get a single-element array containing comma-separated values
         $ActivityTypes = $ActivityTypes[0].Split(',') | ForEach-Object { $_.Trim() }
         Write-Host "Converted single-element array ActivityTypes to proper array, count: $($ActivityTypes.Count)" -ForegroundColor Magenta
@@ -231,14 +232,16 @@ function Start-VisibleReexecForAuth {
         if ($StartDate) { 
             if ($StartDate.StartsWith("'") -and $StartDate.EndsWith("'")) {
                 $parts += "-StartDate " + $StartDate
-            } else {
+            }
+            else {
                 $parts += "-StartDate '" + ($StartDate -replace "'", "''") + "'"
             }
         }
         if ($EndDate) { 
             if ($EndDate.StartsWith("'") -and $EndDate.EndsWith("'")) {
                 $parts += "-EndDate " + $EndDate
-            } else {
+            }
+            else {
                 $parts += "-EndDate '" + ($EndDate -replace "'", "''") + "'"
             }
         }
@@ -254,13 +257,15 @@ function Start-VisibleReexecForAuth {
         if ($OutputFile) { 
             if ($OutputFile.StartsWith("'") -and $OutputFile.EndsWith("'")) {
                 $parts += "-OutputFile " + $OutputFile
-            } else {
+            }
+            else {
                 $parts += "-OutputFile '" + ($OutputFile -replace "'", "''") + "'"
             }
         }
         if ($OverrideAuth) {
             $parts += "-Auth " + $OverrideAuth
-        } elseif ($Auth) {
+        }
+        elseif ($Auth) {
             $parts += "-Auth " + $Auth
         }
         if ($BlockHours) { $parts += "-BlockHours $BlockHours" }
@@ -289,7 +294,8 @@ function Start-VisibleReexecForAuth {
         
         Write-Host ("Visible host exited with code: " + $p.ExitCode) -ForegroundColor Yellow
         exit $p.ExitCode
-    } catch {
+    }
+    catch {
         Write-Host ("Visible re-launch failed: " + $_.Exception.Message) -ForegroundColor Red
         throw
     }
@@ -302,7 +308,8 @@ function Is-VisibleHost {
         if ($env:WT_SESSION) { return $true } # Windows Terminal
         if ($env:TERM_PROGRAM -eq 'vscode') { return $true } # VS Code integrated terminal
         try { $null = $Host.UI.RawUI.WindowTitle; return $true } catch {}
-    } catch {}
+    }
+    catch {}
     return $false
 }
 
@@ -317,7 +324,8 @@ if (-not (Get-Module -ListAvailable -Name ExchangeOnlineManagement)) {
         Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted -ErrorAction SilentlyContinue
         Install-Module -Name ExchangeOnlineManagement -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
         Write-Host "ExchangeOnlineManagement installed." -ForegroundColor Green
-    } catch {
+    }
+    catch {
         Write-Error "Failed to install ExchangeOnlineManagement for CurrentUser: $($_.Exception.Message)"
         Write-Host "You may preinstall the module manually with:" -ForegroundColor Yellow
         Write-Host "  Install-Module ExchangeOnlineManagement -Scope CurrentUser" -ForegroundColor Yellow
@@ -340,7 +348,8 @@ function Connect-ToComplianceCenter {
                 Write-Host ("Connect-ExchangeOnline params: " + $params) -ForegroundColor DarkCyan
                 $ipps = Get-Command Connect-IPPSSession -ErrorAction SilentlyContinue
                 if ($ipps) { Write-Host ("Connect-IPPSSession params: " + (($ipps.Parameters.Keys | Sort-Object) -join ', ')) -ForegroundColor DarkCyan }
-            } catch {}
+            }
+            catch {}
         }
 
         switch ($Auth.ToLower()) {
@@ -360,18 +369,21 @@ function Connect-ToComplianceCenter {
                             Connect-ExchangeOnline -ShowBanner:$false -DisableWAM -ErrorAction Stop | Out-Null
                             $connected = $true
                             Write-Host "Successfully connected with Connect-ExchangeOnline!" -ForegroundColor Green
-                        } catch {
+                        }
+                        catch {
                             Write-Host ("Connect-ExchangeOnline with DisableWAM failed: " + $_.Exception.Message) -ForegroundColor DarkYellow
                             throw "DisableWAM authentication failed"
                         }
-                    } else {
+                    }
+                    else {
                         # DisableWAM parameter not available, use UseWebLogin fallback
                         try {
                             Write-Host "DisableWAM not available in this Exchange module version, using UseWebLogin fallback..." -ForegroundColor Yellow
                             Connect-ExchangeOnline -ShowBanner:$false -UseWebLogin -ErrorAction Stop | Out-Null
                             $connected = $true
                             Write-Host "Successfully connected with UseWebLogin fallback!" -ForegroundColor Green
-                        } catch {
+                        }
+                        catch {
                             Write-Host ("UseWebLogin fallback failed: " + $_.Exception.Message) -ForegroundColor DarkYellow
                             throw "UseWebLogin authentication failed"
                         }
@@ -399,7 +411,8 @@ function Connect-ToComplianceCenter {
                     $args = @{ ShowBanner = $false }
                     if ($exoCmd -and $exoCmd.Parameters.ContainsKey('UseWAM')) { $args['UseWAM'] = $false }
                     & Connect-ExchangeOnline @args -ErrorAction Stop
-                } catch {
+                }
+                catch {
                     $silentOk = $false
                     Write-Host "Silent sign-in failed; switching to browser-based sign-in..." -ForegroundColor Yellow
                 }
@@ -411,10 +424,12 @@ function Connect-ToComplianceCenter {
                         $hasWAM = $exoCmd -and $exoCmd.Parameters.ContainsKey('UseWAM')
                         if ($hasWAM) {
                             Connect-ExchangeOnline -ShowBanner:$false -OpenWebPage -UseWAM:$false -ErrorAction Stop | Out-Null
-                        } else {
+                        }
+                        else {
                             Connect-ExchangeOnline -ShowBanner:$false -OpenWebPage -ErrorAction Stop | Out-Null
                         }
-                    } catch {
+                    }
+                    catch {
                         Write-Host ("-OpenWebPage failed, retrying with standard authentication: " + $_.Exception.Message) -ForegroundColor DarkYellow
                         Connect-ExchangeOnline -ShowBanner:$false -ErrorAction Stop | Out-Null
                     }
@@ -422,7 +437,8 @@ function Connect-ToComplianceCenter {
             }
         }
         Write-Host "Connected successfully!" -ForegroundColor Green
-    } catch {
+    }
+    catch {
         Write-Error "Failed to connect: $($_.Exception.Message)"
         exit 1
     }
@@ -445,7 +461,8 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
             $res = Search-UnifiedAuditLog @params
             if ($PacingMs -gt 0) { Start-Sleep -Milliseconds $PacingMs }
             return $res
-        } catch {
+        }
+        catch {
             $msg = $_.Exception.Message
             $status = $null
             try { $status = $_.Exception.Response.StatusCode.Value__ } catch {}
@@ -471,7 +488,8 @@ function Parse-AuditData {
     param([string]$AuditDataJson)
     try {
         return $AuditDataJson | ConvertFrom-Json
-    } catch {
+    }
+    catch {
         return $null
     }
 }
@@ -487,7 +505,8 @@ function Get-NestedProperty {
     foreach ($part in $parts) {
         if ($current -and $current.PSObject.Properties[$part]) {
             $current = $current.$part
-        } else {
+        }
+        else {
             return $null
         }
     }
@@ -545,11 +564,14 @@ function Get-SyntheticObjectId {
     $timestamp = [DateTimeOffset]::Now.ToUnixTimeSeconds().ToString("x8")
     if ($Operation -match "File|Document") {
         return "https://tenant.sharepoint.com/sites/team/Shared Documents/file_$timestamp.docx"
-    } elseif ($Operation -match "Mail|Message" -and $RecordType -match "Exchange") {
+    }
+    elseif ($Operation -match "Mail|Message" -and $RecordType -match "Exchange") {
         return "<message_$($timestamp)@tenant.onmicrosoft.com>"
-    } elseif ($Operation -match "Team|Meeting" -or $RecordType -match "Teams") {
+    }
+    elseif ($Operation -match "Team|Meeting" -or $RecordType -match "Teams") {
         return "19:meeting_$($timestamp)@thread.v2"
-    } elseif ($RecordType -match "Copilot|261") {
+    }
+    elseif ($RecordType -match "Copilot|261") {
         return "copilot-conversation-$timestamp"
     }
     return "object-$timestamp"
@@ -563,7 +585,8 @@ function Get-NestedProperty {
     foreach ($prop in $PropertyPath.Split('.')) {
         if ($current -and $current.PSObject.Properties[$prop]) {
             $current = $current.$prop
-        } else {
+        }
+        else {
             return $Default
         }
     }
@@ -621,7 +644,8 @@ try {
         try {
             Start-Transcript -Path $LogFile -Force
             Write-Host "Transcript logging started: $LogFile" -ForegroundColor Green
-        } catch {
+        }
+        catch {
             Write-Warning "Failed to start transcript logging to '$LogFile': $($_.Exception.Message)"
         }
     }
@@ -660,7 +684,8 @@ try {
                 if ($logs) {
                     $allLogs += $logs
                     Write-Host "  Found $($logs.Count) records for $($activity) at $($startBlock.ToString('yyyy-MM-dd HH:mm'))" -ForegroundColor Green
-                } else {
+                }
+                else {
                     Write-Host "  No records found for $($activity) ($($startBlock.ToString('yyyy-MM-dd HH:mm'))-$($endBlock.ToString('HH:mm')))" -ForegroundColor Yellow
                 }
             }
@@ -758,7 +783,8 @@ try {
             Write-Host "Detailed sample (first entry):" -ForegroundColor Cyan
             $first | Format-List | Out-String | Write-Host
         }
-    } else {
+    }
+    else {
         Write-Host "No sample available (no records)" -ForegroundColor Yellow
     }
     $postCount = [math]::Min($postCount + 1, $postTotal)
@@ -783,10 +809,12 @@ try {
             $fieldStats.GetEnumerator() | Sort-Object Value -Descending | ForEach-Object {
                 Write-Host " $($_.Key): $($_.Value)% populated" -ForegroundColor Gray
             }
-        } else {
+        }
+        else {
             Write-Host "Computed population stats across $($props.Count) fields" -ForegroundColor Cyan
         }
-    } else {
+    }
+    else {
         Write-Host "No stats (no records)" -ForegroundColor Yellow
     }
     $postCount = [math]::Min($postCount + 1, $postTotal)
@@ -815,14 +843,17 @@ try {
     Write-Host "CSV export completed: $OutputFile" -ForegroundColor Cyan
     Write-Host "PA:DONE"
     exit 0
-} catch {
+}
+catch {
     Write-Error "Script failed: $($_.Exception.Message)"
     Write-Error $_.ScriptStackTrace
-} finally {
+}
+finally {
     try {
         Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue
         Disconnect-IPPSSession -Confirm:$false -ErrorAction SilentlyContinue
-    } catch {
+    }
+    catch {
         # Ignore disconnection errors
     }
     
@@ -831,7 +862,8 @@ try {
         try {
             Stop-Transcript
             Write-Host "Transcript log saved: $LogFile" -ForegroundColor Green
-        } catch {
+        }
+        catch {
             # Transcript might not be running, ignore errors
         }
     }
