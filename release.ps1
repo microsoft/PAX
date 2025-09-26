@@ -102,7 +102,8 @@ function Step-Version {
             $minor++
             $patch = 0
         }
-        default { # patch
+        default {
+            # patch
             $patch++
         }
     }
@@ -124,7 +125,8 @@ function Update-JsonVersion {
         if ($content.PSObject.Properties['version']) {
             # Direct version property (package.json)
             $content.version = $NewVersion
-        } elseif ($content.PSObject.Properties['package']) {
+        }
+        elseif ($content.PSObject.Properties['package']) {
             # Nested under package (tauri.conf.json)
             $content.package.version = $NewVersion
             
@@ -138,7 +140,8 @@ function Update-JsonVersion {
                 $content.tauri.windows[0].title = $newTitle
                 Write-Status "Updated window title to: $newTitle"
             }
-        } else {
+        }
+        else {
             throw "No version property found in $FilePath"
         }
         
@@ -198,7 +201,8 @@ function New-CommitAndTag {
     # Create commit message - use custom message if provided, otherwise auto-generate
     $commitMsg = if ($CustomMessage) {
         "v${NewVersion}: $CustomMessage"
-    } else {
+    }
+    else {
         switch ($BumpType) {
             "major" { "v${NewVersion}: Major version release" }
             "minor" { "v${NewVersion}: Minor version release" }
@@ -279,7 +283,8 @@ function Main {
     # Prepare commit message
     $finalCommitMsg = if ($Message) {
         "v${newVersion}: $Message"
-    } else {
+    }
+    else {
         switch ($bumpType) {
             "major" { "v${newVersion}: Major version release" }
             "minor" { "v${newVersion}: Minor version release" }
