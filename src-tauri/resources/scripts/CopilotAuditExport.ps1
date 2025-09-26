@@ -8,7 +8,18 @@ param(
     [Parameter(Mandatory = $false)]
     [string[]]$ActivityTypes = @(
         "CopilotChatAccessed",                # User accessed Copilot chat
-        "CopilotPromptUsed",                  # User submitted a prompt to Copilot
+        "CopilotPromptUsed",                  # User subm                    } catch {
+                        # DisableWAM parameter not available, use standard authentication fallback
+                        try {
+                            Write-Host "DisableWAM not available in this Exchange module version, using standard authentication fallback..." -ForegroundColor Yellow
+                            Connect-ExchangeOnline -ShowBanner:$false -ErrorAction Stop | Out-Null
+                            $ConnectSuccessful = $true
+                            Write-Host "Successfully connected with standard authentication fallback!" -ForegroundColor Green
+                        } catch {
+                            Write-Host ("Standard authentication fallback failed: " + $_.Exception.Message) -ForegroundColor DarkYellow
+                            throw "Authentication failed"
+                        }
+                    }pt to Copilot
         "CopilotQuerySentToBing",             # Copilot sent a query to Bing
         "CopilotInteractionSummaryViewed",    # User viewed Copilot interaction summary
         "MessageSent",                        # Message sent (Teams, Exchange)
@@ -431,8 +442,8 @@ function Connect-ToComplianceCenter {
                             Connect-ExchangeOnline -ShowBanner:$false -OpenWebPage -ErrorAction Stop | Out-Null
                         }
                     } catch {
-                        Write-Host ("-OpenWebPage failed, retrying with -UseWebLogin: " + $_.Exception.Message) -ForegroundColor DarkYellow
-                        Connect-ExchangeOnline -ShowBanner:$false -UseWebLogin -ErrorAction Stop | Out-Null
+                        Write-Host ("-OpenWebPage failed, retrying with standard authentication: " + $_.Exception.Message) -ForegroundColor DarkYellow
+                        Connect-ExchangeOnline -ShowBanner:$false -ErrorAction Stop | Out-Null
                     }
                 }
             }
