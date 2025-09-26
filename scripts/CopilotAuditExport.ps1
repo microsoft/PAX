@@ -7,40 +7,12 @@ param(
     [string]$EndDate,
     [Parameter(Mandatory = $false)]
     [string[]]$ActivityTypes = @(
-        "CopilotChatAccessed",                # User accessed Copilot chat
-        "CopilotPromptUsed",                  # User subm                    } catch {
-        # DisableWAM parameter not available, use standard authentication fallback
-        try {
-            Write-Host "DisableWAM not available in this Exchange module version, using standard authentication fallback..." -ForegroundColor Yellow
-            Connect-ExchangeOnline -ShowBanner:$false -ErrorAction Stop | Out-Null
-            $ConnectSuccessful = $true
-            Write-Host "Successfully connected with standard authentication fallback!" -ForegroundColor Green
-        }
-        catch {
-            Write-Host ("Standard authentication fallback failed: " + $_.Exception.Message) -ForegroundColor DarkYellow
-            throw "Authentication failed"
-        }
-    }pt to Copilot
-    "CopilotQuerySentToBing",             # Copilot sent a query to Bing
-    "CopilotInteractionSummaryViewed",    # User viewed Copilot interaction summary
-    "MessageSent",                        # Message sent (Teams, Exchange)
-    "MessageRead",                        # Message read (Teams, Exchange)
-    "FileAccessed",                       # File accessed (SharePoint, OneDrive)
-    "FileModified",                       # File modified (SharePoint, OneDrive)
-    "FileDeleted",                        # File deleted (SharePoint, OneDrive)
-    "UserLoggedIn",                       # User signed in (all products)
-    "MeetingJoined",                      # User joined a Teams meeting
-    "MeetingCreated",                     # User created a Teams meeting
-    "ChannelMessageSent",                 # Message sent in a Teams channel
-    "TeamCreated",                        # New Team created
-    "SiteAccessed",                       # SharePoint site accessed
-    "MailboxLogin",                       # User logged into mailbox (Exchange)
-    "MailItemsAccessed",                  # Mail item accessed (Exchange)
-    "MailItemsDeleted",                   # Mail item deleted (Exchange)
-    "MailItemsSent",                      # Mail item sent (Exchange)
-    "DocumentShared",                     # Document shared (SharePoint, OneDrive)
-    "DocumentDownloaded"                  # Document downloaded (SharePoint, OneDrive)
-    # ...add more as needed
+        "CreatePromptBook","CreatePlugin","ScheduledPromptCreated","DeletePlugin","DeletePromptBook","ScheduledPromptDeleted",
+        "DisableCopilotPlugin","DisablePromptBook","EnablePlugin","EnablePromptBook","ScheduledPromptExecute","CopilotInteraction",
+        "UpdatePlugin","UpdatePromptBook","UpdateTenantSettings","MeetingDetail","AINotesUpdate","LiveNotesUpdate",
+        "MeetingParticipantDetail","MessageSent","MessageRead","TeamsSessionStarted","FileAccessed","FileAccessedExtended",
+        "FileDownloaded","FileModified","SearchQueryPerformed","FilePreviewed","FileUploaded","PageViewed",
+        "MailItemsAccessed","MailboxLogin"
 ),
 [Parameter(Mandatory = $false)]
 [string]$OutputFile = "$([System.IO.Path]::GetTempPath())Purview_Export_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv",
