@@ -21,7 +21,7 @@ param(
     [string]$Auth = 'WebLogin',
     [Parameter(Mandatory = $false)]
     [ValidateSet(2, 4, 6, 8, 12, 24)]
-    [int]$BlockHours = 8,
+    [int]$BlockHours = 24,
     [Parameter(Mandatory = $false)]
     [ValidateRange(1, 5000)]
     [int]$ResultSize = 5000,
@@ -82,7 +82,7 @@ PARAMETERS:
                                • Credential: Username/password prompt; may fail with MFA/CA policies; not recommended
                                • Silent: Reuses existing cached session if available; fails otherwise
                                Note: Script validates account permissions before starting the full export.
--BlockHours       (Optional)  Time window per query: 2,4,6,8,12,24 hours. Default: 8 (enterprise-safe). Auto-adapts if hitting limits.
+-BlockHours       (Optional)  Time window per query: 2,4,6,8,12,24 hours. Default: 24 (optimal efficiency). Auto-subdivides when hitting limits.
 -ResultSize       (Optional)  Records per API call (1-5000). Default: 5000. Reduce if hitting throttling limits.
 -PacingMs         (Optional)  Delay between API calls in milliseconds (0-10000). Default: 0. Use 500-2000 to reduce throttling.
 -MaxConcurrent    (Optional)  Maximum concurrent queries (1-10). Default: 3. Higher values = faster but more throttling risk.
@@ -708,9 +708,9 @@ try {
     $endDateObj = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null)
     Write-Host "Searching for Copilot audit logs from $($startDateObj.ToString('yyyy-MM-dd')) to $($endDateObj.ToString('yyyy-MM-dd'))..." -ForegroundColor Yellow
 
-    # Adaptive block sizing - start with user preference but adapt based on data density
+    # Adaptive block sizing - start aggressive (24h), auto-subdivide when needed for enterprise safety
     $blockHours = [int]$BlockHours
-    if ($blockHours -lt 1) { $blockHours = 8 }
+    if ($blockHours -lt 1) { $blockHours = 24 }
     $adaptiveBlockSizing = $true
     $originalBlockHours = $blockHours
     
@@ -720,9 +720,9 @@ try {
     
     # Track data density for adaptive sizing
     $dataDensityStats = @{
-        TotalQueries = 0
+        TotalQueries       = 0
         QueriesWithResults = 0
-        QueriesAtLimit = 0
+        QueriesAtLimit     = 0
         AvgResultsPerQuery = 0
     }
     # Intelligent activity batching for better performance
@@ -735,7 +735,7 @@ try {
     
     # High-volume activities: query individually to prevent result limits
     foreach ($activity in ($ActivityTypes | Where-Object { $_ -in $highVolumeActivities })) {
-        $queryGroups += ,@($activity)
+        $queryGroups += , @($activity)
     }
     
     # Medium-volume activities: batch 2-3 together
@@ -743,14 +743,14 @@ try {
     for ($i = 0; $i -lt $mediumActivitiesToProcess.Count; $i += 2) {
         $batchEnd = [math]::Min($i + 1, $mediumActivitiesToProcess.Count - 1)
         $batch = $mediumActivitiesToProcess[$i..$batchEnd]
-        $queryGroups += ,$batch
+        $queryGroups += , $batch
     }
     
     # Low-volume activities: batch 4-6 together for efficiency
     for ($i = 0; $i -lt $lowVolumeActivities.Count; $i += 5) {
         $batchEnd = [math]::Min($i + 4, $lowVolumeActivities.Count - 1)
         $batch = $lowVolumeActivities[$i..$batchEnd]
-        if ($batch.Count -gt 0) { $queryGroups += ,$batch }
+        if ($batch.Count -gt 0) { $queryGroups += , $batch }
     }
     
     $totalQueries = $totalBlocks * $queryGroups.Count
@@ -800,7 +800,8 @@ try {
                                     $params = @{ StartDate = $Start; EndDate = $End; ResultSize = $ResultSize; ErrorAction = 'Stop' }
                                     if ($Operation) { $params.Operations = $Operation }
                                     return Search-UnifiedAuditLog @params
-                                } catch { return @() }
+                                }
+                                catch { return @() }
                             }
                             return Invoke-SearchUnifiedAuditLogWithRetry -Start $Start -End $End -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs
                         }
@@ -817,7 +818,8 @@ try {
                         if ($logs) { $groupLogs += $logs }
                         Remove-Job $job
                     }
-                } else {
+                }
+                else {
                     # Sequential processing (default/fallback)
                     foreach ($activity in $activityGroup) {
                         $logs = Invoke-SearchUnifiedAuditLogWithRetry -Start $startBlock -End $endBlock -Operation $activity -ResultSize $ResultSize -PacingMs $PacingMs
