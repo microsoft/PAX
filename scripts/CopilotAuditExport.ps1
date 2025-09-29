@@ -683,6 +683,9 @@ function Convert-ToMetricsRecord {
                 $records += $record
             }
             return $records
+        } else {
+            # Still return the record even if no/single MessageId
+            return $baseRecord
         }
     }
     

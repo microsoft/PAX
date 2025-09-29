@@ -87,7 +87,7 @@ function newInitialForm(): FormState {
     activityIds: RELEVANT_ACTIVITIES.map(a=>a.id),
     outputFile: '',
     overwrite: false,
-  blockHours: 8,
+  blockHours: 24,
     resultSize: 5000,
     pacingMs: 0,
     authMode: 'WebLogin',
@@ -1058,28 +1058,6 @@ export default function App(){
             The selected folder will also contain the log file for this run.  The CSV name is chosen above; the log name will be <code>Purview_Export_YYYYMMDD_HHMMSS.log</code>.
             </div>
           </div>
-          <div>
-            <label className="font-semibold">Search interval</label>
-            <div className="flex items-center gap-2 mt-1">
-              <select
-                className="border rounded px-2 py-1 bg-white"
-                value={form.blockHours}
-                onChange={(e)=> setForm((f:FormState)=>({...f, blockHours: parseInt(e.target.value, 10)}))}
-              >
-                {[2,4,6,8,12,24].map(h=> <option key={h} value={h}>{h} hours</option>)}
-              </select>
-              <span className="text-xs text-gray-600">
-                How many hours per query window. Default is 8 hours. Shorter intervals (more frequent windows) make the export process take longer overall.
-                {' '}
-                <button
-                  type="button"
-                  className="text-blue-700 hover:underline"
-                  title="Search-UnifiedAuditLog result limits and paging"
-                  onClick={async ()=>{ try { await open('https://learn.microsoft.com/powershell/module/exchange/search-unifiedauditlog'); } catch(e:any){ queueLogLine('stderr', `Failed to open docs: ${e?.message || e}`); } }}
-                >Learn about result limits</button>.
-              </span>
-            </div>
-          </div>
           <div className="flex items-center gap-2">
             <Switch checked={form.overwrite} onCheckedChange={(v:boolean)=>setForm((f:FormState)=>({...f,overwrite:v}))} />
             <span>Overwrite if file exists</span>
@@ -1116,6 +1094,28 @@ export default function App(){
                       onChange={(e)=> setForm((f)=> ({...f, pacingMs: Math.max(0, Math.min(10000, parseInt(e.target.value||'0',10) || 0))}))}
                     />
                     <span className="text-xs text-gray-600">Default 0. Add 150–300ms to reduce throttling (429/503) in busy tenants.</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="font-semibold">Search interval</label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <select
+                      className="border rounded px-2 py-1 bg-white"
+                      value={form.blockHours}
+                      onChange={(e)=> setForm((f:FormState)=>({...f, blockHours: parseInt(e.target.value, 10)}))}
+                    >
+                      {[2,4,6,8,12,24].map(h=> <option key={h} value={h}>{h} hours</option>)}
+                    </select>
+                    <span className="text-xs text-gray-600">
+                      Default is 24 hours (optimal efficiency). Auto-subdivides when hitting limits. Shorter intervals make the export process take longer overall.
+                      {' '}
+                      <button
+                        type="button"
+                        className="text-blue-700 hover:underline"
+                        title="Search-UnifiedAuditLog result limits and paging"
+                        onClick={async ()=>{ try { await open('https://learn.microsoft.com/powershell/module/exchange/search-unifiedauditlog'); } catch(e:any){ queueLogLine('stderr', `Failed to open docs: ${e?.message || e}`); } }}
+                      >Learn about result limits</button>.
+                    </span>
                   </div>
                 </div>
                 <div className="flex justify-end pt-1">
