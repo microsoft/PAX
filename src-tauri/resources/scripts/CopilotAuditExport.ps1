@@ -481,8 +481,8 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
                     # Only subdivide if window > 30 minutes
                     Write-Host "  Result limit hit ($($res.Count) records). Auto-subdividing time window..." -ForegroundColor Yellow
                     $midPoint = $Start.AddTicks(($End - $Start).Ticks / 2)
-                    $firstHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $Start -End $midPoint -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs -AutoSubdivide $AutoSubdivide
-                    $secondHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $midPoint -End $End -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs -AutoSubdivide $AutoSubdivide
+                    $firstHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $Start -End $midPoint -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs -MaxRetries $MaxRetries -AutoSubdivide:$AutoSubdivide
+                    $secondHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $midPoint -End $End -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs -MaxRetries $MaxRetries -AutoSubdivide:$AutoSubdivide
                     $combinedResults = @()
                     if ($firstHalf) { $combinedResults += $firstHalf }
                     if ($secondHalf) { $combinedResults += $secondHalf }
