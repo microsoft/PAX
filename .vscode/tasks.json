@@ -8,6 +8,11 @@
 			"command": "npm run tauri dev"
 		},
 		{
+			"label": "Dev (Tauri - Stable)",
+			"type": "shell",
+			"command": "npm run tauri:dev:stable"
+		},
+		{
 			"label": "Build frontend",
 			"type": "shell",
 			"command": "pwsh",

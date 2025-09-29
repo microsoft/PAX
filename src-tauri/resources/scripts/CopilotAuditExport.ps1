@@ -32,7 +32,7 @@ param(
     [ValidateRange(1, 10)]
     [int]$MaxConcurrent = 3,
     [Parameter(Mandatory = $false)]
-    [switch]$ExplodeArrays,
+    [switch]$NoExplodeArrays,
     [Parameter(Mandatory = $false)]
     [switch]$DetailedPost,
     [Parameter(Mandatory = $false)]
@@ -86,7 +86,7 @@ PARAMETERS:
 -ResultSize       (Optional)  Records per API call (1-5000). Default: 5000. Reduce if hitting throttling limits.
 -PacingMs         (Optional)  Delay between API calls in milliseconds (0-10000). Default: 0. Use 500-2000 to reduce throttling.
 -MaxConcurrent    (Optional)  Maximum concurrent queries (1-10). Default: 3. Higher values = faster but more throttling risk.
--ExplodeArrays    (Optional)  Create separate rows for array values (better for analytics). Default: join arrays with commas.
+-NoExplodeArrays  (Optional)  Disable row explosion (join arrays with commas). Default: explode arrays into separate rows for better analytics.
 -DetailedPost     (Optional)  Show extra post-processing details (sample records, field statistics). Does not change CSV output.
 -Help or /Help    (Optional)  Display this help message and exit.
 
@@ -282,7 +282,7 @@ function Start-VisibleReexecForAuth {
         if ($ResultSize) { $parts += "-ResultSize $ResultSize" }
         if ($PacingMs -ne $null) { $parts += "-PacingMs $PacingMs" }
         if ($MaxConcurrent) { $parts += "-MaxConcurrent $MaxConcurrent" }
-        if ($ExplodeArrays) { $parts += "-ExplodeArrays" }
+        if ($NoExplodeArrays) { $parts += "-NoExplodeArrays" }
         if ($DetailedPost) { $parts += "-DetailedPost" }
         $parts += "-InHelper"
 
@@ -478,16 +478,34 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
             if ($AutoSubdivide -and $res -and $res.Count -eq $ResultSize) {
                 $timeSpan = $End - $Start
                 if ($timeSpan.TotalMinutes -gt 30) {
-                    # Only subdivide if window > 30 minutes
-                    Write-Host "  Result limit hit ($($res.Count) records). Auto-subdividing time window..." -ForegroundColor Yellow
-                    $midPoint = $Start.AddTicks(($End - $Start).Ticks / 2)
-                    $firstHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $Start -End $midPoint -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs -MaxRetries $MaxRetries -AutoSubdivide:$AutoSubdivide
-                    $secondHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $midPoint -End $End -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs -MaxRetries $MaxRetries -AutoSubdivide:$AutoSubdivide
-                    $combinedResults = @()
-                    if ($firstHalf) { $combinedResults += $firstHalf }
-                    if ($secondHalf) { $combinedResults += $secondHalf }
-                    Write-Host "  Auto-subdivision completed. Total records: $($combinedResults.Count)" -ForegroundColor Green
-                    return $combinedResults
+                    # Aggressive subdivision: Jump to smaller windows immediately for high-volume activities
+                    if ($timeSpan.TotalHours -ge 12) {
+                        # For large windows (12+ hours), jump directly to 2-hour chunks
+                        Write-Host "  Result limit hit ($($res.Count) records). Using aggressive 2-hour subdivision..." -ForegroundColor Yellow
+                        $chunkResults = @()
+                        $current = $Start
+                        while ($current -lt $End) {
+                            $chunkEnd = [Math]::Min($current.AddHours(2).Ticks, $End.Ticks)
+                            $chunkEnd = [DateTime]::new($chunkEnd)
+                            $chunk = Invoke-SearchUnifiedAuditLogWithRetry -Start $current -End $chunkEnd -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs -MaxRetries $MaxRetries -AutoSubdivide:$AutoSubdivide
+                            if ($chunk) { $chunkResults += $chunk }
+                            $current = $chunkEnd
+                        }
+                        Write-Host "  Aggressive subdivision completed. Total records: $($chunkResults.Count)" -ForegroundColor Green
+                        return $chunkResults
+                    }
+                    else {
+                        # Standard binary subdivision for smaller windows
+                        Write-Host "  Result limit hit ($($res.Count) records). Auto-subdividing time window..." -ForegroundColor Yellow
+                        $midPoint = $Start.AddTicks(($End - $Start).Ticks / 2)
+                        $firstHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $Start -End $midPoint -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs -MaxRetries $MaxRetries -AutoSubdivide:$AutoSubdivide
+                        $secondHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $midPoint -End $End -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs -MaxRetries $MaxRetries -AutoSubdivide:$AutoSubdivide
+                        $combinedResults = @()
+                        if ($firstHalf) { $combinedResults += $firstHalf }
+                        if ($secondHalf) { $combinedResults += $secondHalf }
+                        Write-Host "  Auto-subdivision completed. Total records: $($combinedResults.Count)" -ForegroundColor Green
+                        return $combinedResults
+                    }
                 }
                 else {
                     Write-Host "  WARNING: Result limit hit but time window too small to subdivide. Possible data loss!" -ForegroundColor Red
@@ -628,7 +646,7 @@ function Get-NestedProperty {
 }
 
 function Convert-ToMetricsRecord {
-    param([object]$AuditLogEntry, [switch]$ExplodeArrays)
+    param([object]$AuditLogEntry, [switch]$NoExplodeArrays)
     $auditData = Parse-AuditData -AuditDataJson $AuditLogEntry.AuditData
     $baseRecord = [PSCustomObject]@{
         RecordId                           = $AuditLogEntry.Identity
@@ -641,8 +659,8 @@ function Convert-ToMetricsRecord {
         Workload                           = Get-WorkloadFromRecordType -RecordType $AuditLogEntry.RecordType
         Operation                          = $AuditLogEntry.Operations
         UserId                             = $AuditLogEntry.UserIds
-        AssociatedAdminUnits               = Get-NestedProperty $auditData "AssociatedAdminUnits"
-        AssociatedAdminUnitsNames          = Get-NestedProperty $auditData "AssociatedAdminUnitsNames"
+        AssociatedAdminUnits               = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "AssociatedAdminUnits" -join ",") } else { Get-NestedProperty $auditData "AssociatedAdminUnits" }
+        AssociatedAdminUnitsNames          = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "AssociatedAdminUnitsNames" -join ",") } else { Get-NestedProperty $auditData "AssociatedAdminUnitsNames" }
         AgentId                            = Get-NestedProperty $auditData "AgentId"
         AgentName                          = Get-NestedProperty $auditData "AgentName"
         AppIdentity_AppId                  = Get-NestedProperty $auditData "AppIdentity.AppId"
@@ -663,38 +681,108 @@ function Convert-ToMetricsRecord {
         Message_Id                         = Get-NestedProperty $auditData "Message.Id"
         Message_isPrompt                   = Get-NestedProperty $auditData "Message.isPrompt"
         AccessedResource_Action            = Get-NestedProperty $auditData "AccessedResource.Action"
-        AccessedResource_PolicyDetails     = Get-NestedProperty $auditData "AccessedResource.PolicyDetails"
+        AccessedResource_PolicyDetails     = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "AccessedResource.PolicyDetails" -join ",") } else { Get-NestedProperty $auditData "AccessedResource.PolicyDetails" }
         AccessedResource_SiteUrl           = Get-NestedProperty $auditData "AccessedResource.SiteUrl"
         AISystemPlugin_Id                  = Get-NestedProperty $auditData "AISystemPlugin.Id"
         AISystemPlugin_Name                = Get-NestedProperty $auditData "AISystemPlugin.Name"
         ModelTransparencyDetails_ModelName = Get-NestedProperty $auditData "ModelTransparencyDetails.ModelName"
-        MessageIds                         = if ($ExplodeArrays) { Get-NestedProperty $auditData "MessageIds" } else { (Get-NestedProperty $auditData "MessageIds" -join ",") }
+        MessageIds                         = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "MessageIds" -join ",") } else { Get-NestedProperty $auditData "MessageIds" }
     }
     
-    # Handle row explosion for arrays when requested
-    if ($ExplodeArrays) {
-        $messageIds = Get-NestedProperty $auditData "MessageIds"
-        if ($messageIds -and $messageIds.Count -gt 1) {
-            # Create separate row for each MessageId
-            $records = @()
-            foreach ($msgId in $messageIds) {
-                $record = $baseRecord.PSObject.Copy()
-                $record.MessageIds = $msgId
-                $records += $record
+    # Handle row explosion for arrays (default behavior unless disabled)
+    if (!$NoExplodeArrays) {
+        # Comprehensive array detection function
+        function Find-AllArrays {
+            param($Data, $Path = "", $Arrays = @())
+            
+            if ($Data -eq $null) { return $Arrays }
+            
+            # Check if current data is an array with multiple items
+            if ($Data -is [System.Array] -and $Data.Count -gt 1) {
+                $Arrays += @{ Path = $Path; Count = $Data.Count; Data = $Data }
             }
-            return $records
+            
+            # Recursively check object properties
+            if ($Data -is [PSCustomObject] -or $Data.GetType().Name -eq 'PSCustomObject') {
+                foreach ($prop in $Data.PSObject.Properties) {
+                    $newPath = if ($Path) { "$Path.$($prop.Name)" } else { $prop.Name }
+                    $Arrays = Find-AllArrays -Data $prop.Value -Path $newPath -Arrays $Arrays
+                }
+            }
+            # Check hashtables/dictionaries
+            elseif ($Data -is [System.Collections.IDictionary]) {
+                foreach ($key in $Data.Keys) {
+                    $newPath = if ($Path) { "$Path.$key" } else { $key }
+                    $Arrays = Find-AllArrays -Data $Data[$key] -Path $newPath -Arrays $Arrays
+                }
+            }
+            # Check arrays for nested structures
+            elseif ($Data -is [System.Array]) {
+                for ($i = 0; $i -lt $Data.Count; $i++) {
+                    $newPath = if ($Path) { "$Path[$i]" } else { "[$i]" }
+                    $Arrays = Find-AllArrays -Data $Data[$i] -Path $newPath -Arrays $Arrays
+                }
+            }
+            
+            return $Arrays
+        }
+        
+        # Find all arrays in the audit data
+        $allArrays = Find-AllArrays -Data $auditData
+        
+        if ($allArrays.Count -gt 0) {
+            Write-Verbose "Found $($allArrays.Count) arrays to explode:"
+            foreach ($arr in $allArrays) {
+                Write-Verbose "  $($arr.Path): $($arr.Count) items"
+            }
+            
+            # Start with single base record
+            $explodedRecords = @($baseRecord)
+            
+            # Process each array for cross-product explosion
+            foreach ($arrayInfo in $allArrays) {
+                $newRecords = @()
+                
+                foreach ($existingRecord in $explodedRecords) {
+                    foreach ($item in $arrayInfo.Data) {
+                        $record = $existingRecord.PSObject.Copy()
+                        
+                        # Set the array value to single item using dynamic property access
+                        $pathParts = $arrayInfo.Path -split '\.'
+                        if ($pathParts.Count -eq 1) {
+                            # Top-level property
+                            $record.$($pathParts[0]) = $item
+                        } else {
+                            # Nested property - create the path if needed
+                            $current = $record
+                            for ($i = 0; $i -lt $pathParts.Count - 1; $i++) {
+                                if (-not $current.PSObject.Properties[$pathParts[$i]]) {
+                                    Add-Member -InputObject $current -NotePropertyName $pathParts[$i] -NotePropertyValue ([PSCustomObject]@{}) -Force
+                                }
+                                $current = $current.PSObject.Properties[$pathParts[$i]].Value
+                            }
+                            Add-Member -InputObject $current -NotePropertyName $pathParts[-1] -NotePropertyValue $item -Force
+                        }
+                        
+                        $newRecords += $record
+                    }
+                }
+                
+                $explodedRecords = $newRecords
+                Write-Verbose "After exploding $($arrayInfo.Path): $($explodedRecords.Count) records"
+            }
+            
+            # Add explosion metadata
+            foreach ($record in $explodedRecords) {
+                Add-Member -InputObject $record -NotePropertyName '_ExplosionType' -NotePropertyValue 'ComprehensiveArrayExplosion' -Force
+                Add-Member -InputObject $record -NotePropertyName '_ArraysExploded' -NotePropertyValue $allArrays.Count -Force
+            }
+            
+            return $explodedRecords
         }
         else {
             # Add metadata for passthrough tracking
-            if (!$messageIds -or $messageIds.Count -eq 0) {
-                Add-Member -InputObject $baseRecord -NotePropertyName '_PassthroughReason' -NotePropertyValue 'NoMessageIds' -Force
-            }
-            elseif ($messageIds.Count -eq 1) {
-                Add-Member -InputObject $baseRecord -NotePropertyName '_PassthroughReason' -NotePropertyValue 'SingleMessageId' -Force
-            }
-            else {
-                Add-Member -InputObject $baseRecord -NotePropertyName '_PassthroughReason' -NotePropertyValue 'Other' -Force
-            }
+            Add-Member -InputObject $baseRecord -NotePropertyName '_PassthroughReason' -NotePropertyValue 'NoArraysToExplode' -Force
             return $baseRecord
         }
     }
@@ -940,7 +1028,7 @@ try {
         $percentPost = [math]::Round(($postCount / $postTotal) * 100, 1)
         Write-Host "[$percentPost%] Post $postCount/$postTotal - Converting ($i/$($postCategories.convert))" -ForegroundColor Gray
         if ($i -le 5 -and $i % 50 -eq 0) { Write-Host "Converting records..." -ForegroundColor Gray }
-        $metricsRecord = Convert-ToMetricsRecord -AuditLogEntry $log -ExplodeArrays:$ExplodeArrays
+        $metricsRecord = Convert-ToMetricsRecord -AuditLogEntry $log -NoExplodeArrays:$NoExplodeArrays
         
         # Track row explosion statistics
         $explosionStats.TotalInput++
@@ -955,15 +1043,24 @@ try {
             $explosionStats.PassthroughRecords++
             $explosionStats.OutputRecords++
             
-            # Track specific passthrough reasons (only when ExplodeArrays is enabled)
-            if ($ExplodeArrays -and $metricsRecord.'_PassthroughReason') {
+            # Track specific passthrough reasons (only when explosion is enabled)
+            if (!$NoExplodeArrays -and $metricsRecord.'_PassthroughReason') {
                 switch ($metricsRecord.'_PassthroughReason') {
                     'NoMessageIds' { $explosionStats.PassthroughNoMessageIds++ }
                     'SingleMessageId' { $explosionStats.PassthroughSingleId++ }
+                    'NoArraysToExplode' { $explosionStats.PassthroughOther++ }
                     'Other' { $explosionStats.PassthroughOther++ }
                 }
                 # Remove the metadata property before adding to final output
                 $metricsRecord.PSObject.Properties.Remove('_PassthroughReason')
+            }
+            
+            # Clean up explosion metadata
+            if ($metricsRecord.'_ExplosionType') {
+                $metricsRecord.PSObject.Properties.Remove('_ExplosionType')
+            }
+            if ($metricsRecord.'_ArraysExploded') {
+                $metricsRecord.PSObject.Properties.Remove('_ArraysExploded')
             }
             
             $metricsData.Add($metricsRecord) | Out-Null
@@ -972,14 +1069,14 @@ try {
     }
     
     # Report row explosion statistics
-    if ($ExplodeArrays) {
+    if (!$NoExplodeArrays) {
         Write-Host "=== Row Explosion Statistics ===" -ForegroundColor Cyan
         Write-Host "Input records: $($explosionStats.TotalInput)" -ForegroundColor Yellow
         Write-Host "Records exploded: $($explosionStats.ExplodedRecords)" -ForegroundColor Green
         Write-Host "Records passed through: $($explosionStats.PassthroughRecords)" -ForegroundColor Blue
-        Write-Host "  └─ No/null MessageIds: $($explosionStats.PassthroughNoMessageIds)" -ForegroundColor DarkCyan
-        Write-Host "  └─ Single MessageId: $($explosionStats.PassthroughSingleId)" -ForegroundColor DarkCyan
-        Write-Host "  └─ Other reasons: $($explosionStats.PassthroughOther)" -ForegroundColor DarkCyan
+        Write-Host "  └─ No arrays found: $($explosionStats.PassthroughOther)" -ForegroundColor DarkCyan
+        Write-Host "  └─ Single elements only: $($explosionStats.PassthroughSingleId)" -ForegroundColor DarkCyan
+        Write-Host "  └─ Legacy tracking: $($explosionStats.PassthroughNoMessageIds)" -ForegroundColor DarkGray
         Write-Host "Total output records: $($explosionStats.OutputRecords)" -ForegroundColor Magenta
         $explosionRatio = if ($explosionStats.TotalInput -gt 0) { [math]::Round($explosionStats.OutputRecords / $explosionStats.TotalInput, 2) } else { 0 }
         Write-Host "Explosion ratio: $explosionRatio:1 (output:input)" -ForegroundColor White

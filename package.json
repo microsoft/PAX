@@ -10,6 +10,7 @@
     "build": "vite build",
     "postbuild": "node scripts/verify-no-synthetic.cjs",
     "tauri": "tauri",
+    "tauri:dev:stable": "tauri dev --no-watch",
     "prebuild": "node scripts/copy-script.cjs",
     "build:macos": "npm run tauri build -- --target aarch64-apple-darwin && npm run tauri build -- --target x86_64-apple-darwin",
     "build:macos:silicon": "npm run tauri build -- --target aarch64-apple-darwin",
