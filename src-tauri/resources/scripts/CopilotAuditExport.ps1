@@ -683,8 +683,18 @@ function Convert-ToMetricsRecord {
                 $records += $record
             }
             return $records
-        } else {
-            # Still return the record even if no/single MessageId
+        }
+        else {
+            # Add metadata for passthrough tracking
+            if (!$messageIds -or $messageIds.Count -eq 0) {
+                Add-Member -InputObject $baseRecord -NotePropertyName '_PassthroughReason' -NotePropertyValue 'NoMessageIds' -Force
+            }
+            elseif ($messageIds.Count -eq 1) {
+                Add-Member -InputObject $baseRecord -NotePropertyName '_PassthroughReason' -NotePropertyValue 'SingleMessageId' -Force
+            }
+            else {
+                Add-Member -InputObject $baseRecord -NotePropertyName '_PassthroughReason' -NotePropertyValue 'Other' -Force
+            }
             return $baseRecord
         }
     }
@@ -911,6 +921,18 @@ try {
     # Convert
     Write-Host "PA:POST start convert total=$($postCategories.convert)" -ForegroundColor Yellow
     $metricsData = New-Object System.Collections.ArrayList
+    
+    # Initialize row explosion tracking counters
+    $explosionStats = @{
+        TotalInput              = 0
+        ExplodedRecords         = 0
+        PassthroughRecords      = 0
+        PassthroughNoMessageIds = 0
+        PassthroughSingleId     = 0
+        PassthroughOther        = 0
+        OutputRecords           = 0
+    }
+    
     $i = 0
     foreach ($log in $uniqueLogs) {
         $i++
@@ -920,15 +942,50 @@ try {
         if ($i -le 5 -and $i % 50 -eq 0) { Write-Host "Converting records..." -ForegroundColor Gray }
         $metricsRecord = Convert-ToMetricsRecord -AuditLogEntry $log -ExplodeArrays:$ExplodeArrays
         
+        # Track row explosion statistics
+        $explosionStats.TotalInput++
+        
         # Handle both single records and arrays of records from row explosion
         if ($metricsRecord -is [array]) {
+            $explosionStats.ExplodedRecords++
+            $explosionStats.OutputRecords += $metricsRecord.Count
             $metricsData.AddRange($metricsRecord) | Out-Null
         }
         else {
+            $explosionStats.PassthroughRecords++
+            $explosionStats.OutputRecords++
+            
+            # Track specific passthrough reasons (only when ExplodeArrays is enabled)
+            if ($ExplodeArrays -and $metricsRecord.'_PassthroughReason') {
+                switch ($metricsRecord.'_PassthroughReason') {
+                    'NoMessageIds' { $explosionStats.PassthroughNoMessageIds++ }
+                    'SingleMessageId' { $explosionStats.PassthroughSingleId++ }
+                    'Other' { $explosionStats.PassthroughOther++ }
+                }
+                # Remove the metadata property before adding to final output
+                $metricsRecord.PSObject.Properties.Remove('_PassthroughReason')
+            }
+            
             $metricsData.Add($metricsRecord) | Out-Null
         }
         Write-Host "PA:POST progress convert $i/$($postCategories.convert)"
     }
+    
+    # Report row explosion statistics
+    if ($ExplodeArrays) {
+        Write-Host "=== Row Explosion Statistics ===" -ForegroundColor Cyan
+        Write-Host "Input records: $($explosionStats.TotalInput)" -ForegroundColor Yellow
+        Write-Host "Records exploded: $($explosionStats.ExplodedRecords)" -ForegroundColor Green
+        Write-Host "Records passed through: $($explosionStats.PassthroughRecords)" -ForegroundColor Blue
+        Write-Host "  └─ No/null MessageIds: $($explosionStats.PassthroughNoMessageIds)" -ForegroundColor DarkCyan
+        Write-Host "  └─ Single MessageId: $($explosionStats.PassthroughSingleId)" -ForegroundColor DarkCyan
+        Write-Host "  └─ Other reasons: $($explosionStats.PassthroughOther)" -ForegroundColor DarkCyan
+        Write-Host "Total output records: $($explosionStats.OutputRecords)" -ForegroundColor Magenta
+        $explosionRatio = if ($explosionStats.TotalInput -gt 0) { [math]::Round($explosionStats.OutputRecords / $explosionStats.TotalInput, 2) } else { 0 }
+        Write-Host "Explosion ratio: $explosionRatio:1 (output:input)" -ForegroundColor White
+        Write-Host "=================================" -ForegroundColor Cyan
+    }
+    
     Write-Host "PA:POST end convert"
 
     # Export CSV
