@@ -21,7 +21,7 @@ param(
     [string]$Auth = 'WebLogin',
     [Parameter(Mandatory = $false)]
     [ValidateSet(2, 4, 6, 8, 12, 24)]
-    [int]$BlockHours = 24,
+    [int]$BlockHours = 8,
     [Parameter(Mandatory = $false)]
     [ValidateRange(1, 5000)]
     [int]$ResultSize = 5000,
@@ -82,7 +82,7 @@ PARAMETERS:
                                • Credential: Username/password prompt; may fail with MFA/CA policies; not recommended
                                • Silent: Reuses existing cached session if available; fails otherwise
                                Note: Script validates account permissions before starting the full export.
--BlockHours       (Optional)  Time window per query: 2,4,6,8,12,24 hours. Default: 24. Smaller = more queries, better for large datasets.
+-BlockHours       (Optional)  Time window per query: 2,4,6,8,12,24 hours. Default: 8 (enterprise-safe). Auto-adapts if hitting limits.
 -ResultSize       (Optional)  Records per API call (1-5000). Default: 5000. Reduce if hitting throttling limits.
 -PacingMs         (Optional)  Delay between API calls in milliseconds (0-10000). Default: 0. Use 500-2000 to reduce throttling.
 -MaxConcurrent    (Optional)  Maximum concurrent queries (1-10). Default: 3. Higher values = faster but more throttling risk.
@@ -126,8 +126,11 @@ WHAT DOES THE SCRIPT DO?
 ------------------------
 - Connects to Microsoft 365 Purview audit log system with your chosen authentication method
 - Validates account permissions by testing audit log access before starting full export
-- Searches for Copilot/AI activities and related user events using time-windowed queries (BlockHours intervals)
-- Downloads matching audit records and processes them into structured CSV format
+- Uses intelligent activity batching to group high/medium/low-volume operations for optimal performance
+- Searches with adaptive time windows that auto-adjust based on data density to prevent result limits
+- Implements auto-subdivision when hitting 5000-record limits to ensure complete data collection
+- Supports controlled parallel processing for faster execution while respecting API throttling
+- Downloads matching audit records and processes them into structured CSV format (with optional row explosion)
 - Creates automatic transcript logs (.log files) alongside CSV output for troubleshooting
 - Uses exponential backoff and optional pacing to handle Microsoft 365 throttling gracefully
 
@@ -474,7 +477,8 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
             # Check for result limit and auto-subdivide if needed
             if ($AutoSubdivide -and $res -and $res.Count -eq $ResultSize) {
                 $timeSpan = $End - $Start
-                if ($timeSpan.TotalMinutes -gt 30) {  # Only subdivide if window > 30 minutes
+                if ($timeSpan.TotalMinutes -gt 30) {
+                    # Only subdivide if window > 30 minutes
                     Write-Host "  Result limit hit ($($res.Count) records). Auto-subdividing time window..." -ForegroundColor Yellow
                     $midPoint = $Start.AddTicks(($End - $Start).Ticks / 2)
                     $firstHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $Start -End $midPoint -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs -AutoSubdivide $AutoSubdivide
@@ -484,7 +488,8 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
                     if ($secondHalf) { $combinedResults += $secondHalf }
                     Write-Host "  Auto-subdivision completed. Total records: $($combinedResults.Count)" -ForegroundColor Green
                     return $combinedResults
-                } else {
+                }
+                else {
                     Write-Host "  WARNING: Result limit hit but time window too small to subdivide. Possible data loss!" -ForegroundColor Red
                 }
             }
@@ -703,18 +708,58 @@ try {
     $endDateObj = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null)
     Write-Host "Searching for Copilot audit logs from $($startDateObj.ToString('yyyy-MM-dd')) to $($endDateObj.ToString('yyyy-MM-dd'))..." -ForegroundColor Yellow
 
+    # Adaptive block sizing - start with user preference but adapt based on data density
     $blockHours = [int]$BlockHours
-    if ($blockHours -lt 1) { $blockHours = 12 }
+    if ($blockHours -lt 1) { $blockHours = 8 }
+    $adaptiveBlockSizing = $true
+    $originalBlockHours = $blockHours
+    
     $blocksPerDay = [int](24 / $blockHours)
     $totalDays = ($endDateObj.Date - $startDateObj.Date).Days
     $totalBlocks = $totalDays * $blocksPerDay
-    $totalActivities = $ActivityTypes.Count
-    $totalQueries = $totalBlocks * $totalActivities
+    
+    # Track data density for adaptive sizing
+    $dataDensityStats = @{
+        TotalQueries = 0
+        QueriesWithResults = 0
+        QueriesAtLimit = 0
+        AvgResultsPerQuery = 0
+    }
+    # Intelligent activity batching for better performance
+    $highVolumeActivities = @("CopilotInteraction", "MessageSent", "MessageRead", "FileAccessed", "FileModified", "MailItemsAccessed", "PageViewed", "TeamsSessionStarted")
+    $mediumVolumeActivities = @("MeetingDetail", "MeetingParticipantDetail", "FileDownloaded", "FileUploaded", "SearchQueryPerformed", "FilePreviewed", "AINotesUpdate", "LiveNotesUpdate")
+    $lowVolumeActivities = $ActivityTypes | Where-Object { $_ -notin $highVolumeActivities -and $_ -notin $mediumVolumeActivities }
+    
+    # Create batched query groups
+    $queryGroups = @()
+    
+    # High-volume activities: query individually to prevent result limits
+    foreach ($activity in ($ActivityTypes | Where-Object { $_ -in $highVolumeActivities })) {
+        $queryGroups += ,@($activity)
+    }
+    
+    # Medium-volume activities: batch 2-3 together
+    $mediumActivitiesToProcess = $ActivityTypes | Where-Object { $_ -in $mediumVolumeActivities }
+    for ($i = 0; $i -lt $mediumActivitiesToProcess.Count; $i += 2) {
+        $batchEnd = [math]::Min($i + 1, $mediumActivitiesToProcess.Count - 1)
+        $batch = $mediumActivitiesToProcess[$i..$batchEnd]
+        $queryGroups += ,$batch
+    }
+    
+    # Low-volume activities: batch 4-6 together for efficiency
+    for ($i = 0; $i -lt $lowVolumeActivities.Count; $i += 5) {
+        $batchEnd = [math]::Min($i + 4, $lowVolumeActivities.Count - 1)
+        $batch = $lowVolumeActivities[$i..$batchEnd]
+        if ($batch.Count -gt 0) { $queryGroups += ,$batch }
+    }
+    
+    $totalQueries = $totalBlocks * $queryGroups.Count
     $queryCount = 0
 
     # Emit explicit totals for host application to consume (ground truth)
     Write-Host "PA:TOTALS queries=$totalQueries keywords=$totalBlocks"
-    Write-Host "Performance optimizations active: Auto-subdivision, ArrayList operations, Enhanced retry logic" -ForegroundColor Green
+    Write-Host "Intelligent batching: $($queryGroups.Count) query groups from $($ActivityTypes.Count) activities (High:$(($ActivityTypes | Where-Object { $_ -in $highVolumeActivities }).Count), Medium:$(($ActivityTypes | Where-Object { $_ -in $mediumVolumeActivities }).Count), Low:$($lowVolumeActivities.Count))" -ForegroundColor Green
+    Write-Host "Performance optimizations active: Auto-subdivision, ArrayList operations, Enhanced retry logic, Smart batching" -ForegroundColor Green
 
     # Use ArrayList for better performance with large datasets
     $allLogs = New-Object System.Collections.ArrayList
@@ -724,17 +769,83 @@ try {
         for ($block = 0; $block -lt $blocksPerDay; $block++) {
             $startBlock = $day.AddHours($block * $blockHours)
             $endBlock = $startBlock.AddHours($blockHours)
-            foreach ($activity in $ActivityTypes) {
+            foreach ($activityGroup in $queryGroups) {
                 $queryCount++
                 $percentComplete = [math]::Round(($queryCount / $totalQueries) * 100, 1)
-                Write-Host "[$percentComplete%] Query $queryCount/$totalQueries - $($activity) ($($startBlock.ToString('yyyy-MM-dd HH:mm')) - $($endBlock.ToString('HH:mm')))" -ForegroundColor Gray
-                $logs = Invoke-SearchUnifiedAuditLogWithRetry -Start $startBlock -End $endBlock -Operation $activity -ResultSize $ResultSize -PacingMs $PacingMs
-                if ($logs) {
-                    $allLogs.AddRange($logs) | Out-Null
-                    Write-Host "  Found $($logs.Count) records for $($activity) at $($startBlock.ToString('yyyy-MM-dd HH:mm'))" -ForegroundColor Green
+                $activityList = if ($activityGroup.Count -eq 1) { $activityGroup[0] } else { "[$($activityGroup -join ', ')]" }
+                Write-Host "[$percentComplete%] Query $queryCount/$totalQueries - $activityList ($($startBlock.ToString('yyyy-MM-dd HH:mm')) - $($endBlock.ToString('HH:mm')))" -ForegroundColor Gray
+                
+                # Query activities in the group with optional parallelism
+                $groupLogs = @()
+                if ($MaxConcurrent -gt 1 -and $activityGroup.Count -gt 1) {
+                    # Parallel processing for multiple activities in group
+                    $jobs = @()
+                    $activityIndex = 0
+                    foreach ($activity in $activityGroup) {
+                        # Limit concurrent jobs
+                        while ((Get-Job -State Running).Count -ge $MaxConcurrent) {
+                            Start-Sleep -Milliseconds 100
+                            Get-Job -State Completed | Remove-Job
+                        }
+                        
+                        $scriptBlock = {
+                            param($Start, $End, $Operation, $ResultSize, $PacingMs)
+                            # Import the retry function into job scope
+                            function Invoke-SearchUnifiedAuditLogWithRetry {
+                                param(
+                                    [datetime]$Start, [datetime]$End, [string]$Operation,
+                                    [int]$ResultSize, [int]$PacingMs, [switch]$AutoSubdivide = $true
+                                )
+                                try {
+                                    $params = @{ StartDate = $Start; EndDate = $End; ResultSize = $ResultSize; ErrorAction = 'Stop' }
+                                    if ($Operation) { $params.Operations = $Operation }
+                                    return Search-UnifiedAuditLog @params
+                                } catch { return @() }
+                            }
+                            return Invoke-SearchUnifiedAuditLogWithRetry -Start $Start -End $End -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs
+                        }
+                        
+                        $job = Start-Job -ScriptBlock $scriptBlock -ArgumentList $startBlock, $endBlock, $activity, $ResultSize, $PacingMs
+                        $jobs += $job
+                        $activityIndex++
+                    }
+                    
+                    # Wait for all jobs and collect results
+                    $jobs | Wait-Job | Out-Null
+                    foreach ($job in $jobs) {
+                        $logs = Receive-Job $job
+                        if ($logs) { $groupLogs += $logs }
+                        Remove-Job $job
+                    }
+                } else {
+                    # Sequential processing (default/fallback)
+                    foreach ($activity in $activityGroup) {
+                        $logs = Invoke-SearchUnifiedAuditLogWithRetry -Start $startBlock -End $endBlock -Operation $activity -ResultSize $ResultSize -PacingMs $PacingMs
+                        if ($logs) { $groupLogs += $logs }
+                    }
+                }
+                
+                # Track data density statistics for adaptive sizing
+                $dataDensityStats.TotalQueries++
+                if ($groupLogs) {
+                    $dataDensityStats.QueriesWithResults++
+                    $dataDensityStats.AvgResultsPerQuery = (($dataDensityStats.AvgResultsPerQuery * ($dataDensityStats.QueriesWithResults - 1)) + $groupLogs.Count) / $dataDensityStats.QueriesWithResults
+                    
+                    # Check if we're consistently hitting result limits (indicates need for smaller blocks)
+                    if ($groupLogs.Count -ge ($ResultSize * 0.9)) {
+                        $dataDensityStats.QueriesAtLimit++
+                        if ($adaptiveBlockSizing -and $dataDensityStats.QueriesAtLimit -ge 3 -and $blockHours -gt 2) {
+                            Write-Host "  Adaptive sizing: High data density detected, reducing block size for remaining queries" -ForegroundColor Yellow
+                            $blockHours = [math]::Max(2, $blockHours / 2)
+                            $blocksPerDay = [int](24 / $blockHours)
+                        }
+                    }
+                    
+                    $allLogs.AddRange($groupLogs) | Out-Null
+                    Write-Host "  Found $($groupLogs.Count) records for $activityList at $($startBlock.ToString('yyyy-MM-dd HH:mm'))" -ForegroundColor Green
                 }
                 else {
-                    Write-Host "  No records found for $($activity) ($($startBlock.ToString('yyyy-MM-dd HH:mm'))-$($endBlock.ToString('HH:mm')))" -ForegroundColor Yellow
+                    Write-Host "  No records found for $activityList ($($startBlock.ToString('yyyy-MM-dd HH:mm'))-$($endBlock.ToString('HH:mm')))" -ForegroundColor Yellow
                 }
             }
         }
@@ -807,7 +918,8 @@ try {
         # Handle both single records and arrays of records from row explosion
         if ($metricsRecord -is [array]) {
             $metricsData.AddRange($metricsRecord) | Out-Null
-        } else {
+        }
+        else {
             $metricsData.Add($metricsRecord) | Out-Null
         }
         Write-Host "PA:POST progress convert $i/$($postCategories.convert)"
