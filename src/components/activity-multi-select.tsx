@@ -7,9 +7,10 @@ interface Props {
   error?: string;
   categories?: Record<string, Activity[]>; // optional dynamic override
   relevant?: Activity[]; // optional dynamic override
+  disabled?: boolean;
 }
 
-export function ActivityMultiSelect({ value, onChange, error, categories, relevant }: Props){
+export function ActivityMultiSelect({ value, onChange, error, categories, relevant, disabled = false }: Props){
   const [open,setOpen] = useState(false);
   const [search,setSearch] = useState('');
   // Only show categories; do not render a separate "Relevant" section.
@@ -34,19 +35,17 @@ export function ActivityMultiSelect({ value, onChange, error, categories, releva
   }
 
   return <div>
-    <label className="font-semibold flex items-center gap-2">Activities
-      <a
-        className="text-blue-600 underline text-xs"
-        href="#"
-        onClick={(e)=>{ e.preventDefault(); openExternal('https://learn.microsoft.com/en-us/purview/audit-log-activities'); }}
-      >View full activity reference</a>
-    </label>
     <div className="flex items-start gap-3 min-w-0">
   <div className="flex-1 min-w-0 relative">
         <button
           type="button"
-          className="w-full border rounded px-3 py-2 bg-white flex items-center justify-between min-w-0"
-          onClick={()=>setOpen(o=>!o)}
+          className={`w-full border rounded px-3 py-2 flex items-center justify-between min-w-0 ${
+            disabled 
+              ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+              : 'bg-white hover:bg-gray-50'
+          }`}
+          onClick={disabled ? undefined : ()=>setOpen(o=>!o)}
+          disabled={disabled}
           aria-haspopup="listbox"
           aria-expanded={open}
         >

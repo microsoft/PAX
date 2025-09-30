@@ -5,12 +5,23 @@
 		{
 			"label": "Dev (Tauri)",
 			"type": "shell",
+			"command": "npm run tauri:dev:stable"
+		},
+		{
+			"label": "Dev (Tauri - With File Watching)",
+			"type": "shell",
 			"command": "npm run tauri dev"
 		},
 		{
-			"label": "Dev (Tauri - Stable)",
+			"label": "Dev (Clean Start)",
 			"type": "shell",
-			"command": "npm run tauri:dev:stable"
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile", 
+				"-Command",
+				"Write-Host 'Cleaning up all Node.js processes...' -ForegroundColor Yellow; taskkill /F /IM node.exe 2>$null; Start-Sleep 3; Write-Host 'Starting fresh development server on port 5173...' -ForegroundColor Green; npm run tauri:dev:stable"
+			]
 		},
 		{
 			"label": "Build frontend",

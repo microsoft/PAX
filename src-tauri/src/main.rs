@@ -196,12 +196,12 @@ async fn preflight_exchange_module(window: Window) -> Result<(), String> {
       .map_err(|_| "PowerShell not found. Please install PowerShell.\n  macOS:   brew install --cask powershell\n  Ubuntu:  sudo apt-get install -y powershell\n  Docs:    https://learn.microsoft.com/powershell/".to_string())?
     };
     // Execution policy (configurable). Priority:
-    // 1) Runtime env: PURVIEW_EXEC_POLICY
-    // 2) Build-time default: PURVIEW_EXEC_POLICY_DEFAULT (set at compile time)
+    // 1) Runtime env: PAX_EXEC_POLICY
+    // 2) Build-time default: PAX_EXEC_POLICY_DEFAULT (set at compile time)
     // 3) Fallback: Bypass
-    let exec_policy = std::env::var("PURVIEW_EXEC_POLICY")
+    let exec_policy = std::env::var("PAX_EXEC_POLICY")
         .ok()
-        .or_else(|| option_env!("PURVIEW_EXEC_POLICY_DEFAULT").map(|s| s.to_string()))
+        .or_else(|| option_env!("PAX_EXEC_POLICY_DEFAULT").map(|s| s.to_string()))
         .unwrap_or_else(|| "Bypass".into());
 
     let script = r#"
@@ -274,7 +274,7 @@ async fn preflight_exchange_module(window: Window) -> Result<(), String> {
 
 #[allow(non_snake_case)]
 #[tauri::command]
-async fn run_purview_script(
+async fn run_audit_script(
     window: Window,
     state: tauri::State<'_, RunState>,
     startDate: String,
@@ -282,11 +282,13 @@ async fn run_purview_script(
     activityTypes: Vec<String>,
     outputFile: String,
     _overwrite: Option<bool>,
-    blockHours: Option<u64>,
+    blockHours: Option<f64>,
     authMode: Option<String>,
-    detailedPost: Option<bool>,
     resultSize: Option<u64>,
     pacingMs: Option<u64>,
+    explodeArrays: Option<bool>,
+    copilotInteractionOnly: Option<bool>,
+    devTestMode: Option<bool>,
 ) -> Result<(), String> {
     // Try PowerShell 7 first, fall back to PowerShell 5.1 for compatibility
     let pwsh_path = if cfg!(windows) {
@@ -366,19 +368,25 @@ async fn run_purview_script(
     let auth = authMode.unwrap_or_else(|| "WebLogin".into());
     inner.push_str(&format!(" -Auth {}", q(&auth)));
     // No helper needed; script will open system browser directly
-    if detailedPost.unwrap_or(false) {
-        inner.push_str(" -DetailedPost");
-    }
     if let Some(rs) = resultSize {
-        inner.push_str(&format!(" -ResultSize {}", rs.min(5000)));
+        inner.push_str(&format!(" -ResultSize {}", rs.min(50000)));
     }
     if let Some(pm) = pacingMs {
         inner.push_str(&format!(" -PacingMs {}", pm.min(10000)));
     }
+    if let Some(ea) = explodeArrays {
+        if !ea {
+            inner.push_str(" -NoExplodeArrays");
+        }
+    }
+    if copilotInteractionOnly == Some(true) {
+        inner.push_str(" -CopilotInteractionOnly");
+    }
+    if devTestMode == Some(true) {
+        inner.push_str(" -DevTest");
+    }
 
-    // Add LogFile parameter for in-app logging (same as exported scripts)
-    let log_file = outputFile.replace(".csv", ".log");
-    inner.push_str(&format!(" -LogFile {}", q(&log_file)));
+    // Note: PowerShell script handles its own logging automatically
     // Wrap in a script block and redirect streams 3..5 to 1 (stdout).
     // NOTE: We intentionally do NOT redirect 6 (Information) because Write-Host in PS7
     // writes to the Information stream AND to the host; redirecting 6 causes duplicate lines.
@@ -386,9 +394,9 @@ async fn run_purview_script(
 
     // PowerShell flags for predictable behavior
     // Execution policy (configurable). Priority order matches preflight.
-    let exec_policy = std::env::var("PURVIEW_EXEC_POLICY")
+    let exec_policy = std::env::var("PAX_EXEC_POLICY")
         .ok()
-        .or_else(|| option_env!("PURVIEW_EXEC_POLICY_DEFAULT").map(|s| s.to_string()))
+        .or_else(|| option_env!("PAX_EXEC_POLICY_DEFAULT").map(|s| s.to_string()))
         .unwrap_or_else(|| "Bypass".into());
     let args: Vec<String> = vec![
         "-NoProfile".into(),
@@ -439,8 +447,8 @@ async fn run_purview_script(
     // Defaults if markers aren't emitted
     let activities_count = activityTypes.len();
     let total_days = days_between(&startDate, &endDate).unwrap_or(0).max(0) as u64; // end exclusive
-    let bh = blockHours.unwrap_or(8).max(1).min(24); // 1..24 safety, default 8
-    let blocks_per_day: u64 = 24 / bh;
+    let bh = blockHours.unwrap_or(0.5).max(0.016667).min(24.0); // 1min to 24h safety, default 30min
+    let blocks_per_day: u64 = (24.0 / bh).ceil() as u64;
     let mut q_tot_fixed: u64 = total_days * blocks_per_day * (activities_count as u64);
     let mut k_tot_fixed: u64 = total_days * blocks_per_day;
 
@@ -697,42 +705,15 @@ async fn run_purview_script(
                     p_tot
                 };
                 let mut overall_percent: Option<f64> = None;
-                let pre_tot = eff_q_tot.saturating_add(eff_k_tot);
-                if eff_q_tot + eff_k_tot + eff_p_tot > 0 {
-                    // Shares (of 100)
-                    let pre_share: f64 = 95.0; // queries + keywords combined
-                    let post_share: f64 = 100.0 - pre_share; // 5%
-
-                    // Determine query share within pre_share; clamp so queries can't exceed 90% overall
-                    // and leave at least 5% for keywords when both phases exist.
-                    let q_share: f64 = if pre_tot == 0 {
-                        0.0
-                    } else if eff_k_tot == 0 {
-                        pre_share // only queries exist pre-post
-                    } else if eff_q_tot == 0 {
-                        0.0
-                    } else {
-                        // raw proportional share within pre_share
-                        let raw = (eff_q_tot as f64 / pre_tot as f64) * pre_share;
-                        // clamp between 60% and 90% of overall
-                        let min_q: f64 = 60.0; // ensure queries visibly move bar early
-                        let max_q: f64 = 90.0; // keep headroom for keywords before post
-                        raw.max(min_q).min(max_q)
-                    };
-                    let k_share: f64 = if pre_tot == 0 {
-                        0.0
-                    } else {
-                        pre_share - q_share
-                    };
+                // Since keywords phase no longer exists, simplify to queries + post-processing only
+                if eff_q_tot + eff_p_tot > 0 {
+                    // Realistic shares based on actual workflow timing
+                    let q_share: f64 = 80.0;  // queries take ~80% of total time
+                    let post_share: f64 = 20.0; // post-processing takes ~20% (15% + 5% final)
 
                     // Phase progresses
                     let q_prog = if eff_q_tot > 0 {
                         (q_cur.min(eff_q_tot) as f64) / (eff_q_tot as f64)
-                    } else {
-                        0.0
-                    };
-                    let k_prog = if eff_k_tot > 0 {
-                        (k_cur.min(eff_k_tot) as f64) / (eff_k_tot as f64)
                     } else {
                         0.0
                     };
@@ -742,7 +723,7 @@ async fn run_purview_script(
                         0.0
                     };
 
-                    let mut val = q_share * q_prog + k_share * k_prog + post_share * p_prog;
+                    let mut val = q_share * q_prog + post_share * p_prog;
                     if val < last_overall {
                         val = last_overall;
                     } // enforce monotonicity
@@ -773,7 +754,6 @@ async fn run_purview_script(
           "postCurrentCat": cat_name,
           "postCurrentCatPercent": cat_pct,
           "queries": {"current": q_cur, "total": q_tot},
-          "keywords": {"current": k_cur, "total": k_tot},
           "post": {"current": p_cur, "total": eff_p_tot},
           "postCategories": {
             "convert": {"current": post_cat_cur.get("convert").cloned().unwrap_or(0), "total": post_cat_tot.get("convert").cloned().unwrap_or(0)},
@@ -933,10 +913,12 @@ async fn export_hardcoded_script(
     activityTypes: Vec<String>,
     outputFile: String,
     authMode: String,
-    blockHours: Option<u64>,
+    blockHours: Option<f64>,
     resultSize: Option<u64>,
     pacingMs: Option<u64>,
-    detailedPost: Option<bool>,
+    explodeArrays: Option<bool>,
+    copilotInteractionOnly: Option<bool>,
+    devTestMode: Option<bool>,
     targetPath: String,
 ) -> Result<(), String> {
     // Use the full-featured original script (with PS 5.1 compatibility fixes)
@@ -955,7 +937,7 @@ async fn export_hardcoded_script(
     };
 
     // For exported scripts, preserve user's activity selection to ensure identical behavior
-    let bh = blockHours.unwrap_or(8);
+    let bh = blockHours.unwrap_or(0.5).max(0.016667).min(24.0); // 30min default, 1min-24h range
 
     // Format ActivityTypes array for PowerShell
     let activities_ps = if activityTypes.is_empty() {
@@ -972,10 +954,10 @@ async fn export_hardcoded_script(
     };
 
     // Check if user left the default app-generated path vs selected a custom path
-    // Default pattern: ends with "Purview_Export_YYYYMMDD_HHMMSS.csv" (generated by defaultOutputPath())
+    // Default pattern: ends with "PAX_Export_YYYYMMDD_HHMMSS.csv" (generated by defaultOutputPath())
     let is_app_default_pattern = {
         use regex::Regex;
-        let pattern = Regex::new(r"\\Purview_Export_\d{8}_\d{6}\.csv$")
+        let pattern = Regex::new(r"\\PAX_Export_\d{8}_\d{6}\.csv$")
             .unwrap_or_else(|_| Regex::new("").unwrap());
         pattern.is_match(&outputFile)
     };
@@ -991,13 +973,13 @@ async fn export_hardcoded_script(
         // User left the app's default suggestion - generate fresh timestamp at script runtime
         let path_without_filename = {
             use regex::Regex;
-            let pattern = Regex::new(r"\\Purview_Export_\d{8}_\d{6}\.csv$")
+            let pattern = Regex::new(r"\\PAX_Export_\d{8}_\d{6}\.csv$")
                 .unwrap_or_else(|_| Regex::new("").unwrap());
             pattern.replace(&outputFile, "").to_string()
         };
         (
-      format!("# Generate fresh timestamp for default path at script runtime\n$OutputFile = '{path}\\Purview_Export_' + (Get-Date -Format 'yyyyMMdd_HHmmss') + '.csv'", path = path_without_filename),
-      format!("Dynamic: {}\\Purview_Export_YYYYMMDD_HHMMSS.csv", path_without_filename),
+      format!("# Generate fresh timestamp for default path at script runtime\n$OutputFile = '{path}\\PAX_Export_' + (Get-Date -Format 'yyyyMMdd_HHmmss') + '.csv'", path = path_without_filename),
+      format!("Dynamic: {}\\PAX_Export_YYYYMMDD_HHMMSS.csv", path_without_filename),
       " (fresh timestamp at runtime)".to_string()
     )
     } else {
@@ -1013,26 +995,22 @@ async fn export_hardcoded_script(
     };
 
     let config_vars = format!(
-    "# AUTO-GENERATED BY PAX (PURVIEW AUDIT EXPORTER)\n# \n# OVERVIEW:\n# - Exports Microsoft 365 Copilot/AI and user activity audit logs to CSV\n# - Uses curated activity tiers: Tier 1=Copilot core, Tier 2=Teams context, Tier 3=Files context\n# - Creates automatic transcript logs (.log files) alongside CSV output\n# - Handles Microsoft 365 throttling with exponential backoff and optional pacing\n# \n# IMPORTANT - QUERY TIMING:\n# - Individual queries may appear to 'hang' for 30-120 seconds - this is NORMAL\n# - Microsoft 365 Purview processes complex queries server-side, causing apparent delays\n# - Be patient during query phases - true timeouts are very rare (10+ minutes)\n# - Progress shows '[25%] Query 5/20 - ActivityName' then waits for Microsoft's response\n# \n# AUTHENTICATION: {au} (WebLogin=browser, DeviceCode=code entry, Credential=stored creds)\n# TIME WINDOWS: Queries run in {bh}-hour blocks across date range (EndDate exclusive)\n# THROTTLING: {pm}ms pacing between API calls (0=no delay, 500-2000 recommended for busy tenants)\n# STRUCTURED MARKERS: Emits PA:TOTALS, PA:PHASE, PA:POST for automated parsing\n# \n# HARD-CODED CRITERIA (configured via PAX application):\n#   Start Date  : {sd} (inclusive - data from this date included)\n#   End Date    : {ed} (exclusive - data up to but not including this date)\n#   Auth Mode   : {au}\n#   Block Hours : {bh} (smaller = more queries, better for large datasets)\n#   Result Size : {rs} records per API call\n#   Pacing Ms   : {pm} milliseconds delay between requests\n#   CSV Output  : {csv_desc}\n#   Log File    : Auto-generated .log file in same directory\n#   Activities  : {act_count} curated activities selected in PAX\n\n$StartDate = '{sd}'\n$EndDate = '{ed}'\n$Auth = '{au}'\n$BlockHours = {bh}\n$ResultSize = {rs}\n$PacingMs = {pm}\n{output_config}\n# Generate log file name based on output file\n$LogFile = $OutputFile -replace '\\.csv$', '.log'\nif ($LogFile -eq $OutputFile) {{ $LogFile += '.log' }}\n{activities}\n\nWrite-Host 'PAX Auto-Generated Script - Hard-coded Configuration:' -ForegroundColor Cyan\nWrite-Host ('  Start Date  : ' + $StartDate + ' (inclusive)')\nWrite-Host ('  End Date    : ' + $EndDate + ' (exclusive)')\nWrite-Host ('  Auth Mode   : ' + $Auth)\nWrite-Host ('  Block Hours : ' + $BlockHours + ' (time window per query)')\nWrite-Host ('  Result Size : ' + $ResultSize + ' (records per API call)')\nWrite-Host ('  Pacing Ms   : ' + $PacingMs + ' (delay between requests)')\nWrite-Host ('  CSV Output  : ' + $OutputFile + '{runtime_note}')\nWrite-Host ('  Log File    : ' + $LogFile)\nWrite-Host ('  Activities  : {act_count} selected (curated tiers 1-3)')\nWrite-Host ('NOTE: Queries may appear to hang 30-120 seconds - this is normal Microsoft 365 behavior') -ForegroundColor Yellow\n\n",
+    "# AUTO-GENERATED BY PAX (PORTABLE AUDIT EXPORTER)\n# \n# OVERVIEW:\n# - Exports Microsoft 365 Copilot/AI and user activity audit logs to CSV\n# - Uses curated activity tiers: Tier 1=Copilot core, Tier 2=Teams context, Tier 3=Files context\n# - Creates automatic transcript logs (.log files) alongside CSV output\n# - Handles Microsoft 365 throttling with exponential backoff and optional pacing\n# \n# IMPORTANT - QUERY TIMING:\n# - Individual queries may appear to 'hang' for 30-120 seconds - this is NORMAL\n# - Microsoft 365 audit system processes complex queries server-side, causing apparent delays\n# - Be patient during query phases - true timeouts are very rare (10+ minutes)\n# - Progress shows '[25%] Query 5/20 - ActivityName' then waits for Microsoft's response\n# \n# AUTHENTICATION: {au} (WebLogin=browser, DeviceCode=code entry, Credential=stored creds)\n# TIME WINDOWS: Queries run in {bh}-hour blocks across date range (EndDate exclusive)\n# THROTTLING: {pm}ms pacing between API calls (0=no delay, 500-2000 recommended for busy tenants)\n# STRUCTURED MARKERS: Emits PA:TOTALS, PA:PHASE, PA:POST for automated parsing\n# \n# HARD-CODED CRITERIA (configured via PAX application):\n#   Start Date  : {sd} (inclusive - data from this date included)\n#   End Date    : {ed} (exclusive - data up to but not including this date)\n#   Auth Mode   : {au}\n#   Block Hours : {bh} (smaller = more queries, better for large datasets)\n#   Result Size : {rs} records per API call\n#   Pacing Ms   : {pm} milliseconds delay between requests\n#   CSV Output  : {csv_desc}\n#   Log File    : Auto-generated .log file in same directory\n#   Activities  : {act_count} curated activities selected in PAX\n\n$StartDate = '{sd}'\n$EndDate = '{ed}'\n$Auth = '{au}'\n$BlockHours = {bh}\n$ResultSize = {rs}\n$PacingMs = {pm}\n$NoExplodeArrays = ${explode_arrays}\n$CopilotInteractionOnly = ${copilot_interaction_only}\n$DevTest = ${dev_test}\n{output_config}\n# Generate log file name based on output file\n$LogFile = $OutputFile -replace '\\.csv$', '.log'\nif ($LogFile -eq $OutputFile) {{ $LogFile += '.log' }}\n{activities}\n\nWrite-Host 'PAX Auto-Generated Script - Hard-coded Configuration:' -ForegroundColor Cyan\nWrite-Host ('  Start Date  : ' + $StartDate + ' (inclusive)')\nWrite-Host ('  End Date    : ' + $EndDate + ' (exclusive)')\nWrite-Host ('  Auth Mode   : ' + $Auth)\nWrite-Host ('  Block Hours : ' + $BlockHours + ' (time window per query)')\nWrite-Host ('  Result Size : ' + $ResultSize + ' (records per API call)')\nWrite-Host ('  Pacing Ms   : ' + $PacingMs + ' (delay between requests)')\nWrite-Host ('  CSV Output  : ' + $OutputFile + '{runtime_note}')\nWrite-Host ('  Log File    : ' + $LogFile)\nWrite-Host ('  Activities  : {act_count} selected (curated tiers 1-3)')\nWrite-Host ('NOTE: Queries may appear to hang 30-120 seconds - this is normal Microsoft 365 behavior') -ForegroundColor Yellow\n\n",
     sd = startDate,
     ed = endDate,
     au = authMode,
     bh = bh,
-    rs = resultSize.unwrap_or(5000).min(5000),
+    rs = resultSize.unwrap_or(25000).min(50000),
     pm = pacingMs.unwrap_or(0).min(10000),
+    explode_arrays = if explodeArrays == Some(false) { "$true" } else { "$false" },
+    copilot_interaction_only = if copilotInteractionOnly == Some(true) { "$true" } else { "$false" },
+    dev_test = if devTestMode == Some(true) { "$true" } else { "$false" },
     act_count = activityTypes.len(),
     csv_desc = csv_output_desc,
     output_config = output_file_config,
     runtime_note = runtime_note,
     activities = activities_ps
   );
-
-    // If DetailedPost is requested, enable it in the exported script via a switch variable
-    let detailed_switch = if detailedPost.unwrap_or(false) {
-        "$DetailedPost = $true\n"
-    } else {
-        "$DetailedPost = $false\n"
-    };
 
     // Process the full-featured script while preserving all functionality
     let mut out = String::new();
@@ -1079,8 +1057,6 @@ async fn export_hardcoded_script(
                 out.push_str("param([switch]$InHelper)\n\n");
                 if !injected_config {
                     out.push_str(&config_vars);
-                    out.push_str(&detailed_switch);
-                    out.push_str("Write-Host ('  DetailedPost: ' + $DetailedPost)\n\n");
                     injected_config = true;
                 }
             }
@@ -1102,8 +1078,6 @@ async fn export_hardcoded_script(
                 out.push_str("param([switch]$InHelper)\n\n");
                 if !injected_config {
                     out.push_str(&config_vars);
-                    out.push_str(&detailed_switch);
-                    out.push_str("Write-Host ('  DetailedPost: ' + $DetailedPost)\n\n");
                     injected_config = true;
                 }
             }
@@ -1170,8 +1144,6 @@ async fn export_hardcoded_script(
         // Inject config after requires but before any other content if not already done
         if !injected_config && found_requires && !trimmed.is_empty() && !trimmed.starts_with("#") {
             out.push_str(&config_vars);
-            out.push_str(&detailed_switch);
-            out.push_str("Write-Host ('  DetailedPost: ' + $DetailedPost)\n\n");
             injected_config = true;
         }
 
@@ -1243,7 +1215,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             preflight_exchange_module,
-            run_purview_script,
+            run_audit_script,
             cancel_current_run,
             export_hardcoded_script,
             open_file_externally,

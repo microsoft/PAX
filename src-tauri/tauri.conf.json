@@ -6,7 +6,7 @@
     "distDir": "../dist"
   },
   "package": {
-    "productName": "Purview Audit eXporter (PAX)",
+    "productName": "Portable Audit eXporter (PAX)",
     "version": "1.2.0"
   },
   "tauri": {
@@ -47,7 +47,7 @@
     },
     "windows": [
       {
-        "title": "Purview Audit eXporter (PAX) v1.2.0",
+        "title": "Portable Audit eXporter (PAX) v1.2.0",
         "width": 640,
         "height": 920,
         "minHeight": 600,

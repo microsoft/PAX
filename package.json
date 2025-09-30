@@ -1,7 +1,7 @@
 {
-  "name": "purview-audit-exporter",
+  "name": "portable-audit-exporter",
   "version": "1.2.0",
-  "description": "Cross-platform Purview audit export wizard (Tauri + React + TypeScript).",
+  "description": "Cross-platform audit log export wizard (Tauri + React + TypeScript).",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -16,7 +16,8 @@
     "build:macos:silicon": "npm run tauri build -- --target aarch64-apple-darwin",
     "build:macos:intel": "npm run tauri build -- --target x86_64-apple-darwin",
     "synth:csv": "node scripts/generate-synthetic.mjs",
-    "analyze:purview": "node scripts/analyze-purview-columns.mjs"
+    "analyze:purview": "node scripts/analyze-purview-columns.mjs",
+    "sync:activities": "node scripts/sync-activities.js"
   },
   "dependencies": {
     "@tauri-apps/api": "^1.6.0",

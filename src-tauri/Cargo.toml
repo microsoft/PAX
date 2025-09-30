@@ -1,8 +1,8 @@
 [package]
-name = "purview-audit-exporter"
+name = "portable-audit-exporter"
 version = "0.1.0"
 edition = "2021"
-description = "Purview audit export wizard"
+description = "Portable Audit eXporter (PAX) - Multi-source audit log export wizard"
 authors = ["Your Name"]
 
 [dependencies]

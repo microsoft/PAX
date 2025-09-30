@@ -9,7 +9,7 @@ import { HelpModal } from './components/HelpModal';
 import { appWindow, LogicalSize } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { ActivityMultiSelect } from './components/activity-multi-select';
-import { RELEVANT_ACTIVITIES, ALL_ACTIVITIES, Activity } from './lib/activities';
+import { RELEVANT_ACTIVITIES, CURATED_ACTIVITIES, ALL_ACTIVITIES, Activity } from './lib/activities';
 
 // Placeholder light-weight UI primitives (replace with shadcn added components)
 import { Button } from './components/ui/button';
@@ -23,6 +23,207 @@ import { Command, CommandList, CommandGroup, CommandItem } from './components/ui
 
 interface LogLine { type:'stdout'|'stderr'; line:string }
 
+// Enhanced log color coding function
+function getLogLineColor(line: string): string {
+  // Error patterns - highest priority (including Exchange Online errors)
+  if (/error|failed|exception|cannot|unable|invalid|fatal|critical|write-error|server side error|operation could not be completed|reach out to ms support/i.test(line)) {
+    return 'text-red-400';
+  }
+  
+  // Warning patterns
+  if (/warning|retry|throttle|backed|rate limit|timeout|slow|delay/i.test(line)) {
+    return 'text-orange-400';
+  }
+  
+  // Success patterns
+  if (/success|completed|connected|authenticated|found \d+ records|extraction complete|done|finished|ready/i.test(line)) {
+    return 'text-green-400';
+  }
+  
+  // Progress patterns - important milestones
+  if (/\[\d+\.\d+%\]|Query \d+\/\d+|PA:PHASE|PA:POST|===.*===|\d+\/\d+ -/i.test(line)) {
+    return 'text-yellow-300 font-semibold';
+  }
+  
+  // Major sections and connection events
+  if (/PA:PHASE|PA:POST|===.*===|connecting|authentication|session|import.*module/i.test(line)) {
+    return 'text-cyan-400';
+  }
+  
+  // Performance and optimization
+  if (/optimization|batch|consolidated query|memory|streaming|performance|\d+\.\d+s|records\/sec/i.test(line)) {
+    return 'text-purple-400';
+  }
+  
+  // Processing and activity
+  if (/starting|processing|querying|fetching|searching|exporting|building/i.test(line)) {
+    return 'text-blue-400';
+  }
+  
+  // Debug and verbose info
+  if (/debug|verbose|info|sample|stats|details/i.test(line)) {
+    return 'text-gray-400';
+  }
+  
+  // Default color for regular content
+  return 'text-gray-300';
+}
+
+// Multi-part line highlighting function  
+function renderLogLineWithHighlights(line: string): string {
+  // First convert any ANSI codes to HTML, then apply our custom highlighting
+  let processedLine = convertANSIToHTML(line);
+  
+  return processedLine
+    // Progress percentages
+    .replace(/(\[\d+\.\d+%\])/g, '<span class="text-yellow-300 font-bold bg-yellow-900/20 px-1 rounded">$1</span>')
+    // Query numbers
+    .replace(/(Query \d+\/\d+)/g, '<span class="text-blue-400 font-medium">$1</span>')
+    // Record counts
+    .replace(/(\d+ records?)/g, '<span class="text-green-400 font-medium">$1</span>')
+    // Phase markers
+    .replace(/(PA:PHASE|PA:POST)/g, '<span class="text-cyan-400 font-bold bg-cyan-900/20 px-1 rounded">$1</span>')
+    // Consolidated query optimization
+    .replace(/(Consolidated query for \d+ operations)/g, '<span class="text-purple-400 font-medium bg-purple-900/20 px-1 rounded">$1</span>')
+    // Session IDs (shortened for readability)
+    .replace(/(session [a-f0-9-]{8})[a-f0-9-]{28}/g, '<span class="text-indigo-400">$1...</span>')
+    // Time stamps
+    .replace(/(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/g, '<span class="text-blue-300">$1</span>')
+    // Error keywords (enhance Write-Error detection)
+    .replace(/(Write-Error|error|failed|exception|server side error)/gi, '<span class="text-red-400 font-bold bg-red-900/20 px-1 rounded">$1</span>')
+    // Success keywords  
+    .replace(/(success|completed|done|found \d+ records)/gi, '<span class="text-green-400 font-medium bg-green-900/20 px-1 rounded">$1</span>');
+}
+
+// ANSI color codes for log file output
+const ANSI_COLORS = {
+  red: '\x1b[31m',
+  green: '\x1b[32m', 
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  magenta: '\x1b[35m',
+  cyan: '\x1b[36m',
+  white: '\x1b[37m',
+  gray: '\x1b[90m',
+  orange: '\x1b[38;5;208m',
+  purple: '\x1b[38;5;141m',
+  reset: '\x1b[0m',
+  bold: '\x1b[1m'
+};
+
+// Get ANSI color for log file based on content
+function getANSIColor(line: string): string {
+  // Error patterns
+  if (/error|failed|exception|cannot|unable|invalid|fatal|critical/i.test(line)) {
+    return ANSI_COLORS.red + ANSI_COLORS.bold;
+  }
+  
+  // Warning patterns
+  if (/warning|retry|throttle|backed|rate limit|timeout|slow|delay/i.test(line)) {
+    return ANSI_COLORS.orange;
+  }
+  
+  // Success patterns
+  if (/success|completed|connected|authenticated|found \d+ records|extraction complete|done|finished|ready/i.test(line)) {
+    return ANSI_COLORS.green + ANSI_COLORS.bold;
+  }
+  
+  // Progress patterns
+  if (/\[\d+\.\d+%\]|Query \d+\/\d+|PA:PHASE|PA:POST|===.*===|\d+\/\d+ -/i.test(line)) {
+    return ANSI_COLORS.yellow + ANSI_COLORS.bold;
+  }
+  
+  // Major sections
+  if (/PA:PHASE|PA:POST|===.*===|connecting|authentication|session|import.*module/i.test(line)) {
+    return ANSI_COLORS.cyan + ANSI_COLORS.bold;
+  }
+  
+  // Performance and optimization
+  if (/optimization|batch|consolidated query|memory|streaming|performance|\d+\.\d+s|records\/sec/i.test(line)) {
+    return ANSI_COLORS.purple;
+  }
+  
+  // Processing and activity
+  if (/starting|processing|querying|fetching|searching|exporting|building/i.test(line)) {
+    return ANSI_COLORS.blue;
+  }
+  
+  // Debug and verbose info
+  if (/debug|verbose|info|sample|stats|details/i.test(line)) {
+    return ANSI_COLORS.gray;
+  }
+  
+  // Default white
+  return ANSI_COLORS.white;
+}
+
+// Helper function to strip ANSI color codes from log lines when parsing saved files
+function stripANSI(text: string): string {
+  // Enhanced regex to handle all ANSI escape sequences including PowerShell Write-Error format
+  return text
+    .replace(/\x1b\[[0-9;]*m/g, '') // Standard ANSI codes
+    .replace(/\[([0-9;]+)m/g, '') // Bracket-only format from Write-Error
+    .replace(/\[0m/g, ''); // Reset codes
+}
+
+// Enhanced function to convert ANSI codes to HTML for better display
+function convertANSIToHTML(text: string): string {
+  return text
+    // Handle standard ANSI codes
+    .replace(/\x1b\[31m/g, '<span class="text-red-400">')
+    .replace(/\x1b\[31;1m/g, '<span class="text-red-400 font-bold">')
+    .replace(/\x1b\[32m/g, '<span class="text-green-400">')
+    .replace(/\x1b\[33m/g, '<span class="text-yellow-400">')
+    .replace(/\x1b\[34m/g, '<span class="text-blue-400">')
+    .replace(/\x1b\[35m/g, '<span class="text-purple-400">')
+    .replace(/\x1b\[36m/g, '<span class="text-cyan-400">')
+    .replace(/\x1b\[37m/g, '<span class="text-white">')
+    .replace(/\x1b\[90m/g, '<span class="text-gray-400">')
+    .replace(/\x1b\[0m/g, '</span>')
+    .replace(/\x1b\[1m/g, '<span class="font-bold">')
+    // Handle PowerShell Write-Error bracket format
+    .replace(/\[31;1m/g, '<span class="text-red-400 font-bold">')
+    .replace(/\[31m/g, '<span class="text-red-400">')
+    .replace(/\[32m/g, '<span class="text-green-400">')
+    .replace(/\[33m/g, '<span class="text-yellow-400">')
+    .replace(/\[34m/g, '<span class="text-blue-400">')
+    .replace(/\[35m/g, '<span class="text-purple-400">')
+    .replace(/\[36m/g, '<span class="text-cyan-400">')
+    .replace(/\[37m/g, '<span class="text-white">')
+    .replace(/\[90m/g, '<span class="text-gray-400">')
+    .replace(/\[0m/g, '</span>')
+    .replace(/\[1m/g, '<span class="font-bold">');
+}
+
+// Helper function to parse log line format with ANSI color support
+function parseLogLine(line: string): LogLine {
+  // Strip ANSI colors first, then parse the format
+  const cleanLine = stripANSI(line);
+  
+  if (cleanLine.startsWith('[stdout] ')) {
+    return { type: 'stdout' as const, line: cleanLine.substring(9) };
+  } else if (cleanLine.startsWith('[stderr] ')) {
+    return { type: 'stderr' as const, line: cleanLine.substring(9) };
+  } else {
+    return { type: 'stdout' as const, line: cleanLine };
+  }
+}
+
+// ResultSize dropdown options
+const RESULT_SIZE_OPTIONS = [
+  { value: 50000, label: '50,000 (Maximum)' },
+  { value: 40000, label: '40,000' },
+  { value: 30000, label: '30,000' },
+  { value: 25000, label: '25,000 (Default)' },
+  { value: 20000, label: '20,000' },
+  { value: 15000, label: '15,000' },
+  { value: 10000, label: '10,000' },
+  { value: 7500, label: '7,500' },
+  { value: 5000, label: '5,000' },
+  { value: 2500, label: '2,500' },
+  { value: 1000, label: '1,000' }
+];
+
 interface FormState {
   startDate: string;
   endDate: string;
@@ -32,9 +233,11 @@ interface FormState {
   blockHours: number;
   authMode: 'WebLogin' | 'DeviceCode' | 'Credential' | 'Silent';
   remember: boolean;
-  detailedPost: boolean;
   resultSize: number;
   pacingMs: number;
+  explodeArrays: boolean;
+  copilotInteractionOnly: boolean;
+  devTestMode: boolean;
 }
 
 function toYMD(d: Date){
@@ -65,11 +268,11 @@ async function getTempDir(){
 }
 async function defaultOutputPath(){
   const dir = await getTempDir();
-  return `${dir.replace(/\\$/, '')}\\Purview_Export_${timestamp()}.csv`;
+  return `${dir.replace(/\\$/, '')}\\PAX_Export_${timestamp()}.csv`;
 }
 
 async function createUniqueLogPathInDir(dir: string){
-  const base = `${dir.replace(/\\$/, '')}\\Purview_Export_${timestamp()}`;
+  const base = `${dir.replace(/\\$/, '')}\\PAX_Export_${timestamp()}`;
   let candidate = `${base}.log`;
   let i = 1;
   while (await exists(candidate).catch(()=>false)){
@@ -87,12 +290,14 @@ function newInitialForm(): FormState {
     activityIds: RELEVANT_ACTIVITIES.map(a=>a.id),
     outputFile: '',
     overwrite: false,
-  blockHours: 24,
-    resultSize: 5000,
+  blockHours: 0.5,
+    resultSize: 25000,
     pacingMs: 0,
     authMode: 'WebLogin',
     remember: false,
-    detailedPost: false,
+    explodeArrays: false,
+    copilotInteractionOnly: false,
+    devTestMode: false,
   };
 }
 
@@ -125,7 +330,6 @@ export default function App(){
   const [dynCuratedIds, setDynCuratedIds] = useState<Set<string> | null>(null);
   const [selectionTouched, setSelectionTouched] = useState<boolean>(false);
   const [datasetLoadError, setDatasetLoadError] = useState<string | null>(null);
-  const [showDetailedFlipNotice, setShowDetailedFlipNotice] = useState(false);
   const [showWebLoginHint, setShowWebLoginHint] = useState(false);
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
   const [authInfoOpen, setAuthInfoOpen] = useState(false);
@@ -134,6 +338,7 @@ export default function App(){
   const [noResults,setNoResults] = useState(false);
   const [logPath, setLogPath] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [loadingFullLog, setLoadingFullLog] = useState<boolean>(false);
   const logPathRef = React.useRef<string | null>(null);
   // Buffered logging to avoid UI stalls
   const logBufferRef = React.useRef<LogLine[]>([]);
@@ -143,18 +348,18 @@ export default function App(){
   const fileFlushTimerRef = React.useRef<number | null>(null);
   const LOG_UI_FLUSH_MS = 50; // batch UI updates ~20fps
   const LOG_FILE_FLUSH_MS = 200; // fewer fs writes
-  const LOG_MAX_LINES = 5000; // cap in-memory lines
+  const LOG_MAX_LINES = 15000; // increased buffer for full log history scrollback
   React.useEffect(()=>{ logPathRef.current = logPath; }, [logPath]);
   // Load saved auto-scroll preference
   useEffect(()=>{
     try {
-      const raw = localStorage.getItem('purview_auto_scroll_log');
+      const raw = localStorage.getItem('pax_auto_scroll_log');
       if (raw === 'false') setAutoScroll(false);
     } catch {}
   },[]);
   // Persist auto-scroll preference
   useEffect(()=>{
-    try { localStorage.setItem('purview_auto_scroll_log', String(autoScroll)); } catch {}
+    try { localStorage.setItem('pax_auto_scroll_log', String(autoScroll)); } catch {}
   }, [autoScroll]);
   // Autoscroll log container to bottom as new lines arrive (always keep latest visible)
   const logContainerRef = React.useRef<HTMLDivElement|null>(null);
@@ -173,7 +378,12 @@ export default function App(){
     }
     lastLogRef.current = item;
     logBufferRef.current.push(item);
-    fileLogBufferRef.current.push(`[${type}] ${line}${line.endsWith('\n') ? '' : '\n'}`);
+    
+    // Add ANSI colors to log file for better readability in text editors that support colors
+    const colorCode = getANSIColor(line);
+    const coloredLine = `${colorCode}[${type}] ${line}${ANSI_COLORS.reset}${line.endsWith('\n') ? '' : '\n'}`;
+    fileLogBufferRef.current.push(coloredLine);
+    
     scheduleUiFlush();
     scheduleFileFlush();
   }
@@ -204,6 +414,103 @@ export default function App(){
       if (!p) return;
       try { await (writeTextFile as any)(p, chunk, { append: true } as any); } catch {}
     }, LOG_FILE_FLUSH_MS);
+  }
+
+  // Log navigation functions
+  async function scrollLogToTop(){
+    const el = logContainerRef.current;
+    if (!el) return;
+    
+    // If we have a log file, load the beginning of the full file
+    const p = logPathRef.current;
+    if (p) {
+      try {
+        setLoadingFullLog(true);
+        // Read the full log file
+        const fullLogContent = await readTextFile(p);
+        const allLines = fullLogContent.split('\n');
+        
+        if (allLines.length > LOG_MAX_LINES) {
+          // Show the first LOG_MAX_LINES from the beginning of the file
+          const topLines = allLines.slice(0, LOG_MAX_LINES);
+          const topLogLines: LogLine[] = topLines.map(line => {
+            // Parse the log format with ANSI color support
+            return parseLogLine(line);
+          }).filter(item => item.line.trim()); // Remove empty lines
+          
+          setLogs(topLogLines);
+          setTimeout(() => {
+            if (el) el.scrollTop = 0;
+          }, 50);
+          setAutoScroll(false);
+        } else {
+          // File is small enough, just scroll to top
+          setTimeout(() => {
+            if (el) el.scrollTop = 0;
+          }, 50);
+          setAutoScroll(false);
+        }
+      } catch (error) {
+        console.log('Could not read full log file:', error);
+        // Fallback: just scroll to top of current view
+        el.scrollTop = 0;
+        setAutoScroll(false);
+      } finally {
+        setLoadingFullLog(false);
+      }
+    } else {
+      // Fallback: just scroll to top of current view
+      el.scrollTop = 0;
+      setAutoScroll(false);
+    }
+  }
+
+  async function scrollLogToBottom(){
+    const el = logContainerRef.current;
+    if (!el) return;
+    
+    // If we have a log file, load the end of the full file
+    const p = logPathRef.current;
+    if (p) {
+      try {
+        setLoadingFullLog(true);
+        // Read the full log file
+        const fullLogContent = await readTextFile(p);
+        const allLines = fullLogContent.split('\n');
+        
+        if (allLines.length > LOG_MAX_LINES) {
+          // Show the last LOG_MAX_LINES from the end of the file
+          const bottomLines = allLines.slice(-LOG_MAX_LINES);
+          const bottomLogLines: LogLine[] = bottomLines.map(line => {
+            // Parse the log format with ANSI color support
+            return parseLogLine(line);
+          }).filter(item => item.line.trim()); // Remove empty lines
+          
+          setLogs(bottomLogLines);
+          setTimeout(() => {
+            if (el) el.scrollTop = el.scrollHeight;
+          }, 50);
+          setAutoScroll(true);
+        } else {
+          // File is small enough, just scroll to bottom
+          setTimeout(() => {
+            if (el) el.scrollTop = el.scrollHeight;
+          }, 50);
+          setAutoScroll(true);
+        }
+      } catch (error) {
+        console.log('Could not read full log file:', error);
+        // Fallback: just scroll to bottom of current view
+        el.scrollTop = el.scrollHeight;
+        setAutoScroll(true);
+      } finally {
+        setLoadingFullLog(false);
+      }
+    } else {
+      // Fallback: just scroll to bottom of current view
+      el.scrollTop = el.scrollHeight;
+      setAutoScroll(true);
+    }
   }
 
   // Dynamically fit window height to content (no artificial minimums)
@@ -305,7 +612,7 @@ export default function App(){
   // Load cached settings on mount
   useEffect(()=>{
     try {
-      const raw = localStorage.getItem('purview_audit_exporter_settings_v1');
+      const raw = localStorage.getItem('pax_audit_exporter_settings_v1');
       if(raw){
         const parsed = JSON.parse(raw);
         // basic shape guard
@@ -320,8 +627,8 @@ export default function App(){
             ...(typeof parsed.blockHours==='number'? {blockHours: parsed.blockHours}:{}),
             ...(typeof parsed.resultSize==='number'? {resultSize: parsed.resultSize}:{}),
             ...(typeof parsed.pacingMs==='number'? {pacingMs: parsed.pacingMs}:{}),
+            ...(typeof parsed.explodeArrays==='boolean'? {explodeArrays: parsed.explodeArrays}:{}),
             ...(parsed.authMode? {authMode: parsed.authMode}:{}),
-            ...(typeof parsed.detailedPost==='boolean'? {detailedPost: parsed.detailedPost}:{}),
             remember: true,
           }));
         }
@@ -333,7 +640,7 @@ export default function App(){
   useEffect(()=>{
     try {
       if(form.remember){
-        localStorage.setItem('purview_audit_exporter_settings_v1', JSON.stringify({
+        localStorage.setItem('pax_audit_exporter_settings_v1', JSON.stringify({
           startDate: form.startDate,
           endDate: form.endDate,
           activityIds: form.activityIds,
@@ -343,13 +650,13 @@ export default function App(){
           resultSize: form.resultSize,
           pacingMs: form.pacingMs,
           authMode: form.authMode,
-          detailedPost: form.detailedPost,
+          explodeArrays: form.explodeArrays,
         }));
       } else {
-        localStorage.removeItem('purview_audit_exporter_settings_v1');
+        localStorage.removeItem('pax_audit_exporter_settings_v1');
       }
     } catch {}
-  },[form.startDate, form.endDate, form.activityIds, form.outputFile, form.overwrite, form.blockHours, form.authMode, form.detailedPost, form.resultSize, form.pacingMs, form.remember]);
+  },[form.startDate, form.endDate, form.activityIds, form.outputFile, form.overwrite, form.blockHours, form.authMode, form.resultSize, form.pacingMs, form.explodeArrays, form.remember]);
 
   function validateStep1(){
     const e:Record<string,string>={};
@@ -408,7 +715,7 @@ export default function App(){
     setDynCategories(ordered);
     // Build unified relevant = tiers 1–3 + curated-intersection
     const allOps = new Set<string>(Object.values(cats).flat().map(a=>a.id));
-    const curatedIds = new Set<string>((RELEVANT_ACTIVITIES||[]).map(a=>a.id));
+    const curatedIds = new Set<string>((CURATED_ACTIVITIES||[]).map(a=>a.id));
     const curatedIntersect: Activity[] = [];
     for (const [label, acts] of Object.entries(cats)){
       for (const a of acts){ if (curatedIds.has(a.id)) curatedIntersect.push(a); }
@@ -522,7 +829,7 @@ export default function App(){
       if (rel.length){ setSelectionTouched(true); setForm((f:FormState)=>({...f, activityIds: Array.from(new Set(rel.map(a=>a.id))) })); return; }
       // If dynRelevant is empty (e.g., no tiers present), intersect curated with dataset
       const allOps = new Set<string>(Object.values(dynCategories).flat().map(a=>a.id));
-      const curated = RELEVANT_ACTIVITIES.map(a=>a.id).filter(id=> allOps.has(id));
+      const curated = CURATED_ACTIVITIES.map(a=>a.id).filter(id=> allOps.has(id));
       if (curated.length){ setSelectionTouched(true); setForm((f:FormState)=>({...f, activityIds: Array.from(new Set(curated)) })); return; }
       // Fallback: select everything
       const all = Object.values(dynCategories).flat().map(a=>a.id);
@@ -530,7 +837,7 @@ export default function App(){
       setForm((f:FormState)=>({...f, activityIds: Array.from(new Set(all)) }));
     } else {
       setSelectionTouched(true);
-      setForm((f:FormState)=>({...f, activityIds: RELEVANT_ACTIVITIES.map(a=>a.id) }));
+      setForm((f:FormState)=>({...f, activityIds: CURATED_ACTIVITIES.map(a=>a.id) }));
     }
   }
 
@@ -569,7 +876,7 @@ export default function App(){
       const lp = await createUniqueLogPathInDir(csvDir);
       setLogPath(lp);
       // Create the log file immediately so the Open Log button works even if no output arrives
-      await writeTextFile(lp, `=== Purview Audit Exporter Log ===\nStarted: ${new Date().toISOString()}\nCSV: ${form.outputFile}\nLog: ${lp}\n`);
+      await writeTextFile(lp, `=== Portable Audit eXporter (PAX) Log ===\nStarted: ${new Date().toISOString()}\nCSV: ${form.outputFile}\nLog: ${lp}\n`);
     } catch {}
     try {
       // If file exists and overwrite is off, ask user before proceeding
@@ -589,7 +896,7 @@ export default function App(){
     // Preflight: ensure ExchangeOnlineManagement is available
     await invoke('preflight_exchange_module');
       
-      await invoke('run_purview_script', {
+      await invoke('run_audit_script', {
         startDate: form.startDate,
         endDate: form.endDate,
         activityTypes: form.activityIds,
@@ -597,9 +904,11 @@ export default function App(){
         overwrite: form.overwrite,
         blockHours: form.blockHours,
         authMode: form.authMode,
-        detailedPost: form.detailedPost,
         resultSize: form.resultSize,
         pacingMs: form.pacingMs,
+        explodeArrays: form.explodeArrays,
+        copilotInteractionOnly: form.copilotInteractionOnly,
+        devTestMode: form.devTestMode,
       });
       // Verify the file was actually created before reporting success
       const created = await exists(form.outputFile).catch(()=>false);
@@ -903,8 +1212,48 @@ export default function App(){
             <div className="mt-1">
               <AuthModeSelect value={form.authMode} onChange={(v)=> setForm((f)=>({...f, authMode: v}))} />
             </div>
-            <div className="text-xs text-gray-600 mt-1">Choose how to authenticate to Exchange Online for Purview audit access.</div>
+            <div className="text-xs text-gray-600 mt-1">Choose how to authenticate to Exchange Online for Microsoft 365 audit access.</div>
           </div>
+
+          {/* Activities Section Label */}
+          <div>
+            <label className="font-semibold flex items-center gap-2">Activities
+              <a
+                className="text-blue-600 underline text-xs"
+                href="#"
+                onClick={(e)=>{ e.preventDefault(); open('https://learn.microsoft.com/en-us/purview/audit-log-activities'); }}
+              >View full activity reference</a>
+            </label>
+          </div>
+
+          {/* CopilotInteraction Only Toggle */}
+          <div className="p-3 border rounded bg-blue-50">
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.copilotInteractionOnly}
+                  onChange={(e) => {
+                    const enabled = e.target.checked;
+                    setSelectionTouched(true);
+                    setForm((f: FormState) => ({
+                      ...f,
+                      copilotInteractionOnly: enabled,
+                      devTestMode: enabled ? false : f.devTestMode,
+                      activityIds: enabled ? ['CopilotInteraction'] : CURATED_ACTIVITIES.map(a => a.id)
+                    }));
+                  }}
+                  disabled={form.devTestMode}
+                  className="rounded"
+                />
+                <span className="text-sm font-semibold text-blue-700">CopilotInteraction Only</span>
+              </label>
+              <span className="text-xs text-blue-600">
+                Fast, focused extraction of core Copilot usage data only
+              </span>
+            </div>
+          </div>
+
             <div>
               <div className="flex items-start gap-4">
                 <div className="flex-1">
@@ -927,47 +1276,36 @@ export default function App(){
                         >Full ({Object.values(dynCategories || ALL_ACTIVITIES).reduce((n,arr)=>n+arr.length,0)})</button>
                       </div>
                     </div>
-                    <label className="text-xs flex items-center gap-1">
-                      <input
-                        type="checkbox"
-                        checked={showOnlySelected}
-                        onChange={(e)=> { const v = e.target.checked; setShowOnlySelected(v); if (v) setShowOnlyRecommended(false); }}
-                      />
-                      <span>Show only selected</span>
-                    </label>
-                    <label className="text-xs flex items-center gap-1">
-                      <input
-                        type="checkbox"
-                        checked={showOnlyRecommended}
-                        onChange={(e)=> { const v = e.target.checked; setShowOnlyRecommended(v); if (v) setShowOnlySelected(false); }}
-                      />
-                      <span>Show only recommended</span>
-                    </label>
-                    <button
-                      type="button"
-                      className="text-xs text-blue-700 underline"
-                      onClick={()=>{
-                        // Reset to recommended selection set
-                        const rel = dynRelevant || [];
-                        if (rel.length) {
-                          setSelectionTouched(true);
-                          setForm((f:FormState)=>({...f, activityIds: Array.from(new Set(rel.map(a=>a.id))) }));
-                        } else if (dynCategories) {
-                          // Fallback to recommended via curated intersect if relevant is empty
-                          const allOps = new Set<string>(Object.values(dynCategories).flat().map(a=>a.id));
-                          const curated = RELEVANT_ACTIVITIES.map(a=>a.id).filter(id=> allOps.has(id));
-                          if (curated.length) {
-                            setSelectionTouched(true);
-                            setForm((f:FormState)=>({...f, activityIds: Array.from(new Set(curated)) }));
-                          }
-                        }
-                      }}
-                    >Reset to Recommended</button>
+                    <div className="flex flex-wrap gap-2 justify-center md:justify-start">
+                      <Button 
+                        type="button" 
+                        variant="ghost" 
+                        className="text-xs border hover:bg-gray-50" 
+                        onClick={selectRecommended}
+                        disabled={form.copilotInteractionOnly || form.devTestMode}
+                      >
+                        Select Recommended (40)
+                      </Button>
+                      <Button 
+                        type="button" 
+                        variant="ghost" 
+                        className="text-xs border hover:bg-gray-50" 
+                        onClick={selectEverything}
+                        disabled={form.copilotInteractionOnly || form.devTestMode}
+                      >
+                        Select Everything
+                      </Button>
+                    </div>
+                    <div className="text-[10px] text-gray-600 mt-2 space-y-1">
+                      <div><strong>Recommended (40):</strong> Comprehensive Copilot & M365 activities</div>
+                      <div><strong>Everything:</strong> All 1000+ available activities</div>
+                    </div>
                   </div>
                   <ActivityMultiSelect
                     value={form.activityIds}
                     onChange={(ids:string[])=>{ setSelectionTouched(true); setForm((f:FormState)=>({...f,activityIds:ids})); }}
                     error={errors.activityIds}
+                    disabled={form.copilotInteractionOnly || form.devTestMode}
                     categories={(() => {
                       const base = dynCategories || ALL_ACTIVITIES;
                       // Show only recommended view
@@ -1008,29 +1346,47 @@ export default function App(){
               {(activitiesVersion || activitiesFresh===false || datasetLoadError) && (
                 <div className="text-xs text-gray-600 mt-1">
                   {activitiesVersion && <span>Activities version: {activitiesVersion}</span>}
-                  {activitiesFresh===false && <span className="ml-2 text-amber-700">(loaded from bundle or file)</span>}
                   <span className="ml-2">Loaded categories: {Object.keys(dynCategories || {}).length}, items: {Object.values(dynCategories || ALL_ACTIVITIES).reduce((n,arr)=>n+arr.length,0)}</span>
                   {datasetLoadError && <span className="ml-2 text-red-700">Load error: {datasetLoadError}</span>}
                 </div>
               )}
               {/* Hide Learn refresh/discovery errors in simplified mode */}
-              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="p-2 border rounded">
-                  <div className="text-xs font-semibold mb-2">Selection</div>
-                  <div className="flex flex-wrap gap-2 justify-center md:justify-start">
-                    <Button type="button" variant="ghost" className="text-xs border hover:bg-gray-50" onClick={selectRecommended}>Select Recommended</Button>
-                    <Button type="button" variant="ghost" className="text-xs border hover:bg-gray-50" onClick={selectEverything}>Select Everything</Button>
-                  </div>
-                  <div className="text-[10px] text-gray-600 mt-1">Recommended (Copilot): tiers 1–3 (Copilot core, Teams, Files). Excludes Security Copilot; Exchange/Governance optional.</div>
-                </div>
-                <div className="p-2 border rounded">
-                  <div className="flex flex-wrap gap-2 justify-center md:justify-start">
-                    <Button type="button" variant="ghost" className="text-xs border hover:bg-gray-50" onClick={loadDatasetFromFile}>Load from file…</Button>
-                  </div>
-                </div>
-              </div>
+              
               {/* Discovered operations UI removed in simplified mode */}
             </div>
+
+          {/* Dev Test Mode Toggle - FOR TESTING ONLY */}
+          <div className="p-3 border-2 border-orange-200 rounded bg-orange-50">
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.devTestMode}
+                  onChange={(e) => {
+                    const enabled = e.target.checked;
+                    setSelectionTouched(true);
+                    setForm((f: FormState) => ({
+                      ...f,
+                      devTestMode: enabled,
+                      copilotInteractionOnly: enabled ? false : f.copilotInteractionOnly,
+                      activityIds: enabled ? ['CopilotInteraction'] : (f.copilotInteractionOnly ? ['CopilotInteraction'] : CURATED_ACTIVITIES.map(a => a.id))
+                    }));
+                  }}
+                  className="rounded"
+                />
+                <span className="text-sm font-semibold text-orange-700">🧪 CopilotInteraction Only Dev Test</span>
+              </label>
+              <span className="text-xs text-orange-600">
+                Testing mode: Filters for "Create" operations, converts to synthetic CopilotInteraction data
+              </span>
+            </div>
+            {form.devTestMode && (
+              <div className="mt-2 text-xs text-orange-600 bg-orange-100 p-2 rounded">
+                <strong>⚠️ DEV TEST MODE ACTIVE:</strong> This will search for "Create" operations and convert them to realistic CopilotInteraction data with synthetic JSON structures. Remove before production release.
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center gap-2">
             <input id="remember-settings" type="checkbox" checked={form.remember} onChange={(e)=> setForm((f)=>({...f, remember: e.target.checked}))} />
             <label htmlFor="remember-settings" className="text-sm">Remember my selections and output path on this device</label>
@@ -1055,7 +1411,7 @@ export default function App(){
             </div>
             {errors.outputFile && <div className="text-red-600 text-sm">{errors.outputFile}</div>}
             <div className="text-xs text-gray-600 mt-1">
-            The selected folder will also contain the log file for this run.  The CSV name is chosen above; the log name will be <code>Purview_Export_YYYYMMDD_HHMMSS.log</code>.
+            The selected folder will also contain the log file for this run.  The CSV name is chosen above; the log name will be <code>PAX_Export_YYYYMMDD_HHMMSS.log</code>.
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1067,18 +1423,20 @@ export default function App(){
               <summary className="px-3 py-2 cursor-pointer select-none font-semibold">Advanced</summary>
               <div className="p-3 space-y-3 text-sm">
                 <div>
-                  <label className="font-semibold">Result size per call</label>
+                  <label className="font-semibold">Records per time block</label>
                   <div className="flex items-center gap-2 mt-1">
-                    <input
-                      type="number"
-                      min={1}
-                      max={5000}
-                      step={100}
-                      className="border rounded px-2 py-1 w-32"
+                    <select
+                      className="border rounded px-2 py-1 w-40"
                       value={form.resultSize}
-                      onChange={(e)=> setForm((f)=> ({...f, resultSize: Math.max(1, Math.min(5000, parseInt(e.target.value||'0',10) || 0))}))}
-                    />
-                    <span className="text-xs text-gray-600">Default 5000. Higher returns more rows per call and reduces the chance of dropped records in busy windows.</span>
+                      onChange={(e)=> setForm((f)=> ({...f, resultSize: parseInt(e.target.value, 10)}))}
+                    >
+                      {RESULT_SIZE_OPTIONS.map(option => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-xs text-gray-600">Records to fetch per time block. Values &gt;5,000 use session-based pagination to bypass Exchange limits. Higher values = fewer API calls but longer sessions.</span>
                   </div>
                 </div>
                 <div>
@@ -1102,12 +1460,25 @@ export default function App(){
                     <select
                       className="border rounded px-2 py-1 bg-white"
                       value={form.blockHours}
-                      onChange={(e)=> setForm((f:FormState)=>({...f, blockHours: parseInt(e.target.value, 10)}))}
+                      onChange={(e)=> setForm((f:FormState)=>({...f, blockHours: parseFloat(e.target.value)}))}
                     >
-                      {[2,4,6,8,12,24].map(h=> <option key={h} value={h}>{h} hours</option>)}
+                      {[
+                        {value: 0.016667, label: "1 minute"},
+                        {value: 0.033333, label: "2 minutes"},
+                        {value: 0.066667, label: "4 minutes"},
+                        {value: 0.133333, label: "8 minutes"},
+                        {value: 0.25, label: "15 minutes"},
+                        {value: 0.5, label: "30 minutes (Enterprise Default)"},
+                        {value: 1, label: "1 hour"},
+                        {value: 2, label: "2 hours"},
+                        {value: 4, label: "4 hours"},
+                        {value: 8, label: "8 hours"},
+                        {value: 12, label: "12 hours"},
+                        {value: 24, label: "24 hours"}
+                      ].map(h=> <option key={h.value} value={h.value}>{h.label}</option>)}
                     </select>
                     <span className="text-xs text-gray-600">
-                      Default is 24 hours (optimal efficiency). Auto-subdivides when hitting limits. Shorter intervals make the export process take longer overall.
+                      Default is 30 minutes (enterprise-optimized). Auto-subdivides progressively when hitting limits. Shorter intervals prevent expensive throwaway queries.
                       {' '}
                       <button
                         type="button"
@@ -1118,14 +1489,48 @@ export default function App(){
                     </span>
                   </div>
                 </div>
+                <div>
+                  <label className="font-semibold">Array Explosion</label>
+                  <div className="space-y-2 mt-1">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        id="explode-true"
+                        name="explodeArrays"
+                        checked={form.explodeArrays === true}
+                        onChange={() => setForm((f: FormState) => ({ ...f, explodeArrays: true }))}
+                        className="w-4 h-4"
+                      />
+                      <label htmlFor="explode-true" className="text-sm">
+                        <span className="font-medium">Create separate rows for each array element</span>
+                        <span className="text-gray-600"> (detailed output, analytics-ready)</span>
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        id="explode-false"
+                        name="explodeArrays"
+                        checked={form.explodeArrays === false}
+                        onChange={() => setForm((f: FormState) => ({ ...f, explodeArrays: false }))}
+                        className="w-4 h-4"
+                      />
+                      <label htmlFor="explode-false" className="text-sm">
+                        <span className="font-medium">Preserve raw JSON in AuditData column</span>
+                        <span className="text-gray-600"> (simplified CSV with raw JSON for custom parsing)</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
                 <div className="flex justify-end pt-1">
                   <Button
                     type="button"
                     variant="ghost"
                     className="text-xs border hover:bg-gray-50"
-                    onClick={()=> setForm((f:FormState)=> ({...f, resultSize: 5000, pacingMs: 0}))}
+                    onClick={()=> setForm((f:FormState)=> ({...f, blockHours: 0.5, resultSize: 25000, pacingMs: 0, explodeArrays: true}))}
                   >Reset to defaults</Button>
                 </div>
+
               </div>
             </details>
           </div>
@@ -1190,24 +1595,22 @@ export default function App(){
             <div className="text-sm mt-1">Mode: <span className="font-medium">{form.authMode}</span></div>
           </div>
           <div className="space-y-2 text-sm">
-            <div><span className="font-semibold">Start Date:</span> {form.startDate}</div>
-            <div><span className="font-semibold">End Date:</span> {form.endDate}</div>
-            <div><span className="font-semibold">Search interval:</span> {form.blockHours} hours</div>
-            <div><span className="font-semibold">Result size:</span> {form.resultSize}</div>
-            <div><span className="font-semibold">Pacing (ms):</span> {form.pacingMs}</div>
+            <div><span className="font-semibold">Date Range:</span> {form.startDate} to {form.endDate}</div>
+            <div><span className="font-semibold">Output File:</span> {form.outputFile}</div>
+            <div><span className="font-semibold">Authentication Mode:</span> {form.authMode}</div>
+            <div><span className="font-semibold">Block Hours (Time Window):</span> {form.blockHours}</div>
+            <div><span className="font-semibold">Result Size (Records per API call):</span> {form.resultSize}</div>
+            <div><span className="font-semibold">Pacing (Delay between calls):</span> {form.pacingMs}ms</div>
+            <div><span className="font-semibold">Max Concurrent Queries:</span> 3 (default)</div>
+            <div><span className="font-semibold">Array Explosion:</span> {form.explodeArrays ? 'Enabled (separate rows)' : 'Disabled (raw JSON)'}</div>
             <div>
-              <span className="font-semibold">Activities:</span> {form.activityIds.length} selected
+              <span className="font-semibold">Activity Types:</span> {form.activityIds.length} selected
               <div className="mt-2 flex flex-wrap gap-1">
                 {form.activityIds.map(id=>{
                   const act = RELEVANT_ACTIVITIES.find(a=>a.id===id) || { name: id } as any;
                   return <span key={id} className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs">{(act as any).name || id}</span>;
                 })}
               </div>
-            </div>
-            <div><span className="font-semibold">Output File:</span> {form.outputFile}</div>
-            <div className="flex items-center gap-2 mt-2">
-              <Switch checked={form.detailedPost} onCheckedChange={(v:boolean)=> setForm((f:FormState)=>({...f, detailedPost: v}))} />
-              <span>Show detailed post logs</span>
             </div>
             <div><span className="font-semibold">Remember Settings:</span> {form.remember ? 'Yes' : 'No'}</div>
           </div>
@@ -1218,7 +1621,7 @@ export default function App(){
                 variant="ghost" 
                 className="bg-blue-50 text-blue-700 border border-blue-300 hover:bg-blue-100" 
                 onClick={async ()=>{
-                  const def = (await getTempDir()) + `\\Purview_Export_Script_${timestamp()}.ps1`;
+                  const def = (await getTempDir()) + `\\PAX_Export_Script_${timestamp()}.ps1`;
                   const file = await saveDialog({ defaultPath: def, filters:[{name:'PowerShell script', extensions:['ps1']}] });
                   if(!file) return;
                   try {
@@ -1231,7 +1634,9 @@ export default function App(){
                       blockHours: form.blockHours,
                       resultSize: form.resultSize,
                       pacingMs: form.pacingMs,
-                      detailedPost: form.detailedPost,
+                      explodeArrays: form.explodeArrays,
+                      copilotInteractionOnly: form.copilotInteractionOnly,
+                      devTestMode: form.devTestMode,
                       targetPath: file,
                     });
                     // Show success message or navigate somewhere
@@ -1271,17 +1676,39 @@ export default function App(){
             </div>
           </div>
           {step===3 && (
-            <div className="flex items-center gap-3 text-xs">
+            <div className="flex items-center gap-3 text-xs mb-2">
               <div className="flex items-center gap-2">
-                <Switch checked={form.detailedPost} onCheckedChange={(v:boolean)=>{ setForm((f:FormState)=>({...f, detailedPost: v})); setShowDetailedFlipNotice(true); setTimeout(()=> setShowDetailedFlipNotice(false), 3000); }} />
-                <span>Show detailed post logs</span>
+                <Button
+                  type="button"
+                  onClick={scrollLogToTop}
+                  disabled={loadingFullLog}
+                  className="h-7 px-3 text-xs bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:bg-gray-500 transition-all duration-200 shadow-sm"
+                  title="Load and scroll to beginning of full log file"
+                >
+                  {loadingFullLog ? "⏳" : "↑ Top"}
+                </Button>
+                <Button
+                  type="button"
+                  onClick={scrollLogToBottom}
+                  disabled={loadingFullLog}
+                  className="h-7 px-3 text-xs bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:bg-gray-500 transition-all duration-200 shadow-sm"
+                  title="Load and scroll to end of full log file"
+                >
+                  {loadingFullLog ? "⏳" : "↓ Bottom"}
+                </Button>
+                <div className="text-gray-500 text-xs ml-2">
+                  {logs.length > 0 && `${logs.length.toLocaleString()} lines`}
+                </div>
               </div>
-              {showDetailedFlipNotice && (
-                <span className="px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-200">Applies to the next run</span>
-              )}
               <div className="ml-auto flex items-center gap-2">
-                <input id="auto-scroll" type="checkbox" checked={autoScroll} onChange={(e)=> setAutoScroll(e.target.checked)} />
-                <label htmlFor="auto-scroll">Auto scroll log</label>
+                <input 
+                  id="auto-scroll" 
+                  type="checkbox" 
+                  checked={autoScroll} 
+                  onChange={(e)=> setAutoScroll(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                />
+                <label htmlFor="auto-scroll" className="text-gray-600 font-medium">Auto scroll log</label>
               </div>
             </div>
           )}
@@ -1295,8 +1722,20 @@ export default function App(){
               No results found for the selected dates and activities. Try expanding the date range or selecting different activities.
             </div>
           )}
-          <div ref={logContainerRef} className="h-[55vh] min-h-[360px] overflow-auto bg-black text-xs p-2 rounded font-mono">
-            {logs.map((l, i)=><div key={i} className={l.type==='stderr'?'text-red-400':'text-white'}>{l.line}</div>)}
+          <div ref={logContainerRef} className="h-[55vh] min-h-[360px] overflow-auto bg-gray-900 text-xs p-3 rounded-lg font-mono border border-gray-700 shadow-inner">
+            {logs.map((l, i) => {
+              // Use stderr for base color detection, then apply intelligent pattern matching
+              const baseColor = l.type === 'stderr' ? 'text-red-400' : getLogLineColor(l.line);
+              const highlightedContent = renderLogLineWithHighlights(l.line);
+              
+              return (
+                <div 
+                  key={i} 
+                  className={`${baseColor} leading-relaxed hover:bg-gray-800/30 px-1 py-0.5 rounded transition-colors duration-150`}
+                  dangerouslySetInnerHTML={{ __html: highlightedContent }}
+                />
+              );
+            })}
           </div>
           <div className="w-full flex flex-col items-center gap-3">
             <div className="flex flex-wrap justify-center gap-2">
@@ -1323,7 +1762,7 @@ export default function App(){
                 }}
               >Open Log</Button>
               <Button onClick={async ()=>{
-              const def = (await getTempDir()) + `\\Purview_Export_Script_${timestamp()}.ps1`;
+              const def = (await getTempDir()) + `\\PAX_Export_Script_${timestamp()}.ps1`;
               const file = await saveDialog({ defaultPath: def, filters:[{name:'PowerShell script', extensions:['ps1']}] });
               if(!file) return;
               try {
@@ -1336,7 +1775,9 @@ export default function App(){
                   blockHours: form.blockHours,
                   resultSize: form.resultSize,
                   pacingMs: form.pacingMs,
-                  detailedPost: form.detailedPost,
+                  explodeArrays: form.explodeArrays,
+                  copilotInteractionOnly: form.copilotInteractionOnly,
+                  devTestMode: form.devTestMode,
                   targetPath: file,
                 });
               } catch(err:any){

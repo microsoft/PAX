@@ -125,12 +125,12 @@ update_tauri_conf() {
         # macOS
         sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$new_version\"/" "$TAURI_CONF"
         # Update window title
-        sed -i '' "s/\"title\": \"Purview Audit eXporter (PAX) v[^\"]*\"/\"title\": \"Purview Audit eXporter (PAX) v$new_version\"/" "$TAURI_CONF"
+        sed -i '' "s/\"title\": \"Portable Audit eXporter (PAX) v[^\"]*\"/\"title\": \"Portable Audit eXporter (PAX) v$new_version\"/" "$TAURI_CONF"
     else
         # Linux/Windows (Git Bash)  
         sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$new_version\"/" "$TAURI_CONF"
         # Update window title
-        sed -i "s/\"title\": \"Purview Audit eXporter (PAX) v[^\"]*\"/\"title\": \"Purview Audit eXporter (PAX) v$new_version\"/" "$TAURI_CONF"
+        sed -i "s/\"title\": \"Portable Audit eXporter (PAX) v[^\"]*\"/\"title\": \"Portable Audit eXporter (PAX) v$new_version\"/" "$TAURI_CONF"
     fi
     
     print_success "Updated $TAURI_CONF to version $new_version (including window title)"

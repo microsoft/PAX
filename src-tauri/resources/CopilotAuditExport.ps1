@@ -625,14 +625,7 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
                     }
                 }
                 else {
-                    # Special handling for Exchange Online 10K limit issue
-                    if ($totalFetched -eq 10000 -and $pageNumber -eq 3) {
-                        Write-Host "    Page $pageNumber returned no results but total is exactly 10,000 - likely server limit reached" -ForegroundColor Yellow
-                        Write-Host "    This appears to be an Exchange Online server-side limitation" -ForegroundColor Yellow
-                        Write-Host "    Consider using smaller time blocks or different date ranges to get complete data" -ForegroundColor Yellow
-                    } else {
-                        Write-Host "    Page $pageNumber returned no results - ending session" -ForegroundColor DarkCyan
-                    }
+                    Write-Host "    Page $pageNumber returned no results - ending session" -ForegroundColor DarkCyan
                     break
                 }
                 
@@ -640,14 +633,6 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
             }
             
             Write-Host "  Session completed: $($allResults.Count) total records fetched" -ForegroundColor Green
-            
-            # Warn if we hit the 10K Exchange Online limit
-            if ($allResults.Count -eq 10000 -and $ResultSize -gt 10000) {
-                Write-Host "  WARNING: Exactly 10,000 records returned when more were requested ($ResultSize)" -ForegroundColor Yellow
-                Write-Host "  This suggests an Exchange Online server-side limit was reached" -ForegroundColor Yellow
-                Write-Host "  Consider using smaller time blocks (e.g., 2-4 hours) to retrieve complete data" -ForegroundColor Yellow
-            }
-            
             $res = $allResults
             
         }
