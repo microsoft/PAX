@@ -708,7 +708,7 @@ async fn run_audit_script(
                 // Since keywords phase no longer exists, simplify to queries + post-processing only
                 if eff_q_tot + eff_p_tot > 0 {
                     // Realistic shares based on actual workflow timing
-                    let q_share: f64 = 80.0;  // queries take ~80% of total time
+                    let q_share: f64 = 80.0; // queries take ~80% of total time
                     let post_share: f64 = 20.0; // post-processing takes ~20% (15% + 5% final)
 
                     // Phase progresses

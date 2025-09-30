@@ -25,6 +25,11 @@ interface LogLine { type:'stdout'|'stderr'; line:string }
 
 // Enhanced log color coding function
 function getLogLineColor(line: string): string {
+  // Initial connection errors - faint orange (expected fallback behavior)
+  if (/connect-exchangeonline.*error|could not load file or assembly.*exchangeonlinemanagement|module.*exchangeonline.*not.*found|import-module.*exchangeonline.*failed|connection.*initial.*attempt.*failed|authentication.*method.*not.*supported.*trying|connect.*attempt.*failed.*trying.*alternative|exchangeonline.*connection.*failed.*falling.*back/i.test(line)) {
+    return 'text-orange-300 opacity-60';
+  }
+  
   // Error patterns - highest priority (including Exchange Online errors)
   if (/error|failed|exception|cannot|unable|invalid|fatal|critical|write-error|server side error|operation could not be completed|reach out to ms support/i.test(line)) {
     return 'text-red-400';
@@ -113,6 +118,11 @@ const ANSI_COLORS = {
 
 // Get ANSI color for log file based on content
 function getANSIColor(line: string): string {
+  // Initial connection errors - faint orange (expected fallback behavior)
+  if (/connect-exchangeonline.*error|could not load file or assembly.*exchangeonlinemanagement|module.*exchangeonline.*not.*found|import-module.*exchangeonline.*failed|connection.*initial.*attempt.*failed|authentication.*method.*not.*supported.*trying|connect.*attempt.*failed.*trying.*alternative|exchangeonline.*connection.*failed.*falling.*back/i.test(line)) {
+    return ANSI_COLORS.orange;
+  }
+  
   // Error patterns
   if (/error|failed|exception|cannot|unable|invalid|fatal|critical/i.test(line)) {
     return ANSI_COLORS.red + ANSI_COLORS.bold;
@@ -238,6 +248,7 @@ interface FormState {
   explodeArrays: boolean;
   copilotInteractionOnly: boolean;
   devTestMode: boolean;
+  ansiLogFormat: boolean;
 }
 
 function toYMD(d: Date){
@@ -298,6 +309,7 @@ function newInitialForm(): FormState {
     explodeArrays: false,
     copilotInteractionOnly: false,
     devTestMode: false,
+    ansiLogFormat: false,
   };
 }
 
@@ -308,6 +320,7 @@ export default function App(){
   const [form,setForm] = useState<FormState>(initialForm);
   const [errors,setErrors] = useState<Record<string,string>>({});
   const [logs,setLogs] = useState<LogLine[]>([]);
+  const [totalLogLines,setTotalLogLines] = useState<number>(0);
   const [status,setStatus] = useState<'idle'|'running'|'success'|'error'|'noresults'>('idle');
   const [csvPath,setCsvPath] = useState<string|null>(null);
   const [running,setRunning] = useState(false);
@@ -379,10 +392,18 @@ export default function App(){
     lastLogRef.current = item;
     logBufferRef.current.push(item);
     
-    // Add ANSI colors to log file for better readability in text editors that support colors
-    const colorCode = getANSIColor(line);
-    const coloredLine = `${colorCode}[${type}] ${line}${ANSI_COLORS.reset}${line.endsWith('\n') ? '' : '\n'}`;
-    fileLogBufferRef.current.push(coloredLine);
+    // Track total log lines
+    setTotalLogLines(prev => prev + 1);
+    
+    // Add colors to log file - ANSI format if enabled, otherwise plain text
+    if (form.ansiLogFormat) {
+      const colorCode = getANSIColor(line);
+      const coloredLine = `${colorCode}[${type}] ${line}${ANSI_COLORS.reset}${line.endsWith('\n') ? '' : '\n'}`;
+      fileLogBufferRef.current.push(coloredLine);
+    } else {
+      const plainLine = `[${type}] ${line}${line.endsWith('\n') ? '' : '\n'}`;
+      fileLogBufferRef.current.push(plainLine);
+    }
     
     scheduleUiFlush();
     scheduleFileFlush();
@@ -628,6 +649,7 @@ export default function App(){
             ...(typeof parsed.resultSize==='number'? {resultSize: parsed.resultSize}:{}),
             ...(typeof parsed.pacingMs==='number'? {pacingMs: parsed.pacingMs}:{}),
             ...(typeof parsed.explodeArrays==='boolean'? {explodeArrays: parsed.explodeArrays}:{}),
+            ...(typeof parsed.ansiLogFormat==='boolean'? {ansiLogFormat: parsed.ansiLogFormat}:{}),
             ...(parsed.authMode? {authMode: parsed.authMode}:{}),
             remember: true,
           }));
@@ -651,12 +673,13 @@ export default function App(){
           pacingMs: form.pacingMs,
           authMode: form.authMode,
           explodeArrays: form.explodeArrays,
+          ansiLogFormat: form.ansiLogFormat,
         }));
       } else {
         localStorage.removeItem('pax_audit_exporter_settings_v1');
       }
     } catch {}
-  },[form.startDate, form.endDate, form.activityIds, form.outputFile, form.overwrite, form.blockHours, form.authMode, form.resultSize, form.pacingMs, form.explodeArrays, form.remember]);
+  },[form.startDate, form.endDate, form.activityIds, form.outputFile, form.overwrite, form.blockHours, form.authMode, form.resultSize, form.pacingMs, form.explodeArrays, form.ansiLogFormat, form.remember]);
 
   function validateStep1(){
     const e:Record<string,string>={};
@@ -858,7 +881,7 @@ export default function App(){
   }
 
   async function runExport(){
-    setRunning(true); setCanCancel(true); setStatus('running'); setLogs([]); setCsvPath(null); setPercent(0); setTotalFound(null); setNoResults(false);
+    setRunning(true); setCanCancel(true); setStatus('running'); setLogs([]); setTotalLogLines(0); setCsvPath(null); setPercent(0); setTotalFound(null); setNoResults(false);
     // reset buffers
     logBufferRef.current = [];
     fileLogBufferRef.current = [];
@@ -1418,6 +1441,41 @@ export default function App(){
             <Switch checked={form.overwrite} onCheckedChange={(v:boolean)=>setForm((f:FormState)=>({...f,overwrite:v}))} />
             <span>Overwrite if file exists</span>
           </div>
+          
+          <div>
+            <label className="font-semibold">Log File Format</label>
+            <div className="space-y-2 mt-2">
+              <div className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  id="ansi-false-output"
+                  name="ansiLogFormatOutput"
+                  checked={form.ansiLogFormat === false}
+                  onChange={() => setForm((f: FormState) => ({ ...f, ansiLogFormat: false }))}
+                  className="w-4 h-4"
+                />
+                <label htmlFor="ansi-false-output" className="text-sm">
+                  <span className="font-medium">Regular text format</span>
+                  <span className="text-gray-600"> (recommended - clean text in any editor)</span>
+                </label>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  id="ansi-true-output"
+                  name="ansiLogFormatOutput"
+                  checked={form.ansiLogFormat === true}
+                  onChange={() => setForm((f: FormState) => ({ ...f, ansiLogFormat: true }))}
+                  className="w-4 h-4"
+                />
+                <label htmlFor="ansi-true-output" className="text-sm">
+                  <span className="font-medium">ANSI color codes</span>
+                  <span className="text-gray-600"> (colored text in VS Code, may show escape codes in basic editors)</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          
           <div className="pt-2">
             <details className="border rounded">
               <summary className="px-3 py-2 cursor-pointer select-none font-semibold">Advanced</summary>
@@ -1603,6 +1661,7 @@ export default function App(){
             <div><span className="font-semibold">Pacing (Delay between calls):</span> {form.pacingMs}ms</div>
             <div><span className="font-semibold">Max Concurrent Queries:</span> 3 (default)</div>
             <div><span className="font-semibold">Array Explosion:</span> {form.explodeArrays ? 'Enabled (separate rows)' : 'Disabled (raw JSON)'}</div>
+            <div><span className="font-semibold">Log File Format:</span> {form.ansiLogFormat ? 'ANSI color codes' : 'Regular text format'}</div>
             <div>
               <span className="font-semibold">Activity Types:</span> {form.activityIds.length} selected
               <div className="mt-2 flex flex-wrap gap-1">
@@ -1614,6 +1673,7 @@ export default function App(){
             </div>
             <div><span className="font-semibold">Remember Settings:</span> {form.remember ? 'Yes' : 'No'}</div>
           </div>
+          
           <div className="flex justify-between items-center">
             <div className="flex gap-2">
               <Button variant="soft" onClick={()=>setStep(1)}>Back</Button>
@@ -1697,7 +1757,11 @@ export default function App(){
                   {loadingFullLog ? "⏳" : "↓ Bottom"}
                 </Button>
                 <div className="text-gray-500 text-xs ml-2">
-                  {logs.length > 0 && `${logs.length.toLocaleString()} lines`}
+                  {totalLogLines > 0 && (
+                    totalLogLines > LOG_MAX_LINES 
+                      ? `${totalLogLines.toLocaleString()}+ lines (showing last ${LOG_MAX_LINES.toLocaleString()})`
+                      : `${totalLogLines.toLocaleString()} lines`
+                  )}
                 </div>
               </div>
               <div className="ml-auto flex items-center gap-2">
@@ -1798,7 +1862,7 @@ export default function App(){
                     className="bg-gray-50 text-gray-700 hover:bg-gray-100"
                     onClick={onCloseApp}
                   >Close</Button>
-                  <Button variant="soft" onClick={()=>{ /* run again or new run */ setStep(0); setStatus('idle'); setLogs([]); setCsvPath(null); setPercent(0); setOverallPercent(0); setPhase('unknown'); }}>Start Over</Button>
+                  <Button variant="soft" onClick={()=>{ /* run again or new run */ setStep(0); setStatus('idle'); setLogs([]); setTotalLogLines(0); setCsvPath(null); setPercent(0); setOverallPercent(0); setPhase('unknown'); }}>Start Over</Button>
                 </>
               )}
             </div>

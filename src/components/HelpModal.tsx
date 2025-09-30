@@ -60,6 +60,7 @@ export function HelpModal({ open, onClose }: { open:boolean; onClose: ()=>void }
                 <h4 className="font-semibold">2) Output</h4>
                 <ul className="list-disc ml-5">
                   <li><b>Output File:</b> Select CSV file path using text field or <i>Browse…</i> button. Log file (.log) is automatically created in same directory with timestamp naming.</li>
+                  <li><b>Log File Format:</b> Choose between Regular text format (recommended - clean text in any editor) or ANSI color codes (colored text in VS Code, may show escape codes in basic editors). This setting controls how the log file is written to disk.</li>
                   <li><b>Search Interval:</b> Choose query window size (1,2,4,8,15,30 minutes or 1,2,4,8,12,24 hours) from dropdown. Default is 30 minutes (enterprise-optimized). Features persistent adaptive sizing - when hitting record limits, smaller intervals are learned and applied to remaining queries across days.</li>
                   <li><b>Overwrite Toggle:</b> Switch to control file replacement behavior. When off, timestamp suffixes create unique file names.</li>
                   <li><b>Advanced Settings:</b> Expandable section with <i>Records per time block</i> (dropdown: 1000-50000, default 25000) and <i>Pacing between calls</i> (0-10000ms, default 0). Values &gt;5000 use session-based pagination. Use pacing (150-300ms) to reduce throttling in busy tenants. <i>Reset to defaults</i> button resets all performance settings (30-min intervals, 25000 result size, 0ms pacing).</li>
@@ -69,7 +70,7 @@ export function HelpModal({ open, onClose }: { open:boolean; onClose: ()=>void }
                 <h4 className="font-semibold">3) Review</h4>
                 <ul className="list-disc ml-5">
                   <li><b>Authentication Summary:</b> Shows selected auth mode with info popup (ⓘ) explaining all authentication options and permission validation behavior.</li>
-                  <li><b>Settings Review:</b> Complete summary of dates, search interval, result size, pacing, selected activities count with individual activity badges, output path, and remember preference.</li>
+                  <li><b>Settings Review:</b> Complete summary of dates, search interval, result size, pacing, log file format, selected activities count with individual activity badges, output path, and remember preference.</li>
                   <li><b>Detailed Post Logs:</b> Toggle to control verbosity of post-processing output (applies to next run, not current settings).</li>
                   <li><b>Export Actions:</b> <i>Run Export</i> button starts immediate execution. <i>Export to .ps1</i> button (📄) generates standalone PowerShell script with identical settings and functionality.</li>
                 </ul>
