@@ -63,7 +63,7 @@ export function HelpModal({ open, onClose }: { open:boolean; onClose: ()=>void }
                   <li><b>Log File Format:</b> Choose between Regular text format (recommended - clean text in any editor) or ANSI color codes (colored text in VS Code, may show escape codes in basic editors). This setting controls how the log file is written to disk.</li>
                   <li><b>Search Interval:</b> Choose query window size (1,2,4,8,15,30 minutes or 1,2,4,8,12,24 hours) from dropdown. Default is 30 minutes (enterprise-optimized). Features persistent adaptive sizing - when hitting record limits, smaller intervals are learned and applied to remaining queries across days.</li>
                   <li><b>Overwrite Toggle:</b> Switch to control file replacement behavior. When off, timestamp suffixes create unique file names.</li>
-                  <li><b>Advanced Settings:</b> Expandable section with <i>Records per time block</i> (dropdown: 1000-50000, default 25000) and <i>Pacing between calls</i> (0-10000ms, default 0). Values &gt;5000 use session-based pagination. Use pacing (150-300ms) to reduce throttling in busy tenants. <i>Reset to defaults</i> button resets all performance settings (30-min intervals, 25000 result size, 0ms pacing).</li>
+                  <li><b>Advanced Settings:</b> Expandable section with <i>Records per time block</i> (text input: 1-10000, default 10000) and <i>Pacing between calls</i> (0-10000ms, default 0). Capped at 10K due to Exchange Online server limits. Values &gt;5000 use session-based pagination. Use pacing (150-300ms) to reduce throttling in busy tenants. <i>Reset to defaults</i> button resets all performance settings (30-min intervals, 10000 result size, 0ms pacing).</li>
                 </ul>
               </div>
               <div>
@@ -93,7 +93,7 @@ export function HelpModal({ open, onClose }: { open:boolean; onClose: ()=>void }
             <div className="space-y-1 text-sm">
               <p><b>Expected Behavior:</b> Individual queries may appear to "hang" for 30-120 seconds. This is normal Microsoft 365 behavior - audit services process complex queries server-side which takes time for large datasets.</p>
               <p><b>Progress Indicators:</b> Watch for "[25%] Query 5/20" progress markers followed by waiting periods. Be patient during apparent hangs - the service is working. True timeouts are rare (10+ minutes).</p>
-              <p><b>Throttling Management:</b> Use smaller search intervals (1-8 minutes) and Pacing (150-300ms) in busy tenants to reduce throttling risk. The persistent adaptive sizing automatically learns optimal intervals when hitting limits. Higher Result Size (up to 50000) reduces total API calls needed but uses session-based pagination for values &gt;5000.</p>
+              <p><b>Throttling Management:</b> Use smaller search intervals (1-8 minutes) and Pacing (150-300ms) in busy tenants to reduce throttling risk. The persistent adaptive sizing automatically learns optimal intervals when hitting limits. Result Size is capped at 10,000 due to Exchange Online server limits. Values &gt;5000 use session-based pagination.</p>
               <p><b>Structured Logging:</b> Progress includes human-readable markers plus structured tags (PA:PHASE, PA:TOTALS, PA:POST) for automation tools while remaining console-friendly.</p>
             </div>
           </section>

@@ -369,7 +369,7 @@ async fn run_audit_script(
     inner.push_str(&format!(" -Auth {}", q(&auth)));
     // No helper needed; script will open system browser directly
     if let Some(rs) = resultSize {
-        inner.push_str(&format!(" -ResultSize {}", rs.min(50000)));
+        inner.push_str(&format!(" -ResultSize {}", rs.min(10000)));
     }
     if let Some(pm) = pacingMs {
         inner.push_str(&format!(" -PacingMs {}", pm.min(10000)));
@@ -1000,7 +1000,7 @@ async fn export_hardcoded_script(
     ed = endDate,
     au = authMode,
     bh = bh,
-    rs = resultSize.unwrap_or(25000).min(50000),
+    rs = resultSize.unwrap_or(10000).min(10000),
     pm = pacingMs.unwrap_or(0).min(10000),
     explode_arrays = if explodeArrays == Some(false) { "$true" } else { "$false" },
     copilot_interaction_only = if copilotInteractionOnly == Some(true) { "$true" } else { "$false" },

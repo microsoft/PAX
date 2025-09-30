@@ -219,21 +219,6 @@ function parseLogLine(line: string): LogLine {
   }
 }
 
-// ResultSize dropdown options
-const RESULT_SIZE_OPTIONS = [
-  { value: 50000, label: '50,000 (Maximum)' },
-  { value: 40000, label: '40,000' },
-  { value: 30000, label: '30,000' },
-  { value: 25000, label: '25,000 (Default)' },
-  { value: 20000, label: '20,000' },
-  { value: 15000, label: '15,000' },
-  { value: 10000, label: '10,000' },
-  { value: 7500, label: '7,500' },
-  { value: 5000, label: '5,000' },
-  { value: 2500, label: '2,500' },
-  { value: 1000, label: '1,000' }
-];
-
 interface FormState {
   startDate: string;
   endDate: string;
@@ -302,7 +287,7 @@ function newInitialForm(): FormState {
     outputFile: '',
     overwrite: false,
   blockHours: 0.5,
-    resultSize: 25000,
+    resultSize: 10000,
     pacingMs: 0,
     authMode: 'WebLogin',
     remember: false,
@@ -1483,18 +1468,15 @@ export default function App(){
                 <div>
                   <label className="font-semibold">Records per time block</label>
                   <div className="flex items-center gap-2 mt-1">
-                    <select
+                    <input
+                      type="number"
+                      min="1"
+                      max="10000"
                       className="border rounded px-2 py-1 w-40"
                       value={form.resultSize}
-                      onChange={(e)=> setForm((f)=> ({...f, resultSize: parseInt(e.target.value, 10)}))}
-                    >
-                      {RESULT_SIZE_OPTIONS.map(option => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="text-xs text-gray-600">Records to fetch per time block. Values &gt;5,000 use session-based pagination to bypass Exchange limits. Higher values = fewer API calls but longer sessions.</span>
+                      onChange={(e)=> setForm((f)=> ({...f, resultSize: parseInt(e.target.value, 10) || 10000}))}
+                    />
+                    <span className="text-xs text-gray-600">Records to fetch per time block (1-10,000). Default: 10,000. Capped at 10K due to Exchange Online server limits.</span>
                   </div>
                 </div>
                 <div>
@@ -1585,7 +1567,7 @@ export default function App(){
                     type="button"
                     variant="ghost"
                     className="text-xs border hover:bg-gray-50"
-                    onClick={()=> setForm((f:FormState)=> ({...f, blockHours: 0.5, resultSize: 25000, pacingMs: 0, explodeArrays: true}))}
+                    onClick={()=> setForm((f:FormState)=> ({...f, blockHours: 0.5, resultSize: 10000, pacingMs: 0, explodeArrays: true}))}
                   >Reset to defaults</Button>
                 </div>
 

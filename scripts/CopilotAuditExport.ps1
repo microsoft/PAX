@@ -23,7 +23,7 @@ param(
     [ValidateRange(0.016667, 24)]  # 1 minute to 24 hours (1min = 0.016667h)
     [double]$BlockHours = 0.5,
     [Parameter(Mandatory = $false)]
-    [int]$ResultSize = 25000,
+    [int]$ResultSize = 10000,
     [Parameter(Mandatory = $false)]
     [ValidateRange(0, 10000)]
     [int]$PacingMs = 0,
@@ -89,7 +89,7 @@ PARAMETERS:
                                • Silent: Reuses existing cached session if available; fails otherwise
                                Note: Script validates account permissions before starting the full export.
 -BlockHours       (Optional)  Time window per query: 0.016667-24 hours. Default: 0.5 (30min, enterprise-optimized). Auto-subdivides progressively when hitting limits.
--ResultSize       (Optional)  Records per API call (1-50000). Default: 25000. Values >5000 use session-based pagination for compatibility.
+-ResultSize       (Optional)  Records per API call (1-10000). Default: 10000. Script automatically pages through all available records using this as page size. Values >5000 use Exchange sessions, ≤5000 use standard pagination.
 -PacingMs         (Optional)  Delay between API calls in milliseconds (0-10000). Default: 0. Use 500-2000 to reduce throttling.
 -MaxConcurrent    (Optional)  Maximum concurrent queries (1-10). Default: 3. Higher values = faster but more throttling risk.
 -NoExplodeArrays  (Optional)  Preserve raw JSON in AuditData column instead of flattening into separate columns. When enabled, exports simplified CSV with essential fields plus raw AuditData JSON. When disabled (default), JSON is flattened into individual columns for detailed analytics.
@@ -319,7 +319,7 @@ function Start-VisibleReexecForAuth {
         exit $p.ExitCode
     }
     catch {
-        Write-Host ("Visible re-launch failed: " + $_.Exception.Message) -ForegroundColor Red
+        Write-Host ("Visible re-launch failed: " + $_.Exception.Message) -ForegroundColor DarkYellow
         throw
     }
 }
@@ -400,7 +400,7 @@ function Connect-ToComplianceCenter {
                         }
                         catch {
                             Write-Host ("Connect-ExchangeOnline with DisableWAM failed: " + $_.Exception.Message) -ForegroundColor DarkYellow
-                            throw "DisableWAM authentication failed"
+                            $connected = $false
                         }
                     }
                     else {
@@ -413,12 +413,13 @@ function Connect-ToComplianceCenter {
                         }
                         catch {
                             Write-Host ("UseWebLogin fallback failed: " + $_.Exception.Message) -ForegroundColor DarkYellow
-                            throw "UseWebLogin authentication failed"
+                            $connected = $false
                         }
                     }
                 }
                 
                 if (-not $connected) {
+                    Write-Host "Failed to authenticate via WebLogin - all fallback methods exhausted" -ForegroundColor DarkYellow
                     throw "Failed to authenticate via WebLogin"
                 }
             }
@@ -537,210 +538,176 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
         [Parameter(Mandatory = $false)] [bool]$AutoSubdivide = $true
     )
     
-    # Implement proper session-based pagination for ResultSize > 5000
-    if ($ResultSize -gt 5000) {
-        Write-Host "  Using session-based pagination for ResultSize $ResultSize (>5000 limit)" -ForegroundColor Cyan
-        
-        $allResults = @()
+    # Initialize tracking variables for 10K limit detection
+    $script:Hit10KLimit = $false
+    $script:LimitTimeWindow = ""
+    
+    # Universal pagination logic - always attempt to get all available records
+    # Use session-based pagination for page sizes > 5000, otherwise use standard pagination
+    $allResults = @()
+    $totalFetched = 0
+    $pageNumber = 1
+    $maxPages = 50  # Safety limit to prevent infinite loops
+    
+    # Determine page size and pagination method
+    $pageSize = [Math]::Min($ResultSize, 5000)  # API limit is 5000 per call
+    $useSessionPagination = $ResultSize -gt 5000
+    
+    if ($useSessionPagination) {
+        Write-Host "  Using session-based pagination for ResultSize $ResultSize (page size: $pageSize)" -ForegroundColor Cyan
         $sessionId = [Guid]::NewGuid().ToString()
-        $pageSize = 5000  # Maximum allowed by API
-        $totalFetched = 0
-        $pageNumber = 1
-        
-        try {
-            while ($totalFetched -lt $ResultSize) {
-                $remainingNeeded = $ResultSize - $totalFetched
-                $currentPageSize = [Math]::Min($pageSize, $remainingNeeded)
-                
-                # Retry logic for each page
-                $pageAttempt = 0
-                $pageResults = $null
-                $pageMaxRetries = 3  # Retry each page up to 3 times
-                
-                while ($pageAttempt -le $pageMaxRetries) {
-                    try {
-                        # Prepare parameters for current page
-                        $params = @{
-                            'StartDate'   = $Start
-                            'EndDate'     = $End
-                            'ResultSize'  = $currentPageSize
-                            'SessionId'   = $sessionId
-                            'ErrorAction' = 'Stop'
-                        }
-                        
-                        if ($Operation) { $params.Add('Operations', $Operation) }
-                        
-                        # Set session command based on page number
+    } else {
+        Write-Host "  Using standard pagination for ResultSize $ResultSize (page size: $pageSize)" -ForegroundColor Cyan
+    }
+    
+    try {
+        while ($totalFetched -lt $ResultSize -and $pageNumber -le $maxPages) {
+            $remainingNeeded = $ResultSize - $totalFetched
+            $currentPageSize = [Math]::Min($pageSize, $remainingNeeded)
+            
+            # Retry logic for each page
+            $pageAttempt = 0
+            $pageResults = $null
+            $pageMaxRetries = 3
+            
+            while ($pageAttempt -le $pageMaxRetries) {
+                try {
+                    # Prepare parameters for current page
+                    $params = @{
+                        'StartDate'   = $Start
+                        'EndDate'     = $End
+                        'ResultSize'  = $currentPageSize
+                        'ErrorAction' = 'Stop'
+                    }
+                    
+                    if ($Operation) { $params.Add('Operations', $Operation) }
+                    
+                    # Add session parameters if using session-based pagination
+                    if ($useSessionPagination) {
+                        $params.Add('SessionId', $sessionId)
                         if ($pageNumber -eq 1) {
                             $params.Add('SessionCommand', 'ReturnLargeSet')
-                            if ($pageAttempt -eq 0) {
-                                Write-Host "    Starting session $sessionId, requesting page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan
-                            }
-                            else {
-                                Write-Host "    Retrying page $pageNumber (attempt $($pageAttempt + 1) of $($pageMaxRetries + 1))" -ForegroundColor Yellow
-                            }
-                        }
-                        else {
+                        } else {
                             $params.Add('SessionCommand', 'ReturnNextPreviewPage')
-                            if ($pageAttempt -eq 0) {
+                        }
+                    }
+                    
+                    # Log the request
+                    if ($pageAttempt -eq 0) {
+                        if ($useSessionPagination) {
+                            if ($pageNumber -eq 1) {
+                                Write-Host "    Starting session $sessionId, requesting page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan
+                            } else {
                                 Write-Host "    Fetching page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan
                             }
-                            else {
-                                Write-Host "    Retrying page $pageNumber (attempt $($pageAttempt + 1) of $($pageMaxRetries + 1))" -ForegroundColor Yellow
-                            }
+                        } else {
+                            Write-Host "    Fetching page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan
                         }
-                        
-                        # Add increasing delay for retries
-                        $delayMs = $PacingMs + ($pageAttempt * 2000)  # Base pacing + 2s per retry
-                        if ($delayMs -gt 0) { Start-Sleep -Milliseconds $delayMs }
-                        
-                        $pageResults = Search-UnifiedAuditLog @params
-                        
-                        # Success - break out of retry loop
-                        break
+                    } else {
+                        Write-Host "    Retrying page $pageNumber (attempt $($pageAttempt + 1) of $($pageMaxRetries + 1))" -ForegroundColor Yellow
                     }
-                    catch {
-                        $pageAttempt++
-                        if ($pageAttempt -le $pageMaxRetries) {
-                            Write-Host "    Page $pageNumber attempt $pageAttempt failed: $($_.Exception.Message). Retrying..." -ForegroundColor Yellow
-                            # If session might be stale, create new session for retry after first failure
-                            if ($pageAttempt -gt 1) {
-                                $sessionId = [Guid]::NewGuid().ToString()
-                                Write-Host "    Creating new session ID for retry: $sessionId" -ForegroundColor Yellow
-                            }
-                        }
-                        else {
-                            Write-Host "    Page $pageNumber failed after $($pageMaxRetries + 1) attempts: $($_.Exception.Message)" -ForegroundColor Red
-                            throw
-                        }
-                    }
-                }
-                
-                if ($pageResults -and $pageResults.Count -gt 0) {
-                    $allResults += $pageResults
-                    $totalFetched += $pageResults.Count
-                    Write-Host "    Page $pageNumber returned $($pageResults.Count) records (total: $totalFetched)" -ForegroundColor DarkCyan
                     
-                    # If we got fewer records than requested, we've reached the end
-                    if ($pageResults.Count -lt $currentPageSize) {
-                        Write-Host "    Reached end of data (page returned $($pageResults.Count) < $currentPageSize requested)" -ForegroundColor DarkCyan
-                        break
-                    }
+                    # Add delay for retries and pacing
+                    $delayMs = $PacingMs + ($pageAttempt * 2000)
+                    if ($delayMs -gt 0) { Start-Sleep -Milliseconds $delayMs }
+                    
+                    $pageResults = Search-UnifiedAuditLog @params
+                    
+                    # Success - break out of retry loop
+                    break
                 }
-                else {
-                    # Special handling for Exchange Online 10K limit issue
-                    if ($totalFetched -eq 10000 -and $pageNumber -eq 3) {
-                        Write-Host "    Page $pageNumber returned no results but total is exactly 10,000 - likely server limit reached" -ForegroundColor Yellow
-                        Write-Host "    This appears to be an Exchange Online server-side limitation" -ForegroundColor Yellow
-                        Write-Host "    Consider using smaller time blocks or different date ranges to get complete data" -ForegroundColor Yellow
+                catch {
+                    $pageAttempt++
+                    if ($pageAttempt -le $pageMaxRetries) {
+                        $msg = $_.Exception.Message
+                        $status = $null
+                        try { $status = $_.Exception.Response.StatusCode.Value__ } catch {}
+                        
+                        $isThrottle = ($msg -match '429' -or $msg -match 'Too\s*Many\s*Requests' -or $msg -match 'throttl' -or $msg -match '503' -or $msg -match 'Service\s*Unavailable' -or $status -in 429, 503)
+                        
+                        if ($isThrottle) {
+                            Write-Host "    Page $pageNumber throttled (attempt $pageAttempt). Retrying..." -ForegroundColor Yellow
+                            # Exponential backoff for throttling
+                            $base = 0.5
+                            $delay = [math]::Min(30.0, $base * [math]::Pow(2, $pageAttempt - 1))
+                            $jitter = (Get-Random -Minimum 0 -Maximum 250) / 1000.0
+                            $total = $delay + $jitter
+                            $ms = [int]([math]::Round($total * 1000))
+                            Start-Sleep -Milliseconds $ms
+                        } else {
+                            Write-Host "    Page $pageNumber attempt $pageAttempt failed: $($_.Exception.Message). Retrying..." -ForegroundColor Yellow
+                        }
+                        
+                        # If session might be stale, create new session for retry
+                        if ($useSessionPagination -and $pageAttempt -gt 1) {
+                            $sessionId = [Guid]::NewGuid().ToString()
+                            Write-Host "    Creating new session ID for retry: $sessionId" -ForegroundColor Yellow
+                        }
                     }
                     else {
-                        Write-Host "    Page $pageNumber returned no results - ending session" -ForegroundColor DarkCyan
+                        Write-Host "    Page $pageNumber failed after $($pageMaxRetries + 1) attempts: $($_.Exception.Message)" -ForegroundColor Red
+                        throw
                     }
+                }
+            }
+            
+            if ($pageResults -and $pageResults.Count -gt 0) {
+                $allResults += $pageResults
+                $totalFetched += $pageResults.Count
+                Write-Host "    Page $pageNumber returned $($pageResults.Count) records (total: $totalFetched)" -ForegroundColor DarkCyan
+                
+                # If we got fewer records than requested, we've reached the end
+                if ($pageResults.Count -lt $currentPageSize) {
+                    Write-Host "    Reached end of data (page returned $($pageResults.Count) < $currentPageSize requested)" -ForegroundColor DarkCyan
                     break
                 }
                 
-                $pageNumber++
-            }
-            
-            Write-Host "  Session completed: $($allResults.Count) total records fetched" -ForegroundColor Green
-            
-            # Warn if we hit the 10K Exchange Online limit and offer automatic subdivision
-            if ($allResults.Count -eq 10000 -and $ResultSize -gt 10000) {
-                Write-Host "  WARNING: Exactly 10,000 records returned when more were requested ($ResultSize)" -ForegroundColor Yellow
-                Write-Host "  This suggests an Exchange Online server-side limit was reached" -ForegroundColor Yellow
-                
-                # Calculate time span and suggest subdivision
-                $timeSpan = $End - $Start
-                if ($timeSpan.TotalHours -gt 2) {
-                    Write-Host "  ATTEMPTING AUTOMATIC RECOVERY: Subdividing time range to retrieve remaining data..." -ForegroundColor Cyan
+                # Critical detection: Exchange Online 10K server limit reached
+                if ($totalFetched -eq 10000 -and $pageResults.Count -eq $currentPageSize) {
+                    Write-Host "" -ForegroundColor Red
+                    Write-Host "    ⚠️  CRITICAL: Exchange Online 10,000 Record Server Limit Reached!" -ForegroundColor Red
+                    Write-Host "    📊 Retrieved: 10,000 records" -ForegroundColor Yellow
+                    Write-Host "    ❌ Missing: Additional records are likely available but CANNOT be accessed" -ForegroundColor Red
+                    Write-Host "    🔧 Solution: Use smaller time blocks (30 minutes or less) to get complete data" -ForegroundColor Cyan
+                    Write-Host "    📝 This is a hard Exchange Online server limitation - pagination cannot bypass it" -ForegroundColor Yellow
+                    Write-Host "" -ForegroundColor Red
                     
-                    # Split the time range in half and try both halves
-                    $midPoint = $Start.AddMinutes($timeSpan.TotalMinutes / 2)
-                    $additionalResults = @()
-                    
-                    try {
-                        Write-Host "    Querying first half: $($Start.ToString('yyyy-MM-dd HH:mm')) to $($midPoint.ToString('yyyy-MM-dd HH:mm'))" -ForegroundColor Cyan
-                        $firstHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $Start -End $midPoint -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs
-                        
-                        Write-Host "    Querying second half: $($midPoint.ToString('yyyy-MM-dd HH:mm')) to $($End.ToString('yyyy-MM-dd HH:mm'))" -ForegroundColor Cyan  
-                        $secondHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $midPoint -End $End -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs
-                        
-                        # Combine results and remove duplicates based on Identity
-                        $combinedResults = @()
-                        $seenIdentities = @{}
-                        
-                        foreach ($result in ($firstHalf + $secondHalf)) {
-                            if (-not $seenIdentities.ContainsKey($result.Identity)) {
-                                $combinedResults += $result
-                                $seenIdentities[$result.Identity] = $true
-                            }
-                        }
-                        
-                        if ($combinedResults.Count -gt $allResults.Count) {
-                            Write-Host "    SUCCESS: Recovered additional records! Original: $($allResults.Count), New total: $($combinedResults.Count)" -ForegroundColor Green
-                            $allResults = $combinedResults
-                        }
-                        else {
-                            Write-Host "    No additional records recovered through subdivision" -ForegroundColor Yellow
-                        }
-                    }
-                    catch {
-                        Write-Host "    Subdivision attempt failed: $($_.Exception.Message)" -ForegroundColor Yellow
-                        Write-Host "    Continuing with original 10,000 records" -ForegroundColor Yellow
-                    }
-                }
-                else {
-                    Write-Host "  Consider using smaller time blocks (e.g., 1-2 hours) to retrieve complete data" -ForegroundColor Yellow
+                    # Also add to summary at the end
+                    $script:Hit10KLimit = $true
+                    $script:LimitTimeWindow = "$($Start.ToString('yyyy-MM-dd HH:mm')) to $($End.ToString('yyyy-MM-dd HH:mm'))"
                 }
             }
-            
-            $res = $allResults
-            
-        }
-        catch {
-            Write-Host "  Session-based pagination failed: $($_.Exception.Message)" -ForegroundColor Red
-            throw
-        }
-    }
-    else {
-        # Standard single request for ResultSize <= 5000
-        $attempt = 0
-        $res = $null
-        while ($attempt -le $MaxRetries) {
-            try {
-                $params = @{
-                    'StartDate'   = $Start
-                    'EndDate'     = $End
-                    'ResultSize'  = $ResultSize
-                    'ErrorAction' = 'Stop'
-                }
-                if ($Operation) { $params.Add('Operations', $Operation) }
-                
-                $res = Search-UnifiedAuditLog @params
-                if ($PacingMs -gt 0) { Start-Sleep -Milliseconds $PacingMs }
+            else {
+                Write-Host "    Page $pageNumber returned no results - ending pagination" -ForegroundColor DarkCyan
                 break
             }
-            catch {
-                $msg = $_.Exception.Message
-                $status = $null
-                try { $status = $_.Exception.Response.StatusCode.Value__ } catch {}
-                
-                $isThrottle = ($msg -match '429' -or $msg -match 'Too\s*Many\s*Requests' -or $msg -match 'throttl' -or $msg -match '503' -or $msg -match 'Service\s*Unavailable' -or $status -in 429, 503)
-                if (-not $isThrottle -or $attempt -ge $MaxRetries) {
-                    Write-Host ("  Request failed: " + $msg) -ForegroundColor DarkYellow
-                    throw
-                }
-                $attempt++
-                $base = 0.5
-                $delay = [math]::Min(30.0, $base * [math]::Pow(2, $attempt - 1))
-                $jitter = (Get-Random -Minimum 0 -Maximum 250) / 1000.0
-                $total = $delay + $jitter + ([double]$PacingMs / 1000.0)
-                $ms = [int]([math]::Round($total * 1000))
-                Write-Host ("  Throttled (attempt $attempt/$MaxRetries). Backing off for ${ms}ms...") -ForegroundColor Yellow
-                Start-Sleep -Milliseconds $ms
-            }
+            
+            $pageNumber++
         }
+        
+        if ($pageNumber -gt $maxPages) {
+            Write-Host "  WARNING: Reached maximum page limit ($maxPages). There may be more data available." -ForegroundColor Yellow
+            Write-Host "  Consider using smaller time blocks or a larger ResultSize to get complete data." -ForegroundColor Yellow
+        }
+        
+        # Final warning if 10K limit was hit
+        if ($script:Hit10KLimit) {
+            Write-Host "" -ForegroundColor Red
+            Write-Host "  🚨 INCOMPLETE DATA WARNING 🚨" -ForegroundColor Red
+            Write-Host "  Time window: $($script:LimitTimeWindow)" -ForegroundColor Yellow
+            Write-Host "  Retrieved exactly 10,000 records - Exchange Online server limit reached" -ForegroundColor Red
+            Write-Host "  Additional records exist but are inaccessible with this time window" -ForegroundColor Red
+            Write-Host "  REQUIRED ACTION: Re-run with smaller time blocks (30 minutes recommended)" -ForegroundColor Cyan
+            Write-Host "" -ForegroundColor Red
+        }
+        
+        Write-Host "  Pagination completed: $($allResults.Count) total records fetched" -ForegroundColor Green
+        $res = $allResults
+        
+    }
+    catch {
+        Write-Host "  Pagination failed: $($_.Exception.Message)" -ForegroundColor Red
+        throw
     }
     
     # Check for result limit and auto-subdivide if needed
@@ -901,6 +868,17 @@ function Convert-ToMetricsRecord {
         [switch]$NoExplodeArrays, 
         [switch]$DevTest
     )
+    
+    # Handle case where an array is passed instead of a single object
+    if ($AuditLogEntry -is [array]) {
+        Write-Warning "Convert-ToMetricsRecord: Array passed instead of single object. Processing first element."
+        if ($AuditLogEntry.Count -gt 0) {
+            $AuditLogEntry = $AuditLogEntry[0]
+        } else {
+            Write-Warning "Convert-ToMetricsRecord: Empty array provided"
+            return $null
+        }
+    }
     
     # Input validation
     if (-not $AuditLogEntry) {
@@ -1779,7 +1757,7 @@ if (!$NoExplodeArrays) {
         Write-Host "  Maximum potential explosion: 1 → $totalExplosionPotential records" -ForegroundColor Magenta
     }
     else {
-        Write-Host "  No arrays detected for explosion" -ForegroundColor Red
+        Write-Host "  No arrays detected for explosion" -ForegroundColor Yellow
         # Debug the raw structure
         Write-Host "  Raw audit data type: $($auditData.GetType().Name)" -ForegroundColor Gray
         if ($auditData -is [PSCustomObject]) {
@@ -1959,8 +1937,8 @@ try {
     
     # Runtime parameter validation (bypasses PowerShell attribute caching issues)
     Write-Host "Validating parameters..." -ForegroundColor Yellow
-    if ($ResultSize -lt 1 -or $ResultSize -gt 50000) {
-        throw "ResultSize must be between 1 and 50000. Current value: $ResultSize"
+    if ($ResultSize -lt 1 -or $ResultSize -gt 10000) {
+        throw "ResultSize must be between 1 and 10000 (Exchange Online server limit). Current value: $ResultSize"
     }
     if ($BlockHours -lt 0.016667 -or $BlockHours -gt 24) {
         throw "BlockHours must be between 0.016667 (1 minute) and 24 (24 hours). Current value: $BlockHours"
