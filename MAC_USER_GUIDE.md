@@ -1,22 +1,32 @@
 # PAX for Mac - Quick Start Guide
 
 ## What is PAX?
+
 PAX (Purview Audit eXporter) is a simple app that helps you export Microsoft Purview audit data for analysis. It works with Microsoft 365 and requires no installation.
 
 ## How to Get PAX for Your Mac
 
 ### Method 1: Download Ready-to-Use App (Recommended)
-1. Ask your IT administrator for the PAX Mac download link
-2. Download the ZIP file for your Mac type:
-   - **Newer Macs (2020+)**: Download "PAX-macOS-AppleSilicon.zip" 
-   - **Older Macs**: Download "PAX-macOS-Intel.zip"
-   - **Not sure?** Click the Apple menu → About This Mac. If it says "Apple M1", "Apple M2", or "Apple M3", use AppleSilicon.
-3. Double-click the ZIP file to extract it
-4. **Right-click** on "Purview Audit eXporter (PAX)" and select "Open"
-5. If you see a security warning, click "Open" to confirm
-6. The app will start - no installation needed!
+
+1. Go to the PAX releases page: https://github.com/Rance9/PAX/releases
+2. Download the latest **"PAX-vX.X.X-macOS-Universal.zip"** file
+   - This single file works on ALL Mac computers (Intel & Apple Silicon)
+3. **Double-click the ZIP file** to extract it
+4. You should see a **"PAX.app"** or **"Portable Audit eXporter.app"** file
+5. **Right-click** on the .app file and select **"Open"**
+6. If you see a security warning, click **"Open"** to confirm
+7. The app will start - no installation needed!
+
+## Important: If You See Source Code Files
+
+If your download shows folders like "scripts", "src", etc. instead of just an app:
+
+- Look for a file ending in **.app**
+- That's the actual application to run
+- The other folders are not needed and can be ignored
 
 ### Method 2: Build It Yourself (Advanced Users)
+
 If you're comfortable with Terminal and want to build from source, see `BUILD_MACOS.md` for detailed instructions.
 
 ## First Time Setup
@@ -31,7 +41,7 @@ When you first run PAX:
 ## Using PAX
 
 1. **Choose Activities**: Select which Microsoft 365 activities to export
-2. **Set Date Range**: Pick the time period for your export  
+2. **Set Date Range**: Pick the time period for your export
 3. **Export**: Click "Export Script to File" to save the PowerShell script
 4. **Run Script**: Open Terminal and run the saved script
 5. **Get Results**: Your audit data will be saved as CSV files
@@ -39,16 +49,19 @@ When you first run PAX:
 ## Troubleshooting
 
 ### "App is damaged and can't be opened"
+
 ```bash
 # Run this in Terminal (replace with actual path):
 xattr -d com.apple.quarantine "/path/to/Purview Audit eXporter (PAX).app"
 ```
 
 ### App won't start
+
 - Right-click the app and choose "Open" (don't just double-click)
 - Check System Preferences → Security & Privacy for blocked app notifications
 
 ### PowerShell issues
+
 - The app will guide you through installing PowerShell if needed
 - All required Microsoft modules are installed automatically
 

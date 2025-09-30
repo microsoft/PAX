@@ -199,17 +199,23 @@ jobs:
           APP_NAME=$(basename "$APP_PATH")
           echo "Found native app bundle: $APP_NAME at $APP_PATH"
 
-          # Create distribution directories for both architectures
-          mkdir -p macos-dist-native
+          # Create clean distribution directory
+          mkdir -p "macos-dist-native"
 
-          # Copy the app bundle
+          # Copy ONLY the app bundle to the distribution directory
           cp -r "$APP_PATH" "macos-dist-native/"
+
+          # Change to the distribution directory and create a clean ZIP with just the app
           cd "macos-dist-native"
 
-          # Create single universal ZIP file (works on all Macs)
+          # Create ZIP file containing only the .app bundle (no extra folders)
           zip -r "PAX-${VERSION}-macOS-Universal.zip" "$APP_NAME"
 
-          echo "Created universal macOS app bundle"
+          # Verify the ZIP contents
+          echo "=== ZIP contents verification ==="
+          unzip -l "PAX-${VERSION}-macOS-Universal.zip" | head -10
+
+          echo "Created universal macOS app bundle: PAX-${VERSION}-macOS-Universal.zip"
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
