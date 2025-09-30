@@ -57,16 +57,26 @@ jobs:
           "v1.0.19"
         }
         
-        $exePath = Get-ChildItem "src-tauri/target/release" -Name "*.exe" | Where-Object { $_ -like "*Purview*" }
+        $exePath = Get-ChildItem "src-tauri/target/release" -Name "*.exe" | Where-Object { $_ -like "*portable-audit-exporter*" }
         if ($exePath) {
           Copy-Item "src-tauri/target/release/$exePath" "windows-dist/"
-          Rename-Item "windows-dist/\$exePath" "PAX-$version-Windows-Portable.exe"
+          Rename-Item "windows-dist/$exePath" "PAX-$version-Windows-Portable.exe"
+        } else {
+          # Fallback: try to find any exe file in release directory
+          $exePath = Get-ChildItem "src-tauri/target/release" -Name "*.exe" | Select-Object -First 1
+          if ($exePath) {
+            Copy-Item "src-tauri/target/release/$exePath" "windows-dist/"
+            Rename-Item "windows-dist/$exePath" "PAX-$version-Windows-Portable.exe"
+          } else {
+            Write-Host "Error: No executable found in release directory"
+            Get-ChildItem "src-tauri/target/release" -Recurse
+          }
         }
         # Also include MSI installer if available
         $msiPath = Get-ChildItem "src-tauri/target/release/bundle/msi" -Name "*.msi" -ErrorAction SilentlyContinue
         if ($msiPath) {
           Copy-Item "src-tauri/target/release/bundle/msi/$msiPath" "windows-dist/"
-          Rename-Item "windows-dist/\$msiPath" "PAX-$version-Windows-Installer.msi"
+          Rename-Item "windows-dist/$msiPath" "PAX-$version-Windows-Installer.msi"
         }
 
     - name: Upload Windows artifacts
