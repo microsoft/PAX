@@ -1775,22 +1775,82 @@ if (!$NoExplodeArrays) {
     # Start with single base record
     $explodedRecords = @($baseRecord)
             
-    # Process each array for comprehensive cross-product explosion
+    # Process each array for comprehensive cross-product explosion with performance optimization
     foreach ($arrayInfo in $sortedArrays) {
         $newRecords = @()
         Write-Verbose "Processing array: $($arrayInfo.Path) with $($arrayInfo.Count) items (depth $($arrayInfo.Depth))"
+        
+        # ULTRA-AGGRESSIVE Performance protection: limit explosion size to prevent excessive processing time
+        $maxRecords = 500  # Reduced from 1000 for faster processing
+        $maxArraySize = 25  # Limit individual array size to prevent exponential explosion
+        $projectedRecords = $explodedRecords.Count * $arrayInfo.Count
+        
+        if ($projectedRecords -gt $maxRecords) {
+            Write-Host "    Performance protection: Projected $projectedRecords records exceeds limit of $maxRecords" -ForegroundColor Yellow
+            Write-Host "    Limiting array to first $([math]::Floor($maxRecords / $explodedRecords.Count)) items" -ForegroundColor Yellow
+            $arrayInfo.Data = $arrayInfo.Data | Select-Object -First ([math]::Max(1, [math]::Floor($maxRecords / $explodedRecords.Count)))
+            $arrayInfo.Count = $arrayInfo.Data.Count
+        }
+        
+        # Additional protection: limit individual array size
+        if ($arrayInfo.Count -gt $maxArraySize) {
+            Write-Host "    Performance protection: Array size $($arrayInfo.Count) exceeds limit of $maxArraySize" -ForegroundColor Yellow
+            Write-Host "    Truncating to first $maxArraySize items" -ForegroundColor Yellow
+            $arrayInfo.Data = $arrayInfo.Data | Select-Object -First $maxArraySize
+            $arrayInfo.Count = $arrayInfo.Data.Count
+        }
+        
+        # Show progress for large explosion operations with reduced frequency
+        $totalOperations = $explodedRecords.Count * $arrayInfo.Count
+        $currentOperation = 0
+        $showProgress = $totalOperations -gt 50
+        $progressInterval = [math]::Max(50, [math]::Floor($totalOperations / 20))  # Show max 20 progress updates
+        
+        # Pre-allocate array for better performance
+        $newRecords = [System.Collections.ArrayList]::new($totalOperations)
                 
         foreach ($existingRecord in $explodedRecords) {
             foreach ($item in $arrayInfo.Data) {
+                $currentOperation++
+                
+                # Show progress for large operations (reduced frequency)
+                if ($showProgress -and ($currentOperation % $progressInterval) -eq 0) {
+                    $percent = [math]::Round(($currentOperation / $totalOperations) * 100, 1)
+                    Write-Host "    Exploding $($arrayInfo.Path): $percent% ($currentOperation/$totalOperations)" -ForegroundColor DarkGray
+                }
+                
                 try {
-                    # Deep clone the record to avoid reference issues
-                    $record = $existingRecord | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+                    # ULTRA-FAST CLONING: Use direct property copying instead of JSON serialization
+                    $record = [PSCustomObject]@{}
+                    
+                    # Copy all properties from existing record using direct assignment (fastest method)
+                    foreach ($property in $existingRecord.PSObject.Properties) {
+                        if ($property.Value -is [PSCustomObject]) {
+                            # For nested objects, create a new PSCustomObject and copy properties
+                            $nestedObj = [PSCustomObject]@{}
+                            foreach ($nestedProp in $property.Value.PSObject.Properties) {
+                                if ($nestedProp.Value -is [array]) {
+                                    # For arrays, create a shallow copy
+                                    $nestedObj | Add-Member -NotePropertyName $nestedProp.Name -NotePropertyValue @($nestedProp.Value) -Force
+                                } else {
+                                    $nestedObj | Add-Member -NotePropertyName $nestedProp.Name -NotePropertyValue $nestedProp.Value -Force
+                                }
+                            }
+                            $record | Add-Member -NotePropertyName $property.Name -NotePropertyValue $nestedObj -Force
+                        } elseif ($property.Value -is [array]) {
+                            # For arrays, create a shallow copy
+                            $record | Add-Member -NotePropertyName $property.Name -NotePropertyValue @($property.Value) -Force
+                        } else {
+                            # For simple values, direct copy
+                            $record | Add-Member -NotePropertyName $property.Name -NotePropertyValue $property.Value -Force
+                        }
+                    }
                             
                     # Enhanced path resolution for ALL possible scenarios
                     $success = Set-ValueAtPath -Record $record -Path $arrayInfo.Path -Value $item
                             
                     if ($success) {
-                        $newRecords += $record
+                        [void]$newRecords.Add($record)  # ArrayList.Add() is much faster than +=
                     }
                     else {
                         Write-Verbose "    Failed to set value at path: $($arrayInfo.Path)"
@@ -1803,7 +1863,7 @@ if (!$NoExplodeArrays) {
         }
                 
         if ($newRecords.Count -gt 0) {
-            $explodedRecords = $newRecords
+            $explodedRecords = $newRecords.ToArray()  # Convert ArrayList back to array
             Write-Verbose "After exploding $($arrayInfo.Path): $($explodedRecords.Count) records"
         }
         else {
@@ -2235,12 +2295,12 @@ try {
         
         # Calculate overall progress based on whether row explosion is enabled
         if ($NoExplodeArrays) {
-            # When NoExplodeArrays is enabled: queries = 90%, post = 10%
-            $postProgress = 90 + [math]::Round(($i / $postCategories.convert) * 10, 1)
+            # When row explosion is disabled: queries = 80%, post = 20%
+            $postProgress = 80 + [math]::Round(($i / $postCategories.convert) * 20, 1)
         }
         else {
-            # When row explosion is enabled: queries = 50%, explosion = 40%, post = 10%
-            $postProgress = 50 + [math]::Round(($i / $postCategories.convert) * 40, 1)
+            # When row explosion is enabled: queries = 30%, explosion = 65%, final post = 5%
+            $postProgress = 30 + [math]::Round(($i / $postCategories.convert) * 65, 1)
         }
         
         Write-Host "$postProgress - $(if ($NoExplodeArrays) { 'Post' } else { 'Row Explosion' }) $i/$($postCategories.convert) - Converting" -ForegroundColor Gray
@@ -2316,12 +2376,12 @@ try {
     Write-Host "Exporting to CSV: $OutputFile" -ForegroundColor Yellow
     $metricsData | Export-Csv -Path $OutputFile -NoTypeInformation -Encoding UTF8
     
-    # Calculate final post-processing progress (export = 2.5% of total)
+    # Calculate final post-processing progress (export = final 5% component of total)
     if ($NoExplodeArrays) {
-        $exportProgress = 92.5  # 90% (queries) + 2.5% (export)
+        $exportProgress = 95.0  # 80% (queries) + 15% (post-processing part 1) + 5% (export)
     }
     else {
-        $exportProgress = 92.5  # 50% (queries) + 40% (explosion) + 2.5% (export)
+        $exportProgress = 97.5  # 30% (queries) + 65% (explosion) + 2.5% (export)
     }
     Write-Host "$exportProgress - Post - Exporting CSV" -ForegroundColor Gray
     Write-Host "PA:POST progress export 1/1"
@@ -2341,12 +2401,12 @@ try {
         Write-Host "No sample available (no records)" -ForegroundColor Yellow
     }
     
-    # Calculate sample progress (sample = 2.5% of total)
+    # Calculate sample progress (sample = final 5% component of total)
     if ($NoExplodeArrays) {
-        $sampleProgress = 95.0  # 90% (queries) + 2.5% (export) + 2.5% (sample)
+        $sampleProgress = 97.5  # 80% (queries) + 17.5% (post-processing parts 1+2) + 2.5% (sample)
     }
     else {
-        $sampleProgress = 95.0  # 50% (queries) + 40% (explosion) + 2.5% (export) + 2.5% (sample)
+        $sampleProgress = 98.75  # 30% (queries) + 65% (explosion) + 2.5% (export) + 1.25% (sample)
     }
     Write-Host "$sampleProgress - Post - Sample" -ForegroundColor Gray
     Write-Host "PA:POST progress sample 1/1"
@@ -2363,12 +2423,12 @@ try {
         Write-Host "No stats (no records)" -ForegroundColor Yellow
     }
     
-    # Calculate stats progress (stats = 2.5% of total)
+    # Calculate stats progress (stats = final 5% component of total)
     if ($NoExplodeArrays) {
-        $statsProgress = 97.5  # 90% (queries) + 2.5% (export) + 2.5% (sample) + 2.5% (stats)
+        $statsProgress = 99.0  # 80% (queries) + 18% (post-processing parts 1+2+3) + 1% (stats)
     }
     else {
-        $statsProgress = 97.5  # 50% (queries) + 40% (explosion) + 2.5% (export) + 2.5% (sample) + 2.5% (stats)
+        $statsProgress = 99.375  # 30% (queries) + 65% (explosion) + 2.5% (export) + 1.25% (sample) + 0.625% (stats)
     }
     Write-Host "$statsProgress - Post - Stats" -ForegroundColor Gray
     Write-Host "PA:POST progress stats 1/1"
