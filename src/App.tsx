@@ -359,12 +359,23 @@ export default function App(){
   useEffect(()=>{
     try { localStorage.setItem('pax_auto_scroll_log', String(autoScroll)); } catch {}
   }, [autoScroll]);
-  // Autoscroll log container to bottom as new lines arrive (always keep latest visible)
+  // Autoscroll log container to bottom as new lines arrive (only when enabled)
   const logContainerRef = React.useRef<HTMLDivElement|null>(null);
+  const previousLogsLengthRef = React.useRef<number>(0);
   useEffect(()=>{
     const el = logContainerRef.current;
     if(!el) return;
-    if (autoScroll) el.scrollTop = el.scrollHeight;
+    
+    // Only auto-scroll if enabled AND logs actually increased (not trimmed)
+    const currentLength = logs.length;
+    const previousLength = previousLogsLengthRef.current;
+    const logsIncreased = currentLength > previousLength;
+    
+    if (autoScroll && logsIncreased) {
+      el.scrollTop = el.scrollHeight;
+    }
+    
+    previousLogsLengthRef.current = currentLength;
   }, [logs.length, step, autoScroll]);
   // Queue a log line into UI and file buffers
   function queueLogLine(type: 'stdout'|'stderr', line: string){

@@ -300,7 +300,10 @@ jobs:
             ### Quick Start
 
             1. **Windows**: Download and run the .exe file
-            2. **Mac**: Download the .zip file, extract, right-click the app and choose "Open"
+            2. **Mac**: Download the .zip file, extract, then:
+               - **Right-click** the app and choose "Open" (don't double-click)
+               - If you see "damaged" error, run in Terminal: `xattr -d com.apple.quarantine "/path/to/app"`
+               - See MAC_USER_GUIDE.md for detailed instructions
 
             ### Requirements
 

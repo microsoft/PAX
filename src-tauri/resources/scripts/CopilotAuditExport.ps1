@@ -1800,21 +1800,17 @@ if (!$NoExplodeArrays) {
             $arrayInfo.Count = $arrayInfo.Data.Count
         }
         
-        # Show progress for large explosion operations with reduced frequency
+        # Show progress for large explosion operations
         $totalOperations = $explodedRecords.Count * $arrayInfo.Count
         $currentOperation = 0
         $showProgress = $totalOperations -gt 50
-        $progressInterval = [math]::Max(50, [math]::Floor($totalOperations / 20))  # Show max 20 progress updates
-        
-        # Pre-allocate array for better performance
-        $newRecords = [System.Collections.ArrayList]::new($totalOperations)
                 
         foreach ($existingRecord in $explodedRecords) {
             foreach ($item in $arrayInfo.Data) {
                 $currentOperation++
                 
-                # Show progress for large operations (reduced frequency)
-                if ($showProgress -and ($currentOperation % $progressInterval) -eq 0) {
+                # Show progress for large operations
+                if ($showProgress -and ($currentOperation % 25) -eq 0) {
                     $percent = [math]::Round(($currentOperation / $totalOperations) * 100, 1)
                     Write-Host "    Exploding $($arrayInfo.Path): $percent% ($currentOperation/$totalOperations)" -ForegroundColor DarkGray
                 }
@@ -1850,7 +1846,7 @@ if (!$NoExplodeArrays) {
                     $success = Set-ValueAtPath -Record $record -Path $arrayInfo.Path -Value $item
                             
                     if ($success) {
-                        [void]$newRecords.Add($record)  # ArrayList.Add() is much faster than +=
+                        $newRecords += $record
                     }
                     else {
                         Write-Verbose "    Failed to set value at path: $($arrayInfo.Path)"
@@ -1863,7 +1859,7 @@ if (!$NoExplodeArrays) {
         }
                 
         if ($newRecords.Count -gt 0) {
-            $explodedRecords = $newRecords.ToArray()  # Convert ArrayList back to array
+            $explodedRecords = $newRecords
             Write-Verbose "After exploding $($arrayInfo.Path): $($explodedRecords.Count) records"
         }
         else {

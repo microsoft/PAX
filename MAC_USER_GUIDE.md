@@ -48,12 +48,41 @@ When you first run PAX:
 
 ## Troubleshooting
 
-### "App is damaged and can't be opened"
+## Troubleshooting
+
+### "App is damaged and can't be opened" or Security Warning
+
+This is a common macOS security feature for unsigned apps. Try these solutions:
+
+**Method 1 - Remove Quarantine (Recommended):**
+
+1. Open Terminal (Applications → Utilities → Terminal)
+2. Run this command (replace path with your app location):
 
 ```bash
-# Run this in Terminal (replace with actual path):
-xattr -d com.apple.quarantine "/path/to/Purview Audit eXporter (PAX).app"
+xattr -d com.apple.quarantine "/path/to/Portable Audit eXporter (PAX).app"
 ```
+
+3. Example if in Downloads folder:
+
+```bash
+xattr -d com.apple.quarantine "~/Downloads/Portable Audit eXporter (PAX).app"
+```
+
+4. Press Enter, then try opening the app normally
+
+**Method 2 - Control+Click:**
+
+1. Hold Control and click the app (don't right-click)
+2. Choose "Open" from the menu
+3. Click "Open" in the security dialog
+
+**Method 3 - System Preferences:**
+
+1. Try to open the app (it will fail)
+2. Go to System Preferences → Security & Privacy → General
+3. Look for a message about PAX being blocked
+4. Click "Open Anyway"
 
 ### App won't start
 
