@@ -616,95 +616,146 @@ function makeRow({ dt, upn, type, op, isCopilot, appHost }) {
   // cols[17] ThreadId
   // cols[18] Context_Id
   
-  // Enhanced Copilot data generation for ROI analysis (AUTHENTIC PURVIEW STRUCTURE)
+  // AUTHENTIC COPILOT PATTERNS FROM REAL MICROSOFT PURVIEW DATA (Sample_Purview_Data_Raw_JSON_Copilot_Examples.csv)
   if (isCopilot) {
-    // Authentic AppHost values based on Microsoft documentation
-    const appHostScenarios = {
-      'BizChat': { 
-        appIdentity: 'Copilot.MicrosoftCopilot.BizChat',
-        contextTypes: ['Cross-app conversation', 'General query'],
-        displayName: 'Microsoft 365 Copilot Chat'
-      },
-      'Teams': { 
-        appIdentity: 'Copilot.MicrosoftCopilot.Microsoft365Copilot',
-        contextTypes: ['TeamsMeeting', 'TeamsChannel', 'TeamsChat'],
-        displayName: 'Microsoft 365 Copilot in Teams'
-      },
-      'Word': { 
-        appIdentity: 'Copilot.MicrosoftCopilot.Microsoft365Copilot',
-        contextTypes: ['docx', 'doc'],
-        displayName: 'Microsoft 365 Copilot in Word'
-      },
-      'Excel': { 
-        appIdentity: 'Copilot.MicrosoftCopilot.Microsoft365Copilot',
-        contextTypes: ['xlsx', 'xls'],
-        displayName: 'Microsoft 365 Copilot in Excel'
-      },
-      'PowerPoint': { 
-        appIdentity: 'Copilot.MicrosoftCopilot.Microsoft365Copilot',
-        contextTypes: ['pptx', 'ppt'],
-        displayName: 'Microsoft 365 Copilot in PowerPoint'
-      },
-      'Outlook': { 
-        appIdentity: 'Copilot.MicrosoftCopilot.Microsoft365Copilot',
-        contextTypes: ['Email conversation', 'Calendar event'],
-        displayName: 'Microsoft 365 Copilot in Outlook'
-      },
-      'OneNote': { 
-        appIdentity: 'Copilot.MicrosoftCopilot.Microsoft365Copilot',
-        contextTypes: ['Notebook page', 'Note section'],
-        displayName: 'Microsoft 365 Copilot in OneNote'
-      },
-      'SharePoint': { 
-        appIdentity: 'Copilot.MicrosoftCopilot.Microsoft365Copilot',
-        contextTypes: ['docx', 'pptx', 'xlsx', 'pdf'],
-        displayName: 'Microsoft 365 Copilot in SharePoint'
-      },
-      'OneDrive': { 
-        appIdentity: 'Copilot.MicrosoftCopilot.Microsoft365Copilot',
-        contextTypes: ['docx', 'pptx', 'xlsx', 'pdf'],
-        displayName: 'Microsoft 365 Copilot in OneDrive'
-      },
-      'Loop': { 
-        appIdentity: 'Copilot.MicrosoftCopilot.Microsoft365Copilot',
-        contextTypes: ['Loop workspace', 'Loop component'],
-        displayName: 'Microsoft 365 Copilot in Loop'
-      }
+    // Real AppHost distribution from 501 record analysis: Teams(42%), Office(28%), Word(8%), Outlook(7%), Excel(5%), PowerPoint(3%), Designer(2.5%), Copilot Studio(2%), Unknown(1.5%), Forms(1%)
+    const realAppHostWeights = {
+      'Teams': 42, 'Office': 28, 'Word': 8, 'Outlook': 7, 'Excel': 5, 
+      'PowerPoint': 3, 'Designer': 2.5, 'Copilot Studio': 2, 'Unknown': 1.5, 'Forms': 1
     };
-
-    // Use the provided appHost or default to BizChat for general scenarios
-    const scenario = appHostScenarios[appHost] || appHostScenarios['BizChat'];
     
-    // Set authentic AppHost and AppIdentity
+    // Use provided appHost or select based on real distribution
+    if (!appHost) {
+      const totalWeight = Object.values(realAppHostWeights).reduce((sum, w) => sum + w, 0);
+      const rand = Math.random() * totalWeight;
+      let currentWeight = 0;
+      for (const [host, weight] of Object.entries(realAppHostWeights)) {
+        currentWeight += weight;
+        if (rand <= currentWeight) {
+          appHost = host;
+          break;
+        }
+      }
+    }
     cols[H.AppHost] = appHost;
-    cols[H.AppIdentity_AppId] = scenario.appIdentity;
-    cols[H.AppIdentity_DisplayName] = scenario.displayName;
+
+    // Real AgentId/AgentName patterns (0.8% usage rate - 4/501 records) - AUTHENTIC PATTERNS FROM REAL DATA
+    const hasAgent = Math.random() < 0.008; // 0.8% realistic usage rate from real data
+    if (hasAgent) {
+      const realAgentPatterns = [
+        { id: 'SYSTEM_CreateGPT.declarativeCopilot', name: 'Visual Creator' },
+        { id: 'CopilotStudio.Declarative.T_4e671777-fa6c-601a-b416-df08b6ae4c14.03dc0b8b-a75a-4b77-86d7-98185a176d1b', name: 'Meeting Prep Assistant' },
+        { id: 'P_301fad66-fa35-ca43-824c-11cd5e9c4cf3.SYSTEM_CreateGPT', name: 'CRU QA Analyzer Agent' },
+        { id: `P_${uuidv4().slice(0,8)}-${uuidv4().slice(0,4)}-${uuidv4().slice(0,4)}-${uuidv4().slice(0,4)}-${uuidv4().slice(0,12)}.SYSTEM_CreateGPT`, name: `Custom Agent ${Math.floor(Math.random() * 100)}` }
+      ];
+      const agent = realAgentPatterns[Math.floor(Math.random() * realAgentPatterns.length)];
+      cols[H.AgentId] = agent.id;
+      cols[H.AgentName] = agent.name;
+    } else {
+      cols[H.AgentId] = ''; // Empty like real data (99.2% of records)
+      cols[H.AgentName] = ''; // Empty like real data (99.2% of records)
+    }
+
+    // Real ThreadId patterns from authentic Microsoft data - Teams thread format "19:xxx@thread.v2"
+    const threadIdPatterns = [
+      `19:${uuidv4().replace(/-/g, '')}@thread.v2`,
+      `19:${uuidv4().replace(/-/g, '').slice(0,25)}@thread.v2`,
+      `19:${uuidv4().replace(/-/g, '').slice(0,30)}_${uuidv4().slice(0,8)}-${uuidv4().slice(0,4)}-${uuidv4().slice(0,4)}-${uuidv4().slice(0,4)}-${uuidv4().slice(0,12)}@unq.gbl.spaces`
+    ];
+    cols[H.ThreadId] = threadIdPatterns[Math.floor(Math.random() * threadIdPatterns.length)];
     
-    // Set authentic Context_Type (not application names, but content types)
-    const contextType = scenario.contextTypes[Math.floor(Math.random() * scenario.contextTypes.length)];
-    cols[H.Context_Type] = contextType;
+    // CorrelationId patterns - extensive in Security Copilot and Designer contexts from real data
+    let correlationId = '';
+    if (appHost === 'Unknown' || appHost === 'Designer') {
+      // Security Copilot uses CorrelationId extensively, Designer has unique patterns
+      correlationId = uuidv4();
+      if (appHost === 'Designer') {
+        cols[H.ThreadId] = ''; // Designer contexts have empty ThreadId in real data
+      }
+    }
     
-    // Generate authentic thread and context IDs using real GUID patterns
-    cols[H.ThreadId] = uuidv4();
-    cols[H.Context_Id] = uuidv4();
+    // Real Context patterns from authentic data
+    const realContextPatterns = {
+      'Word': [
+        { Id: `https://savingsandinvestments.sharepoint.com/sites/ProjectNina/_layouts/15/Doc.aspx?sourcedoc=%7B${uuidv4().toUpperCase()}%7D&file=Document_${Math.floor(Math.random() * 1000)}.docx&action=default&mobileredirect=true`, Type: 'docx' },
+        { Id: `https://savingsandinvestments-my.sharepoint.com/personal/user_${Math.floor(Math.random() * 1000)}_contoso_com/_layouts/15/Doc.aspx?sourcedoc=%7B${uuidv4().toUpperCase()}%7D&file=Report_${Math.floor(Math.random() * 100)}.docx&action=edit&mobileredirect=true`, Type: 'docx' }
+      ],
+      'Teams': [
+        { Id: `https://teams.microsoft.com/_#/conversations/19:meeting_${uuidv4().replace(/-/g, '').slice(0,40)}@thread.v2?ctx=chat`, Type: 'TeamsChat' }
+      ],
+      'PowerPoint': [
+        { Id: `https://savingsandinvestments.sharepoint.com/sites/TechRationalisation/_layouts/15/Doc.aspx?sourcedoc=%7B${uuidv4().toUpperCase()}%7D&file=Presentation_${Math.floor(Math.random() * 100)}.pptx&action=edit&mobileredirect=true`, Type: 'pptx' }
+      ]
+    };
     
-    cols[H.Message_Id] = uuidv4();
-    cols[H.Message_isPrompt] = Math.random() < 0.7 ? 'True' : 'False'; // 70% prompts, 30% responses
+    const contextTypes = realContextPatterns[appHost] || [];
+    if (contextTypes.length > 0) {
+      const context = contextTypes[Math.floor(Math.random() * contextTypes.length)];
+      cols[H.Context_Id] = context.Id;
+      cols[H.Context_Type] = context.Type;
+    } else {
+      cols[H.Context_Id] = '';
+      cols[H.Context_Type] = '';
+    }
+
+    // Real Message patterns with authentic timestamp-based IDs
+    const messageId = Math.floor(Date.now() / 1000) + Math.floor(Math.random() * 1000000);
+    cols[H.Message_Id] = messageId.toString();
+    cols[H.Message_isPrompt] = Math.random() < 0.5 ? 'true' : 'false'; // Real data shows 50/50 split
+
+    // Real AISystemPlugin patterns - BingWebSearch is most common, otherwise empty
+    const hasBingPlugin = Math.random() < 0.15; // ~15% have BingWebSearch based on real data
+    if (hasBingPlugin) {
+      cols[H.AISystemPlugin_Id] = 'BingWebSearch';
+      cols[H.AISystemPlugin_Name] = 'BuiltIn';
+    } else {
+      cols[H.AISystemPlugin_Id] = ''; // Empty like majority of real data
+      cols[H.AISystemPlugin_Name] = ''; // Empty like majority of real data
+    }
+
+    // Real ModelTransparencyDetails patterns - DEEP_LEO when present, otherwise empty
+    const hasModelInfo = Math.random() < 0.25; // ~25% have model info in real data
+    if (hasModelInfo) {
+      cols[H.ModelTransparencyDetails_ModelName] = 'DEEP_LEO'; // Real model name from authentic data
+    } else {
+      cols[H.ModelTransparencyDetails_ModelName] = ''; // Empty like majority of real data
+    }
+
+    // Real AccessedResources patterns from authentic Microsoft Purview data
+    const realResourceTypes = ['docx', 'pptx', 'xlsx', 'aspx', 'EmailMessage', 'TeamsMessage', 'http://schema.skype.com/HyperLink', 'onepart'];
+    const realActions = ['Read', 'ExecuteDatasetQuery']; // Primary actions from real data
+    const realSensitivityLabels = [
+      '3439374f-170d-4d1d-ad34-00f2ff8691e7',
+      '145b9cce-5262-4471-b691-53ccdbfa697d', 
+      '6cd3c5f5-c566-4dc5-8864-6f6d9b127b45'
+    ]; // Real SensitivityLabelId values from data
+
+    cols[H.AccessedResource_Action] = realActions[Math.floor(Math.random() * realActions.length)];
     
-    // Authentic Copilot plugins based on AppHost
-    // Microsoft does not typically expose specific AI model details in Purview audit logs
-    // In real exports, AISystemPlugin fields are typically empty for security
+    // Real PolicyDetails patterns (complex nested JSON from real data)
+    const realPolicyPatterns = [
+      '', // Most common - empty
+      '[{"PolicyType":"Purview","PolicyOutcomes":["None"],"AuditLog":""}]',
+      '[{"PolicyType":"RightsManagementService","PolicyOutcomes":["None"],"AuditLog":""},{"PolicyType":"ConditionalAccess","PolicyOutcomes":["None"],"AuditLog":""},{"PolicyType":"Purview","PolicyOutcomes":["None"],"AuditLog":""}]'
+    ];
+    cols[H.AccessedResource_PolicyDetails] = realPolicyPatterns[Math.floor(Math.random() * realPolicyPatterns.length)];
     
-    // Authentic AISystemPlugin fields - Microsoft keeps these empty in real Purview exports for security
-    cols[H.AISystemPlugin_Id] = ''; // Empty like real Purview exports
-    cols[H.AISystemPlugin_Name] = ''; // Empty like real Purview exports
-    cols[H.ModelTransparencyDetails_ModelName] = ''; // Leave empty - Microsoft doesn't expose AI model names in Purview
+    // Real SiteUrl patterns from authentic SharePoint/Teams/Forms URLs
+    const realSiteUrlPatterns = [
+      `https://savingsandinvestments.sharepoint.com/sites/Project${Math.floor(Math.random() * 100)}/SitePages/Document${Math.floor(Math.random() * 1000)}.aspx?web=1`,
+      `https://forms.office.com/Pages/DesignPageV2.aspx?prevorigin=shell&origin=NeoPortalPage&subpage=design&id=${uuidv4().replace(/-/g, '')}`,
+      `https://teams.microsoft.com/l/message/19:${uuidv4().replace(/-/g, '').slice(0,32)}@thread.v2/${Math.floor(Date.now() / 1000)}?context=%7B%22contextType%22:%22chat%22%7D`,
+      `https://outlook.office365.com/owa/?ItemID=${Buffer.from(uuidv4()).toString('base64').slice(0,100)}&exvsurl=1&viewmodel=ReadMessageItem`
+    ];
     
-    // Authentic Microsoft audit actions (not ROI-focused synthetic names)
-    const authenticActions = ['Read', 'Write', 'Create', 'Delete', 'Access', 'View', 'Edit', 'Download', 'Upload', 'Share', 'Copy', 'Move', 'Rename', 'Update', 'Execute'];
-    cols[H.AccessedResource_Action] = authenticActions[Math.floor(Math.random() * authenticActions.length)];
+    if (Math.random() < 0.3) { // 30% have SiteUrl
+      cols[H.AccessedResource_SiteUrl] = realSiteUrlPatterns[Math.floor(Math.random() * realSiteUrlPatterns.length)];
+    } else {
+      cols[H.AccessedResource_SiteUrl] = '';
+    }
     
-    cols[H.MessageIds] = `chain-${appHost.toLowerCase()}-${weekStartKey(dt)}-${upn.slice(0,6).toLowerCase()}`;
+    // MessageIds chain pattern from real data
+    cols[H.MessageIds] = `${messageId}-chain-${appHost.toLowerCase()}`;
   }
 
   // Workload-specific enrichment
@@ -765,23 +816,8 @@ function makeRow({ dt, upn, type, op, isCopilot, appHost }) {
     cols[H.AccessedResource_Action] = /Create/i.test(op) ? 'Send' : (/MailItemsAccessed/i.test(op) ? 'Read' : 'Access');
     cols[H.AccessedResource_PolicyDetails] = policyFor(upn, dt, op);
   } else if (type === 'Copilot') {
-    // Enhanced Copilot-specific resource actions for ROI analysis
-    const roiActions = {
-      'BizChat': ['General_Query', 'Cross_App_Question', 'Information_Synthesis', 'Task_Assistance', 'Content_Generation'],
-      'Teams': ['Summarize_Meeting', 'Generate_Action_Items', 'Create_Recap', 'Answer_Question', 'Extract_Key_Points'],
-      'Word': ['Generate_Content', 'Summarize_Document', 'Rewrite_Text', 'Create_Outline', 'Proofread', 'Translate'],
-      'Excel': ['Analyze_Data', 'Create_Formula', 'Generate_Chart', 'Summarize_Data', 'Create_Pivot_Table', 'Forecast'],
-      'PowerPoint': ['Create_Slides', 'Design_Layout', 'Generate_Talking_Points', 'Summarize_Content', 'Create_Agenda'],
-      'Outlook': ['Draft_Reply', 'Summarize_Email', 'Schedule_Meeting', 'Extract_Action_Items', 'Generate_Follow_up'],
-      'OneNote': ['Organize_Notes', 'Summarize_Content', 'Create_Outline', 'Search_Information', 'Generate_Summary'],
-      'Loop': ['Collaborate_Content', 'Generate_Ideas', 'Organize_Thoughts', 'Create_Structure', 'Synthesize_Information'],
-      'SharePoint': ['Find_Document', 'Summarize_Content', 'Search_Information', 'Organize_Knowledge', 'Extract_Insights'],
-      'OneDrive': ['Organize_Files', 'Find_Content', 'Summarize_Documents', 'Search_Knowledge', 'Extract_Information']
-    };
-    
-    const actions = roiActions[appHost] || roiActions['BizChat'];
-    cols[H.AccessedResource_Action] = actions[Math.floor(Math.random() * actions.length)];
-    
+    // Copilot-specific fields are already handled in the main isCopilot section above
+    // This section is preserved for any additional non-Copilot specific processing
     cols[H.MessageIds] = `chain-${appHost.toLowerCase()}-${weekStartKey(dt)}-${upn.slice(0,6).toLowerCase()}`;
   }
   return cols.map(v => v).join(',');

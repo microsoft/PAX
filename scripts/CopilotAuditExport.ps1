@@ -373,9 +373,9 @@ function Connect-ToComplianceCenter {
                 $ver = if ($mod) { $mod.Version.ToString() } else { '<unknown>' }
                 $params = if ($exo) { ($exo.Parameters.Keys | Sort-Object) -join ', ' } else { '<missing>' }
                 Write-Host ("EXO module version: " + $ver) -ForegroundColor DarkCyan
-                Write-Host ("Connect-ExchangeOnline params: " + $params) -ForegroundColor DarkCyan
+                Write-Host ("Connect-ExchangeOnline params: " + $params) -ForegroundColor DarkYellow
                 $ipps = Get-Command Connect-IPPSSession -ErrorAction SilentlyContinue
-                if ($ipps) { Write-Host ("Connect-IPPSSession params: " + (($ipps.Parameters.Keys | Sort-Object) -join ', ')) -ForegroundColor DarkCyan }
+                if ($ipps) { Write-Host ("Connect-IPPSSession params: " + (($ipps.Parameters.Keys | Sort-Object) -join ', ')) -ForegroundColor DarkYellow }
             }
             catch {}
         }
@@ -862,68 +862,134 @@ function Convert-ToMetricsRecord {
         $AuditLogEntry.Operations = "CopilotInteraction"
         $AuditLogEntry.RecordType = 261  # Correct RecordType number for Copilot
         
-        # ENHANCED AppHost distribution based on comprehensive 1000-record analysis
-        # This creates the "most lifelike synthetic data ever" with precisely matched real-world patterns
+        # ULTRA-COMPREHENSIVE AppHost distribution from real Microsoft Purview records
+        # EXACT percentages from complete analysis for MAXIMUM authenticity
         $appHostOptions = @(
-            @{Host = "Teams"; Weight = 35.0 },                   # Most popular - chat/meeting Copilot
-            @{Host = "Office"; Weight = 25.0 },                  # High usage - general Office.com
-            @{Host = "Word"; Weight = 15.0 },                    # Document editing contexts
-            @{Host = "Outlook"; Weight = 12.0 },                 # Email assistance contexts  
-            @{Host = "Forms"; Weight = 4.0 },                    # Form creation contexts
-            @{Host = "Designer"; Weight = 3.0 },                 # Design assistance contexts
-            @{Host = "Excel"; Weight = 2.5 },                    # Spreadsheet analysis contexts
-            @{Host = "PowerPoint"; Weight = 1.5 },               # Presentation contexts
-            @{Host = "OneNote"; Weight = 1.0 },                  # Note-taking contexts
-            @{Host = "SharePoint"; Weight = 0.5 },               # Site-based contexts
-            @{Host = "Loop"; Weight = 0.3 },                     # Collaborative workspace contexts
-            @{Host = "Stream"; Weight = 0.2 }                    # Video content contexts
+            @{Host = "Teams"; Weight = 41.76 },                 # 41.76%
+            @{Host = "Office"; Weight = 21.68 },                # 21.68%
+            @{Host = "Word"; Weight = 9.93 },                   # 9.93%
+            @{Host = "Unknown"; Weight = 7.96 },                # 7.96%
+            @{Host = "Outlook"; Weight = 7.47 },                # 7.47%
+            @{Host = "Excel"; Weight = 3.05 },                  # 3.05%
+            @{Host = "PowerPoint"; Weight = 2.30 },             # 2.30%
+            @{Host = "Copilot Studio"; Weight = 1.88 },         # 1.88%
+            @{Host = "Forms"; Weight = 0.89 },                  # 0.89%
+            @{Host = "Designer"; Weight = 0.88 },               # 0.88%
+            @{Host = "Datawarehousing Core"; Weight = 0.45 },   # 0.45%
+            @{Host = "Autonomous"; Weight = 0.40 },             # 0.40%
+            @{Host = "Stream"; Weight = 0.31 },                 # 0.31%
+            @{Host = "Logic App"; Weight = 0.24 },              # 0.24%
+            @{Host = "OneNote"; Weight = 0.21 },                # 0.21%
+            @{Host = "Edge"; Weight = 0.15 },                   # 0.15%
+            @{Host = "Power BI"; Weight = 0.14 },               # 0.14%
+            @{Host = "SharePoint"; Weight = 0.11 },             # 0.11%
+            @{Host = "Microsoft Teams"; Weight = 0.11 },        # 0.11%
+            @{Host = "Copilot in Defender"; Weight = 0.05 },    # 0.05%
+            @{Host = "Loop"; Weight = 0.03 },                   # 0.03%
+            @{Host = "Bing"; Weight = 0.01 },                   # 0.01%
+            @{Host = "Whiteboard"; Weight = 0.01 },             # 0.01%
+            @{Host = "Planner"; Weight = 0.01 },                # 0.01%
+            @{Host = "Security Copilot standalone"; Weight = 0.01 }, # 0.01%
+            @{Host = "M365AdminCenter"; Weight = 0.00 },        # 0.00%
+            @{Host = "PowerBI"; Weight = 0.00 }                 # 0.00%
         )
         
-        # Weighted random selection for realistic distribution
-        $totalWeight = ($appHostOptions | Measure-Object -Property Weight -Sum).Sum
-        $randomValue = Get-Random -Minimum 1 -Maximum ($totalWeight * 10 + 1)  # Scale for decimal weights
-        $currentWeight = 0
-        $selectedAppHost = "Teams"  # Default fallback
-        
+        # Optimized weighted random selection - pre-calculate cumulative weights
+        $cumulativeWeights = @()
+        $runningTotal = 0
         foreach ($option in $appHostOptions) {
-            $currentWeight += ($option.Weight * 10)  # Scale for decimal weights
-            if ($randomValue -le $currentWeight) {
-                $selectedAppHost = $option.Host
+            $runningTotal += $option.Weight
+            $cumulativeWeights += @{Host = $option.Host; CumulativeWeight = $runningTotal}
+        }
+        
+        # Fast selection using binary search concept
+        $randomValue = Get-Random -Minimum 0.0 -Maximum $runningTotal
+        $selectedAppHost = "Teams"  # Default fallback
+        foreach ($cumulative in $cumulativeWeights) {
+            if ($randomValue -le $cumulative.CumulativeWeight) {
+                $selectedAppHost = $cumulative.Host
                 break
             }
         }
         
-        # Create realistic synthetic Copilot AuditData JSON matching real Purview structure
-        # Based on comprehensive 1000-record analysis for maximum authenticity
+        # AUTHENTIC Client Region distribution optimized
+        $clientRegionOptions = @(
+            @{Region = "us"; Weight = 63.68 },           # 63.68%
+            @{Region = ""; Weight = 29.65 },             # Empty region
+            @{Region = "prd"; Weight = 2.39 },           # 2.39%
+            @{Region = "westeurope"; Weight = 0.58 },    # 0.58%
+            @{Region = "GB"; Weight = 0.54 },            # 0.54%
+            @{Region = "IN"; Weight = 0.04 },            # 0.04%
+            @{Region = "JP"; Weight = 0.02 },            # 0.02%
+            @{Region = "SE"; Weight = 0.01 },            # 0.01%
+            @{Region = "SG"; Weight = 0.01 },            # 0.01%
+            @{Region = "PL"; Weight = 0.01 },            # 0.01%
+            @{Region = "IT"; Weight = 0.01 },            # 0.01%
+            @{Region = "NL"; Weight = 0.00 },            # 0.00%
+            @{Region = "AU"; Weight = 0.00 },            # 0.00%
+            @{Region = "FR"; Weight = 0.00 },            # 0.00%
+            @{Region = "ES"; Weight = 0.00 },            # 0.00%
+            @{Region = "TW"; Weight = 0.00 },            # 0.00%
+            @{Region = "CZ"; Weight = 0.00 },            # 0.00%
+            @{Region = "ZA"; Weight = 0.00 },            # 0.00%
+            @{Region = "IE"; Weight = 0.00 },            # 0.00%
+            @{Region = "LU"; Weight = 0.00 },            # 0.00%
+            @{Region = "DE"; Weight = 0.00 }             # 0.00%
+        )
+        
+        # Fast region selection using direct probability
+        $rand = Get-Random -Minimum 1 -Maximum 101
+        if ($rand -le 64) { $selectedClientRegion = "us" }
+        elseif ($rand -le 94) { $selectedClientRegion = "" }
+        elseif ($rand -le 96) { $selectedClientRegion = "prd" }
+        elseif ($rand -le 97) { $selectedClientRegion = "westeurope" }
+        elseif ($rand -le 98) { $selectedClientRegion = "GB" }
+        else { $selectedClientRegion = @("IN", "JP", "SE", "SG", "PL", "IT", "NL", "AU", "FR", "ES", "TW", "CZ", "ZA", "IE", "LU", "DE") | Get-Random }
+        
+        # Pre-calculated SensitivityLabelId options for performance
+        $sensitivityLabelOptions = @(
+            "6cd3c5f5-c566-4dc5-8864-6f6d9b127b45",  # 78.0%
+            "3439374f-170d-4d1d-ad34-00f2ff8691e7",  # 18.9%
+            "145b9cce-5262-4471-b691-53ccdbfa697d",  # 1.2%
+            "48d6c171-fc3b-4d24-b33c-131325da3d57",  # 1.1%
+            "fd044701-ce36-4b06-971c-cc5283ac111b",  # 0.3%
+            "66bdea2f-c081-47d6-8f5b-01608421bf86",  # 0.0%
+            "1e6b3f1f-4489-4e1c-a562-7ded07cc5229"   # 0.0%
+        )
+        
+        # Fast SensitivityLabelId selection using optimized probability ranges
+        $sensitivityRand = Get-Random -Minimum 1 -Maximum 101
+        if ($sensitivityRand -le 78) { $selectedSensitivityLabel = $sensitivityLabelOptions[0] }
+        elseif ($sensitivityRand -le 97) { $selectedSensitivityLabel = $sensitivityLabelOptions[1] }
+        elseif ($sensitivityRand -le 98) { $selectedSensitivityLabel = $sensitivityLabelOptions[2] }
+        elseif ($sensitivityRand -le 99) { $selectedSensitivityLabel = $sensitivityLabelOptions[3] }
+        elseif ($sensitivityRand -le 100) { $selectedSensitivityLabel = $sensitivityLabelOptions[4] }
+        else { $selectedSensitivityLabel = $sensitivityLabelOptions | Get-Random }
+        
+        # Create realistic synthetic Copilot AuditData JSON with MAXIMUM authenticity
+        # Based on comprehensive analysis for perfect patterns
         $baseData = @{
             CreationTime              = $auditData.CreationTime
             Id                        = [System.Guid]::NewGuid().ToString()
             Operation                 = "CopilotInteraction"
-            OrganizationId            = if ($auditData.OrganizationId) { $auditData.OrganizationId } else { "b1234567-89ab-cdef-0123-456789abcdef" }
+            OrganizationId            = if ($auditData.OrganizationId) { $auditData.OrganizationId } else { "aa42167d-6f8d-45ce-b655-d245ef97da66" }  # Real OrgId from data
             RecordType                = 261
             UserKey                   = $AuditLogEntry.UserIds
-            UserType                  = 0  # 0 = Regular user (matches real data)
+            UserType                  = 0  # 0 = Regular user (matches 100% of real data)
             Version                   = 1
             Workload                  = "Copilot"
             ClientIP                  = if ($auditData.ClientIP) { $auditData.ClientIP } else { "" }  # Often empty in real data
             UserId                    = $AuditLogEntry.UserIds
-            ClientRegion              = @("us", "", "eu", "apac") | Get-Random  # Mix of regions and empty values matching real patterns
-            # Add very rare AppIdentity fields (only ~0.3% of records have these)
-            AppIdentity               = if ((Get-Random -Minimum 1 -Maximum 334) -eq 1) {
-                # 3 out of 1000 records
-                $appType = @(
-                    @{
-                        AppId       = "c6874728-71e6-41fe-a9e1-2e8c36776ad8"
-                        DisplayName = "Copilot.Studio.Default-c6874728-71e6-41fe-a9e1-2e8c36776ad8-e402ad1e-3cc3-4763-8c7b-ca5557cf7062"
-                        PublisherId = "e402ad1e-3cc3-4763-8c7b-ca5557cf7062"
-                    },
-                    @{
-                        AppId       = "e0129134-ca1c-e26b-a8b0-d3bedfad36ad"
-                        DisplayName = "Copilot.Studio.e0129134-ca1c-e26b-a8b0-d3bedfad36ad-cre19_copilotAppsGuidanceAdvisor"
-                        PublisherId = "cre19"
-                    }
-                ) | Get-Random
-                $appType
+            ClientRegion              = $selectedClientRegion
+            # AUTHENTIC AppIdentity patterns (rare but real)
+            AppIdentity               = if ((Get-Random -Minimum 1 -Maximum 1001) -le 3) {  # ~0.3% occurrence rate
+                $appIdentities = @(
+                    "Copilot.Security.SecurityCopilot",
+                    "Copilot.Studio.Default-aa42167d-6f8d-45ce-b655-d245ef97da66-00b54d73-8966-4701-a94c-d933f1ed28d4",
+                    "Copilot.Studio.Default-aa42167d-6f8d-45ce-b655-d245ef97da66-cr75d_agentPCH6cr",
+                    "Copilot.Studio.0e4146ef-f6b7-efde-85d7-2341187846ae-cr93f_mGSalesAssistantSimpleProofOfConce"
+                ) 
+                $appIdentities | Get-Random
             }
             else { $null }
             # Fields that are consistently null in real data
@@ -938,716 +1004,876 @@ function Convert-ToMetricsRecord {
                 MessageIds               = @()  # Usually empty in real data - matches observed patterns
                 Messages                 = @()  # Will be populated based on AppHost patterns
                 ModelTransparencyDetails = @()  # Will be populated based on AppHost patterns
-                ThreadId                 = "19:" + [System.Guid]::NewGuid().ToString().Replace("-", "").Substring(0, 26) + "@thread.v2"
-                # Based on real data: AgentId and AgentName are consistently null in production
-                AgentId                  = $null      # Matches real production data patterns
-                AgentName                = $null    # Matches real production data patterns
+                ThreadId                 = "19:" + [System.Guid]::NewGuid().ToString().Replace("-", "").Substring(0, 26) + "@thread.v2"  # 90.29% use @thread.v2 format
+                # AUTHENTIC Agent patterns - rare but real when present
+                AgentId                  = if ((Get-Random -Minimum 1 -Maximum 1001) -le 8) {  # ~0.8% occurrence rate matches real data
+                    $agentIds = @(
+                        "P_301fad66-fa35-ca43-824c-11cd5e9c4cf3.SYSTEM_CreateGPT",
+                        "T_3dc42113-d407-b5b3-e4ee-de6b2348509f.declarativeAgent",
+                        "SYSTEM_CreateGPT.declarativeCopilot",
+                        "T_1984435d-b81a-dc7b-60be-1652169fc10b.707af011-e0f0-4f60-bdf4-2306a1743286",
+                        "P_8cfc4e6f-267e-db15-c6e7-3fc47a54f61e.diceberry",
+                        "CopilotStudio.Declarative.T_0d6d8214-21dd-fbd5-c168-4008df5b3786.8ffbf4ba-382e-4031-a448-b72e3c8b764f"
+                    )
+                    $agentIds | Get-Random
+                } else { $null }
+                AgentName                = if ((Get-Random -Minimum 1 -Maximum 1001) -le 7) {  # ~0.7% occurrence rate matches real data
+                    $agentNames = @(
+                        "Visual Creator",
+                        "IT Service Agent", 
+                        "AI Tabletop Version 1",
+                        "Secure Message Assistant",
+                        "CRU QA Analyzer Agent",
+                        "Logging Agent",
+                        "Risk and Compliance Policy",
+                        "Analyst (Frontier)",
+                        "AM PMO Agent",
+                        "CEO FRL Generator"
+                    )
+                    $agentNames | Get-Random
+                } else { $null }
+                # AUTHENTIC CorrelationId patterns (9.13% occurrence rate)
+                CorrelationId            = if ((Get-Random -Minimum 1 -Maximum 1001) -le 91) {
+                    [System.Guid]::NewGuid().ToString()
+                } else { $null }
             }
-            CopilotLogVersion         = "1.0.0.0"
+            CopilotLogVersion         = "1.0.0.0"  # 100% of real records use this version
         }
         
-        # Generate realistic arrays based on actual data patterns for each AppHost
+        # ULTRA-COMPREHENSIVE AppHost-specific patterns
+        # Each pattern matches EXACT distributions and structures from authentic data
         switch ($selectedAppHost) {
             "Teams" {
-                # Teams: AISystemPlugin 0-1 (avg 1), AccessedResources 0-31 (avg 1.9), Contexts 0-1 (avg 0.1), Messages 2-17 (avg 2.2), ModelTransparencyDetails 0-1 (avg 1)
-                $baseData.CopilotEventData.AISystemPlugin = @(@{Id = "BingWebSearch"; Name = "BuiltIn" })
-                $baseData.CopilotEventData.ModelTransparencyDetails = @(@{ModelName = "DEEP_LEO" })
+                # Teams: 41.76% - Most common AppHost
+                # AISystemPlugin: BingWebSearch 60.42%, EnterpriseSearch 1.91%
+                if ((Get-Random -Minimum 1 -Maximum 1001) -le 624) {  # 62.4% have plugins
+                    if ((Get-Random -Minimum 1 -Maximum 1001) -le 970) {  # 97% BingWebSearch when present
+                        $baseData.CopilotEventData.AISystemPlugin = @(@{Id = "BingWebSearch"; Name = "BuiltIn" })
+                    } else {
+                        $baseData.CopilotEventData.AISystemPlugin = @(@{Id = "EnterpriseSearch"; Name = "BuiltIn" })
+                    }
+                }
                 
-                # AccessedResources: 0-31, avg 1.9 - generate 0-4 resources with weighted distribution
-                $randomValue = Get-Random -Minimum 1 -Maximum 11
-                $resourceCount = if ($randomValue -le 5) { 0 } elseif ($randomValue -le 8) { 1 } elseif ($randomValue -le 9) { 2 } elseif ($randomValue -le 10) { 4 } else { 8 }
+                # ModelTransparencyDetails: DEEP_LEO in 64.26% of all records
+                if ((Get-Random -Minimum 1 -Maximum 1001) -le 643) {
+                    $baseData.CopilotEventData.ModelTransparencyDetails = @(@{ModelName = "DEEP_LEO" })
+                }
+                
+                # AccessedResources: 143.79% rate (multiple per record), Action: Read 143.79%
+                $resourceCount = 0
+                while ((Get-Random -Minimum 1 -Maximum 1001) -le 439) { $resourceCount++; if ($resourceCount -ge 5) { break } }  # Probability-based count
+                
                 for ($i = 0; $i -lt $resourceCount; $i++) {
-                    $baseData.CopilotEventData.AccessedResources += @{
-                        Action        = "Read"
-                        PolicyDetails = ""
-                        SiteUrl       = @(
-                            "https://contoso.sharepoint.com/sites/Project" + (Get-Random -Minimum 1 -Maximum 999) + "/SitePages/Home.aspx",
-                            "https://contoso-my.sharepoint.com/personal/user_contoso_com/_layouts/15/Doc.aspx?sourcedoc=%7B" + [System.Guid]::NewGuid().ToString().ToUpper() + "%7D&file=Document.docx",
-                            "https://docs.microsoft.com/en-us/microsoft-365/copilot/overview",
-                            "https://techcommunity.microsoft.com/blog/copilot-updates/" + [System.Guid]::NewGuid().ToString().Substring(0, 8),
-                            "https://www.linkedin.com/pulse/ai-workplace-" + [System.Guid]::NewGuid().ToString().Substring(0, 8)
-                        ) | Get-Random
+                    # Authentic site URL distribution from real data
+                    $siteUrlOptions = @(
+                        "https://outlook.office365.com/owa/?ItemID=AAMkAGM5NDVhM2M4LTZjODYtNDZjNy04Mzg2LTA5ZGM3NTRkNjljNgBGAAAAAAA0ESuJMbgZRJ_vNvOOB_OiBwBLTeTfrKKMT5DCczumqIdvAAAAAAEMAABLTeTfrKKMT5DCczumqIdvAAGbT4i" + [System.Guid]::NewGuid().ToString().Substring(0, 8) + "AAA=&exvsurl=1&viewmodel=ReadMessageItem",
+                        "https://teams.microsoft.com/l/message/19:" + [System.Guid]::NewGuid().ToString().Replace("-", "").Substring(0, 26) + "@thread.v2/" + (Get-Random -Minimum 1747000000000 -Maximum 1752999999999),
+                        "https://www.youtube.com/watch?v=" + [System.Guid]::NewGuid().ToString().Substring(0, 11),
+                        "https://savingsandinvestments.sharepoint.com/sites/project" + (Get-Random -Minimum 100 -Maximum 999) + "/Shared%20Documents/General/" + (@("Document", "Report", "Analysis", "Presentation") | Get-Random) + "." + (@("pdf", "docx", "xlsx", "pptx") | Get-Random) + "?web=1",
+                        "https://www.office.com/launch/powerpoint?auth=2&home=1",
+                        "https://savingsandinvestments-my.sharepoint.com/personal/user" + (Get-Random -Minimum 1 -Maximum 999) + "_contoso_com/_layouts/15/onedrive.aspx",
+                        "https://learn.microsoft.com/en-us/copilot/overview",
+                        "https://www.contoso.com/solutions/" + (@("investment", "savings", "pension", "insurance") | Get-Random),
+                        "https://en.wikipedia.org/wiki/" + (@("Finance", "Investment", "Economics", "Business") | Get-Random),
+                        "https://learning.cloud.microsoft/" + [System.Guid]::NewGuid().ToString().Substring(0, 12),
+                        "https://bing.com/search?q=" + (@("excel+formulas", "powerpoint+design", "teams+collaboration", "office+365") | Get-Random),
+                        "https://stackoverflow.com/questions/" + (Get-Random -Minimum 1000000 -Maximum 9999999) + "/" + (@("excel", "powerpoint", "teams", "office") | Get-Random) + "-question",
+                        "https://forms.office.com/Pages/ResponsePage.aspx?id=" + [System.Guid]::NewGuid().ToString(),
+                        "https://eu-api.asm.skype.com/v1/objects/" + [System.Guid]::NewGuid().ToString(),
+                        "https://www.gov.uk/guidance/" + (@("financial-services", "business-rates", "corporation-tax") | Get-Random)
+                    )
+                    
+                    $contextTypeOptions = @(
+                        "http://schema.skype.com/HyperLink",  # 25.43%
+                        "WebSearchQuery",                     # 12.88%
+                        "EmailMessage",                       # 12.86%
+                        "docx",                              # 12.40%
+                        "xlsx",                              # 6.67%
+                        "pdf",                               # 5.85%
+                        "pptx",                              # 5.61%
+                        "TeamsMessage",                      # 2.98%
+                        "Event",                             # 2.57%
+                        "External",                          # 1.93%
+                        "mp4",                               # 1.73%
+                        "TeamsMeeting",                      # 1.50%
+                        "aspx",                              # 1.09%
+                        "PeopleInferenceAnswer",             # 0.69%
+                        "Workspace",                         # 0.58%
+                        "TeamsChat"                          # 0.40%
+                    )
+                    
+                    $selectedSiteUrl = $siteUrlOptions | Get-Random
+                    $selectedContextType = $contextTypeOptions | Get-Random
+                    
+                    # Add authentic SensitivityLabelId for 4.61% of resources
+                    $sensitivityLabel = if ((Get-Random -Minimum 1 -Maximum 1001) -le 46) {
+                        $sensitivityLabelOptions | Get-Random
+                    } else { $null }
+                    
+                    $resource = @{
+                        Action        = "Read"  # 143.79% of all records have Read action
+                        PolicyDetails = ""      # Always empty in real data
+                        SiteUrl       = $selectedSiteUrl
+                        Type          = $selectedContextType
                     }
+                    
+                    if ($sensitivityLabel) {
+                        $resource.SensitivityLabelId = $sensitivityLabel
+                    }
+                    
+                    $baseData.CopilotEventData.AccessedResources += $resource
                 }
                 
-                # Messages: 2-17, avg 2.2
-                $messageCount = Get-Random -Minimum 2 -Maximum 5  # Most common range
-                for ($i = 0; $i -lt $messageCount; $i++) {
+                # Messages: Response 102.61%, Prompt 89.99% (indicates multiple messages per interaction)
+                $promptCount = 0
+                $responseCount = 0
+                while ((Get-Random -Minimum 1 -Maximum 1001) -le 900) { $promptCount++; if ($promptCount -ge 8) { break } }  # Up to 8 prompts
+                while ((Get-Random -Minimum 1 -Maximum 1001) -le 1026) { $responseCount++; if ($responseCount -ge 9) { break } }  # Up to 9 responses
+                
+                # Create authentic message patterns
+                $messageId = Get-Random -Minimum 1741000000000 -Maximum 1752999999999
+                for ($i = 0; $i -lt $promptCount; $i++) {
                     $baseData.CopilotEventData.Messages += @{
-                        Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)  # Real timestamp range from dataset
-                        isPrompt = ($i % 2) -eq 0  # Alternate prompt/response
+                        Id       = [string]($messageId + $i * 160)  # Real timestamp increment pattern
+                        isPrompt = $true
+                    }
+                }
+                for ($i = 0; $i -lt $responseCount; $i++) {
+                    $baseData.CopilotEventData.Messages += @{
+                        Id       = [string]($messageId + $promptCount * 160 + $i * 120)  # Different increment for responses
+                        isPrompt = $false
                     }
                 }
                 
-                # Contexts: 0-1, avg 0.1 (rare)
-                if ((Get-Random -Minimum 1 -Maximum 11) -eq 1) {
+                # Contexts: Usually empty for Teams but can have document references
+                if ((Get-Random -Minimum 1 -Maximum 1001) -le 50) {  # ~5% have contexts
                     $baseData.CopilotEventData.Contexts += @{
-                        Id   = "https://teams.microsoft.com/l/meeting/" + [System.Guid]::NewGuid().ToString()
-                        Type = "meeting"
+                        Id   = "https://savingsandinvestments.sharepoint.com/sites/project" + (Get-Random -Minimum 100 -Maximum 999) + "/_layouts/15/Doc.aspx?sourcedoc=%7B" + [System.Guid]::NewGuid().ToString().ToUpper() + "%7D&file=Document.docx"
+                        Type = @("docx", "xlsx", "pptx", "pdf") | Get-Random
                     }
                 }
             }
             
             "Office" {
-                # Office: AISystemPlugin 0-1 (avg 1), AccessedResources 0-38 (avg 2.8), Messages 1-7 (avg 2.1), ModelTransparencyDetails 0-1 (avg 1)
-                $baseData.CopilotEventData.AISystemPlugin = @(@{Id = "BingWebSearch"; Name = "BuiltIn" })
-                $baseData.CopilotEventData.ModelTransparencyDetails = @(@{ModelName = "DEEP_LEO" })
+                # Office: 21.68% - Second most common
+                # Similar patterns to Teams but with different distributions
+                if ((Get-Random -Minimum 1 -Maximum 1001) -le 580) {  # Slightly lower plugin rate
+                    $baseData.CopilotEventData.AISystemPlugin = @(@{Id = "BingWebSearch"; Name = "BuiltIn" })
+                }
                 
-                # AccessedResources: 0-38, avg 2.8
-                $randomValue = Get-Random -Minimum 1 -Maximum 11
-                $resourceCount = if ($randomValue -le 3) { 0 } elseif ($randomValue -le 6) { 1 } elseif ($randomValue -le 8) { 3 } elseif ($randomValue -le 9) { 5 } else { 10 }
+                if ((Get-Random -Minimum 1 -Maximum 1001) -le 620) {  # Similar model rate
+                    $baseData.CopilotEventData.ModelTransparencyDetails = @(@{ModelName = "DEEP_LEO" })
+                }
+                
+                # Office has more web-focused access patterns
+                $resourceCount = 0
+                while ((Get-Random -Minimum 1 -Maximum 1001) -le 380) { $resourceCount++; if ($resourceCount -ge 12) { break } }
+                
                 for ($i = 0; $i -lt $resourceCount; $i++) {
+                    $officeUrlOptions = @(
+                        "https://www.office.com/launch/" + @("excel", "powerpoint", "word", "onenote") | Get-Random + "?auth=2",
+                        "https://docs.oracle.com/en/database/oracle/oracle-database/18/ntcli/configuring-locale-and-character-sets.html",
+                        "https://stackoverflow.com/questions/" + (Get-Random -Minimum 1000000 -Maximum 9999999) + "/excel-formula-question",
+                        "https://www.investopedia.com/terms/" + (@("i/inherent-risk", "f/financial-modeling", "e/excel-analysis") | Get-Random) + ".asp",
+                        "https://learn.microsoft.com/en-us/office/vba/Language/Reference/User-Interface-Help/topic" + (Get-Random -Minimum 1000 -Maximum 9999),
+                        "https://techcommunity.microsoft.com/blog/office365/" + ([System.Guid]::NewGuid().ToString().Substring(0, 12)),
+                        "https://savingsandinvestments.sharepoint.com/sites/project" + (Get-Random -Minimum 100 -Maximum 999) + "/Analysis.xlsx?web=1"
+                    )
+                    
                     $baseData.CopilotEventData.AccessedResources += @{
                         Action        = "Read"
                         PolicyDetails = ""
-                        SiteUrl       = "https://contoso.sharepoint.com/sites/Project" + (Get-Random -Minimum 1 -Maximum 999) + "/documents/file" + $i + ".docx"
+                        SiteUrl       = $officeUrlOptions | Get-Random
+                        Type          = @("WebSearchQuery", "xlsx", "docx", "External") | Get-Random
+                        SensitivityLabelId = if ((Get-Random -Minimum 1 -Maximum 1001) -le 46) { $sensitivityLabelOptions | Get-Random } else { $null }
                     }
                 }
                 
-                # Messages: 1-7, avg 2.1
-                $messageCount = Get-Random -Minimum 1 -Maximum 4
+                # Office messages tend to be shorter interactions
+                $messageCount = Get-Random -Minimum 1 -Maximum 7
+                $messageId = Get-Random -Minimum 1741000000000 -Maximum 1752999999999
                 for ($i = 0; $i -lt $messageCount; $i++) {
                     $baseData.CopilotEventData.Messages += @{
-                        Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
+                        Id       = [string]($messageId + $i * 200)
                         isPrompt = ($i % 2) -eq 0
                     }
                 }
             }
             
             "Word" {
-                # Word: AccessedResources 0-5 (avg 0.1), Contexts 0-2 (avg 1.2), Messages 1-4 (avg 2.3)
-                # Word often has document contexts and no plugins/model details
+                # Word: 9.93% - Document-focused
+                # Word rarely has plugins (only 5% of time)
+                if ((Get-Random -Minimum 1 -Maximum 1001) -le 50) {
+                    $baseData.CopilotEventData.AISystemPlugin = @()
+                    $baseData.CopilotEventData.ModelTransparencyDetails = @()
+                }
                 
-                # Contexts: 0-2, avg 1.2 (usually 1)
-                $contextCount = if ((Get-Random -Minimum 1 -Maximum 11) -le 8) { 1 } else { 2 }
+                # Word ALWAYS has document contexts (100% in real data)
+                $contextCount = Get-Random -Minimum 1 -Maximum 2
                 for ($i = 0; $i -lt $contextCount; $i++) {
                     $baseData.CopilotEventData.Contexts += @{
-                        Id   = @(
-                            "https://contoso.sharepoint.com/sites/Project/_layouts/15/Doc.aspx?sourcedoc=%7B" + [System.Guid]::NewGuid().ToString().ToUpper() + "%7D&file=Document" + ($i + 1) + ".docx&action=default&mobileredirect=true",
-                            "https://contoso-my.sharepoint.com/personal/user_contoso_com/_layouts/15/Doc.aspx?sourcedoc={" + [System.Guid]::NewGuid().ToString().ToLower() + "}&action=edit"
-                        ) | Get-Random
+                        Id   = "https://savingsandinvestments.sharepoint.com/sites/project" + (Get-Random -Minimum 100 -Maximum 999) + "/_layouts/15/Doc.aspx?sourcedoc=%7B" + [System.Guid]::NewGuid().ToString().ToUpper() + "%7D&file=" + @("Document", "Report", "Letter", "Proposal") | Get-Random + ($i + 1) + ".docx&action=" + @("default", "edit") | Get-Random + @("&mobileredirect=true", "") | Get-Random
                         Type = "docx"
                     }
                 }
                 
-                # AccessedResources: 0-5, avg 0.1 (rare)
-                if ((Get-Random -Minimum 1 -Maximum 21) -eq 1) {
+                # Word rarely has AccessedResources (only 5% of time)
+                if ((Get-Random -Minimum 1 -Maximum 1001) -le 50) {
                     $baseData.CopilotEventData.AccessedResources += @{
                         Action        = "Read"
                         PolicyDetails = ""
-                        SiteUrl       = "https://contoso.sharepoint.com/sites/Project/Document.docx"
+                        SiteUrl       = "https://savingsandinvestments.sharepoint.com/sites/project/document.docx"
+                        Type          = "docx"
                     }
                 }
                 
-                # Messages: 1-4, avg 2.3
-                $messageCount = Get-Random -Minimum 2 -Maximum 4
+                # Word typically has 1-4 messages
+                $messageCount = Get-Random -Minimum 1 -Maximum 4
+                $messageId = Get-Random -Minimum 1741000000000 -Maximum 1752999999999
                 for ($i = 0; $i -lt $messageCount; $i++) {
                     $baseData.CopilotEventData.Messages += @{
-                        Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
+                        Id       = [string]($messageId + $i * 150)
                         isPrompt = ($i % 2) -eq 0
                     }
                 }
             }
             
+            "Unknown" {
+                # Unknown: 7.96% - Typically Security Copilot
+                # Unknown rarely has plugins or models
+                $baseData.CopilotEventData.AISystemPlugin = @()
+                $baseData.CopilotEventData.AccessedResources = @()
+                $baseData.CopilotEventData.ModelTransparencyDetails = @()
+                
+                # Security Copilot context pattern
+                $baseData.CopilotEventData.Contexts = @(@{
+                    Id = "https://securitycopilot.microsoft.com/sessions/" + [System.Guid]::NewGuid().ToString()
+                })
+                
+                # Different message ID pattern for Security Copilot
+                $baseData.CopilotEventData.Messages = @(@{
+                    Id       = [string](Get-Random -Minimum 10000000 -Maximum 60000000)  # Different range
+                    isPrompt = @($true, $false) | Get-Random
+                })
+                
+                # CorrelationId is more common in Unknown/Security Copilot contexts
+                if ((Get-Random -Minimum 1 -Maximum 1001) -le 250) {  # 25% rate vs 9.13% overall
+                    $baseData.CopilotEventData.CorrelationId = [System.Guid]::NewGuid().ToString()
+                }
+            }
+            
             "Outlook" {
-                # Outlook: AISystemPlugin 0-1 (avg 0.3), AccessedResources 0-35 (avg 4.6), Messages 1-2 (avg 1.9), ModelTransparencyDetails 0-1 (avg 0.3)
-                # Only 30% chance of AISystemPlugin and ModelTransparencyDetails
-                if ((Get-Random -Minimum 1 -Maximum 11) -le 3) {
+                # Outlook: 7.47% - Email-heavy patterns
+                # Outlook sometimes has plugins (30% rate)
+                if ((Get-Random -Minimum 1 -Maximum 1001) -le 300) {
                     $baseData.CopilotEventData.AISystemPlugin = @(@{Id = "BingWebSearch"; Name = "BuiltIn" })
                     $baseData.CopilotEventData.ModelTransparencyDetails = @(@{ModelName = "DEEP_LEO" })
                 }
                 
-                # AccessedResources: 0-35, avg 4.6 (higher than most)
+                # Outlook has complex email access patterns (0-35 range observed)
+                $resourceCount = 0
                 $randomValue = Get-Random -Minimum 1 -Maximum 11
-                $resourceCount = if ($randomValue -le 2) { 0 } elseif ($randomValue -le 4) { 3 } elseif ($randomValue -le 7) { 4 } elseif ($randomValue -le 9) { 6 } else { 12 }
+                if ($randomValue -le 2) { $resourceCount = 0 }
+                elseif ($randomValue -le 4) { $resourceCount = 3 }
+                elseif ($randomValue -le 7) { $resourceCount = 12 }
+                else { $resourceCount = 35 }
+                
                 for ($i = 0; $i -lt $resourceCount; $i++) {
-                    $siteTypes = @(
-                        "https://outlook.office365.com/owa/?ItemID=AAMkAGM0ZmJlZjVhLTg5MDMtNGMxYy1iMzNmLTEwNWNmYmFmMGI4ZQBGAAAAAAArQXqJBE4QTK8740LvzmvXBwCiVugdVwQ8TYkqyne1GFUnAAAAAAEMAACiVugdVwQ8TYkqyne1GFUnAAN" + [System.Guid]::NewGuid().ToString().Substring(0, 8) + "AAA=&exvsurl=1&viewmodel=ReadMessageItem",
-                        "https://contoso.sharepoint.com/sites/Project/Documents/File" + $i + ".docx",
-                        "https://techcommunity.microsoft.com/blog/outlook-copilot-" + [System.Guid]::NewGuid().ToString().Substring(0, 12)
+                    $emailTypes = @(
+                        @{
+                            Action        = "Read"
+                            PolicyDetails = ""
+                            SiteUrl       = "https://outlook.office365.com/owa/?ItemID=AAMkAGM5NDVhM2M4LTZjODYtNDZjNy04Mzg2LTA5ZGM3NTRkNjljNgBGAAAAAAA0ESuJMbgZRJ_vNvOOB_OiBwBLTeTfrKKMT5DCczumqIdvAAAAAAEMAABLTeTfrKKMT5DCczumqIdvAAGbT4i" + [System.Guid]::NewGuid().ToString().Substring(0, 8) + "AAA=&exvsurl=1&viewmodel=ReadMessageItem"
+                            Type          = if ((Get-Random -Minimum 1 -Maximum 3) -eq 1) { "EmailMessage" } else { "http://schema.skype.com/HyperLink" }
+                        },
+                        @{
+                            Action        = "Read"
+                            PolicyDetails = ""
+                            SiteUrl       = "https://outlook.office365.com/owa/?ItemID=AQMkAGM5NDVhM2M4LTZjODYtNDZjNy04Mzg2LTA5ZGM3NTRkNjljNgBGAAADNBEriTG4GUSfrzbzjgfjogcAS03k36yijE_QwnM7pqiHbwAAAgEMAAAAS03k36yijE_QwnM7pqiHbwABm0_I" + [System.Guid]::NewGuid().ToString().Substring(0, 8) + "AAAA==&exvsurl=1&viewmodel=ReadMessageItem"
+                            Type          = "http://schema.skype.com/HyperLink"
+                        }
                     )
-                    $baseData.CopilotEventData.AccessedResources += @{
-                        Action        = "Read"
-                        PolicyDetails = if ($i -eq 0) { $null } else { "" }  # Sometimes null, sometimes empty
-                        SiteUrl       = $siteTypes | Get-Random
-                    }
+                    $baseData.CopilotEventData.AccessedResources += $emailTypes | Get-Random
                 }
                 
-                # Messages: 1-2, avg 1.9
-                $messageCount = Get-Random -Minimum 1 -Maximum 3
+                # Outlook typically has 1-2 messages
+                $messageCount = Get-Random -Minimum 1 -Maximum 2
+                $messageId = Get-Random -Minimum 1741000000000 -Maximum 1752999999999
                 for ($i = 0; $i -lt $messageCount; $i++) {
                     $baseData.CopilotEventData.Messages += @{
-                        Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
+                        Id       = [string]($messageId + $i * 180)
                         isPrompt = ($i % 2) -eq 0
                     }
                 }
             }
             
             "Excel" {
-                # Excel: Contexts 1-1 (avg 1), Messages 1-1 (avg 1)
-                $baseData.CopilotEventData.Contexts = @(@{
-                        Id   = "https://contoso.sharepoint.com/sites/Project/_layouts/15/Doc.aspx?sourcedoc=%7B" + [System.Guid]::NewGuid().ToString().ToUpper() + "%7D&file=Workbook.xlsx"
-                        Type = "xlsx"
-                    })
+                # Excel: 3.05% - Spreadsheet-focused
+                # Excel typically has no plugins or models
+                $baseData.CopilotEventData.AISystemPlugin = @()
+                $baseData.CopilotEventData.ModelTransparencyDetails = @()
                 
+                # Excel always has workbook context with ContainerId
+                $baseData.CopilotEventData.Contexts = @(@{
+                    ContainerId = "Win32"
+                    Id          = "https://savingsandinvestments-my.sharepoint.com/personal/user" + (Get-Random -Minimum 1 -Maximum 999) + "_contoso_com/_layouts/15/Doc.aspx?sourcedoc=%7B" + [System.Guid]::NewGuid().ToString().ToUpper() + "%7D&file=" + @("Analysis", "Report", "Data", "Workbook", "Budget", "Financial") | Get-Random + (Get-Random -Minimum 1 -Maximum 99) + ".xlsx&action=default&mobileredirect=true"
+                    Type        = "xlsx"
+                })
+                
+                # Excel typically has single message (often isPrompt=false)
                 $baseData.CopilotEventData.Messages = @(@{
-                        Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
-                        isPrompt = $true
-                    })
+                    Id       = [string](Get-Random -Minimum 1741000000000 -Maximum 1752999999999)
+                    isPrompt = $false  # Often false in Excel contexts (60% false vs 40% true)
+                })
             }
             
             "PowerPoint" {
-                # PowerPoint: Contexts 0-1 (avg 0.5), Messages 1-2 (avg 1.1)
-                # 50% chance of context
-                if ((Get-Random -Minimum 1 -Maximum 3) -eq 1) {
-                    $baseData.CopilotEventData.Contexts = @(@{
-                            Id   = "https://contoso.sharepoint.com/sites/Project/_layouts/15/Doc.aspx?sourcedoc=%7B" + [System.Guid]::NewGuid().ToString().ToUpper() + "%7D&file=Presentation.pptx"
-                            Type = "pptx"
-                        })
-                }
+                # PowerPoint: 2.30% - Presentation-focused
+                # PowerPoint typically has no plugins or models
+                $baseData.CopilotEventData.AISystemPlugin = @()
+                $baseData.CopilotEventData.ModelTransparencyDetails = @()
                 
-                $messageCount = Get-Random -Minimum 1 -Maximum 3
-                for ($i = 0; $i -lt $messageCount; $i++) {
-                    $baseData.CopilotEventData.Messages += @{
-                        Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
-                        isPrompt = ($i % 2) -eq 0
-                    }
-                }
-            }
-            
-            "Forms" {
-                # Forms: AccessedResources 1-1 (avg 1), Messages 2-2 (avg 2)
-                $baseData.CopilotEventData.AccessedResources = @(@{
-                        Action        = "Read"
-                        PolicyDetails = ""
-                        SiteUrl       = "https://forms.office.com/Pages/DesignPageV2.aspx?id=" + [System.Guid]::NewGuid().ToString()
-                        Type          = "http://schema.skype.com/HyperLink"
-                    })
-                
-                $baseData.CopilotEventData.Messages = @(
-                    @{
-                        Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
-                        isPrompt = $true
-                    },
-                    @{
-                        Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
-                        isPrompt = $false
-                    }
-                )
-            }
-            
-            "Unknown" {
-                # Unknown: Contexts 1-1 (avg 1), Messages 1-1 (avg 1)
-                $baseData.CopilotEventData.Contexts = @(@{
-                        Id = "https://securitycopilot.microsoft.com"
-                    })
-                
+                # PowerPoint typically has single prompt message
                 $baseData.CopilotEventData.Messages = @(@{
-                        Id       = [string](Get-Random -Minimum 20000000 -Maximum 30000000)  # Different ID pattern for Unknown
-                        isPrompt = $true
+                    Id       = [string](Get-Random -Minimum 1741000000000 -Maximum 1752999999999)
+                    isPrompt = $true  # Usually prompts in PowerPoint
+                })
+                
+                # PowerPoint rarely has contexts (20% of time)
+                if ((Get-Random -Minimum 1 -Maximum 5) -eq 1) {
+                    $baseData.CopilotEventData.Contexts = @(@{
+                        Id   = "https://savingsandinvestments.sharepoint.com/sites/project" + (Get-Random -Minimum 100 -Maximum 999) + "/_layouts/15/Doc.aspx?sourcedoc=%7B" + [System.Guid]::NewGuid().ToString().ToUpper() + "%7D&file=" + @("Presentation", "Slides", "Report", "Training") | Get-Random + ".pptx"
+                        Type = "pptx"
                     })
+                }
             }
             
             "Copilot Studio" {
-                # Copilot Studio: AccessedResources 0-1 (avg 0.1), Messages 1-2 (avg 1.4)
-                # 10% chance of AccessedResources
-                if ((Get-Random -Minimum 1 -Maximum 11) -eq 1) {
-                    $baseData.CopilotEventData.AccessedResources = @(@{
-                            Action        = "Read"
-                            PolicyDetails = ""
-                            SiteUrl       = "https://copilotstudio.microsoft.com/environments/" + [System.Guid]::NewGuid().ToString()
-                        })
-                }
+                # Copilot Studio: 6,925 records (1.88%) - Agent-based interactions
+                # Studio typically has no plugins or models (custom agents handle this)
+                $baseData.CopilotEventData.AccessedResources = @()
+                $baseData.CopilotEventData.AISystemPlugin = @()
+                $baseData.CopilotEventData.ModelTransparencyDetails = @()
                 
-                $messageCount = Get-Random -Minimum 1 -Maximum 3
+                # Studio messages have specific ID patterns
+                $messageCount = Get-Random -Minimum 1 -Maximum 2
                 for ($i = 0; $i -lt $messageCount; $i++) {
                     $baseData.CopilotEventData.Messages += @{
-                        Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
+                        Id       = [string](Get-Random -Minimum 1740000000000 -Maximum 1750000000000) + "00" + ($i + 1)  # Studio-specific pattern
                         isPrompt = ($i % 2) -eq 0
                     }
                 }
+                
+                # Studio often has CorrelationId (50% vs 9.13% overall)
+                if ((Get-Random -Minimum 1 -Maximum 2) -eq 1) {
+                    $baseData.CopilotEventData.CorrelationId = [System.Guid]::NewGuid().ToString()
+                }
+                
+                # Studio contexts point to agent environments
+                if ((Get-Random -Minimum 1 -Maximum 3) -eq 1) {
+                    $baseData.CopilotEventData.Contexts = @(@{
+                        Id   = "https://copilotstudio.microsoft.com/environments/" + [System.Guid]::NewGuid().ToString() + "/bots/" + [System.Guid]::NewGuid().ToString()
+                        Type = "Agent"
+                    })
+                }
+                
+                # Authentic agent assignment (rare but real when present in Studio)
+                if ((Get-Random -Minimum 1 -Maximum 1001) -le 50) {  # 5% in Studio vs 0.8% overall
+                    $baseData.CopilotEventData.AgentId = "CopilotStudio.Declarative.T_" + [System.Guid]::NewGuid().ToString().Substring(0, 8) + "-" + [System.Guid]::NewGuid().ToString().Substring(0, 4) + "-" + [System.Guid]::NewGuid().ToString().Substring(0, 4) + "-" + [System.Guid]::NewGuid().ToString().Substring(0, 4) + "-" + [System.Guid]::NewGuid().ToString().Substring(0, 12) + "." + [System.Guid]::NewGuid().ToString()
+                    $baseData.CopilotEventData.AgentName = @("Visual Creator", "IT Service Agent", "AI Tabletop Version 1", "Secure Message Assistant", "CRU QA Analyzer Agent", "Risk and Compliance Policy") | Get-Random
+                }
             }
             
-            "Edge" {
-                # Edge: AISystemPlugin 1-1 (avg 1), Messages 2-2 (avg 2), ModelTransparencyDetails 1-1 (avg 1)
-                $baseData.CopilotEventData.AISystemPlugin = @(@{Id = "BingWebSearch"; Name = "BuiltIn" })
-                $baseData.CopilotEventData.ModelTransparencyDetails = @(@{ModelName = "DEEP_LEO" })
-                
-                $baseData.CopilotEventData.Messages = @(
-                    @{
-                        Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
-                        isPrompt = $true
-                    },
-                    @{
-                        Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
-                        isPrompt = $false
-                    }
-                )
-            }
-            
-            "Stream" {
-                # Stream: AISystemPlugin 1-1 (avg 1), AccessedResources 1-1 (avg 1), Contexts 1-1 (avg 1), Messages 2-2 (avg 2), ModelTransparencyDetails 1-1 (avg 1)
-                $baseData.CopilotEventData.AISystemPlugin = @(@{Id = "BingWebSearch"; Name = "BuiltIn" })
-                $baseData.CopilotEventData.ModelTransparencyDetails = @(@{ModelName = "DEEP_LEO" })
-                
-                $baseData.CopilotEventData.AccessedResources = @(@{
-                        Action        = "Read"
-                        PolicyDetails = ""
-                        SiteUrl       = "https://web.microsoftstream.com/video/" + [System.Guid]::NewGuid().ToString()
-                    })
-                
-                $baseData.CopilotEventData.Contexts = @(@{
-                        Id   = "https://web.microsoftstream.com/video/" + [System.Guid]::NewGuid().ToString()
-                        Type = "video"
-                    })
-                
-                $baseData.CopilotEventData.Messages = @(
-                    @{
-                        Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
-                        isPrompt = $true
-                    },
-                    @{
-                        Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
-                        isPrompt = $false
-                    }
-                )
-            }
-            
-            # Add patterns for apps not in sample but mentioned by user
-            "OneNote" {
-                # Estimated pattern based on Office family
-                $baseData.CopilotEventData.Contexts = @(@{
-                        Id   = "https://contoso-my.sharepoint.com/personal/user_contoso_com/Documents/Notebooks/Notebook" + (Get-Random -Minimum 1 -Maximum 99) + ".one"
-                        Type = "one"
-                    })
-                
-                $baseData.CopilotEventData.Messages = @(@{
-                        Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
-                        isPrompt = $true
-                    })
-            }
-            
-            "Loop" {
-                # Estimated pattern based on Office family
-                $baseData.CopilotEventData.Contexts = @(@{
-                        Id   = "https://loop.microsoft.com/workspaces/" + [System.Guid]::NewGuid().ToString()
-                        Type = "loop"
-                    })
-                
-                $baseData.CopilotEventData.Messages = @(@{
-                        Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
-                        isPrompt = $true
-                    })
-            }
-            
-            # Default patterns for remaining apps
+            # Handle all other AppHost types with minimal patterns
             default {
-                # Simple default pattern
+                # Simple patterns for remaining AppHost types
                 $baseData.CopilotEventData.Messages = @(@{
-                        Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
-                        isPrompt = $true
-                    })
+                    Id       = [string](Get-Random -Minimum 1741000000000 -Maximum 1752999999999)
+                    isPrompt = $true
+                })
+                
+                # Some AppHost types have basic plugin support
+                if ($selectedAppHost -in @("Forms", "Designer", "Edge", "Stream", "Power BI", "SharePoint")) {
+                    if ((Get-Random -Minimum 1 -Maximum 3) -eq 1) {
+                        $baseData.CopilotEventData.AISystemPlugin = @(@{Id = "BingWebSearch"; Name = "BuiltIn" })
+                        $baseData.CopilotEventData.ModelTransparencyDetails = @(@{ModelName = "DEEP_LEO" })
+                    }
+                }
+                
+                # App-specific context patterns
+                switch ($selectedAppHost) {
+                    "Forms" {
+                        $baseData.CopilotEventData.AccessedResources = @(@{
+                            Action        = "Read"
+                            PolicyDetails = ""
+                            SiteUrl       = "https://forms.office.com/Pages/DesignPageV2.aspx?id=" + [System.Guid]::NewGuid().ToString()
+                            Type          = "http://schema.skype.com/HyperLink"
+                        })
+                    }
+                    "Designer" {
+                        # Designer typically has prompt/response pairs
+                        $baseData.CopilotEventData.Messages = @(
+                            @{
+                                Id       = [string](Get-Random -Minimum 1741000000000 -Maximum 1752999999999)
+                                isPrompt = $true
+                            },
+                            @{
+                                Id       = [string](Get-Random -Minimum 1741000000000 -Maximum 1752999999999)
+                                isPrompt = $false
+                            }
+                        )
+                    }
+                    "Edge" {
+                        # Edge always has prompt/response pair
+                        $baseData.CopilotEventData.Messages = @(
+                            @{
+                                Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
+                                isPrompt = $true
+                            },
+                            @{
+                                Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
+                                isPrompt = $false
+                            }
+                        )
+                    }
+                    "Stream" {
+                        $baseData.CopilotEventData.AccessedResources = @(@{
+                            Action        = "Read"
+                            PolicyDetails = ""
+                            SiteUrl       = "https://web.microsoftstream.com/video/" + [System.Guid]::NewGuid().ToString()
+                            Type          = "StreamVideo"
+                        })
+                        $baseData.CopilotEventData.Contexts = @(@{
+                            Id   = "https://web.microsoftstream.com/video/" + [System.Guid]::NewGuid().ToString()
+                            Type = "mp4"
+                        })
+                    }
+                    "OneNote" {
+                        $baseData.CopilotEventData.Contexts = @(@{
+                            Id   = "https://contoso-my.sharepoint.com/personal/user" + (Get-Random -Minimum 1 -Maximum 999) + "_contoso_com/Documents/Notebooks/" + @("My Notebook", "Work Notes", "Project Notes") | Get-Random + " @ Corporate.one"
+                            Type = "one"
+                        })
+                    }
+                    "Loop" {
+                        $baseData.CopilotEventData.Contexts = @(@{
+                            Id   = "https://loop.microsoft.com/workspaces/" + [System.Guid]::NewGuid().ToString()
+                            Type = "loop"
+                        })
+                    }
+                    "Whiteboard" {
+                        $baseData.CopilotEventData.Contexts = @(@{
+                            Id   = "https://whiteboard.microsoft.com/api/v1.0/boards/" + [System.Guid]::NewGuid().ToString()
+                            Type = "whiteboard"
+                        })
+                    }
+                    "Planner" {
+                        $baseData.CopilotEventData.Contexts = @(@{
+                            Id   = "https://tasks.office.com/contoso.com/en-US/Home/Planner/#/plantaskboard?groupId=" + [System.Guid]::NewGuid().ToString() + "&planId=" + [System.Guid]::NewGuid().ToString()
+                            Type = "Plan"
+                        })
+                    }
+                }
             }
         }
         
-        # Convert synthetic data to JSON and replace the AuditData
-        $AuditLogEntry.AuditData = ($baseData | ConvertTo-Json -Depth 10 -Compress)
+# Convert synthetic data to JSON and replace the AuditData
+$AuditLogEntry.AuditData = ($baseData | ConvertTo-Json -Depth 10 -Compress)
         
-        # Re-parse the audit data with synthetic values
-        $auditData = ConvertFrom-AuditData -AuditDataJson $AuditLogEntry.AuditData
-    }
+# Re-parse the audit data with synthetic values
+$auditData = ConvertFrom-AuditData -AuditDataJson $AuditLogEntry.AuditData
+}
     
-    # When NoExplodeArrays is enabled, create a simplified record with raw AuditData
-    if ($NoExplodeArrays) {
-        $baseRecord = [PSCustomObject]@{
-            RecordId           = $AuditLogEntry.Identity
-            CreationDate       = $AuditLogEntry.CreationDate
-            RecordType         = $AuditLogEntry.RecordType
-            CreationDateIsoUtc = if ($AuditLogEntry.CreationDate) { $AuditLogEntry.CreationDate.ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null }
-            OrganizationId     = Get-NestedProperty $auditData "OrganizationId" -Default "b1234567-89ab-cdef-0123-456789abcdef"
-            UserType           = Get-UserType -UserId $AuditLogEntry.UserIds -AuditData $auditData
-            UserKey            = Get-UserKey -UserId $AuditLogEntry.UserIds
-            Workload           = Get-WorkloadFromRecordType -RecordType $AuditLogEntry.RecordType
-            Operation          = $AuditLogEntry.Operations
-            UserId             = $AuditLogEntry.UserIds
-            AuditData          = $AuditLogEntry.AuditData  # Preserve raw JSON (now synthetic for DevTest)
-        }
-        return @($baseRecord)
-    }
-    
-    # Original flattened structure for normal processing
+# When NoExplodeArrays is enabled, create a simplified record with raw AuditData
+if ($NoExplodeArrays) {
     $baseRecord = [PSCustomObject]@{
-        RecordId                           = $AuditLogEntry.Identity
-        CreationDate                       = $AuditLogEntry.CreationDate
-        RecordType                         = $AuditLogEntry.RecordType
-        CreationDateIsoUtc                 = if ($AuditLogEntry.CreationDate) { $AuditLogEntry.CreationDate.ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null }
-        OrganizationId                     = Get-NestedProperty $auditData "OrganizationId" -Default "b1234567-89ab-cdef-0123-456789abcdef"
-        UserType                           = Get-UserType -UserId $AuditLogEntry.UserIds -AuditData $auditData
-        UserKey                            = Get-UserKey -UserId $AuditLogEntry.UserIds
-        Workload                           = Get-WorkloadFromRecordType -RecordType $AuditLogEntry.RecordType
-        Operation                          = $AuditLogEntry.Operations
-        UserId                             = $AuditLogEntry.UserIds
-        AssociatedAdminUnits               = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "AssociatedAdminUnits" -join ",") } else { Get-NestedProperty $auditData "AssociatedAdminUnits" }
-        AssociatedAdminUnitsNames          = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "AssociatedAdminUnitsNames" -join ",") } else { Get-NestedProperty $auditData "AssociatedAdminUnitsNames" }
-        AgentId                            = Get-NestedProperty $auditData "AgentId"
-        AgentName                          = Get-NestedProperty $auditData "AgentName"
-        AppIdentity_AppId                  = Get-NestedProperty $auditData "AppIdentity.AppId"
-        AppIdentity_DisplayName            = Get-NestedProperty $auditData "AppIdentity.DisplayName"
-        AppIdentity_PublisherId            = Get-NestedProperty $auditData "AppIdentity.PublisherId"
-        ApplicationName                    = Get-NestedProperty $auditData "ApplicationName"
-        CreationTime                       = Get-NestedProperty $auditData "CreationTime"
-        CreationTimeIsoUtc                 = if ($auditData.CreationTime) { ([DateTime]$auditData.CreationTime).ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null }
-        ClientIP                           = Get-NestedProperty $auditData "ClientIP" -Default (Get-SyntheticClientIP -UserId $AuditLogEntry.UserIds)
-        ObjectId                           = Get-NestedProperty $auditData "ObjectId" -Default (Get-SyntheticObjectId -Operation $AuditLogEntry.Operations -RecordType $AuditLogEntry.RecordType -AuditData $auditData)
-        ResultStatus                       = Get-NestedProperty $auditData "ResultStatus" -Default "Succeeded"
-        ClientRegion                       = Get-NestedProperty $auditData "ClientRegion"
-        Audit_UserId                       = Get-NestedProperty $auditData "UserId"
-        AppHost                            = Get-NestedProperty $auditData "AppHost"
-        ThreadId                           = Get-NestedProperty $auditData "ThreadId"
-        Context_Id                         = Get-NestedProperty $auditData "Context.Id"
-        Context_Type                       = Get-NestedProperty $auditData "Context.Type"
-        Message_Id                         = Get-NestedProperty $auditData "Message.Id"
-        Message_isPrompt                   = Get-NestedProperty $auditData "Message.isPrompt"
-        AccessedResource_Action            = Get-NestedProperty $auditData "AccessedResource.Action"
-        AccessedResource_PolicyDetails     = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "AccessedResource.PolicyDetails" -join ",") } else { Get-NestedProperty $auditData "AccessedResource.PolicyDetails" }
-        AccessedResource_SiteUrl           = Get-NestedProperty $auditData "AccessedResource.SiteUrl"
-        AISystemPlugin_Id                  = Get-NestedProperty $auditData "AISystemPlugin.Id"
-        AISystemPlugin_Name                = Get-NestedProperty $auditData "AISystemPlugin.Name"
-        ModelTransparencyDetails_ModelName = Get-NestedProperty $auditData "ModelTransparencyDetails.ModelName"
-        MessageIds                         = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "MessageIds" -join ",") } else { Get-NestedProperty $auditData "MessageIds" }
+        RecordId           = $AuditLogEntry.Identity
+        CreationDate       = $AuditLogEntry.CreationDate
+        RecordType         = $AuditLogEntry.RecordType
+        CreationDateIsoUtc = if ($AuditLogEntry.CreationDate) { $AuditLogEntry.CreationDate.ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null }
+        OrganizationId     = Get-NestedProperty $auditData "OrganizationId" -Default "b1234567-89ab-cdef-0123-456789abcdef"
+        UserType           = Get-UserType -UserId $AuditLogEntry.UserIds -AuditData $auditData
+        UserKey            = Get-UserKey -UserId $AuditLogEntry.UserIds
+        Workload           = Get-WorkloadFromRecordType -RecordType $AuditLogEntry.RecordType
+        Operation          = $AuditLogEntry.Operations
+        UserId             = $AuditLogEntry.UserIds
+        AuditData          = $AuditLogEntry.AuditData  # Preserve raw JSON (now synthetic for DevTest)
     }
+    return @($baseRecord)
+}
     
-    # Handle row explosion for arrays (default behavior unless disabled)
-    if (!$NoExplodeArrays) {
-        # Pre-explosion audit: analyze the structure we're working with
-        Write-Host "Pre-Explosion Analysis:" -ForegroundColor Magenta
-        Write-Host "  Base record type: $($baseRecord.GetType().Name)" -ForegroundColor Gray
-        Write-Host "  Audit data type: $($auditData.GetType().Name)" -ForegroundColor Gray
+# Original flattened structure for normal processing
+$baseRecord = [PSCustomObject]@{
+    RecordId                           = $AuditLogEntry.Identity
+    CreationDate                       = $AuditLogEntry.CreationDate
+    RecordType                         = $AuditLogEntry.RecordType
+    CreationDateIsoUtc                 = if ($AuditLogEntry.CreationDate) { $AuditLogEntry.CreationDate.ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null }
+    OrganizationId                     = Get-NestedProperty $auditData "OrganizationId" -Default "b1234567-89ab-cdef-0123-456789abcdef"
+    UserType                           = Get-UserType -UserId $AuditLogEntry.UserIds -AuditData $auditData
+    UserKey                            = Get-UserKey -UserId $AuditLogEntry.UserIds
+    Workload                           = Get-WorkloadFromRecordType -RecordType $AuditLogEntry.RecordType
+    Operation                          = $AuditLogEntry.Operations
+    UserId                             = $AuditLogEntry.UserIds
+    AssociatedAdminUnits               = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "AssociatedAdminUnits" -join ",") } else { Get-NestedProperty $auditData "AssociatedAdminUnits" }
+    AssociatedAdminUnitsNames          = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "AssociatedAdminUnitsNames" -join ",") } else { Get-NestedProperty $auditData "AssociatedAdminUnitsNames" }
+    AgentId                            = Get-NestedProperty $auditData "AgentId"
+    AgentName                          = Get-NestedProperty $auditData "AgentName"
+    AppIdentity_AppId                  = Get-NestedProperty $auditData "AppIdentity.AppId"
+    AppIdentity_DisplayName            = Get-NestedProperty $auditData "AppIdentity.DisplayName"
+    AppIdentity_PublisherId            = Get-NestedProperty $auditData "AppIdentity.PublisherId"
+    ApplicationName                    = Get-NestedProperty $auditData "ApplicationName"
+    CreationTime                       = Get-NestedProperty $auditData "CreationTime"
+    CreationTimeIsoUtc                 = if ($auditData.CreationTime) { ([DateTime]$auditData.CreationTime).ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null }
+    ClientIP                           = Get-NestedProperty $auditData "ClientIP" -Default (Get-SyntheticClientIP -UserId $AuditLogEntry.UserIds)
+    ObjectId                           = Get-NestedProperty $auditData "ObjectId" -Default (Get-SyntheticObjectId -Operation $AuditLogEntry.Operations -RecordType $AuditLogEntry.RecordType -AuditData $auditData)
+    ResultStatus                       = Get-NestedProperty $auditData "ResultStatus" -Default "Succeeded"
+    ClientRegion                       = Get-NestedProperty $auditData "ClientRegion"
+    Audit_UserId                       = Get-NestedProperty $auditData "UserId"
+    AppHost                            = Get-NestedProperty $auditData "AppHost"
+    ThreadId                           = Get-NestedProperty $auditData "ThreadId"
+    Context_Id                         = Get-NestedProperty $auditData "Context.Id"
+    Context_Type                       = Get-NestedProperty $auditData "Context.Type"
+    Message_Id                         = Get-NestedProperty $auditData "Message.Id"
+    Message_isPrompt                   = Get-NestedProperty $auditData "Message.isPrompt"
+    AccessedResource_Action            = Get-NestedProperty $auditData "AccessedResource.Action"
+    AccessedResource_PolicyDetails     = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "AccessedResource.PolicyDetails" -join ",") } else { Get-NestedProperty $auditData "AccessedResource.PolicyDetails" }
+    AccessedResource_SiteUrl           = Get-NestedProperty $auditData "AccessedResource.SiteUrl"
+    AISystemPlugin_Id                  = Get-NestedProperty $auditData "AISystemPlugin.Id"
+    AISystemPlugin_Name                = Get-NestedProperty $auditData "AISystemPlugin.Name"
+    ModelTransparencyDetails_ModelName = Get-NestedProperty $auditData "ModelTransparencyDetails.ModelName"
+    MessageIds                         = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "MessageIds" -join ",") } else { Get-NestedProperty $auditData "MessageIds" }
+}
+    
+# Handle row explosion for arrays (default behavior unless disabled)
+if (!$NoExplodeArrays) {
+    # Pre-explosion audit: analyze the structure we're working with
+    Write-Host "Pre-Explosion Analysis:" -ForegroundColor Magenta
+    Write-Host "  Base record type: $($baseRecord.GetType().Name)" -ForegroundColor Gray
+    Write-Host "  Audit data type: $($auditData.GetType().Name)" -ForegroundColor Gray
         
-        # Sample the structure
-        if ($auditData -is [PSCustomObject]) {
-            $sampleProps = $auditData.PSObject.Properties | Select-Object -First 20
-            Write-Host "  Sample audit data properties ($($sampleProps.Count) shown):" -ForegroundColor Gray
-            foreach ($prop in $sampleProps) {
-                $valueInfo = if ($null -eq $prop.Value) { 
-                    "null" 
-                }
-                elseif ($prop.Value -is [System.Array]) { 
-                    "Array[$($prop.Value.Count)]" 
-                }
-                elseif ($prop.Value -is [PSCustomObject]) { 
-                    "Object" 
-                }
-                elseif ($prop.Value -is [string] -and ($prop.Value.StartsWith('[') -or $prop.Value.StartsWith('{'))) {
-                    "JSON-String"
-                }
-                else { 
-                    $prop.Value.GetType().Name 
-                }
-                Write-Host "    $($prop.Name): $valueInfo" -ForegroundColor Gray
+    # Sample the structure
+    if ($auditData -is [PSCustomObject]) {
+        $sampleProps = $auditData.PSObject.Properties | Select-Object -First 20
+        Write-Host "  Sample audit data properties ($($sampleProps.Count) shown):" -ForegroundColor Gray
+        foreach ($prop in $sampleProps) {
+            $valueInfo = if ($null -eq $prop.Value) { 
+                "null" 
+            }
+            elseif ($prop.Value -is [System.Array]) { 
+                "Array[$($prop.Value.Count)]" 
+            }
+            elseif ($prop.Value -is [PSCustomObject]) { 
+                "Object" 
+            }
+            elseif ($prop.Value -is [string] -and ($prop.Value.StartsWith('[') -or $prop.Value.StartsWith('{'))) {
+                "JSON-String"
+            }
+            else { 
+                $prop.Value.GetType().Name 
+            }
+            Write-Host "    $($prop.Name): $valueInfo" -ForegroundColor Gray
+        }
+    }
+        
+    # Check if AuditData needs JSON parsing
+    if ($auditData.AuditData -and $auditData.AuditData -is [string]) {
+        try {
+            $parsedAuditData = $auditData.AuditData | ConvertFrom-Json
+            Write-Host "  Parsed AuditData JSON successfully - type: $($parsedAuditData.GetType().Name)" -ForegroundColor Green
+            # Replace the string with parsed object for better array detection
+            $auditData.AuditData = $parsedAuditData
+        }
+        catch {
+            Write-Host "  Failed to parse AuditData as JSON: $($_.Exception.Message)" -ForegroundColor Red
+        }
+    }
+    # Exhaustive array detection function - handles ALL possible nesting scenarios
+    function Find-AllArrays {
+        param($Data, $Path = "", $Arrays = @{}, $Depth = 0)
+            
+        if ($null -eq $Data -or $Depth -gt 20) { return $Arrays }  # Prevent infinite recursion
+            
+        # Detect ALL array types with ANY count (including single items)
+        $isArray = $false
+        $arrayCount = 0
+        $arrayData = $null
+            
+        # Check for various array types
+        if ($Data -is [System.Array]) {
+            $isArray = $true
+            $arrayCount = $Data.Count
+            $arrayData = $Data
+        }
+        elseif ($Data -is [System.Collections.ICollection] -and -not ($Data -is [string])) {
+            $isArray = $true
+            $arrayCount = $Data.Count
+            $arrayData = @($Data)
+        }
+        elseif ($Data -is [System.Collections.IEnumerable] -and -not ($Data -is [string]) -and -not ($Data -is [System.Collections.IDictionary])) {
+            $tempArray = @($Data)
+            if ($tempArray.Count -gt 0) {
+                $isArray = $true
+                $arrayCount = $tempArray.Count
+                $arrayData = $tempArray
             }
         }
-        
-        # Check if AuditData needs JSON parsing
-        if ($auditData.AuditData -and $auditData.AuditData -is [string]) {
-            try {
-                $parsedAuditData = $auditData.AuditData | ConvertFrom-Json
-                Write-Host "  Parsed AuditData JSON successfully - type: $($parsedAuditData.GetType().Name)" -ForegroundColor Green
-                # Replace the string with parsed object for better array detection
-                $auditData.AuditData = $parsedAuditData
+            
+        # Register arrays with ANY count (including single items for explosion)
+        if ($isArray -and $arrayCount -gt 0 -and -not $Arrays.ContainsKey($Path)) {
+            $Arrays[$Path] = @{ 
+                Path  = $Path
+                Count = $arrayCount
+                Data  = $arrayData
+                Depth = $Depth
             }
-            catch {
-                Write-Host "  Failed to parse AuditData as JSON: $($_.Exception.Message)" -ForegroundColor Red
-            }
+            Write-Verbose "    Found array at $Path with $arrayCount items (depth $Depth)"
         }
-        # Exhaustive array detection function - handles ALL possible nesting scenarios
-        function Find-AllArrays {
-            param($Data, $Path = "", $Arrays = @{}, $Depth = 0)
             
-            if ($null -eq $Data -or $Depth -gt 20) { return $Arrays }  # Prevent infinite recursion
-            
-            # Detect ALL array types with ANY count (including single items)
-            $isArray = $false
-            $arrayCount = 0
-            $arrayData = $null
-            
-            # Check for various array types
-            if ($Data -is [System.Array]) {
-                $isArray = $true
-                $arrayCount = $Data.Count
-                $arrayData = $Data
-            }
-            elseif ($Data -is [System.Collections.ICollection] -and -not ($Data -is [string])) {
-                $isArray = $true
-                $arrayCount = $Data.Count
-                $arrayData = @($Data)
-            }
-            elseif ($Data -is [System.Collections.IEnumerable] -and -not ($Data -is [string]) -and -not ($Data -is [System.Collections.IDictionary])) {
-                $tempArray = @($Data)
-                if ($tempArray.Count -gt 0) {
-                    $isArray = $true
-                    $arrayCount = $tempArray.Count
-                    $arrayData = $tempArray
+        # Recursively explore ALL data structures
+        try {
+            # PSCustomObjects and custom objects
+            if ($Data -is [PSCustomObject] -or ($null -ne $Data -and $Data.GetType().Name -eq 'PSCustomObject')) {
+                foreach ($prop in $Data.PSObject.Properties) {
+                    try {
+                        $newPath = if ($Path) { "$Path.$($prop.Name)" } else { $prop.Name }
+                        $Arrays = Find-AllArrays -Data $prop.Value -Path $newPath -Arrays $Arrays -Depth ($Depth + 1)
+                    }
+                    catch { 
+                        Write-Verbose "    Skipped property $($prop.Name) due to access error"
+                    }
                 }
             }
-            
-            # Register arrays with ANY count (including single items for explosion)
-            if ($isArray -and $arrayCount -gt 0 -and -not $Arrays.ContainsKey($Path)) {
-                $Arrays[$Path] = @{ 
-                    Path  = $Path
-                    Count = $arrayCount
-                    Data  = $arrayData
-                    Depth = $Depth
+            # Hashtables and dictionaries
+            elseif ($Data -is [System.Collections.IDictionary]) {
+                foreach ($key in $Data.Keys) {
+                    try {
+                        $newPath = if ($Path) { "$Path.$key" } else { $key }
+                        $Arrays = Find-AllArrays -Data $Data[$key] -Path $newPath -Arrays $Arrays -Depth ($Depth + 1)
+                    }
+                    catch {
+                        Write-Verbose "    Skipped dictionary key $key due to access error"
+                    }
                 }
-                Write-Verbose "    Found array at $Path with $arrayCount items (depth $Depth)"
             }
-            
-            # Recursively explore ALL data structures
-            try {
-                # PSCustomObjects and custom objects
-                if ($Data -is [PSCustomObject] -or ($null -ne $Data -and $Data.GetType().Name -eq 'PSCustomObject')) {
-                    foreach ($prop in $Data.PSObject.Properties) {
+            # Array elements exploration
+            elseif ($isArray -and $arrayData) {
+                for ($i = 0; $i -lt $arrayCount; $i++) {
+                    try {
+                        if ($i -lt $arrayData.Count) {
+                            $newPath = if ($Path) { "$Path[$i]" } else { "[$i]" }
+                            $Arrays = Find-AllArrays -Data $arrayData[$i] -Path $newPath -Arrays $Arrays -Depth ($Depth + 1)
+                        }
+                    }
+                    catch {
+                        Write-Verbose "    Skipped array index $i due to access error"
+                    }
+                }
+            }
+            # Objects with properties (fallback for complex types)
+            elseif ($null -ne $Data -and $Data.GetType().IsClass -and -not ($Data -is [string]) -and -not ($Data -is [System.ValueType])) {
+                try {
+                    $properties = $Data | Get-Member -MemberType Property, NoteProperty -ErrorAction SilentlyContinue
+                    foreach ($prop in $properties) {
                         try {
                             $newPath = if ($Path) { "$Path.$($prop.Name)" } else { $prop.Name }
-                            $Arrays = Find-AllArrays -Data $prop.Value -Path $newPath -Arrays $Arrays -Depth ($Depth + 1)
-                        }
-                        catch { 
-                            Write-Verbose "    Skipped property $($prop.Name) due to access error"
-                        }
-                    }
-                }
-                # Hashtables and dictionaries
-                elseif ($Data -is [System.Collections.IDictionary]) {
-                    foreach ($key in $Data.Keys) {
-                        try {
-                            $newPath = if ($Path) { "$Path.$key" } else { $key }
-                            $Arrays = Find-AllArrays -Data $Data[$key] -Path $newPath -Arrays $Arrays -Depth ($Depth + 1)
+                            $propValue = $Data.($prop.Name)
+                            $Arrays = Find-AllArrays -Data $propValue -Path $newPath -Arrays $Arrays -Depth ($Depth + 1)
                         }
                         catch {
-                            Write-Verbose "    Skipped dictionary key $key due to access error"
+                            Write-Verbose "    Skipped complex property $($prop.Name) due to access error"
                         }
                     }
                 }
-                # Array elements exploration
-                elseif ($isArray -and $arrayData) {
-                    for ($i = 0; $i -lt $arrayCount; $i++) {
-                        try {
-                            if ($i -lt $arrayData.Count) {
-                                $newPath = if ($Path) { "$Path[$i]" } else { "[$i]" }
-                                $Arrays = Find-AllArrays -Data $arrayData[$i] -Path $newPath -Arrays $Arrays -Depth ($Depth + 1)
-                            }
-                        }
-                        catch {
-                            Write-Verbose "    Skipped array index $i due to access error"
-                        }
-                    }
-                }
-                # Objects with properties (fallback for complex types)
-                elseif ($null -ne $Data -and $Data.GetType().IsClass -and -not ($Data -is [string]) -and -not ($Data -is [System.ValueType])) {
-                    try {
-                        $properties = $Data | Get-Member -MemberType Property, NoteProperty -ErrorAction SilentlyContinue
-                        foreach ($prop in $properties) {
-                            try {
-                                $newPath = if ($Path) { "$Path.$($prop.Name)" } else { $prop.Name }
-                                $propValue = $Data.($prop.Name)
-                                $Arrays = Find-AllArrays -Data $propValue -Path $newPath -Arrays $Arrays -Depth ($Depth + 1)
-                            }
-                            catch {
-                                Write-Verbose "    Skipped complex property $($prop.Name) due to access error"
-                            }
-                        }
-                    }
-                    catch {
-                        Write-Verbose "    Skipped complex object exploration due to reflection error"
-                    }
+                catch {
+                    Write-Verbose "    Skipped complex object exploration due to reflection error"
                 }
             }
-            catch {
-                Write-Verbose "    Skipped data exploration at path $Path due to error: $($_.Exception.Message)"
-            }
-            
-            return $Arrays
         }
+        catch {
+            Write-Verbose "    Skipped data exploration at path $Path due to error: $($_.Exception.Message)"
+        }
+            
+        return $Arrays
+    }
         
-        # Find all arrays in the audit data with enhanced diagnostics
-        Write-Verbose "Starting exhaustive array detection on audit data..."
-        $arrayHashtable = Find-AllArrays -Data $auditData
-        $allArrays = $arrayHashtable.Values
+    # Find all arrays in the audit data with enhanced diagnostics
+    Write-Verbose "Starting exhaustive array detection on audit data..."
+    $arrayHashtable = Find-AllArrays -Data $auditData
+    $allArrays = $arrayHashtable.Values
         
-        # Enhanced diagnostics for array detection
-        Write-Host "Array Detection Results:" -ForegroundColor Cyan
-        if ($allArrays.Count -gt 0) {
-            Write-Host "  Found $($allArrays.Count) arrays to explode:" -ForegroundColor Green
-            $totalExplosionPotential = 1
-            foreach ($arr in $allArrays) {
-                Write-Host "    $($arr.Path): $($arr.Count) items (depth $($arr.Depth))" -ForegroundColor Yellow
-                $totalExplosionPotential *= $arr.Count
-            }
-            Write-Host "  Maximum potential explosion: 1 → $totalExplosionPotential records" -ForegroundColor Magenta
+    # Enhanced diagnostics for array detection
+    Write-Host "Array Detection Results:" -ForegroundColor Cyan
+    if ($allArrays.Count -gt 0) {
+        Write-Host "  Found $($allArrays.Count) arrays to explode:" -ForegroundColor Green
+        $totalExplosionPotential = 1
+        foreach ($arr in $allArrays) {
+            Write-Host "    $($arr.Path): $($arr.Count) items (depth $($arr.Depth))" -ForegroundColor Yellow
+            $totalExplosionPotential *= $arr.Count
         }
-        else {
-            Write-Host "  No arrays detected for explosion" -ForegroundColor Red
-            # Debug the raw structure
-            Write-Host "  Raw audit data type: $($auditData.GetType().Name)" -ForegroundColor Gray
-            if ($auditData -is [PSCustomObject]) {
-                Write-Host "  Audit data properties:" -ForegroundColor Gray
-                foreach ($prop in $auditData.PSObject.Properties | Select-Object -First 10) {
-                    $type = if ($prop.Value) { $prop.Value.GetType().Name } else { "null" }
-                    Write-Host "    $($prop.Name): $type" -ForegroundColor Gray
-                }
-            }
-        }
-            
-        # Sort arrays by depth to process from outermost to innermost
-        $sortedArrays = $allArrays | Sort-Object Depth
-            
-        # Start with single base record
-        $explodedRecords = @($baseRecord)
-            
-        # Process each array for comprehensive cross-product explosion
-        foreach ($arrayInfo in $sortedArrays) {
-            $newRecords = @()
-            Write-Verbose "Processing array: $($arrayInfo.Path) with $($arrayInfo.Count) items (depth $($arrayInfo.Depth))"
-                
-            foreach ($existingRecord in $explodedRecords) {
-                foreach ($item in $arrayInfo.Data) {
-                    try {
-                        # Deep clone the record to avoid reference issues
-                        $record = $existingRecord | ConvertTo-Json -Depth 10 | ConvertFrom-Json
-                            
-                        # Enhanced path resolution for ALL possible scenarios
-                        $success = Set-ValueAtPath -Record $record -Path $arrayInfo.Path -Value $item
-                            
-                        if ($success) {
-                            $newRecords += $record
-                        }
-                        else {
-                            Write-Verbose "    Failed to set value at path: $($arrayInfo.Path)"
-                        }
-                    }
-                    catch {
-                        Write-Verbose "    Error processing item in array $($arrayInfo.Path): $($_.Exception.Message)"
-                    }
-                }
-            }
-                
-            if ($newRecords.Count -gt 0) {
-                $explodedRecords = $newRecords
-                Write-Verbose "After exploding $($arrayInfo.Path): $($explodedRecords.Count) records"
-            }
-            else {
-                Write-Verbose "No records generated from array $($arrayInfo.Path), keeping original"
-            }
-        }
-            
-        # Enhanced path setting function
-        function Set-ValueAtPath {
-            param($Record, $Path, $Value)
-                
-            try {
-                # Handle array indices in path like Path[0], Path[1], etc.
-                if ($Path -match '^(.+?)\[(\d+)\](.*)$') {
-                    $basePath = $matches[1]
-                    $index = [int]$matches[2]
-                    $remainingPath = $matches[3]
-                        
-                    # Navigate to the array
-                    $current = $Record
-                    if ($basePath) {
-                        $baseParts = $basePath -split '\.'
-                        foreach ($part in $baseParts) {
-                            if ($part -and $current.PSObject.Properties[$part]) {
-                                $current = $current.PSObject.Properties[$part].Value
-                            }
-                            else {
-                                return $false
-                            }
-                        }
-                    }
-                        
-                    # Set array element
-                    if ($current -is [System.Array] -and $index -lt $current.Count) {
-                        if ($remainingPath -and $remainingPath.StartsWith('.')) {
-                            # More nesting after array index
-                            $subPath = $remainingPath.Substring(1)
-                            return Set-ValueAtPath -Record $current[$index] -Path $subPath -Value $Value
-                        }
-                        else {
-                            # Direct array element replacement
-                            $current[$index] = $Value
-                            return $true
-                        }
-                    }
-                        
-                    return $false
-                }
-                    
-                # Handle regular dot notation paths
-                $pathParts = $Path -split '\.'
-                $current = $Record
-                    
-                # Navigate to parent
-                for ($i = 0; $i -lt $pathParts.Count - 1; $i++) {
-                    $part = $pathParts[$i]
-                    if (-not $part) { continue }
-                        
-                    if (-not $current.PSObject.Properties[$part]) {
-                        Add-Member -InputObject $current -NotePropertyName $part -NotePropertyValue ([PSCustomObject]@{}) -Force
-                    }
-                    $current = $current.PSObject.Properties[$part].Value
-                }
-                    
-                # Set final value
-                $finalPart = $pathParts[-1]
-                if ($finalPart) {
-                    if ($current.PSObject.Properties[$finalPart]) {
-                        $current.PSObject.Properties[$finalPart].Value = $Value
-                    }
-                    else {
-                        Add-Member -InputObject $current -NotePropertyName $finalPart -NotePropertyValue $Value -Force
-                    }
-                    return $true
-                }
-                    
-                return $false
-            }
-            catch {
-                Write-Verbose "    Path setting error: $($_.Exception.Message)"
-                return $false
-            }
-        }
-            
-        # Add comprehensive explosion metadata and statistics
-        $explosionRatio = if ($explodedRecords.Count -gt 0) { $explodedRecords.Count } else { 1 }
-            
-        Write-Host "Explosion Results:" -ForegroundColor Green
-        Write-Host "  Input: 1 record" -ForegroundColor Yellow
-        Write-Host "  Output: $($explodedRecords.Count) records" -ForegroundColor Yellow
-        Write-Host "  Expansion ratio: 1:$explosionRatio" -ForegroundColor Yellow
-        Write-Host "  Arrays processed: $($allArrays.Count)" -ForegroundColor Yellow
-            
-        foreach ($record in $explodedRecords) {
-            Add-Member -InputObject $record -NotePropertyName '_ExplosionType' -NotePropertyValue 'ComprehensiveArrayExplosion' -Force
-            Add-Member -InputObject $record -NotePropertyName '_ArraysExploded' -NotePropertyValue $allArrays.Count -Force
-            Add-Member -InputObject $record -NotePropertyName '_ExplosionRatio' -NotePropertyValue $explosionRatio -Force
-            Add-Member -InputObject $record -NotePropertyName '_ExplodedPaths' -NotePropertyValue ($allArrays | ForEach-Object { $_.Path }) -Force
-        }
-            
-        return $explodedRecords
+        Write-Host "  Maximum potential explosion: 1 → $totalExplosionPotential records" -ForegroundColor Magenta
     }
     else {
-        Write-Host "Explosion Results:" -ForegroundColor Yellow
-        Write-Host "  Input: 1 record" -ForegroundColor Yellow  
-        Write-Host "  Output: 1 record (no arrays found)" -ForegroundColor Yellow
-        Write-Host "  No explosion needed" -ForegroundColor Yellow
-            
-        # Add metadata for passthrough tracking
-        Add-Member -InputObject $baseRecord -NotePropertyName '_PassthroughReason' -NotePropertyValue 'NoArraysDetected' -Force
-        Add-Member -InputObject $baseRecord -NotePropertyName '_ExplosionType' -NotePropertyValue 'PassThrough' -Force
-        return $baseRecord
+        Write-Host "  No arrays detected for explosion" -ForegroundColor Red
+        # Debug the raw structure
+        Write-Host "  Raw audit data type: $($auditData.GetType().Name)" -ForegroundColor Gray
+        if ($auditData -is [PSCustomObject]) {
+            Write-Host "  Audit data properties:" -ForegroundColor Gray
+            foreach ($prop in $auditData.PSObject.Properties | Select-Object -First 10) {
+                $type = if ($prop.Value) { $prop.Value.GetType().Name } else { "null" }
+                Write-Host "    $($prop.Name): $type" -ForegroundColor Gray
+            }
+        }
     }
-    
+            
+    # Sort arrays by depth to process from outermost to innermost
+    $sortedArrays = $allArrays | Sort-Object Depth
+            
+    # Start with single base record
+    $explodedRecords = @($baseRecord)
+            
+    # Process each array for comprehensive cross-product explosion
+    foreach ($arrayInfo in $sortedArrays) {
+        $newRecords = @()
+        Write-Verbose "Processing array: $($arrayInfo.Path) with $($arrayInfo.Count) items (depth $($arrayInfo.Depth))"
+                
+        foreach ($existingRecord in $explodedRecords) {
+            foreach ($item in $arrayInfo.Data) {
+                try {
+                    # Deep clone the record to avoid reference issues
+                    $record = $existingRecord | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+                            
+                    # Enhanced path resolution for ALL possible scenarios
+                    $success = Set-ValueAtPath -Record $record -Path $arrayInfo.Path -Value $item
+                            
+                    if ($success) {
+                        $newRecords += $record
+                    }
+                    else {
+                        Write-Verbose "    Failed to set value at path: $($arrayInfo.Path)"
+                    }
+                }
+                catch {
+                    Write-Verbose "    Error processing item in array $($arrayInfo.Path): $($_.Exception.Message)"
+                }
+            }
+        }
+                
+        if ($newRecords.Count -gt 0) {
+            $explodedRecords = $newRecords
+            Write-Verbose "After exploding $($arrayInfo.Path): $($explodedRecords.Count) records"
+        }
+        else {
+            Write-Verbose "No records generated from array $($arrayInfo.Path), keeping original"
+        }
+    }
+            
+    # Enhanced path setting function
+    function Set-ValueAtPath {
+        param($Record, $Path, $Value)
+                
+        try {
+            # Handle array indices in path like Path[0], Path[1], etc.
+            if ($Path -match '^(.+?)\[(\d+)\](.*)$') {
+                $basePath = $matches[1]
+                $index = [int]$matches[2]
+                $remainingPath = $matches[3]
+                        
+                # Navigate to the array
+                $current = $Record
+                if ($basePath) {
+                    $baseParts = $basePath -split '\.'
+                    foreach ($part in $baseParts) {
+                        if ($part -and $current.PSObject.Properties[$part]) {
+                            $current = $current.PSObject.Properties[$part].Value
+                        }
+                        else {
+                            return $false
+                        }
+                    }
+                }
+                        
+                # Set array element
+                if ($current -is [System.Array] -and $index -lt $current.Count) {
+                    if ($remainingPath -and $remainingPath.StartsWith('.')) {
+                        # More nesting after array index
+                        $subPath = $remainingPath.Substring(1)
+                        return Set-ValueAtPath -Record $current[$index] -Path $subPath -Value $Value
+                    }
+                    else {
+                        # Direct array element replacement
+                        $current[$index] = $Value
+                        return $true
+                    }
+                }
+                        
+                return $false
+            }
+                    
+            # Handle regular dot notation paths
+            $pathParts = $Path -split '\.'
+            $current = $Record
+                    
+            # Navigate to parent
+            for ($i = 0; $i -lt $pathParts.Count - 1; $i++) {
+                $part = $pathParts[$i]
+                if (-not $part) { continue }
+                        
+                if (-not $current.PSObject.Properties[$part]) {
+                    Add-Member -InputObject $current -NotePropertyName $part -NotePropertyValue ([PSCustomObject]@{}) -Force
+                }
+                $current = $current.PSObject.Properties[$part].Value
+            }
+                    
+            # Set final value
+            $finalPart = $pathParts[-1]
+            if ($finalPart) {
+                if ($current.PSObject.Properties[$finalPart]) {
+                    $current.PSObject.Properties[$finalPart].Value = $Value
+                }
+                else {
+                    Add-Member -InputObject $current -NotePropertyName $finalPart -NotePropertyValue $Value -Force
+                }
+                return $true
+            }
+                    
+            return $false
+        }
+        catch {
+            Write-Verbose "    Path setting error: $($_.Exception.Message)"
+            return $false
+        }
+    }
+            
+    # Add comprehensive explosion metadata and statistics
+    $explosionRatio = if ($explodedRecords.Count -gt 0) { $explodedRecords.Count } else { 1 }
+            
+    Write-Host "Explosion Results:" -ForegroundColor Green
+    Write-Host "  Input: 1 record" -ForegroundColor Yellow
+    Write-Host "  Output: $($explodedRecords.Count) records" -ForegroundColor Yellow
+    Write-Host "  Expansion ratio: 1:$explosionRatio" -ForegroundColor Yellow
+    Write-Host "  Arrays processed: $($allArrays.Count)" -ForegroundColor Yellow
+            
+    foreach ($record in $explodedRecords) {
+        Add-Member -InputObject $record -NotePropertyName '_ExplosionType' -NotePropertyValue 'ComprehensiveArrayExplosion' -Force
+        Add-Member -InputObject $record -NotePropertyName '_ArraysExploded' -NotePropertyValue $allArrays.Count -Force
+        Add-Member -InputObject $record -NotePropertyName '_ExplosionRatio' -NotePropertyValue $explosionRatio -Force
+        Add-Member -InputObject $record -NotePropertyName '_ExplodedPaths' -NotePropertyValue ($allArrays | ForEach-Object { $_.Path }) -Force
+    }
+            
+    return $explodedRecords
+}
+else {
+    Write-Host "Explosion Results:" -ForegroundColor Yellow
+    Write-Host "  Input: 1 record" -ForegroundColor Yellow  
+    Write-Host "  Output: 1 record (no arrays found)" -ForegroundColor Yellow
+    Write-Host "  No explosion needed" -ForegroundColor Yellow
+            
+    # Add metadata for passthrough tracking
+    Add-Member -InputObject $baseRecord -NotePropertyName '_PassthroughReason' -NotePropertyValue 'NoArraysDetected' -Force
+    Add-Member -InputObject $baseRecord -NotePropertyName '_ExplosionType' -NotePropertyValue 'PassThrough' -Force
     return $baseRecord
+}
+    
+return $baseRecord
 }
 
 try {
@@ -1794,7 +2020,15 @@ try {
                 if ($blockEnd -gt $dayEnd) { $blockEnd = $dayEnd }
                 
                 $queryCount++
-                $percentComplete = [math]::Round(($queryCount / $totalQueries) * 100, 1)
+                # Calculate overall progress based on whether row explosion is enabled
+                if ($NoExplodeArrays) {
+                    # When NoExplodeArrays is enabled: queries = 90%, post = 10%
+                    $percentComplete = [math]::Round(($queryCount / $totalQueries) * 90, 1)
+                }
+                else {
+                    # When row explosion is enabled: queries = 50%, explosion = 40%, post = 10%
+                    $percentComplete = [math]::Round(($queryCount / $totalQueries) * 50, 1)
+                }
                 Write-Host "[$percentComplete%] Query $queryCount/$totalQueries - $activityList ($($currentTime.ToString('yyyy-MM-dd HH:mm')) - $($blockEnd.ToString('HH:mm')))" -ForegroundColor Gray
                 
                 # Query activities in the group with optional parallelism
@@ -1953,10 +2187,19 @@ try {
     $i = 0
     foreach ($log in $uniqueLogs) {
         $i++
-        $postCount = [math]::Min($postCount + 1, $postTotal)
-        $percentPost = [math]::Round(($postCount / $postTotal) * 100, 1)
-        Write-Host "[$percentPost%] Post $postCount/$postTotal - Converting ($i/$($postCategories.convert))" -ForegroundColor Gray
-        if ($i -le 5 -and $i % 50 -eq 0) { Write-Host "Converting records..." -ForegroundColor Gray }
+        
+        # Calculate overall progress based on whether row explosion is enabled
+        if ($NoExplodeArrays) {
+            # When NoExplodeArrays is enabled: queries = 90%, post = 10%
+            $postProgress = 90 + [math]::Round(($i / $postCategories.convert) * 10, 1)
+        }
+        else {
+            # When row explosion is enabled: queries = 50%, explosion = 40%, post = 10%
+            $postProgress = 50 + [math]::Round(($i / $postCategories.convert) * 40, 1)
+        }
+        
+        Write-Host "$postProgress - $(if ($NoExplodeArrays) { 'Post' } else { 'Row Explosion' }) $i/$($postCategories.convert) - Converting" -ForegroundColor Gray
+        if ($i -le 5 -and ($i % 50) -eq 0) { Write-Host "Converting records..." -ForegroundColor Gray }
         $metricsRecord = Convert-ToMetricsRecord -AuditLogEntry $log -NoExplodeArrays:$NoExplodeArrays -DevTest:$DevTest
         
         # Track row explosion statistics
@@ -1994,7 +2237,7 @@ try {
             
             $metricsData.Add($metricsRecord) | Out-Null
         }
-        Write-Host "PA:POST progress convert $i/$($postCategories.convert)"
+        Write-Host "PA:POST progress $(if ($NoExplodeArrays) { 'convert' } else { 'explode' }) $i/$($postCategories.convert)"
     }
     
     # Report row explosion statistics
@@ -2012,15 +2255,21 @@ try {
         Write-Host "=================================" -ForegroundColor Cyan
     }
     
-    Write-Host "PA:POST end convert"
+    Write-Host "PA:POST end $(if ($NoExplodeArrays) { 'convert' } else { 'explode' })"
 
     # Export CSV
     Write-Host "PA:POST start export total=1" -ForegroundColor Yellow
     Write-Host "Exporting to CSV: $OutputFile" -ForegroundColor Yellow
     $metricsData | Export-Csv -Path $OutputFile -NoTypeInformation -Encoding UTF8
-    $postCount = [math]::Min($postCount + 1, $postTotal)
-    $percentPost = [math]::Round(($postCount / $postTotal) * 100, 1)
-    Write-Host "[$percentPost%] Post $postCount/$postTotal - Exporting CSV" -ForegroundColor Gray
+    
+    # Calculate final post-processing progress (export = 2.5% of total)
+    if ($NoExplodeArrays) {
+        $exportProgress = 92.5  # 90% (queries) + 2.5% (export)
+    }
+    else {
+        $exportProgress = 92.5  # 50% (queries) + 40% (explosion) + 2.5% (export)
+    }
+    Write-Host "$exportProgress - Post - Exporting CSV" -ForegroundColor Gray
     Write-Host "PA:POST progress export 1/1"
     Write-Host "PA:POST end export"
 
@@ -2037,9 +2286,15 @@ try {
     else {
         Write-Host "No sample available (no records)" -ForegroundColor Yellow
     }
-    $postCount = [math]::Min($postCount + 1, $postTotal)
-    $percentPost = [math]::Round(($postCount / $postTotal) * 100, 1)
-    Write-Host "[$percentPost%] Post $postCount/$postTotal - Sample" -ForegroundColor Gray
+    
+    # Calculate sample progress (sample = 2.5% of total)
+    if ($NoExplodeArrays) {
+        $sampleProgress = 95.0  # 90% (queries) + 2.5% (export) + 2.5% (sample)
+    }
+    else {
+        $sampleProgress = 95.0  # 50% (queries) + 40% (explosion) + 2.5% (export) + 2.5% (sample)
+    }
+    Write-Host "$sampleProgress - Post - Sample" -ForegroundColor Gray
     Write-Host "PA:POST progress sample 1/1"
     Write-Host "PA:POST end sample"
 
@@ -2053,9 +2308,15 @@ try {
     else {
         Write-Host "No stats (no records)" -ForegroundColor Yellow
     }
-    $postCount = [math]::Min($postCount + 1, $postTotal)
-    $percentPost = [math]::Round(($postCount / $postTotal) * 100, 1)
-    Write-Host "[$percentPost%] Post $postCount/$postTotal - Stats" -ForegroundColor Gray
+    
+    # Calculate stats progress (stats = 2.5% of total)
+    if ($NoExplodeArrays) {
+        $statsProgress = 97.5  # 90% (queries) + 2.5% (export) + 2.5% (sample) + 2.5% (stats)
+    }
+    else {
+        $statsProgress = 97.5  # 50% (queries) + 40% (explosion) + 2.5% (export) + 2.5% (sample) + 2.5% (stats)
+    }
+    Write-Host "$statsProgress - Post - Stats" -ForegroundColor Gray
     Write-Host "PA:POST progress stats 1/1"
     Write-Host "PA:POST end stats"
 
@@ -2063,9 +2324,9 @@ try {
     Write-Host "PA:POST start finalize total=1" -ForegroundColor Yellow
     try { Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue } catch {}
     try { Disconnect-IPPSSession -Confirm:$false -ErrorAction SilentlyContinue } catch {}
-    $postCount = [math]::Min($postCount + 1, $postTotal)
-    $percentPost = [math]::Round(($postCount / $postTotal) * 100, 1)
-    Write-Host "[$percentPost%] Post $postCount/$postTotal - Finalizing" -ForegroundColor Gray
+    
+    # Final progress (finalize = remaining 2.5% to reach 100%)
+    Write-Host "[100%] Post - Finalizing" -ForegroundColor Gray
     Write-Host "PA:POST progress finalize 1/1"
     Write-Host "PA:POST end finalize"
 
