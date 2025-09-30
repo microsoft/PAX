@@ -466,7 +466,7 @@ function Connect-ToComplianceCenter {
         Write-Host "Connected successfully!" -ForegroundColor Green
     }
     catch {
-        Write-Error "Failed to connect: $($_.Exception.Message)"
+        Write-Host "Failed to connect: $($_.Exception.Message)" -ForegroundColor DarkYellow
         exit 1
     }
 }
@@ -645,11 +645,54 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
             
             Write-Host "  Session completed: $($allResults.Count) total records fetched" -ForegroundColor Green
             
-            # Warn if we hit the 10K Exchange Online limit
+            # Warn if we hit the 10K Exchange Online limit and offer automatic subdivision
             if ($allResults.Count -eq 10000 -and $ResultSize -gt 10000) {
                 Write-Host "  WARNING: Exactly 10,000 records returned when more were requested ($ResultSize)" -ForegroundColor Yellow
                 Write-Host "  This suggests an Exchange Online server-side limit was reached" -ForegroundColor Yellow
-                Write-Host "  Consider using smaller time blocks (e.g., 2-4 hours) to retrieve complete data" -ForegroundColor Yellow
+                
+                # Calculate time span and suggest subdivision
+                $timeSpan = $End - $Start
+                if ($timeSpan.TotalHours -gt 2) {
+                    Write-Host "  ATTEMPTING AUTOMATIC RECOVERY: Subdividing time range to retrieve remaining data..." -ForegroundColor Cyan
+                    
+                    # Split the time range in half and try both halves
+                    $midPoint = $Start.AddMinutes($timeSpan.TotalMinutes / 2)
+                    $additionalResults = @()
+                    
+                    try {
+                        Write-Host "    Querying first half: $($Start.ToString('yyyy-MM-dd HH:mm')) to $($midPoint.ToString('yyyy-MM-dd HH:mm'))" -ForegroundColor Cyan
+                        $firstHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $Start -End $midPoint -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs
+                        
+                        Write-Host "    Querying second half: $($midPoint.ToString('yyyy-MM-dd HH:mm')) to $($End.ToString('yyyy-MM-dd HH:mm'))" -ForegroundColor Cyan  
+                        $secondHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $midPoint -End $End -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs
+                        
+                        # Combine results and remove duplicates based on Identity
+                        $combinedResults = @()
+                        $seenIdentities = @{}
+                        
+                        foreach ($result in ($firstHalf + $secondHalf)) {
+                            if (-not $seenIdentities.ContainsKey($result.Identity)) {
+                                $combinedResults += $result
+                                $seenIdentities[$result.Identity] = $true
+                            }
+                        }
+                        
+                        if ($combinedResults.Count -gt $allResults.Count) {
+                            Write-Host "    SUCCESS: Recovered additional records! Original: $($allResults.Count), New total: $($combinedResults.Count)" -ForegroundColor Green
+                            $allResults = $combinedResults
+                        }
+                        else {
+                            Write-Host "    No additional records recovered through subdivision" -ForegroundColor Yellow
+                        }
+                    }
+                    catch {
+                        Write-Host "    Subdivision attempt failed: $($_.Exception.Message)" -ForegroundColor Yellow
+                        Write-Host "    Continuing with original 10,000 records" -ForegroundColor Yellow
+                    }
+                }
+                else {
+                    Write-Host "  Consider using smaller time blocks (e.g., 1-2 hours) to retrieve complete data" -ForegroundColor Yellow
+                }
             }
             
             $res = $allResults
@@ -851,8 +894,32 @@ function Get-NestedProperty {
 }
 
 function Convert-ToMetricsRecord {
-    param([object]$AuditLogEntry, [switch]$NoExplodeArrays, [switch]$DevTest)
-    $auditData = ConvertFrom-AuditData -AuditDataJson $AuditLogEntry.AuditData
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [object]$AuditLogEntry, 
+        [switch]$NoExplodeArrays, 
+        [switch]$DevTest
+    )
+    
+    # Input validation
+    if (-not $AuditLogEntry) {
+        Write-Warning "Convert-ToMetricsRecord: Null AuditLogEntry provided"
+        return $null
+    }
+    
+    if (-not $AuditLogEntry.AuditData) {
+        Write-Warning "Convert-ToMetricsRecord: AuditLogEntry missing AuditData property"
+        return $null
+    }
+    
+    try {
+        $auditData = ConvertFrom-AuditData -AuditDataJson $AuditLogEntry.AuditData
+    }
+    catch {
+        Write-Warning "Convert-ToMetricsRecord: Failed to parse AuditData: $($_.Exception.Message)"
+        return $null
+    }
     
     # DevTest mode transformations - convert "Create" operations to look like CopilotInteraction
     if ($DevTest -and $AuditLogEntry.Operations -eq "Create") {
@@ -2200,7 +2267,16 @@ try {
         
         Write-Host "$postProgress - $(if ($NoExplodeArrays) { 'Post' } else { 'Row Explosion' }) $i/$($postCategories.convert) - Converting" -ForegroundColor Gray
         if ($i -le 5 -and ($i % 50) -eq 0) { Write-Host "Converting records..." -ForegroundColor Gray }
-        $metricsRecord = Convert-ToMetricsRecord -AuditLogEntry $log -NoExplodeArrays:$NoExplodeArrays -DevTest:$DevTest
+        
+        # Ensure clean parameter passing to avoid positional parameter issues
+        try {
+            $metricsRecord = Convert-ToMetricsRecord -AuditLogEntry $log -NoExplodeArrays:$NoExplodeArrays -DevTest:$DevTest
+        }
+        catch {
+            Write-Host "Error converting record $i : $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "Skipping problematic record and continuing..." -ForegroundColor Yellow
+            continue
+        }
         
         # Track row explosion statistics
         $explosionStats.TotalInput++
