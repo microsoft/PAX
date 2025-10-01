@@ -79,7 +79,7 @@ PARAMETERS:
 -EndDate          (Required)  End date for search (yyyy-MM-dd format). Exclusive - data up to but not including this date.
 -ActivityTypes    (Optional)  Array of activity types to search. Default: 32 curated activities across Copilot, Teams, Files, and Exchange tiers.
 -CopilotInteractionOnly (Optional) Focus exclusively on CopilotInteraction activities. Overrides ActivityTypes when specified.
--DevTest          (Optional)  Development test mode - searches for Operation='Create' within CopilotInteraction activity type.
+-DevTest          (Optional)  Development test mode - generates synthetic CopilotInteraction data with arrays for testing row explosion functionality.
 -OutputFile       (Optional)  Path for CSV output. Default: PAX_Export_<timestamp>.csv in system temp folder.
 -LogFile          (Optional)  Path for transcript log. Default: auto-generated .log file in same directory as CSV.
 -Auth             (Optional)  Authentication: WebLogin (default, recommended), DeviceCode, Credential, or Silent.
@@ -899,8 +899,9 @@ function Convert-ToMetricsRecord {
         return $null
     }
     
-    # DevTest mode transformations - convert "Create" operations to look like CopilotInteraction
-    if ($DevTest -and $AuditLogEntry.Operations -eq "Create") {
+    # DevTest synthetic data is now generated directly in the query phase
+    # This legacy transformation code is disabled in favor of direct synthetic generation
+    if ($false && $DevTest -and $AuditLogEntry.Operations -eq "Create") {
         Write-Verbose "DevTest: Transforming Create operation to CopilotInteraction for record $($AuditLogEntry.Identity)"
         
         # Transform the audit log entry with correct values
@@ -2025,6 +2026,124 @@ try {
     Write-Host "======================================" -ForegroundColor Yellow
     Write-Host ""
     
+    # Generate synthetic audit logs for DevTest mode
+    function Generate-SyntheticAuditLogs {
+        param(
+            [DateTime]$StartTime,
+            [DateTime]$EndTime, 
+            [int]$Count = 10
+        )
+        
+        $syntheticLogs = @()
+        
+        for ($i = 1; $i -le $Count; $i++) {
+            # Generate random timestamp within the window
+            $randomTicks = Get-Random -Minimum $StartTime.Ticks -Maximum $EndTime.Ticks
+            $randomTime = [DateTime]::new($randomTicks)
+            
+            # Create realistic CopilotEventData with arrays for explosion testing
+            $appHosts = @("Teams", "Office", "Word", "Outlook", "Excel", "PowerPoint", "Unknown", "Copilot Studio")
+            $appWeights = @(41.76, 21.68, 9.93, 7.47, 3.05, 2.30, 7.96, 1.88)
+            $selectedAppHost = Get-WeightedSelection -Options $appHosts -Weights $appWeights
+            
+            # Generate array data for row explosion testing
+            $messageCount = Get-Random -Minimum 2 -Maximum 8
+            $messages = @()
+            for ($m = 1; $m -le $messageCount; $m++) {
+                $messages += @{
+                    Id = "msg-$m-$(Get-Random -Minimum 1000 -Maximum 9999)"
+                    Content = "This is synthetic message $m for testing row explosion functionality"
+                    Timestamp = $randomTime.AddMinutes($m).ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+                    isPrompt = if ($m % 2 -eq 1) { $true } else { $false }
+                }
+            }
+            
+            $contextCount = Get-Random -Minimum 1 -Maximum 5
+            $contexts = @()
+            for ($c = 1; $c -le $contextCount; $c++) {
+                $contexts += @{
+                    Type = @("File", "Email", "Meeting", "Document", "Presentation") | Get-Random
+                    Name = "SyntheticContext$c.docx"
+                    Id = [Guid]::NewGuid().ToString()
+                    Action = @("Read", "Edit", "Reference", "Analyze") | Get-Random
+                }
+            }
+            
+            # Generate AISystemPlugin data
+            $plugins = @()
+            if ((Get-Random -Minimum 1 -Maximum 100) -le 62) {  # 62% chance of having plugins
+                $plugins += @{
+                    Id = if ((Get-Random -Minimum 1 -Maximum 100) -le 97) { "BingWebSearch" } else { "EnterpriseSearch" }
+                    Name = "BuiltIn"
+                }
+            }
+            
+            # Create comprehensive synthetic audit data
+            $auditData = @{
+                CreationTime = $randomTime.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+                Id = [Guid]::NewGuid().ToString()
+                Operation = "CopilotInteraction"
+                OrganizationId = "aa42167d-6f8d-45ce-b655-d245ef97da66"
+                RecordType = 261
+                UserKey = "synthetic.user$i@contoso.com"
+                UserType = 0
+                Version = 1
+                Workload = "Copilot"
+                ClientIP = "192.168.1.$((Get-Random -Minimum 100 -Maximum 199))"
+                UserId = "synthetic.user$i@contoso.com"
+                ClientRegion = if ((Get-Random -Minimum 1 -Maximum 100) -le 64) { "us" } else { @("", "prd", "westeurope", "GB") | Get-Random }
+                AppHost = $selectedAppHost
+                ThreadId = "19:$(([Guid]::NewGuid().ToString() -replace '-','').Substring(0,26))@thread.v2"
+                CopilotEventData = @{
+                    AppHost = $selectedAppHost
+                    ThreadId = "19:$(([Guid]::NewGuid().ToString() -replace '-','').Substring(0,26))@thread.v2"
+                    Messages = $messages
+                    Contexts = $contexts
+                    AISystemPlugin = $plugins
+                    AccessedResources = @()
+                    ModelTransparencyDetails = @()
+                    MessageIds = @()
+                    CorrelationId = [Guid]::NewGuid().ToString()
+                    AgentId = if ((Get-Random -Minimum 1 -Maximum 1000) -le 8) { "SYSTEM_CreateGPT.declarativeCopilot" } else { $null }
+                    AgentName = if ((Get-Random -Minimum 1 -Maximum 1000) -le 7) { @("Visual Creator", "IT Service Agent", "Risk Analysis") | Get-Random } else { $null }
+                }
+                CopilotLogVersion = "1.0.0.0"
+            }
+            
+            # Create synthetic audit log entry that looks like real CopilotInteraction
+            $syntheticLog = [PSCustomObject]@{
+                Identity = "SYNTHETIC-$($randomTime.ToString('yyyyMMdd-HHmmss'))-$i"
+                RecordType = 261  # CopilotInteraction
+                CreationDate = $randomTime
+                UserIds = "synthetic.user$i@contoso.com"
+                Operations = "CopilotInteraction"
+                AuditData = ($auditData | ConvertTo-Json -Depth 10 -Compress)
+                ResultIndex = $i
+                ResultCount = $Count
+                PSComputerName = "compliance.protection.outlook.com"
+            }
+            
+            $syntheticLogs += $syntheticLog
+        }
+        
+        Write-Host "    Generated $Count synthetic CopilotInteraction records with array data for row explosion testing" -ForegroundColor Green
+        return $syntheticLogs
+    }
+    
+    # Helper function for weighted selection
+    function Get-WeightedSelection {
+        param($Options, $Weights)
+        $random = Get-Random -Minimum 0 -Maximum ($Weights | Measure-Object -Sum).Sum
+        $cumulative = 0
+        for ($i = 0; $i -lt $Options.Count; $i++) {
+            $cumulative += $Weights[$i]
+            if ($random -le $cumulative) {
+                return $Options[$i]
+            }
+        }
+        return $Options[0]
+    }
+    
     Connect-ToComplianceCenter
 
     $startDateObj = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null)
@@ -2054,7 +2173,7 @@ try {
     
     # Handle DevTest mode
     if ($DevTest) {
-        Write-Host "DevTest mode enabled - filtering for Operation='Create' within CopilotInteraction activity type" -ForegroundColor Cyan
+        Write-Host "DevTest mode enabled - generating synthetic CopilotInteraction data for testing" -ForegroundColor Cyan
         $ActivityTypes = @("CopilotInteraction")  # Override activity types for dev test
     }
     
@@ -2206,10 +2325,16 @@ try {
                         $safeAutoSubdivide = if ($null -eq $AutoSubdivide -or $AutoSubdivide -eq '') { $true } else { [bool]$AutoSubdivide }
                         
                         # For CopilotInteractionOnly mode, use "CopilotInteraction" as Operations filter instead of activity type
-                        # For DevTest mode, use "Create" as Operations filter within CopilotInteraction activity type
-                        $operationFilter = if ($CopilotInteractionOnly) { "CopilotInteraction" } elseif ($DevTest) { "Create" } else { $activity }
-                        
-                        $logs = Invoke-SearchUnifiedAuditLogWithRetry -Start $currentTime -End $blockEnd -Operation $operationFilter -ResultSize $ResultSize -PacingMs $PacingMs -AutoSubdivide $safeAutoSubdivide
+                        # For DevTest mode, generate synthetic data directly instead of searching for real logs
+                        if ($DevTest) {
+                            # Generate synthetic audit log entries for DevTest mode
+                            Write-Host "  DevTest: Generating synthetic CopilotInteraction records for $($currentTime.ToString('yyyy-MM-dd HH:mm')) - $($blockEnd.ToString('HH:mm'))" -ForegroundColor Yellow
+                            $logs = Generate-SyntheticAuditLogs -StartTime $currentTime -EndTime $blockEnd -Count (Get-Random -Minimum 5 -Maximum 25)
+                        }
+                        else {
+                            $operationFilter = if ($CopilotInteractionOnly) { "CopilotInteraction" } else { $activity }
+                            $logs = Invoke-SearchUnifiedAuditLogWithRetry -Start $currentTime -End $blockEnd -Operation $operationFilter -ResultSize $ResultSize -PacingMs $PacingMs -AutoSubdivide $safeAutoSubdivide
+                        }
                         if ($logs) { $groupLogs += $logs }
                     }
                 }
