@@ -899,635 +899,12 @@ function Convert-ToMetricsRecord {
         return $null
     }
     
-    # DevTest synthetic data is now generated directly in the query phase
-    # This legacy transformation code is disabled in favor of direct synthetic generation
-    if ($false && $DevTest -and $AuditLogEntry.Operations -eq "Create") {
-        Write-Verbose "DevTest: Transforming Create operation to CopilotInteraction for record $($AuditLogEntry.Identity)"
-        
-        # Transform the audit log entry with correct values
-        $AuditLogEntry.Operations = "CopilotInteraction"
-        $AuditLogEntry.RecordType = 261  # Correct RecordType number for Copilot
-        
-        # ULTRA-COMPREHENSIVE AppHost distribution from real Microsoft Purview records
-        # EXACT percentages from complete analysis for MAXIMUM authenticity
-        $appHostOptions = @(
-            @{Host = "Teams"; Weight = 41.76 },                 # 41.76%
-            @{Host = "Office"; Weight = 21.68 },                # 21.68%
-            @{Host = "Word"; Weight = 9.93 },                   # 9.93%
-            @{Host = "Unknown"; Weight = 7.96 },                # 7.96%
-            @{Host = "Outlook"; Weight = 7.47 },                # 7.47%
-            @{Host = "Excel"; Weight = 3.05 },                  # 3.05%
-            @{Host = "PowerPoint"; Weight = 2.30 },             # 2.30%
-            @{Host = "Copilot Studio"; Weight = 1.88 },         # 1.88%
-            @{Host = "Forms"; Weight = 0.89 },                  # 0.89%
-            @{Host = "Designer"; Weight = 0.88 },               # 0.88%
-            @{Host = "Datawarehousing Core"; Weight = 0.45 },   # 0.45%
-            @{Host = "Autonomous"; Weight = 0.40 },             # 0.40%
-            @{Host = "Stream"; Weight = 0.31 },                 # 0.31%
-            @{Host = "Logic App"; Weight = 0.24 },              # 0.24%
-            @{Host = "OneNote"; Weight = 0.21 },                # 0.21%
-            @{Host = "Edge"; Weight = 0.15 },                   # 0.15%
-            @{Host = "Power BI"; Weight = 0.14 },               # 0.14%
-            @{Host = "SharePoint"; Weight = 0.11 },             # 0.11%
-            @{Host = "Microsoft Teams"; Weight = 0.11 },        # 0.11%
-            @{Host = "Copilot in Defender"; Weight = 0.05 },    # 0.05%
-            @{Host = "Loop"; Weight = 0.03 },                   # 0.03%
-            @{Host = "Bing"; Weight = 0.01 },                   # 0.01%
-            @{Host = "Whiteboard"; Weight = 0.01 },             # 0.01%
-            @{Host = "Planner"; Weight = 0.01 },                # 0.01%
-            @{Host = "Security Copilot standalone"; Weight = 0.01 }, # 0.01%
-            @{Host = "M365AdminCenter"; Weight = 0.00 },        # 0.00%
-            @{Host = "PowerBI"; Weight = 0.00 }                 # 0.00%
-        )
-        
-        # Optimized weighted random selection - pre-calculate cumulative weights
-        $cumulativeWeights = @()
-        $runningTotal = 0
-        foreach ($option in $appHostOptions) {
-            $runningTotal += $option.Weight
-            $cumulativeWeights += @{Host = $option.Host; CumulativeWeight = $runningTotal}
-        }
-        
-        # Fast selection using binary search concept
-        $randomValue = Get-Random -Minimum 0.0 -Maximum $runningTotal
-        $selectedAppHost = "Teams"  # Default fallback
-        foreach ($cumulative in $cumulativeWeights) {
-            if ($randomValue -le $cumulative.CumulativeWeight) {
-                $selectedAppHost = $cumulative.Host
-                break
-            }
-        }
-        
-        # AUTHENTIC Client Region distribution optimized
-        $clientRegionOptions = @(
-            @{Region = "us"; Weight = 63.68 },           # 63.68%
-            @{Region = ""; Weight = 29.65 },             # Empty region
-            @{Region = "prd"; Weight = 2.39 },           # 2.39%
-            @{Region = "westeurope"; Weight = 0.58 },    # 0.58%
-            @{Region = "GB"; Weight = 0.54 },            # 0.54%
-            @{Region = "IN"; Weight = 0.04 },            # 0.04%
-            @{Region = "JP"; Weight = 0.02 },            # 0.02%
-            @{Region = "SE"; Weight = 0.01 },            # 0.01%
-            @{Region = "SG"; Weight = 0.01 },            # 0.01%
-            @{Region = "PL"; Weight = 0.01 },            # 0.01%
-            @{Region = "IT"; Weight = 0.01 },            # 0.01%
-            @{Region = "NL"; Weight = 0.00 },            # 0.00%
-            @{Region = "AU"; Weight = 0.00 },            # 0.00%
-            @{Region = "FR"; Weight = 0.00 },            # 0.00%
-            @{Region = "ES"; Weight = 0.00 },            # 0.00%
-            @{Region = "TW"; Weight = 0.00 },            # 0.00%
-            @{Region = "CZ"; Weight = 0.00 },            # 0.00%
-            @{Region = "ZA"; Weight = 0.00 },            # 0.00%
-            @{Region = "IE"; Weight = 0.00 },            # 0.00%
-            @{Region = "LU"; Weight = 0.00 },            # 0.00%
-            @{Region = "DE"; Weight = 0.00 }             # 0.00%
-        )
-        
-        # Fast region selection using direct probability
-        $rand = Get-Random -Minimum 1 -Maximum 101
-        if ($rand -le 64) { $selectedClientRegion = "us" }
-        elseif ($rand -le 94) { $selectedClientRegion = "" }
-        elseif ($rand -le 96) { $selectedClientRegion = "prd" }
-        elseif ($rand -le 97) { $selectedClientRegion = "westeurope" }
-        elseif ($rand -le 98) { $selectedClientRegion = "GB" }
-        else { $selectedClientRegion = @("IN", "JP", "SE", "SG", "PL", "IT", "NL", "AU", "FR", "ES", "TW", "CZ", "ZA", "IE", "LU", "DE") | Get-Random }
-        
-        # Pre-calculated SensitivityLabelId options for performance
-        $sensitivityLabelOptions = @(
-            "6cd3c5f5-c566-4dc5-8864-6f6d9b127b45",  # 78.0%
-            "3439374f-170d-4d1d-ad34-00f2ff8691e7",  # 18.9%
-            "145b9cce-5262-4471-b691-53ccdbfa697d",  # 1.2%
-            "48d6c171-fc3b-4d24-b33c-131325da3d57",  # 1.1%
-            "fd044701-ce36-4b06-971c-cc5283ac111b",  # 0.3%
-            "66bdea2f-c081-47d6-8f5b-01608421bf86",  # 0.0%
-            "1e6b3f1f-4489-4e1c-a562-7ded07cc5229"   # 0.0%
-        )
-        
-        # Fast SensitivityLabelId selection using optimized probability ranges
-        $sensitivityRand = Get-Random -Minimum 1 -Maximum 101
-        if ($sensitivityRand -le 78) { $selectedSensitivityLabel = $sensitivityLabelOptions[0] }
-        elseif ($sensitivityRand -le 97) { $selectedSensitivityLabel = $sensitivityLabelOptions[1] }
-        elseif ($sensitivityRand -le 98) { $selectedSensitivityLabel = $sensitivityLabelOptions[2] }
-        elseif ($sensitivityRand -le 99) { $selectedSensitivityLabel = $sensitivityLabelOptions[3] }
-        elseif ($sensitivityRand -le 100) { $selectedSensitivityLabel = $sensitivityLabelOptions[4] }
-        else { $selectedSensitivityLabel = $sensitivityLabelOptions | Get-Random }
-        
-        # Create realistic synthetic Copilot AuditData JSON with MAXIMUM authenticity
-        # Based on comprehensive analysis for perfect patterns
-        $baseData = @{
-            CreationTime              = $auditData.CreationTime
-            Id                        = [System.Guid]::NewGuid().ToString()
-            Operation                 = "CopilotInteraction"
-            OrganizationId            = if ($auditData.OrganizationId) { $auditData.OrganizationId } else { "aa42167d-6f8d-45ce-b655-d245ef97da66" }  # Real OrgId from data
-            RecordType                = 261
-            UserKey                   = $AuditLogEntry.UserIds
-            UserType                  = 0  # 0 = Regular user (matches 100% of real data)
-            Version                   = 1
-            Workload                  = "Copilot"
-            ClientIP                  = if ($auditData.ClientIP) { $auditData.ClientIP } else { "" }  # Often empty in real data
-            UserId                    = $AuditLogEntry.UserIds
-            ClientRegion              = $selectedClientRegion
-            # AUTHENTIC AppIdentity patterns (rare but real)
-            AppIdentity               = if ((Get-Random -Minimum 1 -Maximum 1001) -le 3) {  # ~0.3% occurrence rate
-                $appIdentities = @(
-                    "Copilot.Security.SecurityCopilot",
-                    "Copilot.Studio.Default-aa42167d-6f8d-45ce-b655-d245ef97da66-00b54d73-8966-4701-a94c-d933f1ed28d4",
-                    "Copilot.Studio.Default-aa42167d-6f8d-45ce-b655-d245ef97da66-cr75d_agentPCH6cr",
-                    "Copilot.Studio.0e4146ef-f6b7-efde-85d7-2341187846ae-cr93f_mGSalesAssistantSimpleProofOfConce"
-                ) 
-                $appIdentities | Get-Random
-            }
-            else { $null }
-            # Fields that are consistently null in real data
-            AssociatedAdminUnits      = $null  # Always null in observed data
-            AssociatedAdminUnitsNames = $null  # Always null in observed data
-            ApplicationName           = $null  # Always null in observed data
-            CopilotEventData          = @{
-                AISystemPlugin           = @()  # Will be populated based on AppHost patterns
-                AccessedResources        = @()  # Will be populated based on AppHost patterns
-                AppHost                  = $selectedAppHost
-                Contexts                 = @()  # Will be populated based on AppHost patterns
-                MessageIds               = @()  # Usually empty in real data - matches observed patterns
-                Messages                 = @()  # Will be populated based on AppHost patterns
-                ModelTransparencyDetails = @()  # Will be populated based on AppHost patterns
-                ThreadId                 = "19:" + [System.Guid]::NewGuid().ToString().Replace("-", "").Substring(0, 26) + "@thread.v2"  # 90.29% use @thread.v2 format
-                # AUTHENTIC Agent patterns - rare but real when present
-                AgentId                  = if ((Get-Random -Minimum 1 -Maximum 1001) -le 8) {  # ~0.8% occurrence rate matches real data
-                    $agentIds = @(
-                        "P_301fad66-fa35-ca43-824c-11cd5e9c4cf3.SYSTEM_CreateGPT",
-                        "T_3dc42113-d407-b5b3-e4ee-de6b2348509f.declarativeAgent",
-                        "SYSTEM_CreateGPT.declarativeCopilot",
-                        "T_1984435d-b81a-dc7b-60be-1652169fc10b.707af011-e0f0-4f60-bdf4-2306a1743286",
-                        "P_8cfc4e6f-267e-db15-c6e7-3fc47a54f61e.diceberry",
-                        "CopilotStudio.Declarative.T_0d6d8214-21dd-fbd5-c168-4008df5b3786.8ffbf4ba-382e-4031-a448-b72e3c8b764f"
-                    )
-                    $agentIds | Get-Random
-                } else { $null }
-                AgentName                = if ((Get-Random -Minimum 1 -Maximum 1001) -le 7) {  # ~0.7% occurrence rate matches real data
-                    $agentNames = @(
-                        "Visual Creator",
-                        "IT Service Agent", 
-                        "AI Tabletop Version 1",
-                        "Secure Message Assistant",
-                        "CRU QA Analyzer Agent",
-                        "Logging Agent",
-                        "Risk and Compliance Policy",
-                        "Analyst (Frontier)",
-                        "AM PMO Agent",
-                        "CEO FRL Generator"
-                    )
-                    $agentNames | Get-Random
-                } else { $null }
-                # AUTHENTIC CorrelationId patterns (9.13% occurrence rate)
-                CorrelationId            = if ((Get-Random -Minimum 1 -Maximum 1001) -le 91) {
-                    [System.Guid]::NewGuid().ToString()
-                } else { $null }
-            }
-            CopilotLogVersion         = "1.0.0.0"  # 100% of real records use this version
-        }
-        
-        # ULTRA-COMPREHENSIVE AppHost-specific patterns
-        # Each pattern matches EXACT distributions and structures from authentic data
-        switch ($selectedAppHost) {
-            "Teams" {
-                # Teams: 41.76% - Most common AppHost
-                # AISystemPlugin: BingWebSearch 60.42%, EnterpriseSearch 1.91%
-                if ((Get-Random -Minimum 1 -Maximum 1001) -le 624) {  # 62.4% have plugins
-                    if ((Get-Random -Minimum 1 -Maximum 1001) -le 970) {  # 97% BingWebSearch when present
-                        $baseData.CopilotEventData.AISystemPlugin = @(@{Id = "BingWebSearch"; Name = "BuiltIn" })
-                    } else {
-                        $baseData.CopilotEventData.AISystemPlugin = @(@{Id = "EnterpriseSearch"; Name = "BuiltIn" })
-                    }
-                }
-                
-                # ModelTransparencyDetails: DEEP_LEO in 64.26% of all records
-                if ((Get-Random -Minimum 1 -Maximum 1001) -le 643) {
-                    $baseData.CopilotEventData.ModelTransparencyDetails = @(@{ModelName = "DEEP_LEO" })
-                }
-                
-                # AccessedResources: 143.79% rate (multiple per record), Action: Read 143.79%
-                $resourceCount = 0
-                while ((Get-Random -Minimum 1 -Maximum 1001) -le 439) { $resourceCount++; if ($resourceCount -ge 5) { break } }  # Probability-based count
-                
-                for ($i = 0; $i -lt $resourceCount; $i++) {
-                    # Authentic site URL distribution from real data
-                    $siteUrlOptions = @(
-                        "https://outlook.office365.com/owa/?ItemID=AAMkAGM5NDVhM2M4LTZjODYtNDZjNy04Mzg2LTA5ZGM3NTRkNjljNgBGAAAAAAA0ESuJMbgZRJ_vNvOOB_OiBwBLTeTfrKKMT5DCczumqIdvAAAAAAEMAABLTeTfrKKMT5DCczumqIdvAAGbT4i" + [System.Guid]::NewGuid().ToString().Substring(0, 8) + "AAA=&exvsurl=1&viewmodel=ReadMessageItem",
-                        "https://teams.microsoft.com/l/message/19:" + [System.Guid]::NewGuid().ToString().Replace("-", "").Substring(0, 26) + "@thread.v2/" + (Get-Random -Minimum 1747000000000 -Maximum 1752999999999),
-                        "https://www.youtube.com/watch?v=" + [System.Guid]::NewGuid().ToString().Substring(0, 11),
-                        "https://savingsandinvestments.sharepoint.com/sites/project" + (Get-Random -Minimum 100 -Maximum 999) + "/Shared%20Documents/General/" + (@("Document", "Report", "Analysis", "Presentation") | Get-Random) + "." + (@("pdf", "docx", "xlsx", "pptx") | Get-Random) + "?web=1",
-                        "https://www.office.com/launch/powerpoint?auth=2&home=1",
-                        "https://savingsandinvestments-my.sharepoint.com/personal/user" + (Get-Random -Minimum 1 -Maximum 999) + "_contoso_com/_layouts/15/onedrive.aspx",
-                        "https://learn.microsoft.com/en-us/copilot/overview",
-                        "https://www.contoso.com/solutions/" + (@("investment", "savings", "pension", "insurance") | Get-Random),
-                        "https://en.wikipedia.org/wiki/" + (@("Finance", "Investment", "Economics", "Business") | Get-Random),
-                        "https://learning.cloud.microsoft/" + [System.Guid]::NewGuid().ToString().Substring(0, 12),
-                        "https://bing.com/search?q=" + (@("excel+formulas", "powerpoint+design", "teams+collaboration", "office+365") | Get-Random),
-                        "https://stackoverflow.com/questions/" + (Get-Random -Minimum 1000000 -Maximum 9999999) + "/" + (@("excel", "powerpoint", "teams", "office") | Get-Random) + "-question",
-                        "https://forms.office.com/Pages/ResponsePage.aspx?id=" + [System.Guid]::NewGuid().ToString(),
-                        "https://eu-api.asm.skype.com/v1/objects/" + [System.Guid]::NewGuid().ToString(),
-                        "https://www.gov.uk/guidance/" + (@("financial-services", "business-rates", "corporation-tax") | Get-Random)
-                    )
-                    
-                    $contextTypeOptions = @(
-                        "http://schema.skype.com/HyperLink",  # 25.43%
-                        "WebSearchQuery",                     # 12.88%
-                        "EmailMessage",                       # 12.86%
-                        "docx",                              # 12.40%
-                        "xlsx",                              # 6.67%
-                        "pdf",                               # 5.85%
-                        "pptx",                              # 5.61%
-                        "TeamsMessage",                      # 2.98%
-                        "Event",                             # 2.57%
-                        "External",                          # 1.93%
-                        "mp4",                               # 1.73%
-                        "TeamsMeeting",                      # 1.50%
-                        "aspx",                              # 1.09%
-                        "PeopleInferenceAnswer",             # 0.69%
-                        "Workspace",                         # 0.58%
-                        "TeamsChat"                          # 0.40%
-                    )
-                    
-                    $selectedSiteUrl = $siteUrlOptions | Get-Random
-                    $selectedContextType = $contextTypeOptions | Get-Random
-                    
-                    # Add authentic SensitivityLabelId for 4.61% of resources
-                    $sensitivityLabel = if ((Get-Random -Minimum 1 -Maximum 1001) -le 46) {
-                        $sensitivityLabelOptions | Get-Random
-                    } else { $null }
-                    
-                    $resource = @{
-                        Action        = "Read"  # 143.79% of all records have Read action
-                        PolicyDetails = ""      # Always empty in real data
-                        SiteUrl       = $selectedSiteUrl
-                        Type          = $selectedContextType
-                    }
-                    
-                    if ($sensitivityLabel) {
-                        $resource.SensitivityLabelId = $sensitivityLabel
-                    }
-                    
-                    $baseData.CopilotEventData.AccessedResources += $resource
-                }
-                
-                # Messages: Response 102.61%, Prompt 89.99% (indicates multiple messages per interaction)
-                $promptCount = 0
-                $responseCount = 0
-                while ((Get-Random -Minimum 1 -Maximum 1001) -le 900) { $promptCount++; if ($promptCount -ge 8) { break } }  # Up to 8 prompts
-                while ((Get-Random -Minimum 1 -Maximum 1001) -le 1026) { $responseCount++; if ($responseCount -ge 9) { break } }  # Up to 9 responses
-                
-                # Create authentic message patterns
-                $messageId = Get-Random -Minimum 1741000000000 -Maximum 1752999999999
-                for ($i = 0; $i -lt $promptCount; $i++) {
-                    $baseData.CopilotEventData.Messages += @{
-                        Id       = [string]($messageId + $i * 160)  # Real timestamp increment pattern
-                        isPrompt = $true
-                    }
-                }
-                for ($i = 0; $i -lt $responseCount; $i++) {
-                    $baseData.CopilotEventData.Messages += @{
-                        Id       = [string]($messageId + $promptCount * 160 + $i * 120)  # Different increment for responses
-                        isPrompt = $false
-                    }
-                }
-                
-                # Contexts: Usually empty for Teams but can have document references
-                if ((Get-Random -Minimum 1 -Maximum 1001) -le 50) {  # ~5% have contexts
-                    $baseData.CopilotEventData.Contexts += @{
-                        Id   = "https://savingsandinvestments.sharepoint.com/sites/project" + (Get-Random -Minimum 100 -Maximum 999) + "/_layouts/15/Doc.aspx?sourcedoc=%7B" + [System.Guid]::NewGuid().ToString().ToUpper() + "%7D&file=Document.docx"
-                        Type = @("docx", "xlsx", "pptx", "pdf") | Get-Random
-                    }
-                }
-            }
-            
-            "Office" {
-                # Office: 21.68% - Second most common
-                # Similar patterns to Teams but with different distributions
-                if ((Get-Random -Minimum 1 -Maximum 1001) -le 580) {  # Slightly lower plugin rate
-                    $baseData.CopilotEventData.AISystemPlugin = @(@{Id = "BingWebSearch"; Name = "BuiltIn" })
-                }
-                
-                if ((Get-Random -Minimum 1 -Maximum 1001) -le 620) {  # Similar model rate
-                    $baseData.CopilotEventData.ModelTransparencyDetails = @(@{ModelName = "DEEP_LEO" })
-                }
-                
-                # Office has more web-focused access patterns
-                $resourceCount = 0
-                while ((Get-Random -Minimum 1 -Maximum 1001) -le 380) { $resourceCount++; if ($resourceCount -ge 12) { break } }
-                
-                for ($i = 0; $i -lt $resourceCount; $i++) {
-                    $officeUrlOptions = @(
-                        "https://www.office.com/launch/" + @("excel", "powerpoint", "word", "onenote") | Get-Random + "?auth=2",
-                        "https://docs.oracle.com/en/database/oracle/oracle-database/18/ntcli/configuring-locale-and-character-sets.html",
-                        "https://stackoverflow.com/questions/" + (Get-Random -Minimum 1000000 -Maximum 9999999) + "/excel-formula-question",
-                        "https://www.investopedia.com/terms/" + (@("i/inherent-risk", "f/financial-modeling", "e/excel-analysis") | Get-Random) + ".asp",
-                        "https://learn.microsoft.com/en-us/office/vba/Language/Reference/User-Interface-Help/topic" + (Get-Random -Minimum 1000 -Maximum 9999),
-                        "https://techcommunity.microsoft.com/blog/office365/" + ([System.Guid]::NewGuid().ToString().Substring(0, 12)),
-                        "https://savingsandinvestments.sharepoint.com/sites/project" + (Get-Random -Minimum 100 -Maximum 999) + "/Analysis.xlsx?web=1"
-                    )
-                    
-                    $baseData.CopilotEventData.AccessedResources += @{
-                        Action        = "Read"
-                        PolicyDetails = ""
-                        SiteUrl       = $officeUrlOptions | Get-Random
-                        Type          = @("WebSearchQuery", "xlsx", "docx", "External") | Get-Random
-                        SensitivityLabelId = if ((Get-Random -Minimum 1 -Maximum 1001) -le 46) { $sensitivityLabelOptions | Get-Random } else { $null }
-                    }
-                }
-                
-                # Office messages tend to be shorter interactions
-                $messageCount = Get-Random -Minimum 1 -Maximum 7
-                $messageId = Get-Random -Minimum 1741000000000 -Maximum 1752999999999
-                for ($i = 0; $i -lt $messageCount; $i++) {
-                    $baseData.CopilotEventData.Messages += @{
-                        Id       = [string]($messageId + $i * 200)
-                        isPrompt = ($i % 2) -eq 0
-                    }
-                }
-            }
-            
-            "Word" {
-                # Word: 9.93% - Document-focused
-                # Word rarely has plugins (only 5% of time)
-                if ((Get-Random -Minimum 1 -Maximum 1001) -le 50) {
-                    $baseData.CopilotEventData.AISystemPlugin = @()
-                    $baseData.CopilotEventData.ModelTransparencyDetails = @()
-                }
-                
-                # Word ALWAYS has document contexts (100% in real data)
-                $contextCount = Get-Random -Minimum 1 -Maximum 2
-                for ($i = 0; $i -lt $contextCount; $i++) {
-                    $baseData.CopilotEventData.Contexts += @{
-                        Id   = "https://savingsandinvestments.sharepoint.com/sites/project" + (Get-Random -Minimum 100 -Maximum 999) + "/_layouts/15/Doc.aspx?sourcedoc=%7B" + [System.Guid]::NewGuid().ToString().ToUpper() + "%7D&file=" + @("Document", "Report", "Letter", "Proposal") | Get-Random + ($i + 1) + ".docx&action=" + @("default", "edit") | Get-Random + @("&mobileredirect=true", "") | Get-Random
-                        Type = "docx"
-                    }
-                }
-                
-                # Word rarely has AccessedResources (only 5% of time)
-                if ((Get-Random -Minimum 1 -Maximum 1001) -le 50) {
-                    $baseData.CopilotEventData.AccessedResources += @{
-                        Action        = "Read"
-                        PolicyDetails = ""
-                        SiteUrl       = "https://savingsandinvestments.sharepoint.com/sites/project/document.docx"
-                        Type          = "docx"
-                    }
-                }
-                
-                # Word typically has 1-4 messages
-                $messageCount = Get-Random -Minimum 1 -Maximum 4
-                $messageId = Get-Random -Minimum 1741000000000 -Maximum 1752999999999
-                for ($i = 0; $i -lt $messageCount; $i++) {
-                    $baseData.CopilotEventData.Messages += @{
-                        Id       = [string]($messageId + $i * 150)
-                        isPrompt = ($i % 2) -eq 0
-                    }
-                }
-            }
-            
-            "Unknown" {
-                # Unknown: 7.96% - Typically Security Copilot
-                # Unknown rarely has plugins or models
-                $baseData.CopilotEventData.AISystemPlugin = @()
-                $baseData.CopilotEventData.AccessedResources = @()
-                $baseData.CopilotEventData.ModelTransparencyDetails = @()
-                
-                # Security Copilot context pattern
-                $baseData.CopilotEventData.Contexts = @(@{
-                    Id = "https://securitycopilot.microsoft.com/sessions/" + [System.Guid]::NewGuid().ToString()
-                })
-                
-                # Different message ID pattern for Security Copilot
-                $baseData.CopilotEventData.Messages = @(@{
-                    Id       = [string](Get-Random -Minimum 10000000 -Maximum 60000000)  # Different range
-                    isPrompt = @($true, $false) | Get-Random
-                })
-                
-                # CorrelationId is more common in Unknown/Security Copilot contexts
-                if ((Get-Random -Minimum 1 -Maximum 1001) -le 250) {  # 25% rate vs 9.13% overall
-                    $baseData.CopilotEventData.CorrelationId = [System.Guid]::NewGuid().ToString()
-                }
-            }
-            
-            "Outlook" {
-                # Outlook: 7.47% - Email-heavy patterns
-                # Outlook sometimes has plugins (30% rate)
-                if ((Get-Random -Minimum 1 -Maximum 1001) -le 300) {
-                    $baseData.CopilotEventData.AISystemPlugin = @(@{Id = "BingWebSearch"; Name = "BuiltIn" })
-                    $baseData.CopilotEventData.ModelTransparencyDetails = @(@{ModelName = "DEEP_LEO" })
-                }
-                
-                # Outlook has complex email access patterns (0-35 range observed)
-                $resourceCount = 0
-                $randomValue = Get-Random -Minimum 1 -Maximum 11
-                if ($randomValue -le 2) { $resourceCount = 0 }
-                elseif ($randomValue -le 4) { $resourceCount = 3 }
-                elseif ($randomValue -le 7) { $resourceCount = 12 }
-                else { $resourceCount = 35 }
-                
-                for ($i = 0; $i -lt $resourceCount; $i++) {
-                    $emailTypes = @(
-                        @{
-                            Action        = "Read"
-                            PolicyDetails = ""
-                            SiteUrl       = "https://outlook.office365.com/owa/?ItemID=AAMkAGM5NDVhM2M4LTZjODYtNDZjNy04Mzg2LTA5ZGM3NTRkNjljNgBGAAAAAAA0ESuJMbgZRJ_vNvOOB_OiBwBLTeTfrKKMT5DCczumqIdvAAAAAAEMAABLTeTfrKKMT5DCczumqIdvAAGbT4i" + [System.Guid]::NewGuid().ToString().Substring(0, 8) + "AAA=&exvsurl=1&viewmodel=ReadMessageItem"
-                            Type          = if ((Get-Random -Minimum 1 -Maximum 3) -eq 1) { "EmailMessage" } else { "http://schema.skype.com/HyperLink" }
-                        },
-                        @{
-                            Action        = "Read"
-                            PolicyDetails = ""
-                            SiteUrl       = "https://outlook.office365.com/owa/?ItemID=AQMkAGM5NDVhM2M4LTZjODYtNDZjNy04Mzg2LTA5ZGM3NTRkNjljNgBGAAADNBEriTG4GUSfrzbzjgfjogcAS03k36yijE_QwnM7pqiHbwAAAgEMAAAAS03k36yijE_QwnM7pqiHbwABm0_I" + [System.Guid]::NewGuid().ToString().Substring(0, 8) + "AAAA==&exvsurl=1&viewmodel=ReadMessageItem"
-                            Type          = "http://schema.skype.com/HyperLink"
-                        }
-                    )
-                    $baseData.CopilotEventData.AccessedResources += $emailTypes | Get-Random
-                }
-                
-                # Outlook typically has 1-2 messages
-                $messageCount = Get-Random -Minimum 1 -Maximum 2
-                $messageId = Get-Random -Minimum 1741000000000 -Maximum 1752999999999
-                for ($i = 0; $i -lt $messageCount; $i++) {
-                    $baseData.CopilotEventData.Messages += @{
-                        Id       = [string]($messageId + $i * 180)
-                        isPrompt = ($i % 2) -eq 0
-                    }
-                }
-            }
-            
-            "Excel" {
-                # Excel: 3.05% - Spreadsheet-focused
-                # Excel typically has no plugins or models
-                $baseData.CopilotEventData.AISystemPlugin = @()
-                $baseData.CopilotEventData.ModelTransparencyDetails = @()
-                
-                # Excel always has workbook context with ContainerId
-                $baseData.CopilotEventData.Contexts = @(@{
-                    ContainerId = "Win32"
-                    Id          = "https://savingsandinvestments-my.sharepoint.com/personal/user" + (Get-Random -Minimum 1 -Maximum 999) + "_contoso_com/_layouts/15/Doc.aspx?sourcedoc=%7B" + [System.Guid]::NewGuid().ToString().ToUpper() + "%7D&file=" + @("Analysis", "Report", "Data", "Workbook", "Budget", "Financial") | Get-Random + (Get-Random -Minimum 1 -Maximum 99) + ".xlsx&action=default&mobileredirect=true"
-                    Type        = "xlsx"
-                })
-                
-                # Excel typically has single message (often isPrompt=false)
-                $baseData.CopilotEventData.Messages = @(@{
-                    Id       = [string](Get-Random -Minimum 1741000000000 -Maximum 1752999999999)
-                    isPrompt = $false  # Often false in Excel contexts (60% false vs 40% true)
-                })
-            }
-            
-            "PowerPoint" {
-                # PowerPoint: 2.30% - Presentation-focused
-                # PowerPoint typically has no plugins or models
-                $baseData.CopilotEventData.AISystemPlugin = @()
-                $baseData.CopilotEventData.ModelTransparencyDetails = @()
-                
-                # PowerPoint typically has single prompt message
-                $baseData.CopilotEventData.Messages = @(@{
-                    Id       = [string](Get-Random -Minimum 1741000000000 -Maximum 1752999999999)
-                    isPrompt = $true  # Usually prompts in PowerPoint
-                })
-                
-                # PowerPoint rarely has contexts (20% of time)
-                if ((Get-Random -Minimum 1 -Maximum 5) -eq 1) {
-                    $baseData.CopilotEventData.Contexts = @(@{
-                        Id   = "https://savingsandinvestments.sharepoint.com/sites/project" + (Get-Random -Minimum 100 -Maximum 999) + "/_layouts/15/Doc.aspx?sourcedoc=%7B" + [System.Guid]::NewGuid().ToString().ToUpper() + "%7D&file=" + @("Presentation", "Slides", "Report", "Training") | Get-Random + ".pptx"
-                        Type = "pptx"
-                    })
-                }
-            }
-            
-            "Copilot Studio" {
-                # Copilot Studio: 6,925 records (1.88%) - Agent-based interactions
-                # Studio typically has no plugins or models (custom agents handle this)
-                $baseData.CopilotEventData.AccessedResources = @()
-                $baseData.CopilotEventData.AISystemPlugin = @()
-                $baseData.CopilotEventData.ModelTransparencyDetails = @()
-                
-                # Studio messages have specific ID patterns
-                $messageCount = Get-Random -Minimum 1 -Maximum 2
-                for ($i = 0; $i -lt $messageCount; $i++) {
-                    $baseData.CopilotEventData.Messages += @{
-                        Id       = [string](Get-Random -Minimum 1740000000000 -Maximum 1750000000000) + "00" + ($i + 1)  # Studio-specific pattern
-                        isPrompt = ($i % 2) -eq 0
-                    }
-                }
-                
-                # Studio often has CorrelationId (50% vs 9.13% overall)
-                if ((Get-Random -Minimum 1 -Maximum 2) -eq 1) {
-                    $baseData.CopilotEventData.CorrelationId = [System.Guid]::NewGuid().ToString()
-                }
-                
-                # Studio contexts point to agent environments
-                if ((Get-Random -Minimum 1 -Maximum 3) -eq 1) {
-                    $baseData.CopilotEventData.Contexts = @(@{
-                        Id   = "https://copilotstudio.microsoft.com/environments/" + [System.Guid]::NewGuid().ToString() + "/bots/" + [System.Guid]::NewGuid().ToString()
-                        Type = "Agent"
-                    })
-                }
-                
-                # Authentic agent assignment (rare but real when present in Studio)
-                if ((Get-Random -Minimum 1 -Maximum 1001) -le 50) {  # 5% in Studio vs 0.8% overall
-                    $baseData.CopilotEventData.AgentId = "CopilotStudio.Declarative.T_" + [System.Guid]::NewGuid().ToString().Substring(0, 8) + "-" + [System.Guid]::NewGuid().ToString().Substring(0, 4) + "-" + [System.Guid]::NewGuid().ToString().Substring(0, 4) + "-" + [System.Guid]::NewGuid().ToString().Substring(0, 4) + "-" + [System.Guid]::NewGuid().ToString().Substring(0, 12) + "." + [System.Guid]::NewGuid().ToString()
-                    $baseData.CopilotEventData.AgentName = @("Visual Creator", "IT Service Agent", "AI Tabletop Version 1", "Secure Message Assistant", "CRU QA Analyzer Agent", "Risk and Compliance Policy") | Get-Random
-                }
-            }
-            
-            # Handle all other AppHost types with minimal patterns
-            default {
-                # Simple patterns for remaining AppHost types
-                $baseData.CopilotEventData.Messages = @(@{
-                    Id       = [string](Get-Random -Minimum 1741000000000 -Maximum 1752999999999)
-                    isPrompt = $true
-                })
-                
-                # Some AppHost types have basic plugin support
-                if ($selectedAppHost -in @("Forms", "Designer", "Edge", "Stream", "Power BI", "SharePoint")) {
-                    if ((Get-Random -Minimum 1 -Maximum 3) -eq 1) {
-                        $baseData.CopilotEventData.AISystemPlugin = @(@{Id = "BingWebSearch"; Name = "BuiltIn" })
-                        $baseData.CopilotEventData.ModelTransparencyDetails = @(@{ModelName = "DEEP_LEO" })
-                    }
-                }
-                
-                # App-specific context patterns
-                switch ($selectedAppHost) {
-                    "Forms" {
-                        $baseData.CopilotEventData.AccessedResources = @(@{
-                            Action        = "Read"
-                            PolicyDetails = ""
-                            SiteUrl       = "https://forms.office.com/Pages/DesignPageV2.aspx?id=" + [System.Guid]::NewGuid().ToString()
-                            Type          = "http://schema.skype.com/HyperLink"
-                        })
-                    }
-                    "Designer" {
-                        # Designer typically has prompt/response pairs
-                        $baseData.CopilotEventData.Messages = @(
-                            @{
-                                Id       = [string](Get-Random -Minimum 1741000000000 -Maximum 1752999999999)
-                                isPrompt = $true
-                            },
-                            @{
-                                Id       = [string](Get-Random -Minimum 1741000000000 -Maximum 1752999999999)
-                                isPrompt = $false
-                            }
-                        )
-                    }
-                    "Edge" {
-                        # Edge always has prompt/response pair
-                        $baseData.CopilotEventData.Messages = @(
-                            @{
-                                Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
-                                isPrompt = $true
-                            },
-                            @{
-                                Id       = [string](Get-Random -Minimum 1747000000000 -Maximum 1752999999999)
-                                isPrompt = $false
-                            }
-                        )
-                    }
-                    "Stream" {
-                        $baseData.CopilotEventData.AccessedResources = @(@{
-                            Action        = "Read"
-                            PolicyDetails = ""
-                            SiteUrl       = "https://web.microsoftstream.com/video/" + [System.Guid]::NewGuid().ToString()
-                            Type          = "StreamVideo"
-                        })
-                        $baseData.CopilotEventData.Contexts = @(@{
-                            Id   = "https://web.microsoftstream.com/video/" + [System.Guid]::NewGuid().ToString()
-                            Type = "mp4"
-                        })
-                    }
-                    "OneNote" {
-                        $baseData.CopilotEventData.Contexts = @(@{
-                            Id   = "https://contoso-my.sharepoint.com/personal/user" + (Get-Random -Minimum 1 -Maximum 999) + "_contoso_com/Documents/Notebooks/" + @("My Notebook", "Work Notes", "Project Notes") | Get-Random + " @ Corporate.one"
-                            Type = "one"
-                        })
-                    }
-                    "Loop" {
-                        $baseData.CopilotEventData.Contexts = @(@{
-                            Id   = "https://loop.microsoft.com/workspaces/" + [System.Guid]::NewGuid().ToString()
-                            Type = "loop"
-                        })
-                    }
-                    "Whiteboard" {
-                        $baseData.CopilotEventData.Contexts = @(@{
-                            Id   = "https://whiteboard.microsoft.com/api/v1.0/boards/" + [System.Guid]::NewGuid().ToString()
-                            Type = "whiteboard"
-                        })
-                    }
-                    "Planner" {
-                        $baseData.CopilotEventData.Contexts = @(@{
-                            Id   = "https://tasks.office.com/contoso.com/en-US/Home/Planner/#/plantaskboard?groupId=" + [System.Guid]::NewGuid().ToString() + "&planId=" + [System.Guid]::NewGuid().ToString()
-                            Type = "Plan"
-                        })
-                    }
-                }
-            }
-        }
-        
-# Convert synthetic data to JSON and replace the AuditData
-$AuditLogEntry.AuditData = ($baseData | ConvertTo-Json -Depth 10 -Compress)
-        
-# Re-parse the audit data with synthetic values
-$auditData = ConvertFrom-AuditData -AuditDataJson $AuditLogEntry.AuditData
-}
+    # Convert audit data JSON to object for processing
+    $auditData = ConvertFrom-AuditData -AuditDataJson $AuditLogEntry.AuditData
+    if (-not $auditData) {
+        Write-Warning "Convert-ToMetricsRecord: Failed to parse audit data for record $($AuditLogEntry.Identity)"
+        return $null
+    }
     
 # When NoExplodeArrays is enabled, create a simplified record with raw AuditData
 if ($NoExplodeArrays) {
@@ -2011,6 +1388,7 @@ try {
     # Display comprehensive configuration summary
     Write-Host ""
     Write-Host "=== Export Configuration Summary ===" -ForegroundColor Yellow
+    Write-Host "Script Generator: Microsoft Portable Audit eXporter (PAX) - v1.3.10" -ForegroundColor Cyan
     Write-Host "Date Range: $StartDate to $EndDate" -ForegroundColor White
     Write-Host "Output File: $OutputFile" -ForegroundColor White
     Write-Host "Authentication Mode: $Auth" -ForegroundColor White
@@ -2046,35 +1424,53 @@ try {
             $appWeights = @(41.76, 21.68, 9.93, 7.47, 3.05, 2.30, 7.96, 1.88)
             $selectedAppHost = Get-WeightedSelection -Options $appHosts -Weights $appWeights
             
-            # Generate array data for row explosion testing
+            # Generate array data for row explosion testing - matching EXACT real data structure
             $messageCount = Get-Random -Minimum 2 -Maximum 8
             $messages = @()
             for ($m = 1; $m -le $messageCount; $m++) {
+                # Realistic structure matching real data: just Id and isPrompt with more varied boolean values
                 $messages += @{
-                    Id = "msg-$m-$(Get-Random -Minimum 1000 -Maximum 9999)"
-                    Content = "This is synthetic message $m for testing row explosion functionality"
-                    Timestamp = $randomTime.AddMinutes($m).ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
-                    isPrompt = if ($m % 2 -eq 1) { $true } else { $false }
+                    Id = "$(Get-Random -Minimum 1749140000000 -Maximum 1749150000000)"
+                    isPrompt = if ($m -eq 1) { $true } else { @($true, $false, $false, $false) | Get-Random }  # First is usually prompt, others mostly false
                 }
             }
             
-            $contextCount = Get-Random -Minimum 1 -Maximum 5
+            # Real data shows Contexts as empty array, so keep it simple for testing
             $contexts = @()
-            for ($c = 1; $c -le $contextCount; $c++) {
-                $contexts += @{
-                    Type = @("File", "Email", "Meeting", "Document", "Presentation") | Get-Random
-                    Name = "SyntheticContext$c.docx"
-                    Id = [Guid]::NewGuid().ToString()
-                    Action = @("Read", "Edit", "Reference", "Analyze") | Get-Random
+            
+            # Generate AISystemPlugin data matching real structure
+            $plugins = @()
+            if ((Get-Random -Minimum 1 -Maximum 100) -le 32) {  # 32% chance of having plugins (reduced from 62%)
+                $pluginTypes = @("BingWebSearch", "EnterpriseSearch", "Microsoft365", "PowerPlatform", "GraphConnector")
+                $weights = @(70, 15, 8, 4, 3)  # BingWebSearch is most common
+                $selectedPlugin = Get-WeightedSelection -Options $pluginTypes -Weights $weights
+                $plugins += @{
+                    Id = $selectedPlugin
+                    Name = if ($selectedPlugin -eq "BingWebSearch") { "BuiltIn" } else { @("BuiltIn", "Custom", "Enterprise") | Get-Random }
                 }
             }
             
-            # Generate AISystemPlugin data
-            $plugins = @()
-            if ((Get-Random -Minimum 1 -Maximum 100) -le 62) {  # 62% chance of having plugins
-                $plugins += @{
-                    Id = if ((Get-Random -Minimum 1 -Maximum 100) -le 97) { "BingWebSearch" } else { "EnterpriseSearch" }
-                    Name = "BuiltIn"
+            # Generate AccessedResources array for more realistic explosion testing
+            $accessedResources = @()
+            $resourceCount = Get-Random -Minimum 0 -Maximum 4  # Reduced from 6 to be more realistic
+            for ($r = 1; $r -le $resourceCount; $r++) {
+                $actions = @("Read", "Edit", "Download", "View", "Share")
+                $weights = @(50, 20, 15, 10, 5)  # Read is most common
+                $accessedResources += @{
+                    Action = Get-WeightedSelection -Options $actions -Weights $weights
+                    PolicyDetails = if ((Get-Random -Minimum 1 -Maximum 100) -le 15) { "DLP_Confidential" } else { "" }  # Most are empty
+                    SiteUrl = if ((Get-Random -Minimum 1 -Maximum 100) -le 80) { "https://contoso.sharepoint.com/sites/team$r" } else { "" }
+                }
+            }
+            
+            # Generate ModelTransparencyDetails with more variety
+            $modelDetails = @()
+            if ((Get-Random -Minimum 1 -Maximum 100) -le 45) {  # 45% chance (reduced from 80%)
+                $models = @("DEEP_LEO", "GPT4", "CODEX", "GPT-3.5-TURBO", "AZURE_OPENAI")
+                $weights = @(40, 30, 15, 10, 5)
+                $modelDetails += @{
+                    ModelName = Get-WeightedSelection -Options $models -Weights $weights
+                    ModelVersion = if ((Get-Random -Minimum 1 -Maximum 100) -le 30) { "v$(Get-Random -Minimum 1 -Maximum 5).$(Get-Random -Minimum 0 -Maximum 9)" } else { $null }
                 }
             }
             
@@ -2100,8 +1496,8 @@ try {
                     Messages = $messages
                     Contexts = $contexts
                     AISystemPlugin = $plugins
-                    AccessedResources = @()
-                    ModelTransparencyDetails = @()
+                    AccessedResources = $accessedResources
+                    ModelTransparencyDetails = $modelDetails
                     MessageIds = @()
                     CorrelationId = [Guid]::NewGuid().ToString()
                     AgentId = if ((Get-Random -Minimum 1 -Maximum 1000) -le 8) { "SYSTEM_CreateGPT.declarativeCopilot" } else { $null }
@@ -2242,12 +1638,12 @@ try {
                 $queryCount++
                 # Calculate overall progress based on whether row explosion is enabled
                 if ($NoExplodeArrays) {
-                    # When NoExplodeArrays is enabled: queries = 90%, post = 10%
-                    $percentComplete = [math]::Round(($queryCount / $totalQueries) * 90, 1)
+                    # When NoExplodeArrays is enabled: queries = 80%, post = 20%
+                    $percentComplete = [math]::Round(($queryCount / $totalQueries) * 80, 1)
                 }
                 else {
-                    # When row explosion is enabled: queries = 50%, explosion = 40%, post = 10%
-                    $percentComplete = [math]::Round(($queryCount / $totalQueries) * 50, 1)
+                    # When row explosion is enabled: queries = 30%, explosion = 65%, post = 5%
+                    $percentComplete = [math]::Round(($queryCount / $totalQueries) * 30, 1)
                 }
                 Write-Host "[$percentComplete%] Query $queryCount/$totalQueries - $activityList ($($currentTime.ToString('yyyy-MM-dd HH:mm')) - $($blockEnd.ToString('HH:mm')))" -ForegroundColor Gray
                 
@@ -2414,6 +1810,11 @@ try {
     foreach ($log in $uniqueLogs) {
         $i++
         
+        # DEBUG: Log NoExplodeArrays status for troubleshooting
+        if ($i -eq 1) {
+            Write-Host "DEBUG: NoExplodeArrays = $NoExplodeArrays, DevTest = $DevTest" -ForegroundColor Red
+        }
+        
         # Calculate overall progress based on whether row explosion is enabled
         if ($NoExplodeArrays) {
             # When row explosion is disabled: queries = 80%, post = 20%
@@ -2424,8 +1825,8 @@ try {
             $postProgress = 30 + [math]::Round(($i / $postCategories.convert) * 65, 1)
         }
         
-        Write-Host "$postProgress - $(if ($NoExplodeArrays) { 'Post' } else { 'Row Explosion' }) $i/$($postCategories.convert) - Converting" -ForegroundColor Gray
-        if ($i -le 5 -and ($i % 50) -eq 0) { Write-Host "Converting records..." -ForegroundColor Gray }
+        Write-Host "$postProgress% - $(if ($NoExplodeArrays) { 'Post' } else { 'Row Explosion' }) $i/$($postCategories.convert) - Converting" -ForegroundColor Cyan
+        if ($i -le 5 -and ($i % 50) -eq 0) { Write-Host "Converting records..." -ForegroundColor Green }
         
         # Ensure clean parameter passing to avoid positional parameter issues
         try {
@@ -2472,7 +1873,7 @@ try {
             
             $metricsData.Add($metricsRecord) | Out-Null
         }
-        Write-Host "PA:POST progress $(if ($NoExplodeArrays) { 'convert' } else { 'explode' }) $i/$($postCategories.convert)"
+        Write-Host "PA:POST progress $(if ($NoExplodeArrays) { 'convert' } else { 'explode' }) $i/$($postCategories.convert) - $postProgress%" -ForegroundColor Yellow
     }
     
     # Report row explosion statistics
