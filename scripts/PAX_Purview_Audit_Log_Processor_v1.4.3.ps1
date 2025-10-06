@@ -102,8 +102,6 @@ param(
     [ValidateSet('Off', 'On', 'Auto')]
     [string]$ParallelMode = 'Off',
     [Parameter(Mandatory = $false)]
-    [switch]$NoProgress,
-    [Parameter(Mandatory = $false)]
     [ValidateRange(1, 10000)]
     [int]$ExportProgressInterval = 10,
 
@@ -318,9 +316,11 @@ function Update-Progress {
     }
     $statusText = if ($Status) { "$Status :: $composite" } else { $composite }
     if ($statusText.Length -gt 180) { $statusText = $statusText.Substring(0, 177) + '...' }
-    if (-not $NoProgress) { try { $overallOp = "Overall $pct%"; Write-Progress -Id 1 -Activity 'Purview Export' -Status $statusText -CurrentOperation $overallOp -PercentComplete $pct } catch {} }
+    # Inline console output only - no Write-Progress blue bar
 }
-function Complete-Progress { try { Write-Progress -Id 1 -Activity 'Purview Export' -Completed } catch {} }
+function Complete-Progress { 
+    # No-op function - progress tracking uses inline console output only
+}
 
 $script:highVolumeActivities = @('CopilotInteraction', 'MessageSent', 'FileAccessed', 'MailItemsAccessed')
 $script:mediumVolumeActivities = @('MessageRead', 'FileModified', 'MeetingDetail', 'SearchQueryPerformed')
@@ -425,7 +425,6 @@ if ($RAWInputCSV) {
         ForcedExplosion        = $ForcedRawInputCsvExplosion
         ExplodeDeep            = $ExplodeDeep.IsPresent
         OutputFile             = $OutputFile
-        NoProgress             = $NoProgress.IsPresent
         ExportProgressInterval = $ExportProgressInterval
         PSVersion              = $PSVersionTable.PSVersion.ToString()
         PSEdition              = $PSVersionTable.PSEdition
@@ -451,7 +450,6 @@ else {
         EnableParallelLegacy   = $EnableParallel.IsPresent
         ParallelMode           = $ParallelMode
         MaxParallelGroups      = $MaxParallelGroups
-        NoProgress             = $NoProgress.IsPresent
         ExportProgressInterval = $ExportProgressInterval
         PSVersion              = $PSVersionTable.PSVersion.ToString()
         PSEdition              = $PSVersionTable.PSEdition
@@ -1411,7 +1409,10 @@ try {
     Write-LogHost ("Groups executed sequentially: {0}" -f ($sequentialGroups + ($queryPlan.Count - $parallelGroupsUsed - $sequentialGroups))) -ForegroundColor Gray
     Write-LogHost ("MaxConcurrency: {0} | MaxParallelGroups: {1} | ParallelMode: {2}" -f $MaxConcurrency, $MaxParallelGroups, $ParallelMode) -ForegroundColor Gray
     if ($ParallelMode -eq 'Auto') { $highGroups = ($queryPlan | Where-Object { $_.Group -eq 'High' }).Count; $mediumGroups = ($queryPlan | Where-Object { $_.Group -eq 'Medium' }).Count; $lowGroups = ($queryPlan | Where-Object { $_.Group -eq 'Low' }).Count; $activitiesTotal = ($queryPlan | ForEach-Object { $_.Activities.Count } | Measure-Object -Sum).Sum; $groupsTotal = $queryPlan.Count; $autoStatus = if ($parallelOverallEnabled) { 'met' } else { 'not met' }; Write-LogHost ("Auto criteria (PS7+, MPG>0, MC>1, <=1 High, >=1 Med/Low, activities<=15, groups>1): {0}; High={1} Medium={2} Low={3} Activities={4} Groups={5}" -f $autoStatus, $highGroups, $mediumGroups, $lowGroups, $activitiesTotal, $groupsTotal) -ForegroundColor Gray }
-    if (-not $NoProgress) { $totalMs = [Math]::Max(1, ($script:metrics.QueryMs + $script:metrics.ExplosionMs + $script:metrics.ExportMs)); $qPct = if ($totalMs -gt 0) { [Math]::Round(($script:metrics.QueryMs / $totalMs) * 100, 1) } else { 0 }; $xPct = if ($totalMs -gt 0 -and $script:metrics.ExplosionMs -gt 0) { [Math]::Round(($script:metrics.ExplosionMs / $totalMs) * 100, 1) } else { 0 }; $ePct = if ($totalMs -gt 0) { [Math]::Round(($script:metrics.ExportMs / $totalMs) * 100, 1) } else { 0 }; $startStamp = try { $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') } catch { '' }; if ($startStamp) { Write-Host ("Execution start time (UTC): {0} UTC" -f $startStamp) }; Write-Host ("Final durations -> query={0}ms ({1}%)  explosion={2}ms ({3}%)  export={4}ms ({5}%)" -f $script:metrics.QueryMs, $qPct, $script:metrics.ExplosionMs, $xPct, $script:metrics.ExportMs, $ePct) }
+    
+    # Always show timing summary (inline console output)
+    $totalMs = [Math]::Max(1, ($script:metrics.QueryMs + $script:metrics.ExplosionMs + $script:metrics.ExportMs)); $qPct = if ($totalMs -gt 0) { [Math]::Round(($script:metrics.QueryMs / $totalMs) * 100, 1) } else { 0 }; $xPct = if ($totalMs -gt 0 -and $script:metrics.ExplosionMs -gt 0) { [Math]::Round(($script:metrics.ExplosionMs / $totalMs) * 100, 1) } else { 0 }; $ePct = if ($totalMs -gt 0) { [Math]::Round(($script:metrics.ExportMs / $totalMs) * 100, 1) } else { 0 }; $startStamp = try { $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') } catch { '' }; if ($startStamp) { Write-Host ("Execution start time (UTC): {0} UTC" -f $startStamp) }; Write-Host ("Final durations -> query={0}ms ({1}%)  explosion={2}ms ({3}%)  export={4}ms ({5}%)" -f $script:metrics.QueryMs, $qPct, $script:metrics.ExplosionMs, $xPct, $script:metrics.ExportMs, $ePct)
+
 
     Write-LogHost ""; Write-LogHost "The CSV file contains the following columns (plus many more if -ExplodeDeep is used):" -ForegroundColor Cyan
     Write-LogHost "- RecordType, CreationDate, UserIds, Operations" -ForegroundColor Gray
