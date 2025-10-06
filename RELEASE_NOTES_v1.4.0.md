@@ -1,7 +1,9 @@
 # PAX Release v1.4.0 - Production Release
+
 **Release Date**: October 6, 2025
 
 ## Overview
+
 This release marks the production-ready milestone for the **CopilotInteraction_Purview_Export.ps1** enterprise audit export engine. All critical bugs have been resolved, and the script is now validated for customer deployment.
 
 ---
@@ -9,6 +11,7 @@ This release marks the production-ready milestone for the **CopilotInteraction_P
 ## 🎯 What's New in v1.4.0
 
 ### Production Validation & Hardening
+
 - ✅ **All critical correctness bugs resolved** from previous development cycles
 - ✅ **Security audit passed** - script meets enterprise security standards
 - ✅ **Customer-facing documentation** cleaned and validated
@@ -16,6 +19,7 @@ This release marks the production-ready milestone for the **CopilotInteraction_P
 - ✅ **Zero syntax errors** - fully validated PowerShell code
 
 ### Script Enhancements (CopilotInteraction_Purview_Export.ps1)
+
 - **ISO 8601 Timestamp Normalization**: Both `CreationDate` and `CreationTime` now consistently output in UTC format (`yyyy-MM-ddTHH:mm:ss.fffZ`)
 - **Late Column Discovery**: Tracks and reports columns discovered after schema freeze with first-25 enumeration
 - **Fast CSV Writer**: Optimized UTF-8 streaming output bypassing `Export-Csv` overhead
@@ -30,12 +34,14 @@ This release marks the production-ready milestone for the **CopilotInteraction_P
 ## 📋 System Requirements
 
 ### Minimum Requirements
+
 - **PowerShell**: 5.1 or later (PowerShell 7+ **strongly recommended** for optimal performance)
 - **ExchangeOnlineManagement Module**: Any reasonably current version
 - **Permissions**: Exchange Online audit log read access
 - **Operating System**: Windows, macOS, or Linux
 
 ### Recommended Configuration
+
 - **PowerShell 7.4+** for best performance and parallel processing support
 - **16 GB RAM** for large dataset processing (100K+ records)
 - **Modern multi-core CPU** for parallel replay mode
@@ -53,15 +59,18 @@ This release marks the production-ready milestone for the **CopilotInteraction_P
 **Workarounds** (choose one):
 
 1. **🔧 Recommended Solution**: Upgrade to **PowerShell 7+**
+
    - Install from: https://aka.ms/powershell
    - PowerShell 7 has significantly improved garbage collection and memory management
    - Enables parallel processing features for even faster performance
    - No script changes required
 
 2. **⚙️ Alternative: Reduce Chunk Size**
+
    ```powershell
    .\CopilotInteraction_Purview_Export.ps1 -RAWInputCSV "input.csv" -StreamingChunkSize 3000
    ```
+
    - Manually sets chunk size to 3,000 rows (default auto-boost is 15,000)
    - Trades some throughput for more responsive processing
    - Eliminates long pauses in PowerShell 5.1
@@ -75,6 +84,7 @@ This release marks the production-ready milestone for the **CopilotInteraction_P
    - May help with datasets that have evolving schemas
 
 **Important Notes**:
+
 - This is a **quality-of-life issue**, not a correctness or security problem
 - The script **completes successfully** in PowerShell 5.1, just with extended pauses
 - Ctrl-C may be unresponsive during pauses; if needed, use Task Manager/Activity Monitor to terminate
@@ -85,12 +95,15 @@ This release marks the production-ready milestone for the **CopilotInteraction_P
 ## 🚀 Quick Start Examples
 
 ### Example 1: Live Query - Previous Day (Default)
+
 ```powershell
 .\CopilotInteraction_Purview_Export.ps1 -OutputFile "copilot_audit.csv"
 ```
+
 Queries all `CopilotInteraction` events from the previous day (automatic window).
 
 ### Example 2: Live Query - Specific Date Range
+
 ```powershell
 .\CopilotInteraction_Purview_Export.ps1 `
   -StartDate "2025-10-01" `
@@ -99,15 +112,18 @@ Queries all `CopilotInteraction` events from the previous day (automatic window)
 ```
 
 ### Example 3: Offline Replay with Deep Explosion
+
 ```powershell
 .\CopilotInteraction_Purview_Export.ps1 `
   -RAWInputCSV "raw_audit_logs.csv" `
   -ExplodeDeep `
   -OutputFile "exploded_audit.csv"
 ```
+
 Processes a previously exported CSV with full deep-flatten of nested JSON structures.
 
 ### Example 4: Array Explosion (Purview Schema)
+
 ```powershell
 .\CopilotInteraction_Purview_Export.ps1 `
   -StartDate "2025-09-01" `
@@ -115,9 +131,11 @@ Processes a previously exported CSV with full deep-flatten of nested JSON struct
   -ExplodeArrays `
   -OutputFile "september_exploded.csv"
 ```
+
 Exports with Purview's 29-column exploded schema (Context, Message, AccessedResource arrays).
 
 ### Example 5: PowerShell 7 with Parallel Processing
+
 ```powershell
 pwsh  # Launch PowerShell 7
 .\CopilotInteraction_Purview_Export.ps1 `
@@ -126,6 +144,7 @@ pwsh  # Launch PowerShell 7
   -ParallelMode Auto `
   -OutputFile "weekly_fast.csv"
 ```
+
 Leverages parallel query execution for multi-activity date ranges.
 
 ---
@@ -133,6 +152,7 @@ Leverages parallel query execution for multi-activity date ranges.
 ## 📊 Key Features
 
 ### Data Export Modes
+
 - **Live Query Mode**: Connects to Exchange Online to retrieve audit logs
 - **Replay Mode**: Processes previously exported CSV files offline
 - **Standard Output**: One-to-one record transformation with aggregated metrics
@@ -140,6 +160,7 @@ Leverages parallel query execution for multi-activity date ranges.
 - **Deep Flatten**: Recursive flattening of all nested JSON structures (hundreds of columns)
 
 ### Performance Optimizations
+
 - **Streaming Architecture**: Processes records in chunks to minimize memory footprint
 - **Adaptive Sizing**: Automatically adjusts chunk size based on schema complexity
 - **Schema Sampling**: Analyzes first 2,000 rows to freeze column order before bulk processing
@@ -147,6 +168,7 @@ Leverages parallel query execution for multi-activity date ranges.
 - **Fast CSV Writer**: Custom UTF-8 StreamWriter with manual RFC 4180 escaping
 
 ### Enterprise Features
+
 - **Retry Logic**: Exponential backoff with automatic block subdivision on throttling
 - **Progress Tracking**: Weighted phase progress (Query/Explosion/Export) with real-time updates
 - **Activity Learning**: Adapts block sizes based on historical query patterns
@@ -157,21 +179,22 @@ Leverages parallel query execution for multi-activity date ranges.
 
 ## 🔧 Common Parameters
 
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `-StartDate` | Query start date (yyyy-MM-dd) | Previous day |
-| `-EndDate` | Query end date (yyyy-MM-dd) | Today |
-| `-OutputFile` | Path to output CSV file | `CopilotInteraction_Export.csv` |
-| `-RAWInputCSV` | Replay mode: process existing CSV | *(none - live query)* |
-| `-ExplodeArrays` | Use Purview exploded schema | `$false` |
-| `-ExplodeDeep` | Deep flatten all nested structures | `$false` |
-| `-StreamingChunkSize` | Rows per chunk | `5000` (adaptive) |
-| `-StreamingSchemaSample` | Rows to sample for schema | `2000` |
-| `-ParallelMode` | Parallel execution: Auto/On/Off | `Off` |
-| `-MaxConcurrency` | Max parallel threads (PS7+) | `4` |
-| `-NoProgress` | Disable progress bar | `$false` |
+| Parameter                | Description                        | Default                         |
+| ------------------------ | ---------------------------------- | ------------------------------- |
+| `-StartDate`             | Query start date (yyyy-MM-dd)      | Previous day                    |
+| `-EndDate`               | Query end date (yyyy-MM-dd)        | Today                           |
+| `-OutputFile`            | Path to output CSV file            | `CopilotInteraction_Export.csv` |
+| `-RAWInputCSV`           | Replay mode: process existing CSV  | _(none - live query)_           |
+| `-ExplodeArrays`         | Use Purview exploded schema        | `$false`                        |
+| `-ExplodeDeep`           | Deep flatten all nested structures | `$false`                        |
+| `-StreamingChunkSize`    | Rows per chunk                     | `5000` (adaptive)               |
+| `-StreamingSchemaSample` | Rows to sample for schema          | `2000`                          |
+| `-ParallelMode`          | Parallel execution: Auto/On/Off    | `Off`                           |
+| `-MaxConcurrency`        | Max parallel threads (PS7+)        | `4`                             |
+| `-NoProgress`            | Disable progress bar               | `$false`                        |
 
 For complete parameter documentation, run:
+
 ```powershell
 Get-Help .\CopilotInteraction_Purview_Export.ps1 -Full
 ```
@@ -200,6 +223,7 @@ Get-Help .\CopilotInteraction_Purview_Export.ps1 -Full
 ## 🐛 Bug Fixes from Previous Versions
 
 ### Critical Fixes (v1.3.11 → v1.3.12)
+
 - ✅ CSV writer scope bug resolved (was using `$global:`, now correctly uses `$script:`)
 - ✅ CreationTime timestamp normalization added (now matches CreationDate format)
 - ✅ Late column discovery tracking implemented with enumeration preview
@@ -207,6 +231,7 @@ Get-Help .\CopilotInteraction_Purview_Export.ps1 -Full
 - ✅ Customer-facing comments cleaned (removed "experimental", "magic numbers", build notes)
 
 ### Validation Results
+
 - **Syntax**: No errors detected
 - **Security**: Passed enterprise security review
 - **Performance**: Streaming architecture tested with 367K+ record datasets
@@ -217,17 +242,20 @@ Get-Help .\CopilotInteraction_Purview_Export.ps1 -Full
 ## 🎉 Getting Started
 
 1. **Install PowerShell 7** (recommended):
+
    ```powershell
    winget install Microsoft.PowerShell
    # Or visit: https://aka.ms/powershell
    ```
 
 2. **Install ExchangeOnlineManagement Module**:
+
    ```powershell
    Install-Module -Name ExchangeOnlineManagement -Scope CurrentUser
    ```
 
 3. **Run Your First Export**:
+
    ```powershell
    pwsh  # Launch PowerShell 7
    cd "path\to\scripts"
