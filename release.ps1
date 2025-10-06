@@ -206,13 +206,33 @@ function Update-ExportScriptVersion {
     }
 
     $oldPath = $existingScript.FullName
+    $oldFilename = $existingScript.Name
     $newFilename = "PAX_Purview_Audit_Log_Processor_v$NewVersion.ps1"
     $newPath = Join-Path (Split-Path $oldPath -Parent) $newFilename
     
-    Write-Status "Renaming export script: $($existingScript.Name) -> $newFilename"
+    # Extract old version from filename for verification
+    if ($oldFilename -match "v([\d\.]+)\.ps1$") {
+        $oldVersion = $matches[1]
+        Write-Status "Current script version: v$oldVersion"
+    }
+    
+    Write-Status "Updating export script: $oldFilename -> $newFilename"
 
     try {
-        # Read content
+        # STEP 1: Archive old version to LegacyScripts folder (preserve with original filename)
+        if ($oldPath -ne $newPath) {
+            $legacyFolder = "scripts/LegacyScripts"
+            if (-not (Test-Path $legacyFolder)) {
+                New-Item -Path $legacyFolder -ItemType Directory -Force | Out-Null
+                Write-Success "Created LegacyScripts folder"
+            }
+            
+            $legacyPath = Join-Path $legacyFolder $oldFilename
+            Copy-Item -Path $oldPath -Destination $legacyPath -Force
+            Write-Success "Archived old version to: LegacyScripts/$oldFilename"
+        }
+        
+        # STEP 2: Read and update content for new version
         $content = Get-Content $oldPath -Raw -ErrorAction Stop
         $updated = $false
         
@@ -247,15 +267,15 @@ function Update-ExportScriptVersion {
             Write-Success "Updated script filename references in help examples"
         }
         
-        # Save to new file
+        # STEP 3: Save updated content to new versioned filename
         if ($updated -or ($oldPath -ne $newPath)) {
             $content | Set-Content -Path $newPath -Encoding UTF8 -NoNewline
             Write-Success "Saved updated script to: $newFilename"
             
-            # Remove old file if name changed
+            # Remove old file from scripts/ root (already archived in LegacyScripts)
             if ($oldPath -ne $newPath) {
                 Remove-Item -Path $oldPath -Force
-                Write-Success "Removed old script file: $($existingScript.Name)"
+                Write-Success "Removed old script file from root: $oldFilename (preserved in LegacyScripts)"
             }
         }
         else {
