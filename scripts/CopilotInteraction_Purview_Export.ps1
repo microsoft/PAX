@@ -272,26 +272,24 @@ if ($legacyParallelSwitchUsed) { $ParallelMode = 'On' }
 function Get-ParallelActivationDecision { param([array]$QueryPlan, [string]$ParallelMode, [int]$MaxParallelGroups, [int]$MaxConcurrency) $ps7 = ($PSVersionTable.PSVersion.Major -ge 7); $highGroups = ($QueryPlan | Where-Object { $_.Group -eq 'High' }).Count; $mediumGroups = ($QueryPlan | Where-Object { $_.Group -eq 'Medium' }).Count; $lowGroups = ($QueryPlan | Where-Object { $_.Group -eq 'Low' }).Count; $totalGroups = $QueryPlan.Count; $totalActivities = ($QueryPlan | ForEach-Object { $_.Activities.Count } | Measure-Object -Sum).Sum; $autoEligible = $ps7 -and ($MaxParallelGroups -gt 0) -and ($MaxConcurrency -gt 1) -and ($highGroups -le 1) -and (($mediumGroups + $lowGroups) -ge 1) -and ($totalActivities -le 15) -and ($totalGroups -gt 1); switch ($ParallelMode) { 'On' { return @{ Enabled = ($ps7 -and $MaxParallelGroups -gt 0 -and $MaxConcurrency -gt 0); Reason = if ($ps7) { 'Forced On' } else { 'PS < 7 (cannot parallel)' }; AutoEligible = $autoEligible } } 'Auto' { return @{ Enabled = $autoEligible; Reason = if ($autoEligible) { 'Auto criteria met' } else { 'Auto criteria not met' }; AutoEligible = $autoEligible } } default { return @{ Enabled = $false; Reason = 'Mode Off'; AutoEligible = $autoEligible } } } }
 
 $weights = if ($effectiveExplodeForProgress) { @{ Query = 0.30; Explosion = 0.60; Export = 0.10 } } else { @{ Query = 0.80; Explosion = 0.00; Export = 0.20 } }
-# Replay mode: drop Query phase weight (no live querying) & renormalize so Overall begins at 0%
+# Replay mode: Use Parsing phase (10%), Explosion (80%), Export (10%) - no Query phase
 if ($RAWInputCSV) {
     try {
-        $weights.Query = 0.0
-        $sum = ($weights.GetEnumerator() | Measure-Object -Property Value -Sum).Sum
-        if ($sum -gt 0) {
-            foreach ($k in @('Query', 'Explosion', 'Export')) { if ($weights.ContainsKey($k)) { $weights[$k] = [math]::Round(($weights[$k] / $sum), 4) } }
-        }
+        $weights = @{ Parsing = 0.10; Query = 0.0; Explosion = 0.80; Export = 0.10 }
     }
     catch {}
 }
-$script:progressState = @{ Weights = $weights; Phase = 'Query'; Query = @{Current = 0; Total = 0 }; Explode = @{Current = 0; Total = 0 }; Export = @{Current = 0; Total = 1 } }
-function Set-ProgressPhase { param([ValidateSet('Query', 'Explosion', 'Export', 'Complete')] [string]$Phase, [string]$Status = ''); $script:progressState.Phase = $Phase; Update-Progress -Status $Status }
+$script:progressState = @{ Weights = $weights; Phase = 'Query'; Parsing = @{Current = 0; Total = 0 }; Query = @{Current = 0; Total = 0 }; Explode = @{Current = 0; Total = 0 }; Export = @{Current = 0; Total = 1 } }
+function Set-ProgressPhase { param([ValidateSet('Parsing', 'Query', 'Explosion', 'Export', 'Complete')] [string]$Phase, [string]$Status = ''); $script:progressState.Phase = $Phase; Update-Progress -Status $Status }
 function Update-Progress {
     param([string]$Status = '')
-    $w = $script:progressState.Weights; $qs = $script:progressState.Query; $es = $script:progressState.Explode; $xs = $script:progressState.Export
+    $w = $script:progressState.Weights; $ps = $script:progressState.Parsing; $qs = $script:progressState.Query; $es = $script:progressState.Explode; $xs = $script:progressState.Export
+    $pPct = if ($ps.Total -gt 0 -and $w.ContainsKey('Parsing') -and $w.Parsing -gt 0) { [double]$ps.Current / [double]$ps.Total } else { 0.0 }
     $qPct = if ($qs.Total -gt 0) { [double]$qs.Current / [double]$qs.Total } else { 0.0 }
     $ePct = if ($es.Total -gt 0 -and $w.Explosion -gt 0) { [double]$es.Current / [double]$es.Total } else { 0.0 }
     $xPct = if ($xs.Total -gt 0) { [double]$xs.Current / [double]$xs.Total } else { 0.0 }
-    $overall = ($w.Query * $qPct) + ($w.Explosion * $ePct) + ($w.Export * $xPct)
+    $parsingWeight = if ($w.ContainsKey('Parsing')) { $w.Parsing } else { 0.0 }
+    $overall = ($parsingWeight * $pPct) + ($w.Query * $qPct) + ($w.Explosion * $ePct) + ($w.Export * $xPct)
     $pct = [int]([Math]::Round($overall * 100))
     $phase = $script:progressState.Phase
     $qDetail = if ($w.Query -gt 0 -and $qs.Total -gt 0) { "{0}/{1}({2}%)" -f $qs.Current, $qs.Total, ([int]([Math]::Round($qPct * 100))) } else { '' }
@@ -1068,10 +1066,17 @@ try {
     $explosionError = $null
     
     # PERFORMANCE OPTIMIZATION: Pre-parse all JSON to avoid repeated ConvertFrom-Json in tight loop
+    if ($RAWInputCSV) {
+        # Set parsing phase and progress tracking (replay mode only)
+        Set-ProgressPhase -Phase 'Parsing' -Status 'Pre-parsing JSON from CSV'
+        $script:progressState.Parsing.Total = [int]$allLogs.Count
+        $script:progressState.Parsing.Current = 0
+    }
     Write-LogHost "Pre-parsing AuditData JSON for $($allLogs.Count) records (performance optimization)..." -ForegroundColor Cyan
     Write-LogHost "NOTE: Pre-parsing may take 5-20 minutes depending on dataset size. Large enterprise exports (50K+ users, 1 month) typically require 10-15 minutes." -ForegroundColor DarkYellow
     $parseStart = Get-Date
     $parseErrors = 0
+    $parseCount = 0
     foreach ($log in $allLogs) {
         if ($log.AuditData -and $log.AuditData -is [string]) {
             try {
@@ -1087,6 +1092,16 @@ try {
         else {
             # Already parsed or missing
             Add-Member -InputObject $log -NotePropertyName '_ParsedAuditData' -NotePropertyValue $log.AuditData -Force
+        }
+        
+        # Update parsing progress (replay mode only)
+        if ($RAWInputCSV) {
+            $parseCount++
+            $script:progressState.Parsing.Current = $parseCount
+            # Update progress bar every 500 records or at completion
+            if ($parseCount % 500 -eq 0 -or $parseCount -eq $allLogs.Count) {
+                Update-Progress -Status "Pre-parsing JSON: $parseCount/$($allLogs.Count)"
+            }
         }
     }
     $parseEnd = Get-Date
