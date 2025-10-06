@@ -57,16 +57,19 @@ The `release.ps1` script is the **100% authoritative release manager** for PAX. 
 When you run `.\release.ps1 -Patch`:
 
 #### Step 1: Version Calculation
+
 - Reads current version from `package.json`: **1.4.2**
 - Calculates new version: **1.4.3**
 - Prompts for confirmation
 
 #### Step 2: Script Archiving (NEW!)
+
 - **Archives** old script to `scripts/LegacyScripts/PAX_Purview_Audit_Log_Processor_v1.4.2.ps1`
 - This preserves the **exact filename** with the old version number
 - Creates `LegacyScripts/` folder if it doesn't exist
 
 #### Step 3: Script Versioning
+
 - **Reads** `scripts/PAX_Purview_Audit_Log_Processor_v1.4.2.ps1`
 - **Updates** header: `# Portable Audit eXporter (PAX) - Purview Audit Log Processor - v1.4.3`
 - **Updates** `$ScriptVersion = '1.4.3'` (if variable exists)
@@ -75,21 +78,25 @@ When you run `.\release.ps1 -Patch`:
 - **Deletes** old file from `scripts/` root (already archived)
 
 #### Step 4: Other File Updates
+
 - `package.json`: `"version": "1.4.3"`
 - `src-tauri/tauri.conf.json`: `"version": "1.4.3"`
 - `src-tauri/Cargo.toml`: `version = "1.4.3"` (package only, not dependencies)
 
 #### Step 5: README Synchronization
+
 - **Updates** script reference: `` Script: `PAX_Purview_Audit_Log_Processor_v1.4.3.ps1` ``
 - **Updates** all command examples (20+ occurrences) to reference `v1.4.3.ps1`
 
 #### Step 6: Git Commit & Tag
+
 - Stages all modified files
 - Creates commit: `"chore(release): bump version to 1.4.3"`
 - Creates tag: `v1.4.3`
 - **Triggers GitHub Actions workflow** to build installers/executables
 
 #### Step 7: Summary
+
 - Displays version change summary
 - Shows commit hash and tag
 - Reminds to push: `git push origin main --tags`
@@ -121,6 +128,7 @@ scripts/
 ```
 
 **Why preserve old versions?**
+
 - Customer support (users may reference older version)
 - Rollback capability
 - Historical comparison
@@ -129,6 +137,7 @@ scripts/
 ### Version Consistency Rules
 
 **CRITICAL**: The version number in the filename MUST match:
+
 1. ✅ The header comment (line 1)
 2. ✅ The `$ScriptVersion` variable (if present)
 3. ✅ All example commands in help section
@@ -143,12 +152,14 @@ scripts/
 If you need to manually update versions (e.g., testing, emergency fix):
 
 ### DO NOT:
+
 - ❌ Manually rename the script file
 - ❌ Edit version numbers in multiple places
 - ❌ Create git tags manually
 - ❌ Skip the archive step
 
 ### DO:
+
 - ✅ Use `.\release.ps1` with appropriate flag
 - ✅ Let automation handle all file updates
 - ✅ Verify version consistency after changes
@@ -200,7 +211,8 @@ Error: `Export script not found matching pattern`
 
 **Cause**: Script filename doesn't match `PAX_Purview_Audit_Log_Processor_v*.ps1`
 
-**Fix**: 
+**Fix**:
+
 1. Manually rename script to match pattern: `PAX_Purview_Audit_Log_Processor_v1.4.2.ps1`
 2. Update header comment to match: `# ... - v1.4.2`
 3. Run `.\release.ps1 -Patch`
@@ -210,6 +222,7 @@ Error: `Export script not found matching pattern`
 **Cause**: First release after archive feature added
 
 **Fix**: Folder will be created automatically on next release. Or manually:
+
 ```powershell
 New-Item -Path "scripts/LegacyScripts" -ItemType Directory
 ```
@@ -234,6 +247,7 @@ New-Item -Path "scripts/LegacyScripts" -ItemType Directory
 ## Support
 
 For version management issues:
+
 1. Check this document first
 2. Review `release.ps1` script comments
 3. Examine git history: `git log --oneline --grep="release"`

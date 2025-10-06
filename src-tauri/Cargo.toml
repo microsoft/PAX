@@ -1,6 +1,6 @@
 [package]
 name = "portable-audit-exporter"
-version = "1.4.2"
+version = "1.4.3"
 edition = "2021"
 description = "Portable Audit eXporter (PAX) - Multi-source audit log export wizard"
 authors = ["Your Name"]
