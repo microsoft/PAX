@@ -117,7 +117,7 @@ param(
     [int]$StreamingChunkSize = 5000
 )
 
-# Script version: dynamically read from package.json (single source of truth maintained by release.ps1)
+# Script version: dynamically read from package.json
 try {
     $pkgPath = Join-Path $PSScriptRoot '..' | Join-Path -ChildPath 'package.json'
     if (Test-Path $pkgPath) { $ScriptVersion = ((Get-Content -Raw $pkgPath) | ConvertFrom-Json).version }
