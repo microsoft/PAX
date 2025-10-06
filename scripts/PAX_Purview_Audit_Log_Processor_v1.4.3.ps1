@@ -317,11 +317,25 @@ function Update-Progress {
     $statusText = if ($Status) { "$Status :: $composite" } else { $composite }
     if ($statusText.Length -gt 180) { $statusText = $statusText.Substring(0, 177) + '...' }
     
-    # Display inline progress on new line for visibility
+    # Display persistent progress bar that overwrites itself on the same line
     $progressLine = "[Overall $pct%] $statusText"
-    Write-Host $progressLine -ForegroundColor Cyan
+    try {
+        # Get terminal width and pad the line to clear previous content
+        $termWidth = try { $Host.UI.RawUI.WindowSize.Width } catch { 120 }
+        if ($progressLine.Length -lt $termWidth - 1) {
+            $progressLine = $progressLine.PadRight($termWidth - 1)
+        }
+        # Use carriage return to overwrite the same line
+        Write-Host "`r$progressLine" -NoNewline -ForegroundColor Cyan
+    }
+    catch {
+        Write-Host $progressLine -ForegroundColor Cyan
+    }
 }
-function Complete-Progress { }
+function Complete-Progress { 
+    # Move to next line after progress completes
+    try { Write-Host "" } catch {}
+}
 
 $script:highVolumeActivities = @('CopilotInteraction', 'MessageSent', 'FileAccessed', 'MailItemsAccessed')
 $script:mediumVolumeActivities = @('MessageRead', 'FileModified', 'MeetingDetail', 'SearchQueryPerformed')
