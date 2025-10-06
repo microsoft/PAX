@@ -280,7 +280,13 @@ if ($RAWInputCSV) {
 $script:progressState = @{ Weights = $weights; Phase = 'Query'; Parsing = @{Current = 0; Total = 0 }; Query = @{Current = 0; Total = 0 }; Explode = @{Current = 0; Total = 0 }; Export = @{Current = 0; Total = 1 } }
 function Set-ProgressPhase { param([ValidateSet('Parsing', 'Query', 'Explosion', 'Export', 'Complete')] [string]$Phase, [string]$Status = ''); $script:progressState.Phase = $Phase; Update-Progress -Status $Status }
 function Update-Progress {
-    param([string]$Status = '')
+    param(
+        [string]$Status = '',
+        [int]$BatchCurrent = 0,
+        [int]$BatchTotal = 0,
+        [int]$BatchRangeStart = 0,
+        [int]$BatchRangeEnd = 0
+    )
     $w = $script:progressState.Weights; $ps = $script:progressState.Parsing; $qs = $script:progressState.Query; $es = $script:progressState.Explode; $xs = $script:progressState.Export
     $pPct = if ($ps.Total -gt 0 -and $w.ContainsKey('Parsing') -and $w.Parsing -gt 0) { [double]$ps.Current / [double]$ps.Total } else { 0.0 }
     $qPct = if ($qs.Total -gt 0) { [double]$qs.Current / [double]$qs.Total } else { 0.0 }
@@ -292,8 +298,23 @@ function Update-Progress {
     $phase = $script:progressState.Phase
     $pDetail = if ($w.ContainsKey('Parsing') -and $w.Parsing -gt 0 -and $ps.Total -gt 0) { "{0}/{1}({2}%)" -f $ps.Current, $ps.Total, ([int]([Math]::Round($pPct * 100))) } else { '' }
     $qDetail = if ($w.Query -gt 0 -and $qs.Total -gt 0) { "{0}/{1}({2}%)" -f $qs.Current, $qs.Total, ([int]([Math]::Round($qPct * 100))) } else { '' }
-    # Format explosion progress display
-    $explosionCounts = if ($es.Total -gt 0) { "{0}/{1}({2}%)" -f $es.Current, $es.Total, ([int]([Math]::Round($ePct * 100))) } else { '0/0' }
+    # Format explosion progress display with batch range if provided
+    if ($BatchRangeStart -ge 1 -and $BatchRangeEnd -ge 1 -and $es.Total -gt 0) {
+        # Show record range for current batch with batch number inline
+        $batchPct = if ($BatchTotal -gt 0 -and $BatchCurrent -gt 0) { [int]([Math]::Round(([double]$BatchCurrent / [double]$BatchTotal) * 100)) } else { 0 }
+        $batchInfo = if ($BatchTotal -ge 1) { " Batch: {0}/{1}({2}%)" -f $BatchCurrent, $BatchTotal, $batchPct } else { '' }
+        $explosionCounts = "Records {0}-{1}/{2}{3}" -f $BatchRangeStart, $BatchRangeEnd, $es.Total, $batchInfo
+    }
+    elseif ($BatchTotal -ge 1) {
+        # Fallback: show current record with batch info inline (same style as range format)
+        $batchPct = if ($BatchTotal -gt 0 -and $BatchCurrent -gt 0) { [int]([Math]::Round(([double]$BatchCurrent / [double]$BatchTotal) * 100)) } else { 0 }
+        $batchInfo = " Batch: {0}/{1}({2}%)" -f $BatchCurrent, $BatchTotal, $batchPct
+        $explosionCounts = if ($es.Total -gt 0) { "Records {0}/{1}{2}" -f $es.Current, $es.Total, $batchInfo } else { "0/0" }
+    }
+    else {
+        # Standard format without batching
+        $explosionCounts = if ($es.Total -gt 0) { "{0}/{1}({2}%)" -f $es.Current, $es.Total, ([int]([Math]::Round($ePct * 100))) } else { '0/0' }
+    }
     $eDetail = if ($w.Explosion -gt 0) {
         if ($phase -eq 'Explosion') {
             " | $explosionCounts"
@@ -303,16 +324,18 @@ function Update-Progress {
         }
     }
     else { '' }
+    # Batch detail is now always included inline with explosion when BatchTotal is provided
+    $batchDetail = ''
     $xDetail = if ($xs.Total -gt 0) { " | Export: {0}/{1}({2}%)" -f $xs.Current, $xs.Total, ([int]([Math]::Round($xPct * 100))) } else { ' | Export: 0/0' }
     $phasePrefix = switch ($phase) { 'Parsing' { 'Pre-parsing JSON' } 'Query' { 'Query' } 'Explosion' { 'Explosion' } 'Export' { 'Export' } 'Complete' { 'Complete' } default { $phase } }
     if ($phase -eq 'Parsing' -and $pDetail) {
-        $composite = "Pre-parsing JSON: $pDetail$eDetail$xDetail"
+        $composite = "Pre-parsing JSON: $pDetail$eDetail$batchDetail$xDetail"
     }
     elseif ($phase -eq 'Explosion' -and -not $qDetail) {
-        $composite = "Explosion: $explosionCounts$xDetail"
+        $composite = "Explosion: $explosionCounts$batchDetail$xDetail"
     }
     else {
-        $composite = if ($qDetail) { "${phasePrefix}: $qDetail$eDetail$xDetail" } else { "${phasePrefix}:$eDetail$xDetail" }
+        $composite = if ($qDetail) { "${phasePrefix}: $qDetail$eDetail$batchDetail$xDetail" } else { "${phasePrefix}:$eDetail$batchDetail$xDetail" }
     }
     $statusText = if ($Status) { "$Status :: $composite" } else { $composite }
     if ($statusText.Length -gt 180) { $statusText = $statusText.Substring(0, 177) + '...' }
@@ -1130,8 +1153,12 @@ try {
     # Begin record explosion and transformation phase
     Set-ProgressPhase -Phase 'Explosion' -Status 'Analyzing and exploding records'
     
+    $parallelProcessingComplete = $false
     try {
         foreach ($log in $allLogs) {
+            # Skip remaining logs if parallel processing already handled them
+            if ($parallelProcessingComplete) { continue }
+            
             $records = if ($effectiveExplode) { Convert-ToPurviewExplodedRecords -Record $log -Deep:$ExplodeDeep } else { Convert-ToStructuredRecord -Record $log -EnableExplosion:$false }
             if ($records -and $records.Count -gt 0) {
                 try {
@@ -1191,6 +1218,7 @@ try {
                                 $remainingCount = $remainingLogs.Count
                                 $processedRemaining = 0
                                 Write-LogHost "Parallel batch config: batchSize=$parallelBatchSize, throttle=$throttle, batches=$([Math]::Ceiling($remainingCount / $parallelBatchSize))" -ForegroundColor DarkCyan
+                                Write-LogHost "NOTE: Progress bar updates between batches - progress may appear paused during intensive parallel processing." -ForegroundColor Yellow
                                 
                                 # Get function definitions to pass into parallel runspace
                                 $convertExplodedDef = ${function:Convert-ToPurviewExplodedRecords}.ToString()
@@ -1207,14 +1235,33 @@ try {
                                 $regexYes1 = $script:RegexYes1
                                 $regexNo0 = $script:RegexNo0
                                 
+                                # Show initial batch progress (0/totalBatches) before starting
+                                # Show range from 1 to end of first batch (including records consumed for schema)
+                                $totalBatches = [Math]::Ceiling($remainingCount / $parallelBatchSize)
+                                $firstBatchSize = [Math]::Min($parallelBatchSize, $remainingCount)
+                                $firstRangeStart = 1
+                                $firstRangeEnd = $logsConsumedForSchema + $firstBatchSize
+                                Update-Progress -BatchCurrent 0 -BatchTotal $totalBatches -BatchRangeStart $firstRangeStart -BatchRangeEnd $firstRangeEnd
+                                
                                 while ($processedRemaining -lt $remainingCount) {
                                     $batchSize = [Math]::Min($parallelBatchSize, $remainingCount - $processedRemaining)
                                     $batch = $remainingLogs[$processedRemaining..($processedRemaining + $batchSize - 1)]
+                                    
+                                    # Calculate batch info for progress display
+                                    $currentBatch = [Math]::Floor($processedRemaining / $parallelBatchSize) + 1
+                                    $totalBatches = [Math]::Ceiling($remainingCount / $parallelBatchSize)
+                                    
+                                    # Calculate the record range for this batch being processed (1-indexed for display)
+                                    $rangeStart = $logsConsumedForSchema + $processedRemaining + 1
+                                    $rangeEnd = $logsConsumedForSchema + $processedRemaining + $batchSize
+                                    
+                                    # Update progress BEFORE starting batch to show what's being processed
+                                    $script:progressState.Explode.Current = $rangeStart - 1  # Show position at start of batch
+                                    Update-Progress -BatchCurrent $currentBatch -BatchTotal $totalBatches -BatchRangeStart $rangeStart -BatchRangeEnd $rangeEnd
+                                    
                                     $batchStart = Get-Date
                                     try {
                                         $batchResults = $batch | ForEach-Object -Parallel {
-                                            param($effectiveExplode, $explodeDeep)
-                                            
                                             # Reconstruct helper functions and variables in parallel runspace
                                             $script:PurviewExplodedHeader = $using:purviewHeader
                                             $script:DeepExtraColumns = $using:deepExtraColumns
@@ -1235,10 +1282,14 @@ try {
                                             $null = New-Item -Path function:Convert-ToPurviewExplodedRecords -Value ([scriptblock]::Create($using:convertExplodedDef)) -Force
                                             $null = New-Item -Path function:Convert-ToStructuredRecord -Value ([scriptblock]::Create($using:convertStructuredDef)) -Force
                                             
+                                            # Access variables from outer scope using $using:
+                                            $effectiveExplode = $using:effectiveExplode
+                                            $explodeDeep = $using:ExplodeDeep
+                                            
                                             $rows = if ($effectiveExplode) { Convert-ToPurviewExplodedRecords -Record $_ -Deep:$explodeDeep } else { Convert-ToStructuredRecord -Record $_ -EnableExplosion:$false }
                                             $rc = 0; if ($null -ne $rows) { if ($rows -is [System.Array]) { $rc = $rows.Count } else { $rc = 1 } }
                                             [pscustomobject]@{ Rows = $rows; RowCount = $rc; ExplosionRows = if ($rc -gt 1) { $rc - 1 } else { 0 }; MaxRows = $rc }
-                                        } -ThrottleLimit $throttle -ArgumentList $effectiveExplode, $ExplodeDeep
+                                        } -ThrottleLimit $throttle
                                     }
                                     catch {
                                         if ($_.Exception -is [System.OutOfMemoryException]) {
@@ -1297,7 +1348,12 @@ try {
                                     $script:progressState.Explode.Current = [Math]::Min($script:progressState.Explode.Total, ($logsConsumedForSchema + $processedRemaining))
                                     $currentBatch = [Math]::Ceiling($processedRemaining / $parallelBatchSize)
                                     $totalBatches = [Math]::Ceiling($remainingCount / $parallelBatchSize)
-                                    Update-Progress -Status "Parallel batch $currentBatch/$totalBatches (${elapsedMs}ms) - Processed: $($script:progressState.Explode.Current)/$($script:progressState.Explode.Total)"
+                                    
+                                    # Calculate the record range for this completed batch (1-indexed for display)
+                                    $rangeStart = $logsConsumedForSchema + ($processedRemaining - $batchSize) + 1
+                                    $rangeEnd = $logsConsumedForSchema + $processedRemaining
+                                    
+                                    Update-Progress -BatchCurrent $currentBatch -BatchTotal $totalBatches -BatchRangeStart $rangeStart -BatchRangeEnd $rangeEnd
                                     
                                     # Dynamically adjust throttle based on batch completion time
                                     if ($elapsedMs -lt $targetMinMs -and $throttle -lt [Math]::Min([Environment]::ProcessorCount, 12)) { $throttle += 1 }
@@ -1309,6 +1365,7 @@ try {
                                 $script:metrics.ParallelBatchSizeFinal = $parallelBatchSize
                                 $script:metrics.ParallelThrottleFinal = $throttle
                                 Write-LogHost "Replay parallel explosion complete (processed remaining=$processedRemaining)" -ForegroundColor DarkCyan
+                                $parallelProcessingComplete = $true
                                 break
                             }
                         }
