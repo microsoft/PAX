@@ -1,3 +1,4 @@
+# Portable Audit eXporter (PAX) - Purview Audit Log Processor - v1.4.1
 <#
 .SYNOPSIS
     Export Microsoft Purview audit logs for Microsoft 365 Copilot and related activities with optional Purview-aligned row explosion and deep flattening.
@@ -17,7 +18,6 @@
         * StartDate / EndDate act as inclusive(lower)/exclusive(upper) UTC filters on CreationDate in the replay dataset
         * ActivityTypes filters by Operation (case‑insensitive membership)
         * Non‑exploded 1:1 mode is intentionally disabled for deterministic schema in offline transforms
-        * Progress weighting adjustment: Query phase weight is removed & Explosion/Export weights re‑normalized so Overall starts at 0% (no initial 30% jump for trivial replay ingestion)
 
     PowerShell 5.1 & 7+ supported. Parallel (Auto/On) requires 7+.
 
@@ -25,7 +25,6 @@
     No internal execution policy bypass. Use external host invocation if needed:
         powershell.exe -ExecutionPolicy Bypass -File .\CopilotInteraction_Purview_Export.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
         pwsh.exe       -ExecutionPolicy Bypass -File .\CopilotInteraction_Purview_Export.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-    Rationale: Embedded policy changes are brittle and can weaken security posture.
 
 .POWERSHELLVERSIONS
     PS 5.1 & 7+. Parallelization requires PS 7+.

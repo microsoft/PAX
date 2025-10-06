@@ -190,7 +190,7 @@ function Update-CargoVersion {
     }
 }
 
-# Function to update $ScriptVersion variable in the audit export PowerShell script
+# Function to update version in the audit export PowerShell script (both static header and dynamic variable)
 function Update-ExportScriptVersion {
     param(
         [string]$FilePath,
@@ -204,21 +204,38 @@ function Update-ExportScriptVersion {
 
     try {
         $content = Get-Content $FilePath -Raw -ErrorAction Stop
-        $pattern = "(?m)^\s*\$ScriptVersion\s*=\s*'[^']*'"
-        if ($content -match $pattern) {
-            # Use backtick to ensure literal $ScriptVersion is written
-            $replacement = "`$ScriptVersion = '$NewVersion'"
-            $updated = [regex]::Replace($content, $pattern, $replacement, 1)
-            if ($updated -ne $content) {
-                $updated | Set-Content -Path $FilePath -Encoding UTF8
-                Write-Success "Updated export script version to $NewVersion"
-            }
-            else {
-                Write-Warning "No change applied to export script version (already $NewVersion?)"
-            }
+        $updated = $false
+        
+        # Update static version comment at top of file (line 1)
+        # Pattern: # Portable Audit eXporter (PAX) - Purview Audit Log Processor - vX.X.X
+        $staticPattern = "(?m)^#\s*Portable Audit eXporter \(PAX\) - Purview Audit Log Processor - v[\d\.]+\s*$"
+        if ($content -match $staticPattern) {
+            $staticReplacement = "# Portable Audit eXporter (PAX) - Purview Audit Log Processor - v$NewVersion"
+            $content = [regex]::Replace($content, $staticPattern, $staticReplacement, 1)
+            $updated = $true
+            Write-Success "Updated static version header to v$NewVersion"
         }
         else {
-            Write-Warning "Could not locate $ScriptVersion assignment in export script; pattern may have changed."
+            Write-Warning "Could not locate static version header in export script (line 1)"
+        }
+        
+        # Update dynamic $ScriptVersion variable assignment (if it exists)
+        $dynamicPattern = "(?m)^\s*\$ScriptVersion\s*=\s*'[^']*'"
+        if ($content -match $dynamicPattern) {
+            # Use backtick to ensure literal $ScriptVersion is written
+            $dynamicReplacement = "`$ScriptVersion = '$NewVersion'"
+            $content = [regex]::Replace($content, $dynamicPattern, $dynamicReplacement, 1)
+            $updated = $true
+            Write-Success "Updated dynamic `$ScriptVersion variable to '$NewVersion'"
+        }
+        
+        # Save changes if any updates were made
+        if ($updated) {
+            $content | Set-Content -Path $FilePath -Encoding UTF8 -NoNewline
+            Write-Success "Updated export script version to $NewVersion"
+        }
+        else {
+            Write-Warning "No version patterns found in export script to update"
         }
     }
     catch {
