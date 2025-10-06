@@ -316,11 +316,8 @@ function Update-Progress {
     }
     $statusText = if ($Status) { "$Status :: $composite" } else { $composite }
     if ($statusText.Length -gt 180) { $statusText = $statusText.Substring(0, 177) + '...' }
-    # Inline console output only - no Write-Progress blue bar
 }
-function Complete-Progress { 
-    # No-op function - progress tracking uses inline console output only
-}
+function Complete-Progress { }
 
 $script:highVolumeActivities = @('CopilotInteraction', 'MessageSent', 'FileAccessed', 'MailItemsAccessed')
 $script:mediumVolumeActivities = @('MessageRead', 'FileModified', 'MeetingDetail', 'SearchQueryPerformed')
