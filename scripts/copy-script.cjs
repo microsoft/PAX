@@ -5,7 +5,6 @@ const { spawnSync } = require('child_process');
 // Only copy the runtime PowerShell export script and activity datasets; never copy synthetic generation/validation files.
 const pairs = [
 	['CopilotAuditExport.ps1', 'CopilotAuditExport.ps1'],
-	['SimpleCopilotAuditExport.ps1', 'SimpleCopilotAuditExport.ps1'], // Simple template for reliable exports
 	// Removed refresh/discovery scripts to reduce surface area
 	['audit-activities.json', 'audit-activities.json'],
     ['audit-activities.merged.json', 'audit-activities.merged.json'],

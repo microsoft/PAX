@@ -34,8 +34,6 @@ const EMBEDDED_DATASET_GENERATED: &str =
 const EMBEDDED_DATASET_CURATED: &str = include_str!("../../scripts/audit-activities.json");
 #[cfg(not(debug_assertions))]
 const EMBEDDED_PS1: &str = include_str!("../../scripts/CopilotAuditExport.ps1");
-#[cfg(not(debug_assertions))]
-const EMBEDDED_SIMPLE_PS1: &str = include_str!("../../scripts/SimpleCopilotAuditExport.ps1");
 
 #[cfg(not(debug_assertions))]
 fn embedded_dataset_value() -> Option<serde_json::Value> {
