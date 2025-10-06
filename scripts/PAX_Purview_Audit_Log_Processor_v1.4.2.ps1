@@ -1054,10 +1054,14 @@ try {
     # Streaming export: rows converted & flushed incrementally to manage memory.
     $structuredDataCount = 0
     Write-LogHost "Streaming export mode enabled (schema sample=$StreamingSchemaSample; base chunk size=$StreamingChunkSize)" -ForegroundColor Yellow
+    
+    # EMERGENCY FIX: Disable parallel explosion due to function scope bug in parallel runspaces
+    # Parallel ForEach-Object cannot access script-level functions like Convert-ToPurviewExplodedRecords
+    # TODO: Refactor to pass function definitions via $using: or embed explosion logic inline
     $replayParallelEligible = $false
-    if ($RAWInputCSV -and ($PSVersionTable.PSVersion.Major -ge 7)) {
-        if ($allLogs.Count -gt ($StreamingSchemaSample + 5000)) { $replayParallelEligible = $true }
-    }
+    # if ($RAWInputCSV -and ($PSVersionTable.PSVersion.Major -ge 7)) {
+    #     if ($allLogs.Count -gt ($StreamingSchemaSample + 5000)) { $replayParallelEligible = $true }
+    # }
     if ($replayParallelEligible) { Write-LogHost "Replay parallel explosion eligible -> will parallelize after schema freeze" -ForegroundColor DarkCyan }
     $script:progressState.Explode.Total = [int]$allLogs.Count; $script:progressState.Explode.Current = 0; $te0 = Get-Date
     $schemaFrozen = $false; $schemaSampleRows = New-Object System.Collections.Generic.List[object]; $postFreezeNewColumns = 0
@@ -1170,12 +1174,15 @@ try {
                                 Write-LogHost "Starting parallel explosion for remaining logs (consumed=$logsConsumedForSchema, total=$($allLogs.Count))" -ForegroundColor Cyan
                                 $remainingLogs = @()
                                 if ($logsConsumedForSchema -lt $allLogs.Count) { $remainingLogs = $allLogs[$logsConsumedForSchema..($allLogs.Count - 1)] } else { $remainingLogs = @() }
-                                $parallelBatchSize = [int][Math]::Min(2000, [Math]::Max(500, [int]($effectiveChunkSize / 2)))
-                                if ($parallelBatchSize -lt 200) { $parallelBatchSize = 200 }
-                                $throttle = [int][Math]::Min([Environment]::ProcessorCount, 6)
-                                $targetMinMs = 800; $targetMaxMs = 2500
+                                # PERFORMANCE FIX: Dramatically increase batch size to reduce overhead
+                                # Previous: 500-2000 records/batch (too many batches, too much overhead)
+                                # New: 10000-20000 records/batch (fewer batches, amortized overhead)
+                                $parallelBatchSize = [int][Math]::Max(10000, [Math]::Min(20000, [int]($remainingLogs.Count / 20)))
+                                $throttle = [int][Math]::Min([Environment]::ProcessorCount, 8)
+                                $targetMinMs = 3000; $targetMaxMs = 12000  # Target 3-12 second batches (was 0.8-2.5s)
                                 $remainingCount = $remainingLogs.Count
                                 $processedRemaining = 0
+                                Write-LogHost "Parallel batch config: batchSize=$parallelBatchSize, throttle=$throttle, batches=$([Math]::Ceiling($remainingCount / $parallelBatchSize))" -ForegroundColor DarkCyan
                                 while ($processedRemaining -lt $remainingCount) {
                                     $batchSize = [Math]::Min($parallelBatchSize, $remainingCount - $processedRemaining)
                                     $batch = $remainingLogs[$processedRemaining..($processedRemaining + $batchSize - 1)]
@@ -1240,12 +1247,12 @@ try {
                                     $processedRemaining += $batchSize
                                     $batchElapsed = (Get-Date) - $batchStart
                                     $elapsedMs = [int]$batchElapsed.TotalMilliseconds
-                                    # Dynamic throttle tuning: aim for 0.8s - 2.5s batches
+                                    # Dynamic throttle tuning: aim for 3s - 12s batches (updated targets for larger batches)
                                     if ($elapsedMs -lt $targetMinMs -and $throttle -lt [Math]::Min([Environment]::ProcessorCount, 12)) { $throttle += 1 }
-                                    elseif ($elapsedMs -gt $targetMaxMs -and $throttle -gt 1) { $throttle = [int][Math]::Max(1, $throttle - 1) }
-                                    # Adjust parallelBatchSize if too slow or too fast
-                                    if ($elapsedMs -lt $targetMinMs -and $parallelBatchSize -lt 8000) { $parallelBatchSize = [int][Math]::Min(8000, [int]($parallelBatchSize * 1.5)) }
-                                    elseif ($elapsedMs -gt ($targetMaxMs * 2) -and $parallelBatchSize -gt 500) { $parallelBatchSize = [int][Math]::Max(500, [int]($parallelBatchSize / 2)) }
+                                    elseif ($elapsedMs -gt $targetMaxMs -and $throttle -gt 2) { $throttle = [int][Math]::Max(2, $throttle - 1) }
+                                    # Adjust parallelBatchSize if too slow or too fast (relaxed bounds for larger batches)
+                                    if ($elapsedMs -lt $targetMinMs -and $parallelBatchSize -lt 40000) { $parallelBatchSize = [int][Math]::Min(40000, [int]($parallelBatchSize * 1.3)) }
+                                    elseif ($elapsedMs -gt ($targetMaxMs * 2) -and $parallelBatchSize -gt 5000) { $parallelBatchSize = [int][Math]::Max(5000, [int]($parallelBatchSize * 0.8)) }
                                     $script:progressState.Explode.Current = [Math]::Min($script:progressState.Explode.Total, ($logsConsumedForSchema + $processedRemaining))
                                     if ($script:progressState.Explode.Current % 500 -eq 0 -or $processedRemaining -ge $remainingCount) { Update-Progress -Status "Exploding (replay parallel): $($script:progressState.Explode.Current)/$($script:progressState.Explode.Total)" } else { Update-Progress }
                                 }
