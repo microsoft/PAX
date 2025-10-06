@@ -292,6 +292,7 @@ function Update-Progress {
     $overall = ($parsingWeight * $pPct) + ($w.Query * $qPct) + ($w.Explosion * $ePct) + ($w.Export * $xPct)
     $pct = [int]([Math]::Round($overall * 100))
     $phase = $script:progressState.Phase
+    $pDetail = if ($w.ContainsKey('Parsing') -and $w.Parsing -gt 0 -and $ps.Total -gt 0) { "{0}/{1}({2}%)" -f $ps.Current, $ps.Total, ([int]([Math]::Round($pPct * 100))) } else { '' }
     $qDetail = if ($w.Query -gt 0 -and $qs.Total -gt 0) { "{0}/{1}({2}%)" -f $qs.Current, $qs.Total, ([int]([Math]::Round($qPct * 100))) } else { '' }
     # Build explosion detail without duplicated label when Explosion is the active phase
     $explosionCounts = if ($es.Total -gt 0) { "{0}/{1}({2}%)" -f $es.Current, $es.Total, ([int]([Math]::Round($ePct * 100))) } else { '0/0' }
@@ -306,8 +307,12 @@ function Update-Progress {
     }
     else { '' }
     $xDetail = if ($xs.Total -gt 0) { " | Export: {0}/{1}({2}%)" -f $xs.Current, $xs.Total, ([int]([Math]::Round($xPct * 100))) } else { ' | Export: 0/0' }
-    $phasePrefix = switch ($phase) { 'Query' { 'Query' } 'Explosion' { 'Explosion' } 'Export' { 'Export' } 'Complete' { 'Complete' } default { $phase } }
-    if ($phase -eq 'Explosion' -and -not $qDetail) {
+    $phasePrefix = switch ($phase) { 'Parsing' { 'Pre-parsing JSON' } 'Query' { 'Query' } 'Explosion' { 'Explosion' } 'Export' { 'Export' } 'Complete' { 'Complete' } default { $phase } }
+    if ($phase -eq 'Parsing' -and $pDetail) {
+        # Parsing phase: show parsing details
+        $composite = "Pre-parsing JSON: $pDetail$eDetail$xDetail"
+    }
+    elseif ($phase -eq 'Explosion' -and -not $qDetail) {
         # Avoid 'Explosion: | <counts>' pattern. Produce 'Explosion: <counts> | Export: ...'
         $composite = "Explosion: $explosionCounts$xDetail"
     }
@@ -1100,13 +1105,16 @@ try {
             $script:progressState.Parsing.Current = $parseCount
             # Update progress bar every 500 records or at completion
             if ($parseCount % 500 -eq 0 -or $parseCount -eq $allLogs.Count) {
-                Update-Progress -Status "Pre-parsing JSON: $parseCount/$($allLogs.Count)"
+                Update-Progress
             }
         }
     }
     $parseEnd = Get-Date
     $parseElapsed = [int]($parseEnd - $parseStart).TotalSeconds
     Write-LogHost "JSON pre-parsing complete in $parseElapsed seconds ($parseErrors parse errors)" -ForegroundColor Green
+    
+    # Transition to Explosion phase
+    Set-ProgressPhase -Phase 'Explosion' -Status 'Analyzing and exploding records'
     
     try {
         foreach ($log in $allLogs) {
