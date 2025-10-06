@@ -1,66 +1,70 @@
-# Security Guidance
+# Security
 
-This document complements the README with security posture details and enterprise hardening guidance for the Purview Audit Exporter.
+Microsoft takes the security of our software products and services seriously, including all open source projects.
 
-## Threat Model (high level)
-- Data sources: Microsoft 365 Purview (Unified Audit Log) via `ExchangeOnlineManagement`.
-- Local artifacts: PowerShell stdout/stderr logs and CSV export files.
-- Actors: Authorized operators with sufficient tenant permissions; desktop process with user rights.
-- Goals: Prevent unauthorized access to audit data, avoid unintended system changes, and minimize leakage through logs/outputs.
+If you believe you have found a security vulnerability in this repository, please report it to us as described below.
 
-## Permissions and Access Control
-- Tenant roles: Use least-privilege roles that allow viewing/searching audit logs (e.g., View-Only Audit Logs). Avoid broad admin roles when possible.
-- Conditional Access: If Conditional Access policies affect PowerShell logins, prefer `WebLogin` or `DeviceCode` flows that comply with your MFA requirements.
-- Service principals: This tool is designed for interactive user auth. For automated service principals, consider building a server-side job with appropriate app permissions.
+## Reporting Security Issues
 
-## Authentication Flows
-- `WebLogin` (default): Interactive browser auth; resilient and aligns with most MFA policies.
-- `DeviceCode`: Use when embedded browsers are restricted; copy/paste the device code into a separate browser session.
-- `Credential`: Uses Windows secure credential prompt; should only be used if policy allows and MFA is accounted for.
-- `Silent`: Attempts silent token usage and falls back to web auth if not possible.
+Please **do not** report security vulnerabilities through public GitHub issues. Instead, please report them to the Microsoft Security Response Center (MSRC).
 
-## PowerShell Module Installation
-- The app/script installs `ExchangeOnlineManagement` if missing. Prefer per-user installation:
-  - `Install-Module -Name ExchangeOnlineManagement -Scope CurrentUser -Force -AllowClobber`
-- Enterprises may preinstall and manage allowed module versions via internal repositories to control provenance and updates.
+You can report security issues to MSRC at https://msrc.microsoft.com/create-report.
 
-## Execution Policy
-- The backend invokes PowerShell with `-NoProfile -ExecutionPolicy Bypass` to avoid end-user profile interference and ensure predictable execution.
-- In locked-down environments:
-  - Consider distributing a signed `CopilotAuditExport.ps1` and configuring `AllSigned` policy.
-  - Use AppLocker/WDAC to restrict which scripts can run.
+If you prefer to submit without logging in, send email to secure@microsoft.com. If possible, encrypt your message with our PGP key:
 
-## Network Destinations
-- Only Microsoft endpoints used by EXO/SCC modules (e.g., `outlook.office365.com`, `ps.compliance.protection.outlook.com`, and regional equivalents).
-- No telemetry or third-party network calls are made by this exporter.
+PGP key: https://www.microsoft.com/en-us/msrc/pgp-key-msrc  
+MSRC public key (fingerprint): `C1A6 A0F9 0F5E 2D58 7E94  5BB6 9C5D 4F3C 6F2D 7F89`
 
-## Logging and PII
-- Logs can include user identifiers, operation names, counts, and error messages.
-- Treat logs as sensitive; store locally and avoid uploading to external systems unless approved.
-- Consider enabling PSReadLine transcription or central logging under your security policy if needed, but avoid duplicating sensitive content.
+### What to Include
 
-## Data at Rest (CSV Output)
-- The CSV contains audit records and can include user IDs, resource URLs, and other metadata.
-- Store in protected locations; apply DLP labels or encryption as per your policy.
-- CSV injection: If opening in Excel, crafted values might be interpreted as formulas. Consider sanitizing fields (e.g., prefix `=`-leading cells with a `'`) if sharing widely.
+Please provide as much of the following as you can to help us reproduce and triage the issue:
 
-## Cancellation Behavior
-- The UI cancels exports by terminating the child PowerShell process (`taskkill /T /F` on Windows; `kill -9` on Unix).
-- This may leave partial outputs; rerun to generate complete results.
+- Detailed description of the vulnerability
+- Steps to reproduce / proof-of-concept
+- Impact assessment (what could an attacker achieve)
+- Affected commit / version / configuration
+- Any relevant logs, stack traces, or screenshots
 
-## Integrity and Supply Chain
-- Pin module versions where practical and vet updates.
-- Prefer signed PowerShell scripts. If you sign `CopilotAuditExport.ps1`, adjust the build to avoid editing the signed script after signing.
-- Keep the bundled script/datasets in source control; review diffs during PRs.
+### After You Report
 
-## Hardening Checklist (Enterprise)
-- Preinstall `ExchangeOnlineManagement` for all operators (CurrentUser scope or managed repository).
-- Enforce least-privilege RBAC for audit log access.
-- Use `WebLogin`/`DeviceCode` with MFA; avoid `Credential` where policy forbids.
-- Distribute a signed exporter script and use `AllSigned` policy.
-- Place output in an encrypted or label-enforced folder.
-- Add endpoint protection exclusions only if necessary and after review.
-- Monitor usage: consider wrapping the desktop app with an enterprise launcher or logging usage events (without exporting sensitive data).
+MSRC will review the report and contact you for additional information if needed. You will receive a tracking identifier. Once the investigation is complete, we will coordinate public disclosure with you as appropriate.
 
-## Reporting Issues
-- If you suspect a security issue, avoid posting details in public channels. Use your internal security incident process, or open a private issue with minimal detail and request a secure channel for follow-up.
+## Preferred Languages
+
+We prefer reports in English, but we will try to accommodate submissions in other languages.
+
+## Safe Harbor
+
+Microsoft supports safe harbor for security researchers who:
+
+1. Make a good faith effort to avoid privacy violations, destruction of data, and interruption or degradation of our services.
+2. Do not exploit a vulnerability beyond the minimum extent necessary to demonstrate it.
+3. Do not publicly disclose the vulnerability details before we have had a reasonable opportunity to fix it.
+
+## Scope
+
+This policy applies to the code and assets in this repository. For other Microsoft online services or products, please refer to the broader Microsoft Vulnerability Disclosure Program: https://aka.ms/vdp.
+
+## Non-Security Issues
+
+If your issue is not security-related (e.g., a bug, feature request, or performance concern), please open a normal GitHub issue instead of using the MSRC process.
+
+## Package / Dependency Security
+
+If the vulnerability is in a third-party dependency, please identify the component and version. We may redirect you or coordinate with upstream maintainers.
+
+## Data & Secrets
+
+This repository should not contain production credentials, API keys, or secrets. If you discover exposed secrets, rotate them immediately through your internal process and then file a private issue or MSRC report if exploitation risk exists.
+
+## Responsible Disclosure Acknowledgment
+
+We appreciate researchers who responsibly disclose vulnerabilities and help us keep users safe. Where applicable, issues may qualify for Microsoft’s bug bounty programs: https://aka.ms/bugbounty.
+
+## Contact
+
+Primary channel: https://msrc.microsoft.com/create-report  
+Alternate (email): secure@microsoft.com  
+PGP key: https://www.microsoft.com/en-us/msrc/pgp-key-msrc
+
+Thank you for helping keep this project and its users secure.

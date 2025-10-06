@@ -45,7 +45,7 @@ param(
 )
 
 function Show-Help {
-    @"
+    @'
 Microsoft 365 Copilot & AI Audit Log Extractor
 -----------------------------------------------
 This script exports Microsoft 365 Copilot, AI, and user activity records from audit logs to CSV with comprehensive logging.
@@ -174,7 +174,7 @@ WHY USE THIS SCRIPT?
 - Create easy-to-read reports for management or compliance
 - Spot trends, answer questions, or investigate specific activities
 
-"@
+'@
 }
 
 # Utility function to get UTC timestamp for phase logging
@@ -556,7 +556,8 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
     if ($useSessionPagination) {
         Write-Host "  Using session-based pagination for ResultSize $ResultSize (page size: $pageSize)" -ForegroundColor Cyan
         $sessionId = [Guid]::NewGuid().ToString()
-    } else {
+    }
+    else {
         Write-Host "  Using standard pagination for ResultSize $ResultSize (page size: $pageSize)" -ForegroundColor Cyan
     }
     
@@ -587,7 +588,8 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
                         $params.Add('SessionId', $sessionId)
                         if ($pageNumber -eq 1) {
                             $params.Add('SessionCommand', 'ReturnLargeSet')
-                        } else {
+                        }
+                        else {
                             $params.Add('SessionCommand', 'ReturnNextPreviewPage')
                         }
                     }
@@ -597,13 +599,16 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
                         if ($useSessionPagination) {
                             if ($pageNumber -eq 1) {
                                 Write-Host "    Starting session $sessionId, requesting page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan
-                            } else {
+                            }
+                            else {
                                 Write-Host "    Fetching page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan
                             }
-                        } else {
+                        }
+                        else {
                             Write-Host "    Fetching page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan
                         }
-                    } else {
+                    }
+                    else {
                         Write-Host "    Retrying page $pageNumber (attempt $($pageAttempt + 1) of $($pageMaxRetries + 1))" -ForegroundColor Yellow
                     }
                     
@@ -634,7 +639,8 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
                             $total = $delay + $jitter
                             $ms = [int]([math]::Round($total * 1000))
                             Start-Sleep -Milliseconds $ms
-                        } else {
+                        }
+                        else {
                             Write-Host "    Page $pageNumber attempt $pageAttempt failed: $($_.Exception.Message). Retrying..." -ForegroundColor Yellow
                         }
                         
@@ -697,11 +703,12 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
             Write-Host "  Time window: $($script:LimitTimeWindow)" -ForegroundColor Yellow
             Write-Host "  Retrieved exactly 10,000 records - Exchange Online server limit reached" -ForegroundColor Red
             Write-Host "  Additional records exist but are inaccessible with this time window" -ForegroundColor Red
-            Write-Host "  REQUIRED ACTION: Re-run with smaller time blocks (30 minutes recommended)" -ForegroundColor Cyan
+            $msg = "  REQUIRED ACTION: Re-run with smaller time blocks (30min recommended)"
+            Write-Host $msg -ForegroundColor Cyan
             Write-Host "" -ForegroundColor Red
         }
         
-        Write-Host "  Pagination completed: $($allResults.Count) total records fetched" -ForegroundColor Green
+        Write-Host "  Pagination done: $($allResults.Count) total records" -ForegroundColor Green
         $res = $allResults
         
     }
@@ -717,7 +724,7 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
             # Aggressive subdivision: Jump to smaller windows immediately for high-volume activities
             if ($timeSpan.TotalHours -ge 12) {
                 # For large windows (12+ hours), jump directly to 2-hour chunks
-                Write-Host "  Result limit hit ($($res.Count) records). Using aggressive 2-hour subdivision..." -ForegroundColor Yellow
+                Write-Host "  Limit hit. Using 2hr subdivision..." -ForegroundColor Yellow
                 $chunkResults = @()
                 $current = $Start
                 while ($current -lt $End) {
@@ -732,7 +739,7 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
             }
             else {
                 # Standard binary subdivision for smaller windows
-                Write-Host "  Result limit hit ($($res.Count) records). Auto-subdividing time window..." -ForegroundColor Yellow
+                Write-Host "  Limit hit. Auto-subdividing..." -ForegroundColor Yellow
                 $midPoint = $Start.AddTicks(($End - $Start).Ticks / 2)
                 $firstHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $Start -End $midPoint -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs -MaxRetries $MaxRetries -AutoSubdivide $AutoSubdivide
                 $secondHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $midPoint -End $End -Operation $Operation -ResultSize $ResultSize -PacingMs $PacingMs -MaxRetries $MaxRetries -AutoSubdivide $AutoSubdivide
@@ -863,7 +870,7 @@ function Get-NestedProperty {
 function Convert-ToMetricsRecord {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory = $true)]
         [object]$AuditLogEntry, 
         [switch]$NoExplodeArrays, 
         [switch]$DevTest
@@ -874,7 +881,8 @@ function Convert-ToMetricsRecord {
         Write-Warning "Convert-ToMetricsRecord: Array passed instead of single object. Processing first element."
         if ($AuditLogEntry.Count -gt 0) {
             $AuditLogEntry = $AuditLogEntry[0]
-        } else {
+        }
+        else {
             Write-Warning "Convert-ToMetricsRecord: Empty array provided"
             return $null
         }
@@ -906,453 +914,456 @@ function Convert-ToMetricsRecord {
         return $null
     }
     
-# When NoExplodeArrays is enabled, create a simplified record with raw AuditData
-if ($NoExplodeArrays) {
+    # When NoExplodeArrays is enabled, create a simplified record with raw AuditData
+    if ($NoExplodeArrays) {
+        $baseRecord = [PSCustomObject]@{
+            RecordId           = $AuditLogEntry.Identity
+            CreationDate       = $AuditLogEntry.CreationDate
+            RecordType         = $AuditLogEntry.RecordType
+            CreationDateIsoUtc = if ($AuditLogEntry.CreationDate) { $AuditLogEntry.CreationDate.ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null }
+            OrganizationId     = Get-NestedProperty $auditData "OrganizationId" -Default "b1234567-89ab-cdef-0123-456789abcdef"
+            UserType           = Get-UserType -UserId $AuditLogEntry.UserIds -AuditData $auditData
+            UserKey            = Get-UserKey -UserId $AuditLogEntry.UserIds
+            Workload           = Get-WorkloadFromRecordType -RecordType $AuditLogEntry.RecordType
+            Operation          = $AuditLogEntry.Operations
+            UserId             = $AuditLogEntry.UserIds
+            AuditData          = $AuditLogEntry.AuditData  # Preserve raw JSON (now synthetic for DevTest)
+        }
+        return @($baseRecord)
+    }
+    
+    # Original flattened structure for normal processing
     $baseRecord = [PSCustomObject]@{
-        RecordId           = $AuditLogEntry.Identity
-        CreationDate       = $AuditLogEntry.CreationDate
-        RecordType         = $AuditLogEntry.RecordType
-        CreationDateIsoUtc = if ($AuditLogEntry.CreationDate) { $AuditLogEntry.CreationDate.ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null }
-        OrganizationId     = Get-NestedProperty $auditData "OrganizationId" -Default "b1234567-89ab-cdef-0123-456789abcdef"
-        UserType           = Get-UserType -UserId $AuditLogEntry.UserIds -AuditData $auditData
-        UserKey            = Get-UserKey -UserId $AuditLogEntry.UserIds
-        Workload           = Get-WorkloadFromRecordType -RecordType $AuditLogEntry.RecordType
-        Operation          = $AuditLogEntry.Operations
-        UserId             = $AuditLogEntry.UserIds
-        AuditData          = $AuditLogEntry.AuditData  # Preserve raw JSON (now synthetic for DevTest)
+        RecordId                           = $AuditLogEntry.Identity
+        CreationDate                       = $AuditLogEntry.CreationDate
+        RecordType                         = $AuditLogEntry.RecordType
+        CreationDateIsoUtc                 = if ($AuditLogEntry.CreationDate) { $AuditLogEntry.CreationDate.ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null }
+        OrganizationId                     = Get-NestedProperty $auditData "OrganizationId" -Default "b1234567-89ab-cdef-0123-456789abcdef"
+        UserType                           = Get-UserType -UserId $AuditLogEntry.UserIds -AuditData $auditData
+        UserKey                            = Get-UserKey -UserId $AuditLogEntry.UserIds
+        Workload                           = Get-WorkloadFromRecordType -RecordType $AuditLogEntry.RecordType
+        Operation                          = $AuditLogEntry.Operations
+        UserId                             = $AuditLogEntry.UserIds
+        AssociatedAdminUnits               = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "AssociatedAdminUnits" -join ",") } else { Get-NestedProperty $auditData "AssociatedAdminUnits" }
+        AssociatedAdminUnitsNames          = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "AssociatedAdminUnitsNames" -join ",") } else { Get-NestedProperty $auditData "AssociatedAdminUnitsNames" }
+        AgentId                            = Get-NestedProperty $auditData "AgentId"
+        AgentName                          = Get-NestedProperty $auditData "AgentName"
+        AppIdentity_AppId                  = Get-NestedProperty $auditData "AppIdentity.AppId"
+        AppIdentity_DisplayName            = Get-NestedProperty $auditData "AppIdentity.DisplayName"
+        AppIdentity_PublisherId            = Get-NestedProperty $auditData "AppIdentity.PublisherId"
+        ApplicationName                    = Get-NestedProperty $auditData "ApplicationName"
+        CreationTime                       = Get-NestedProperty $auditData "CreationTime"
+        CreationTimeIsoUtc                 = if ($auditData.CreationTime) { ([DateTime]$auditData.CreationTime).ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null }
+        ClientIP                           = Get-NestedProperty $auditData "ClientIP" -Default (Get-SyntheticClientIP -UserId $AuditLogEntry.UserIds)
+        ObjectId                           = Get-NestedProperty $auditData "ObjectId" -Default (Get-SyntheticObjectId -Operation $AuditLogEntry.Operations -RecordType $AuditLogEntry.RecordType -AuditData $auditData)
+        ResultStatus                       = Get-NestedProperty $auditData "ResultStatus" -Default "Succeeded"
+        ClientRegion                       = Get-NestedProperty $auditData "ClientRegion"
+        Audit_UserId                       = Get-NestedProperty $auditData "UserId"
+        AppHost                            = Get-NestedProperty $auditData "AppHost"
+        ThreadId                           = Get-NestedProperty $auditData "ThreadId"
+        Context_Id                         = Get-NestedProperty $auditData "Context.Id"
+        Context_Type                       = Get-NestedProperty $auditData "Context.Type"
+        Message_Id                         = Get-NestedProperty $auditData "Message.Id"
+        Message_isPrompt                   = Get-NestedProperty $auditData "Message.isPrompt"
+        AccessedResource_Action            = Get-NestedProperty $auditData "AccessedResource.Action"
+        AccessedResource_PolicyDetails     = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "AccessedResource.PolicyDetails" -join ",") } else { Get-NestedProperty $auditData "AccessedResource.PolicyDetails" }
+        AccessedResource_SiteUrl           = Get-NestedProperty $auditData "AccessedResource.SiteUrl"
+        AISystemPlugin_Id                  = Get-NestedProperty $auditData "AISystemPlugin.Id"
+        AISystemPlugin_Name                = Get-NestedProperty $auditData "AISystemPlugin.Name"
+        ModelTransparencyDetails_ModelName = Get-NestedProperty $auditData "ModelTransparencyDetails.ModelName"
+        MessageIds                         = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "MessageIds" -join ",") } else { Get-NestedProperty $auditData "MessageIds" }
     }
-    return @($baseRecord)
-}
     
-# Original flattened structure for normal processing
-$baseRecord = [PSCustomObject]@{
-    RecordId                           = $AuditLogEntry.Identity
-    CreationDate                       = $AuditLogEntry.CreationDate
-    RecordType                         = $AuditLogEntry.RecordType
-    CreationDateIsoUtc                 = if ($AuditLogEntry.CreationDate) { $AuditLogEntry.CreationDate.ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null }
-    OrganizationId                     = Get-NestedProperty $auditData "OrganizationId" -Default "b1234567-89ab-cdef-0123-456789abcdef"
-    UserType                           = Get-UserType -UserId $AuditLogEntry.UserIds -AuditData $auditData
-    UserKey                            = Get-UserKey -UserId $AuditLogEntry.UserIds
-    Workload                           = Get-WorkloadFromRecordType -RecordType $AuditLogEntry.RecordType
-    Operation                          = $AuditLogEntry.Operations
-    UserId                             = $AuditLogEntry.UserIds
-    AssociatedAdminUnits               = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "AssociatedAdminUnits" -join ",") } else { Get-NestedProperty $auditData "AssociatedAdminUnits" }
-    AssociatedAdminUnitsNames          = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "AssociatedAdminUnitsNames" -join ",") } else { Get-NestedProperty $auditData "AssociatedAdminUnitsNames" }
-    AgentId                            = Get-NestedProperty $auditData "AgentId"
-    AgentName                          = Get-NestedProperty $auditData "AgentName"
-    AppIdentity_AppId                  = Get-NestedProperty $auditData "AppIdentity.AppId"
-    AppIdentity_DisplayName            = Get-NestedProperty $auditData "AppIdentity.DisplayName"
-    AppIdentity_PublisherId            = Get-NestedProperty $auditData "AppIdentity.PublisherId"
-    ApplicationName                    = Get-NestedProperty $auditData "ApplicationName"
-    CreationTime                       = Get-NestedProperty $auditData "CreationTime"
-    CreationTimeIsoUtc                 = if ($auditData.CreationTime) { ([DateTime]$auditData.CreationTime).ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null }
-    ClientIP                           = Get-NestedProperty $auditData "ClientIP" -Default (Get-SyntheticClientIP -UserId $AuditLogEntry.UserIds)
-    ObjectId                           = Get-NestedProperty $auditData "ObjectId" -Default (Get-SyntheticObjectId -Operation $AuditLogEntry.Operations -RecordType $AuditLogEntry.RecordType -AuditData $auditData)
-    ResultStatus                       = Get-NestedProperty $auditData "ResultStatus" -Default "Succeeded"
-    ClientRegion                       = Get-NestedProperty $auditData "ClientRegion"
-    Audit_UserId                       = Get-NestedProperty $auditData "UserId"
-    AppHost                            = Get-NestedProperty $auditData "AppHost"
-    ThreadId                           = Get-NestedProperty $auditData "ThreadId"
-    Context_Id                         = Get-NestedProperty $auditData "Context.Id"
-    Context_Type                       = Get-NestedProperty $auditData "Context.Type"
-    Message_Id                         = Get-NestedProperty $auditData "Message.Id"
-    Message_isPrompt                   = Get-NestedProperty $auditData "Message.isPrompt"
-    AccessedResource_Action            = Get-NestedProperty $auditData "AccessedResource.Action"
-    AccessedResource_PolicyDetails     = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "AccessedResource.PolicyDetails" -join ",") } else { Get-NestedProperty $auditData "AccessedResource.PolicyDetails" }
-    AccessedResource_SiteUrl           = Get-NestedProperty $auditData "AccessedResource.SiteUrl"
-    AISystemPlugin_Id                  = Get-NestedProperty $auditData "AISystemPlugin.Id"
-    AISystemPlugin_Name                = Get-NestedProperty $auditData "AISystemPlugin.Name"
-    ModelTransparencyDetails_ModelName = Get-NestedProperty $auditData "ModelTransparencyDetails.ModelName"
-    MessageIds                         = if ($NoExplodeArrays) { (Get-NestedProperty $auditData "MessageIds" -join ",") } else { Get-NestedProperty $auditData "MessageIds" }
-}
-    
-# Handle row explosion for arrays (default behavior unless disabled)
-if (!$NoExplodeArrays) {
-    # Pre-explosion audit: analyze the structure we're working with
-    Write-Host "Pre-Explosion Analysis:" -ForegroundColor Magenta
-    Write-Host "  Base record type: $($baseRecord.GetType().Name)" -ForegroundColor Gray
-    Write-Host "  Audit data type: $($auditData.GetType().Name)" -ForegroundColor Gray
+    # Handle row explosion for arrays (default behavior unless disabled)
+    if (!$NoExplodeArrays) {
+        # Pre-explosion audit: analyze the structure we're working with
+        Write-Host "Pre-Explosion Analysis:" -ForegroundColor Magenta
+        Write-Host "  Base record type: $($baseRecord.GetType().Name)" -ForegroundColor Gray
+        Write-Host "  Audit data type: $($auditData.GetType().Name)" -ForegroundColor Gray
         
-    # Sample the structure
-    if ($auditData -is [PSCustomObject]) {
-        $sampleProps = $auditData.PSObject.Properties | Select-Object -First 20
-        Write-Host "  Sample audit data properties ($($sampleProps.Count) shown):" -ForegroundColor Gray
-        foreach ($prop in $sampleProps) {
-            $valueInfo = if ($null -eq $prop.Value) { 
-                "null" 
+        # Sample the structure
+        if ($auditData -is [PSCustomObject]) {
+            $sampleProps = $auditData.PSObject.Properties | Select-Object -First 20
+            Write-Host "  Sample audit data properties ($($sampleProps.Count) shown):" -ForegroundColor Gray
+            foreach ($prop in $sampleProps) {
+                $valueInfo = if ($null -eq $prop.Value) { 
+                    "null" 
+                }
+                elseif ($prop.Value -is [System.Array]) { 
+                    "Array[$($prop.Value.Count)]" 
+                }
+                elseif ($prop.Value -is [PSCustomObject]) { 
+                    "Object" 
+                }
+                elseif ($prop.Value -is [string] -and ($prop.Value.StartsWith('[') -or $prop.Value.StartsWith('{'))) {
+                    "JSON-String"
+                }
+                else { 
+                    $prop.Value.GetType().Name 
+                }
+                Write-Host "    $($prop.Name): $valueInfo" -ForegroundColor Gray
             }
-            elseif ($prop.Value -is [System.Array]) { 
-                "Array[$($prop.Value.Count)]" 
-            }
-            elseif ($prop.Value -is [PSCustomObject]) { 
-                "Object" 
-            }
-            elseif ($prop.Value -is [string] -and ($prop.Value.StartsWith('[') -or $prop.Value.StartsWith('{'))) {
-                "JSON-String"
-            }
-            else { 
-                $prop.Value.GetType().Name 
-            }
-            Write-Host "    $($prop.Name): $valueInfo" -ForegroundColor Gray
         }
-    }
         
-    # Check if AuditData needs JSON parsing
-    if ($auditData.AuditData -and $auditData.AuditData -is [string]) {
-        try {
-            $parsedAuditData = $auditData.AuditData | ConvertFrom-Json
-            Write-Host "  Parsed AuditData JSON successfully - type: $($parsedAuditData.GetType().Name)" -ForegroundColor Green
-            # Replace the string with parsed object for better array detection
-            $auditData.AuditData = $parsedAuditData
+        # Check if AuditData needs JSON parsing
+        if ($auditData.AuditData -and $auditData.AuditData -is [string]) {
+            try {
+                $parsedAuditData = $auditData.AuditData | ConvertFrom-Json
+                Write-Host "  Parsed AuditData JSON successfully - type: $($parsedAuditData.GetType().Name)" -ForegroundColor Green
+                # Replace the string with parsed object for better array detection
+                $auditData.AuditData = $parsedAuditData
+            }
+            catch {
+                Write-Host "  Failed to parse AuditData as JSON: $($_.Exception.Message)" -ForegroundColor Red
+            }
         }
-        catch {
-            Write-Host "  Failed to parse AuditData as JSON: $($_.Exception.Message)" -ForegroundColor Red
-        }
-    }
-    # Exhaustive array detection function - handles ALL possible nesting scenarios
-    function Find-AllArrays {
-        param($Data, $Path = "", $Arrays = @{}, $Depth = 0)
+        # Exhaustive array detection function - handles ALL possible nesting scenarios
+        function Find-AllArrays {
+            param($Data, $Path = "", $Arrays = @{}, $Depth = 0)
             
-        if ($null -eq $Data -or $Depth -gt 20) { return $Arrays }  # Prevent infinite recursion
+            if ($null -eq $Data -or $Depth -gt 20) { return $Arrays }  # Prevent infinite recursion
             
-        # Detect ALL array types with ANY count (including single items)
-        $isArray = $false
-        $arrayCount = 0
-        $arrayData = $null
+            # Detect ALL array types with ANY count (including single items)
+            $isArray = $false
+            $arrayCount = 0
+            $arrayData = $null
             
-        # Check for various array types
-        if ($Data -is [System.Array]) {
-            $isArray = $true
-            $arrayCount = $Data.Count
-            $arrayData = $Data
-        }
-        elseif ($Data -is [System.Collections.ICollection] -and -not ($Data -is [string])) {
-            $isArray = $true
-            $arrayCount = $Data.Count
-            $arrayData = @($Data)
-        }
-        elseif ($Data -is [System.Collections.IEnumerable] -and -not ($Data -is [string]) -and -not ($Data -is [System.Collections.IDictionary])) {
-            $tempArray = @($Data)
-            if ($tempArray.Count -gt 0) {
+            # Check for various array types
+            if ($Data -is [System.Array]) {
                 $isArray = $true
-                $arrayCount = $tempArray.Count
-                $arrayData = $tempArray
+                $arrayCount = $Data.Count
+                $arrayData = $Data
             }
-        }
+            elseif ($Data -is [System.Collections.ICollection] -and -not ($Data -is [string])) {
+                $isArray = $true
+                $arrayCount = $Data.Count
+                $arrayData = @($Data)
+            }
+            elseif ($Data -is [System.Collections.IEnumerable] -and -not ($Data -is [string]) -and -not ($Data -is [System.Collections.IDictionary])) {
+                $tempArray = @($Data)
+                if ($tempArray.Count -gt 0) {
+                    $isArray = $true
+                    $arrayCount = $tempArray.Count
+                    $arrayData = $tempArray
+                }
+            }
             
-        # Register arrays with ANY count (including single items for explosion)
-        if ($isArray -and $arrayCount -gt 0 -and -not $Arrays.ContainsKey($Path)) {
-            $Arrays[$Path] = @{ 
-                Path  = $Path
-                Count = $arrayCount
-                Data  = $arrayData
-                Depth = $Depth
+            # Register arrays with ANY count (including single items for explosion)
+            if ($isArray -and $arrayCount -gt 0 -and -not $Arrays.ContainsKey($Path)) {
+                $Arrays[$Path] = @{ 
+                    Path  = $Path
+                    Count = $arrayCount
+                    Data  = $arrayData
+                    Depth = $Depth
+                }
+                Write-Verbose "    Found array at $Path with $arrayCount items (depth $Depth)"
             }
-            Write-Verbose "    Found array at $Path with $arrayCount items (depth $Depth)"
-        }
             
-        # Recursively explore ALL data structures
-        try {
-            # PSCustomObjects and custom objects
-            if ($Data -is [PSCustomObject] -or ($null -ne $Data -and $Data.GetType().Name -eq 'PSCustomObject')) {
-                foreach ($prop in $Data.PSObject.Properties) {
-                    try {
-                        $newPath = if ($Path) { "$Path.$($prop.Name)" } else { $prop.Name }
-                        $Arrays = Find-AllArrays -Data $prop.Value -Path $newPath -Arrays $Arrays -Depth ($Depth + 1)
-                    }
-                    catch { 
-                        Write-Verbose "    Skipped property $($prop.Name) due to access error"
-                    }
-                }
-            }
-            # Hashtables and dictionaries
-            elseif ($Data -is [System.Collections.IDictionary]) {
-                foreach ($key in $Data.Keys) {
-                    try {
-                        $newPath = if ($Path) { "$Path.$key" } else { $key }
-                        $Arrays = Find-AllArrays -Data $Data[$key] -Path $newPath -Arrays $Arrays -Depth ($Depth + 1)
-                    }
-                    catch {
-                        Write-Verbose "    Skipped dictionary key $key due to access error"
-                    }
-                }
-            }
-            # Array elements exploration
-            elseif ($isArray -and $arrayData) {
-                for ($i = 0; $i -lt $arrayCount; $i++) {
-                    try {
-                        if ($i -lt $arrayData.Count) {
-                            $newPath = if ($Path) { "$Path[$i]" } else { "[$i]" }
-                            $Arrays = Find-AllArrays -Data $arrayData[$i] -Path $newPath -Arrays $Arrays -Depth ($Depth + 1)
-                        }
-                    }
-                    catch {
-                        Write-Verbose "    Skipped array index $i due to access error"
-                    }
-                }
-            }
-            # Objects with properties (fallback for complex types)
-            elseif ($null -ne $Data -and $Data.GetType().IsClass -and -not ($Data -is [string]) -and -not ($Data -is [System.ValueType])) {
-                try {
-                    $properties = $Data | Get-Member -MemberType Property, NoteProperty -ErrorAction SilentlyContinue
-                    foreach ($prop in $properties) {
+            # Recursively explore ALL data structures
+            try {
+                # PSCustomObjects and custom objects
+                if ($Data -is [PSCustomObject] -or ($null -ne $Data -and $Data.GetType().Name -eq 'PSCustomObject')) {
+                    foreach ($prop in $Data.PSObject.Properties) {
                         try {
                             $newPath = if ($Path) { "$Path.$($prop.Name)" } else { $prop.Name }
-                            $propValue = $Data.($prop.Name)
-                            $Arrays = Find-AllArrays -Data $propValue -Path $newPath -Arrays $Arrays -Depth ($Depth + 1)
+                            $Arrays = Find-AllArrays -Data $prop.Value -Path $newPath -Arrays $Arrays -Depth ($Depth + 1)
+                        }
+                        catch { 
+                            Write-Verbose "    Skipped property $($prop.Name) due to access error"
+                        }
+                    }
+                }
+                # Hashtables and dictionaries
+                elseif ($Data -is [System.Collections.IDictionary]) {
+                    foreach ($key in $Data.Keys) {
+                        try {
+                            $newPath = if ($Path) { "$Path.$key" } else { $key }
+                            $Arrays = Find-AllArrays -Data $Data[$key] -Path $newPath -Arrays $Arrays -Depth ($Depth + 1)
                         }
                         catch {
-                            Write-Verbose "    Skipped complex property $($prop.Name) due to access error"
+                            Write-Verbose "    Skipped dictionary key $key due to access error"
                         }
                     }
                 }
-                catch {
-                    Write-Verbose "    Skipped complex object exploration due to reflection error"
-                }
-            }
-        }
-        catch {
-            Write-Verbose "    Skipped data exploration at path $Path due to error: $($_.Exception.Message)"
-        }
-            
-        return $Arrays
-    }
-        
-    # Find all arrays in the audit data with enhanced diagnostics
-    Write-Verbose "Starting exhaustive array detection on audit data..."
-    $arrayHashtable = Find-AllArrays -Data $auditData
-    $allArrays = $arrayHashtable.Values
-        
-    # Enhanced diagnostics for array detection
-    Write-Host "Array Detection Results:" -ForegroundColor Cyan
-    if ($allArrays.Count -gt 0) {
-        Write-Host "  Found $($allArrays.Count) arrays to explode:" -ForegroundColor Green
-        $totalExplosionPotential = 1
-        foreach ($arr in $allArrays) {
-            Write-Host "    $($arr.Path): $($arr.Count) items (depth $($arr.Depth))" -ForegroundColor Yellow
-            $totalExplosionPotential *= $arr.Count
-        }
-        Write-Host "  Maximum potential explosion: 1 → $totalExplosionPotential records" -ForegroundColor Magenta
-    }
-    else {
-        Write-Host "  No arrays detected for explosion" -ForegroundColor Yellow
-        # Debug the raw structure
-        Write-Host "  Raw audit data type: $($auditData.GetType().Name)" -ForegroundColor Gray
-        if ($auditData -is [PSCustomObject]) {
-            Write-Host "  Audit data properties:" -ForegroundColor Gray
-            foreach ($prop in $auditData.PSObject.Properties | Select-Object -First 10) {
-                $type = if ($prop.Value) { $prop.Value.GetType().Name } else { "null" }
-                Write-Host "    $($prop.Name): $type" -ForegroundColor Gray
-            }
-        }
-    }
-            
-    # Sort arrays by depth to process from outermost to innermost
-    $sortedArrays = $allArrays | Sort-Object Depth
-            
-    # Start with single base record
-    $explodedRecords = @($baseRecord)
-            
-    # Process each array for comprehensive cross-product explosion with performance optimization
-    foreach ($arrayInfo in $sortedArrays) {
-        $newRecords = @()
-        Write-Verbose "Processing array: $($arrayInfo.Path) with $($arrayInfo.Count) items (depth $($arrayInfo.Depth))"
-        
-        # ULTRA-AGGRESSIVE Performance protection: limit explosion size to prevent excessive processing time
-        $maxRecords = 500  # Reduced from 1000 for faster processing
-        $maxArraySize = 25  # Limit individual array size to prevent exponential explosion
-        $projectedRecords = $explodedRecords.Count * $arrayInfo.Count
-        
-        if ($projectedRecords -gt $maxRecords) {
-            Write-Host "    Performance protection: Projected $projectedRecords records exceeds limit of $maxRecords" -ForegroundColor Yellow
-            Write-Host "    Limiting array to first $([math]::Floor($maxRecords / $explodedRecords.Count)) items" -ForegroundColor Yellow
-            $arrayInfo.Data = $arrayInfo.Data | Select-Object -First ([math]::Max(1, [math]::Floor($maxRecords / $explodedRecords.Count)))
-            $arrayInfo.Count = $arrayInfo.Data.Count
-        }
-        
-        # Additional protection: limit individual array size
-        if ($arrayInfo.Count -gt $maxArraySize) {
-            Write-Host "    Performance protection: Array size $($arrayInfo.Count) exceeds limit of $maxArraySize" -ForegroundColor Yellow
-            Write-Host "    Truncating to first $maxArraySize items" -ForegroundColor Yellow
-            $arrayInfo.Data = $arrayInfo.Data | Select-Object -First $maxArraySize
-            $arrayInfo.Count = $arrayInfo.Data.Count
-        }
-        
-        # Show progress for large explosion operations
-        $totalOperations = $explodedRecords.Count * $arrayInfo.Count
-        $currentOperation = 0
-        $showProgress = $totalOperations -gt 50
-                
-        foreach ($existingRecord in $explodedRecords) {
-            foreach ($item in $arrayInfo.Data) {
-                $currentOperation++
-                
-                # Show progress for large operations
-                if ($showProgress -and ($currentOperation % 25) -eq 0) {
-                    $percent = [math]::Round(($currentOperation / $totalOperations) * 100, 1)
-                    Write-Host "    Exploding $($arrayInfo.Path): $percent% ($currentOperation/$totalOperations)" -ForegroundColor DarkGray
-                }
-                
-                try {
-                    # ULTRA-FAST CLONING: Use direct property copying instead of JSON serialization
-                    $record = [PSCustomObject]@{}
-                    
-                    # Copy all properties from existing record using direct assignment (fastest method)
-                    foreach ($property in $existingRecord.PSObject.Properties) {
-                        if ($property.Value -is [PSCustomObject]) {
-                            # For nested objects, create a new PSCustomObject and copy properties
-                            $nestedObj = [PSCustomObject]@{}
-                            foreach ($nestedProp in $property.Value.PSObject.Properties) {
-                                if ($nestedProp.Value -is [array]) {
-                                    # For arrays, create a shallow copy
-                                    $nestedObj | Add-Member -NotePropertyName $nestedProp.Name -NotePropertyValue @($nestedProp.Value) -Force
-                                } else {
-                                    $nestedObj | Add-Member -NotePropertyName $nestedProp.Name -NotePropertyValue $nestedProp.Value -Force
-                                }
+                # Array elements exploration
+                elseif ($isArray -and $arrayData) {
+                    for ($i = 0; $i -lt $arrayCount; $i++) {
+                        try {
+                            if ($i -lt $arrayData.Count) {
+                                $newPath = if ($Path) { "$Path[$i]" } else { "[$i]" }
+                                $Arrays = Find-AllArrays -Data $arrayData[$i] -Path $newPath -Arrays $Arrays -Depth ($Depth + 1)
                             }
-                            $record | Add-Member -NotePropertyName $property.Name -NotePropertyValue $nestedObj -Force
-                        } elseif ($property.Value -is [array]) {
-                            # For arrays, create a shallow copy
-                            $record | Add-Member -NotePropertyName $property.Name -NotePropertyValue @($property.Value) -Force
-                        } else {
-                            # For simple values, direct copy
-                            $record | Add-Member -NotePropertyName $property.Name -NotePropertyValue $property.Value -Force
+                        }
+                        catch {
+                            Write-Verbose "    Skipped array index $i due to access error"
                         }
                     }
-                            
-                    # Enhanced path resolution for ALL possible scenarios
-                    $success = Set-ValueAtPath -Record $record -Path $arrayInfo.Path -Value $item
-                            
-                    if ($success) {
-                        $newRecords += $record
-                    }
-                    else {
-                        Write-Verbose "    Failed to set value at path: $($arrayInfo.Path)"
-                    }
                 }
-                catch {
-                    Write-Verbose "    Error processing item in array $($arrayInfo.Path): $($_.Exception.Message)"
+                # Objects with properties (fallback for complex types)
+                elseif ($null -ne $Data -and $Data.GetType().IsClass -and -not ($Data -is [string]) -and -not ($Data -is [System.ValueType])) {
+                    try {
+                        $properties = $Data | Get-Member -MemberType Property, NoteProperty -ErrorAction SilentlyContinue
+                        foreach ($prop in $properties) {
+                            try {
+                                $newPath = if ($Path) { "$Path.$($prop.Name)" } else { $prop.Name }
+                                $propValue = $Data.($prop.Name)
+                                $Arrays = Find-AllArrays -Data $propValue -Path $newPath -Arrays $Arrays -Depth ($Depth + 1)
+                            }
+                            catch {
+                                Write-Verbose "    Skipped complex property $($prop.Name) due to access error"
+                            }
+                        }
+                    }
+                    catch {
+                        Write-Verbose "    Skipped complex object exploration due to reflection error"
+                    }
                 }
             }
+            catch {
+                Write-Verbose "    Skipped data exploration at path $Path due to error: $($_.Exception.Message)"
+            }
+            
+            return $Arrays
         }
-                
-        if ($newRecords.Count -gt 0) {
-            $explodedRecords = $newRecords
-            Write-Verbose "After exploding $($arrayInfo.Path): $($explodedRecords.Count) records"
+        
+        # Find all arrays in the audit data with enhanced diagnostics
+        Write-Verbose "Starting exhaustive array detection on audit data..."
+        $arrayHashtable = Find-AllArrays -Data $auditData
+        $allArrays = $arrayHashtable.Values
+        
+        # Enhanced diagnostics for array detection
+        Write-Host "Array Detection Results:" -ForegroundColor Cyan
+        if ($allArrays.Count -gt 0) {
+            Write-Host "  Found $($allArrays.Count) arrays to explode:" -ForegroundColor Green
+            $totalExplosionPotential = 1
+            foreach ($arr in $allArrays) {
+                Write-Host "    $($arr.Path): $($arr.Count) items (depth $($arr.Depth))" -ForegroundColor Yellow
+                $totalExplosionPotential *= $arr.Count
+            }
+            Write-Host "  Maximum potential explosion: 1 → $totalExplosionPotential records" -ForegroundColor Magenta
         }
         else {
-            Write-Verbose "No records generated from array $($arrayInfo.Path), keeping original"
+            Write-Host "  No arrays detected for explosion" -ForegroundColor Yellow
+            # Debug the raw structure
+            Write-Host "  Raw audit data type: $($auditData.GetType().Name)" -ForegroundColor Gray
+            if ($auditData -is [PSCustomObject]) {
+                Write-Host "  Audit data properties:" -ForegroundColor Gray
+                foreach ($prop in $auditData.PSObject.Properties | Select-Object -First 10) {
+                    $type = if ($prop.Value) { $prop.Value.GetType().Name } else { "null" }
+                    Write-Host "    $($prop.Name): $type" -ForegroundColor Gray
+                }
+            }
         }
-    }
             
-    # Enhanced path setting function
-    function Set-ValueAtPath {
-        param($Record, $Path, $Value)
+        # Sort arrays by depth to process from outermost to innermost
+        $sortedArrays = $allArrays | Sort-Object Depth
+            
+        # Start with single base record
+        $explodedRecords = @($baseRecord)
+            
+        # Process each array for comprehensive cross-product explosion with performance optimization
+        foreach ($arrayInfo in $sortedArrays) {
+            $newRecords = @()
+            Write-Verbose "Processing array: $($arrayInfo.Path) with $($arrayInfo.Count) items (depth $($arrayInfo.Depth))"
+        
+            # ULTRA-AGGRESSIVE Performance protection: limit explosion size to prevent excessive processing time
+            $maxRecords = 500  # Reduced from 1000 for faster processing
+            $maxArraySize = 25  # Limit individual array size to prevent exponential explosion
+            $projectedRecords = $explodedRecords.Count * $arrayInfo.Count
+        
+            if ($projectedRecords -gt $maxRecords) {
+                Write-Host "    Performance protection: Projected $projectedRecords records exceeds limit of $maxRecords" -ForegroundColor Yellow
+                Write-Host "    Limiting array to first $([math]::Floor($maxRecords / $explodedRecords.Count)) items" -ForegroundColor Yellow
+                $arrayInfo.Data = $arrayInfo.Data | Select-Object -First ([math]::Max(1, [math]::Floor($maxRecords / $explodedRecords.Count)))
+                $arrayInfo.Count = $arrayInfo.Data.Count
+            }
+        
+            # Additional protection: limit individual array size
+            if ($arrayInfo.Count -gt $maxArraySize) {
+                Write-Host "    Performance protection: Array size $($arrayInfo.Count) exceeds limit of $maxArraySize" -ForegroundColor Yellow
+                Write-Host "    Truncating to first $maxArraySize items" -ForegroundColor Yellow
+                $arrayInfo.Data = $arrayInfo.Data | Select-Object -First $maxArraySize
+                $arrayInfo.Count = $arrayInfo.Data.Count
+            }
+        
+            # Show progress for large explosion operations
+            $totalOperations = $explodedRecords.Count * $arrayInfo.Count
+            $currentOperation = 0
+            $showProgress = $totalOperations -gt 50
                 
-        try {
-            # Handle array indices in path like Path[0], Path[1], etc.
-            if ($Path -match '^(.+?)\[(\d+)\](.*)$') {
-                $basePath = $matches[1]
-                $index = [int]$matches[2]
-                $remainingPath = $matches[3]
-                        
-                # Navigate to the array
-                $current = $Record
-                if ($basePath) {
-                    $baseParts = $basePath -split '\.'
-                    foreach ($part in $baseParts) {
-                        if ($part -and $current.PSObject.Properties[$part]) {
-                            $current = $current.PSObject.Properties[$part].Value
+            foreach ($existingRecord in $explodedRecords) {
+                foreach ($item in $arrayInfo.Data) {
+                    $currentOperation++
+                
+                    # Show progress for large operations
+                    if ($showProgress -and ($currentOperation % 25) -eq 0) {
+                        $percent = [math]::Round(($currentOperation / $totalOperations) * 100, 1)
+                        Write-Host "    Exploding $($arrayInfo.Path): $percent% ($currentOperation/$totalOperations)" -ForegroundColor DarkGray
+                    }
+                
+                    try {
+                        # ULTRA-FAST CLONING: Use direct property copying instead of JSON serialization
+                        $record = [PSCustomObject]@{}
+                    
+                        # Copy all properties from existing record using direct assignment (fastest method)
+                        foreach ($property in $existingRecord.PSObject.Properties) {
+                            if ($property.Value -is [PSCustomObject]) {
+                                # For nested objects, create a new PSCustomObject and copy properties
+                                $nestedObj = [PSCustomObject]@{}
+                                foreach ($nestedProp in $property.Value.PSObject.Properties) {
+                                    if ($nestedProp.Value -is [array]) {
+                                        # For arrays, create a shallow copy
+                                        $nestedObj | Add-Member -NotePropertyName $nestedProp.Name -NotePropertyValue @($nestedProp.Value) -Force
+                                    }
+                                    else {
+                                        $nestedObj | Add-Member -NotePropertyName $nestedProp.Name -NotePropertyValue $nestedProp.Value -Force
+                                    }
+                                }
+                                $record | Add-Member -NotePropertyName $property.Name -NotePropertyValue $nestedObj -Force
+                            }
+                            elseif ($property.Value -is [array]) {
+                                # For arrays, create a shallow copy
+                                $record | Add-Member -NotePropertyName $property.Name -NotePropertyValue @($property.Value) -Force
+                            }
+                            else {
+                                # For simple values, direct copy
+                                $record | Add-Member -NotePropertyName $property.Name -NotePropertyValue $property.Value -Force
+                            }
+                        }
+                            
+                        # Enhanced path resolution for ALL possible scenarios
+                        $success = Set-ValueAtPath -Record $record -Path $arrayInfo.Path -Value $item
+                            
+                        if ($success) {
+                            $newRecords += $record
                         }
                         else {
-                            return $false
+                            Write-Verbose "    Failed to set value at path: $($arrayInfo.Path)"
                         }
                     }
+                    catch {
+                        Write-Verbose "    Error processing item in array $($arrayInfo.Path): $($_.Exception.Message)"
+                    }
                 }
+            }
+                
+            if ($newRecords.Count -gt 0) {
+                $explodedRecords = $newRecords
+                Write-Verbose "After exploding $($arrayInfo.Path): $($explodedRecords.Count) records"
+            }
+            else {
+                Write-Verbose "No records generated from array $($arrayInfo.Path), keeping original"
+            }
+        }
+            
+        # Enhanced path setting function
+        function Set-ValueAtPath {
+            param($Record, $Path, $Value)
+                
+            try {
+                # Handle array indices in path like Path[0], Path[1], etc.
+                if ($Path -match '^(.+?)\[(\d+)\](.*)$') {
+                    $basePath = $matches[1]
+                    $index = [int]$matches[2]
+                    $remainingPath = $matches[3]
                         
-                # Set array element
-                if ($current -is [System.Array] -and $index -lt $current.Count) {
-                    if ($remainingPath -and $remainingPath.StartsWith('.')) {
-                        # More nesting after array index
-                        $subPath = $remainingPath.Substring(1)
-                        return Set-ValueAtPath -Record $current[$index] -Path $subPath -Value $Value
+                    # Navigate to the array
+                    $current = $Record
+                    if ($basePath) {
+                        $baseParts = $basePath -split '\.'
+                        foreach ($part in $baseParts) {
+                            if ($part -and $current.PSObject.Properties[$part]) {
+                                $current = $current.PSObject.Properties[$part].Value
+                            }
+                            else {
+                                return $false
+                            }
+                        }
+                    }
+                        
+                    # Set array element
+                    if ($current -is [System.Array] -and $index -lt $current.Count) {
+                        if ($remainingPath -and $remainingPath.StartsWith('.')) {
+                            # More nesting after array index
+                            $subPath = $remainingPath.Substring(1)
+                            return Set-ValueAtPath -Record $current[$index] -Path $subPath -Value $Value
+                        }
+                        else {
+                            # Direct array element replacement
+                            $current[$index] = $Value
+                            return $true
+                        }
+                    }
+                        
+                    return $false
+                }
+                    
+                # Handle regular dot notation paths
+                $pathParts = $Path -split '\.'
+                $current = $Record
+                    
+                # Navigate to parent
+                for ($i = 0; $i -lt $pathParts.Count - 1; $i++) {
+                    $part = $pathParts[$i]
+                    if (-not $part) { continue }
+                        
+                    if (-not $current.PSObject.Properties[$part]) {
+                        Add-Member -InputObject $current -NotePropertyName $part -NotePropertyValue ([PSCustomObject]@{}) -Force
+                    }
+                    $current = $current.PSObject.Properties[$part].Value
+                }
+                    
+                # Set final value
+                $finalPart = $pathParts[-1]
+                if ($finalPart) {
+                    if ($current.PSObject.Properties[$finalPart]) {
+                        $current.PSObject.Properties[$finalPart].Value = $Value
                     }
                     else {
-                        # Direct array element replacement
-                        $current[$index] = $Value
-                        return $true
+                        Add-Member -InputObject $current -NotePropertyName $finalPart -NotePropertyValue $Value -Force
                     }
+                    return $true
                 }
-                        
+                    
                 return $false
             }
-                    
-            # Handle regular dot notation paths
-            $pathParts = $Path -split '\.'
-            $current = $Record
-                    
-            # Navigate to parent
-            for ($i = 0; $i -lt $pathParts.Count - 1; $i++) {
-                $part = $pathParts[$i]
-                if (-not $part) { continue }
-                        
-                if (-not $current.PSObject.Properties[$part]) {
-                    Add-Member -InputObject $current -NotePropertyName $part -NotePropertyValue ([PSCustomObject]@{}) -Force
-                }
-                $current = $current.PSObject.Properties[$part].Value
+            catch {
+                Write-Verbose "    Path setting error: $($_.Exception.Message)"
+                return $false
             }
-                    
-            # Set final value
-            $finalPart = $pathParts[-1]
-            if ($finalPart) {
-                if ($current.PSObject.Properties[$finalPart]) {
-                    $current.PSObject.Properties[$finalPart].Value = $Value
-                }
-                else {
-                    Add-Member -InputObject $current -NotePropertyName $finalPart -NotePropertyValue $Value -Force
-                }
-                return $true
-            }
-                    
-            return $false
         }
-        catch {
-            Write-Verbose "    Path setting error: $($_.Exception.Message)"
-            return $false
+            
+        # Add comprehensive explosion metadata and statistics
+        $explosionRatio = if ($explodedRecords.Count -gt 0) { $explodedRecords.Count } else { 1 }
+            
+        Write-Host "Explosion Results:" -ForegroundColor Green
+        Write-Host "  Input: 1 record" -ForegroundColor Yellow
+        Write-Host "  Output: $($explodedRecords.Count) records" -ForegroundColor Yellow
+        Write-Host "  Expansion ratio: 1:$explosionRatio" -ForegroundColor Yellow
+        Write-Host "  Arrays processed: $($allArrays.Count)" -ForegroundColor Yellow
+            
+        foreach ($record in $explodedRecords) {
+            Add-Member -InputObject $record -NotePropertyName '_ExplosionType' -NotePropertyValue 'ComprehensiveArrayExplosion' -Force
+            Add-Member -InputObject $record -NotePropertyName '_ArraysExploded' -NotePropertyValue $allArrays.Count -Force
+            Add-Member -InputObject $record -NotePropertyName '_ExplosionRatio' -NotePropertyValue $explosionRatio -Force
+            Add-Member -InputObject $record -NotePropertyName '_ExplodedPaths' -NotePropertyValue ($allArrays | ForEach-Object { $_.Path }) -Force
         }
+            
+        return $explodedRecords
     }
+    else {
+        Write-Host "Explosion Results:" -ForegroundColor Yellow
+        Write-Host "  Input: 1 record" -ForegroundColor Yellow  
+        Write-Host "  Output: 1 record (no arrays found)" -ForegroundColor Yellow
+        Write-Host "  No explosion needed" -ForegroundColor Yellow
             
-    # Add comprehensive explosion metadata and statistics
-    $explosionRatio = if ($explodedRecords.Count -gt 0) { $explodedRecords.Count } else { 1 }
-            
-    Write-Host "Explosion Results:" -ForegroundColor Green
-    Write-Host "  Input: 1 record" -ForegroundColor Yellow
-    Write-Host "  Output: $($explodedRecords.Count) records" -ForegroundColor Yellow
-    Write-Host "  Expansion ratio: 1:$explosionRatio" -ForegroundColor Yellow
-    Write-Host "  Arrays processed: $($allArrays.Count)" -ForegroundColor Yellow
-            
-    foreach ($record in $explodedRecords) {
-        Add-Member -InputObject $record -NotePropertyName '_ExplosionType' -NotePropertyValue 'ComprehensiveArrayExplosion' -Force
-        Add-Member -InputObject $record -NotePropertyName '_ArraysExploded' -NotePropertyValue $allArrays.Count -Force
-        Add-Member -InputObject $record -NotePropertyName '_ExplosionRatio' -NotePropertyValue $explosionRatio -Force
-        Add-Member -InputObject $record -NotePropertyName '_ExplodedPaths' -NotePropertyValue ($allArrays | ForEach-Object { $_.Path }) -Force
+        # Add metadata for passthrough tracking
+        Add-Member -InputObject $baseRecord -NotePropertyName '_PassthroughReason' -NotePropertyValue 'NoArraysDetected' -Force
+        Add-Member -InputObject $baseRecord -NotePropertyName '_ExplosionType' -NotePropertyValue 'PassThrough' -Force
+        return $baseRecord
     }
-            
-    return $explodedRecords
-}
-else {
-    Write-Host "Explosion Results:" -ForegroundColor Yellow
-    Write-Host "  Input: 1 record" -ForegroundColor Yellow  
-    Write-Host "  Output: 1 record (no arrays found)" -ForegroundColor Yellow
-    Write-Host "  No explosion needed" -ForegroundColor Yellow
-            
-    # Add metadata for passthrough tracking
-    Add-Member -InputObject $baseRecord -NotePropertyName '_PassthroughReason' -NotePropertyValue 'NoArraysDetected' -Force
-    Add-Member -InputObject $baseRecord -NotePropertyName '_ExplosionType' -NotePropertyValue 'PassThrough' -Force
-    return $baseRecord
-}
     
-return $baseRecord
+    return $baseRecord
 }
 
 try {
@@ -1360,7 +1371,7 @@ try {
     if ($LogFile) {
         try {
             Start-Transcript -Path $LogFile -Force
-            Write-Host "Transcript logging started: $LogFile" -ForegroundColor Green
+            Write-Host ('Transcript logging started: ' + $LogFile) -ForegroundColor Green
         }
         catch {
             Write-Warning "Failed to start transcript logging to '$LogFile': $($_.Exception.Message)"
@@ -1430,7 +1441,7 @@ try {
             for ($m = 1; $m -le $messageCount; $m++) {
                 # Realistic structure matching real data: just Id and isPrompt with more varied boolean values
                 $messages += @{
-                    Id = "$(Get-Random -Minimum 1749140000000 -Maximum 1749150000000)"
+                    Id       = "$(Get-Random -Minimum 1749140000000 -Maximum 1749150000000)"
                     isPrompt = if ($m -eq 1) { $true } else { @($true, $false, $false, $false) | Get-Random }  # First is usually prompt, others mostly false
                 }
             }
@@ -1440,12 +1451,13 @@ try {
             
             # Generate AISystemPlugin data matching real structure
             $plugins = @()
-            if ((Get-Random -Minimum 1 -Maximum 100) -le 32) {  # 32% chance of having plugins (reduced from 62%)
+            if ((Get-Random -Minimum 1 -Maximum 100) -le 32) {
+                # 32% chance of having plugins (reduced from 62%)
                 $pluginTypes = @("BingWebSearch", "EnterpriseSearch", "Microsoft365", "PowerPlatform", "GraphConnector")
                 $weights = @(70, 15, 8, 4, 3)  # BingWebSearch is most common
                 $selectedPlugin = Get-WeightedSelection -Options $pluginTypes -Weights $weights
                 $plugins += @{
-                    Id = $selectedPlugin
+                    Id   = $selectedPlugin
                     Name = if ($selectedPlugin -eq "BingWebSearch") { "BuiltIn" } else { @("BuiltIn", "Custom", "Enterprise") | Get-Random }
                 }
             }
@@ -1457,65 +1469,66 @@ try {
                 $actions = @("Read", "Edit", "Download", "View", "Share")
                 $weights = @(50, 20, 15, 10, 5)  # Read is most common
                 $accessedResources += @{
-                    Action = Get-WeightedSelection -Options $actions -Weights $weights
+                    Action        = Get-WeightedSelection -Options $actions -Weights $weights
                     PolicyDetails = if ((Get-Random -Minimum 1 -Maximum 100) -le 15) { "DLP_Confidential" } else { "" }  # Most are empty
-                    SiteUrl = if ((Get-Random -Minimum 1 -Maximum 100) -le 80) { "https://contoso.sharepoint.com/sites/team$r" } else { "" }
+                    SiteUrl       = if ((Get-Random -Minimum 1 -Maximum 100) -le 80) { "https://contoso.sharepoint.com/sites/team$r" } else { "" }
                 }
             }
             
             # Generate ModelTransparencyDetails with more variety
             $modelDetails = @()
-            if ((Get-Random -Minimum 1 -Maximum 100) -le 45) {  # 45% chance (reduced from 80%)
+            if ((Get-Random -Minimum 1 -Maximum 100) -le 45) {
+                # 45% chance (reduced from 80%)
                 $models = @("DEEP_LEO", "GPT4", "CODEX", "GPT-3.5-TURBO", "AZURE_OPENAI")
                 $weights = @(40, 30, 15, 10, 5)
                 $modelDetails += @{
-                    ModelName = Get-WeightedSelection -Options $models -Weights $weights
+                    ModelName    = Get-WeightedSelection -Options $models -Weights $weights
                     ModelVersion = if ((Get-Random -Minimum 1 -Maximum 100) -le 30) { "v$(Get-Random -Minimum 1 -Maximum 5).$(Get-Random -Minimum 0 -Maximum 9)" } else { $null }
                 }
             }
             
             # Create comprehensive synthetic audit data
             $auditData = @{
-                CreationTime = $randomTime.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
-                Id = [Guid]::NewGuid().ToString()
-                Operation = "CopilotInteraction"
-                OrganizationId = "aa42167d-6f8d-45ce-b655-d245ef97da66"
-                RecordType = 261
-                UserKey = "synthetic.user$i@contoso.com"
-                UserType = 0
-                Version = 1
-                Workload = "Copilot"
-                ClientIP = "192.168.1.$((Get-Random -Minimum 100 -Maximum 199))"
-                UserId = "synthetic.user$i@contoso.com"
-                ClientRegion = if ((Get-Random -Minimum 1 -Maximum 100) -le 64) { "us" } else { @("", "prd", "westeurope", "GB") | Get-Random }
-                AppHost = $selectedAppHost
-                ThreadId = "19:$(([Guid]::NewGuid().ToString() -replace '-','').Substring(0,26))@thread.v2"
-                CopilotEventData = @{
-                    AppHost = $selectedAppHost
-                    ThreadId = "19:$(([Guid]::NewGuid().ToString() -replace '-','').Substring(0,26))@thread.v2"
-                    Messages = $messages
-                    Contexts = $contexts
-                    AISystemPlugin = $plugins
-                    AccessedResources = $accessedResources
+                CreationTime      = $randomTime.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+                Id                = [Guid]::NewGuid().ToString()
+                Operation         = "CopilotInteraction"
+                OrganizationId    = "aa42167d-6f8d-45ce-b655-d245ef97da66"
+                RecordType        = 261
+                UserKey           = "synthetic.user$i@contoso.com"
+                UserType          = 0
+                Version           = 1
+                Workload          = "Copilot"
+                ClientIP          = "192.168.1.$((Get-Random -Minimum 100 -Maximum 199))"
+                UserId            = "synthetic.user$i@contoso.com"
+                ClientRegion      = if ((Get-Random -Minimum 1 -Maximum 100) -le 64) { "us" } else { @("", "prd", "westeurope", "GB") | Get-Random }
+                AppHost           = $selectedAppHost
+                ThreadId          = "19:$(([Guid]::NewGuid().ToString() -replace '-','').Substring(0,26))@thread.v2"
+                CopilotEventData  = @{
+                    AppHost                  = $selectedAppHost
+                    ThreadId                 = "19:$(([Guid]::NewGuid().ToString() -replace '-','').Substring(0,26))@thread.v2"
+                    Messages                 = $messages
+                    Contexts                 = $contexts
+                    AISystemPlugin           = $plugins
+                    AccessedResources        = $accessedResources
                     ModelTransparencyDetails = $modelDetails
-                    MessageIds = @()
-                    CorrelationId = [Guid]::NewGuid().ToString()
-                    AgentId = if ((Get-Random -Minimum 1 -Maximum 1000) -le 8) { "SYSTEM_CreateGPT.declarativeCopilot" } else { $null }
-                    AgentName = if ((Get-Random -Minimum 1 -Maximum 1000) -le 7) { @("Visual Creator", "IT Service Agent", "Risk Analysis") | Get-Random } else { $null }
+                    MessageIds               = @()
+                    CorrelationId            = [Guid]::NewGuid().ToString()
+                    AgentId                  = if ((Get-Random -Minimum 1 -Maximum 1000) -le 8) { "SYSTEM_CreateGPT.declarativeCopilot" } else { $null }
+                    AgentName                = if ((Get-Random -Minimum 1 -Maximum 1000) -le 7) { @("Visual Creator", "IT Service Agent", "Risk Analysis") | Get-Random } else { $null }
                 }
                 CopilotLogVersion = "1.0.0.0"
             }
             
             # Create synthetic audit log entry that looks like real CopilotInteraction
             $syntheticLog = [PSCustomObject]@{
-                Identity = "SYNTHETIC-$($randomTime.ToString('yyyyMMdd-HHmmss'))-$i"
-                RecordType = 261  # CopilotInteraction
-                CreationDate = $randomTime
-                UserIds = "synthetic.user$i@contoso.com"
-                Operations = "CopilotInteraction"
-                AuditData = ($auditData | ConvertTo-Json -Depth 10 -Compress)
-                ResultIndex = $i
-                ResultCount = $Count
+                Identity       = "SYNTHETIC-$($randomTime.ToString('yyyyMMdd-HHmmss'))-$i"
+                RecordType     = 261  # CopilotInteraction
+                CreationDate   = $randomTime
+                UserIds        = "synthetic.user$i@contoso.com"
+                Operations     = "CopilotInteraction"
+                AuditData      = ($auditData | ConvertTo-Json -Depth 10 -Compress)
+                ResultIndex    = $i
+                ResultCount    = $Count
                 PSComputerName = "compliance.protection.outlook.com"
             }
             
@@ -1752,7 +1765,7 @@ try {
                 # Track statistics and add results
                 if ($groupLogs) {
                     $allLogs.AddRange($groupLogs) | Out-Null
-                    Write-Host "  Found $($groupLogs.Count) records (pre-row explosion) for $activityList at $($currentTime.ToString('yyyy-MM-dd HH:mm'))" -ForegroundColor Green
+                    Write-Host "  Found $($groupLogs.Count) records for $activityList at $($currentTime.ToString('yyyy-MM-dd HH:mm'))" -ForegroundColor Green
                 }
                 else {
                     Write-Host "  No records found for $activityList ($($currentTime.ToString('yyyy-MM-dd HH:mm'))-$($blockEnd.ToString('HH:mm')))" -ForegroundColor Yellow
@@ -1994,10 +2007,11 @@ finally {
     if ($LogFile) {
         try {
             Stop-Transcript
-            Write-Host "Transcript log saved: $LogFile" -ForegroundColor Green
+            Write-Host ('Transcript log saved: ' + $LogFile) -ForegroundColor Green
         }
         catch {
             # Transcript might not be running, ignore errors
         }
     }
 }
+ 

@@ -1,5 +1,6 @@
 # PAX Version Bump and Release Script (PowerShell)
-# Automatically updates version numbers, commits changes, and triggers GitHub release workflow
+# Automatically updates version numbers in package.json, tauri.conf.json, and Cargo.toml
+# Commits changes and triggers GitHub release workflow
 
 param(
     [switch]$Patch,
@@ -13,6 +14,8 @@ param(
 $ScriptName = "PAX Release Script"
 $PackageJson = "package.json"
 $TauriConf = "src-tauri/tauri.conf.json"
+$CargoToml = "src-tauri/Cargo.toml"
+$ExportScript = "scripts/CopilotInteraction_Purview_Export.ps1"
 
 # Function to print colored output
 function Write-Status {
@@ -152,6 +155,108 @@ function Update-JsonVersion {
     }
     catch {
         Write-Error "Failed to update $FilePath`: $($_.Exception.Message)"
+        exit 1
+    }
+}
+
+# Function to update version in Cargo.toml file
+function Update-CargoVersion {
+    param(
+        [string]$FilePath,
+        [string]$NewVersion
+    )
+    
+    try {
+        $content = Get-Content $FilePath -Raw
+        
+        # Update version in [package] section using regex
+        # Matches: version = "x.x.x" (with any whitespace around =)
+        $pattern = '(?<=\[package\][\s\S]*?version\s*=\s*")[^"]+(?=")'
+        
+        if ($content -match $pattern) {
+            $content = $content -replace $pattern, $NewVersion
+            $content | Set-Content $FilePath -Encoding UTF8 -NoNewline
+            Write-Success "Updated $FilePath to version $NewVersion"
+        }
+        else {
+            throw "Could not find version pattern in [package] section of $FilePath"
+        }
+    }
+    catch {
+        Write-Error "Failed to update $FilePath`: $($_.Exception.Message)"
+        exit 1
+    }
+}
+
+# Function to update $ScriptVersion variable in the audit export PowerShell script
+function Update-ExportScriptVersion {
+    param(
+        [string]$FilePath,
+        [string]$NewVersion
+    )
+
+    if (-not (Test-Path $FilePath)) {
+        Write-Warning "Export script not found at $FilePath (skipping)"
+        return
+    }
+
+    try {
+        $content = Get-Content $FilePath -Raw -ErrorAction Stop
+        $pattern = "(?m)^\s*\$ScriptVersion\s*=\s*'[^']*'"
+        if ($content -match $pattern) {
+            # Use backtick to ensure literal $ScriptVersion is written
+            $replacement = "`$ScriptVersion = '$NewVersion'"
+            $updated = [regex]::Replace($content, $pattern, $replacement, 1)
+            if ($updated -ne $content) {
+                $updated | Set-Content -Path $FilePath -Encoding UTF8
+                Write-Success "Updated export script version to $NewVersion"
+            }
+            else {
+                Write-Warning "No change applied to export script version (already $NewVersion?)"
+            }
+        }
+        else {
+            Write-Warning "Could not locate $ScriptVersion assignment in export script; pattern may have changed."
+        }
+    }
+    catch {
+        Write-Error "Failed to update export script version: $($_.Exception.Message)"
+        exit 1
+    }
+}
+
+# Function to update README header version line
+function Update-ReadmeVersion {
+    param(
+        [string]$FilePath,
+        [string]$NewVersion
+    )
+
+    if (-not (Test-Path $FilePath)) {
+        Write-Warning "README not found at $FilePath (skipping)"
+        return
+    }
+
+    try {
+        $content = Get-Content $FilePath -Raw -ErrorAction Stop
+        $pattern = "(?m)^## Portable Audit eXporter \(PAX\) - Purview Audit Log Exporter v\.[0-9]+\.[0-9]+\.[0-9]+"
+        if ($content -match $pattern) {
+            $newHeader = "## Portable Audit eXporter (PAX) - Purview Audit Log Exporter v.$NewVersion"
+            $updated = [regex]::Replace($content, $pattern, [System.Text.RegularExpressions.MatchEvaluator] { param($m) $newHeader }, 1)
+            if ($updated -ne $content) {
+                $updated | Set-Content -Path $FilePath -Encoding UTF8
+                Write-Success "Updated README version header to v.$NewVersion"
+            }
+            else {
+                Write-Warning "README version header already at v.$NewVersion"
+            }
+        }
+        else {
+            Write-Warning "README header pattern not found; skipping version header update."
+        }
+    }
+    catch {
+        Write-Error "Failed to update README version header: $($_.Exception.Message)"
         exit 1
     }
 }
@@ -310,6 +415,8 @@ function Main {
     Write-Status "Updating version files..."
     Update-JsonVersion -FilePath $PackageJson -NewVersion $newVersion
     Update-JsonVersion -FilePath $TauriConf -NewVersion $newVersion
+    Update-CargoVersion -FilePath $CargoToml -NewVersion $newVersion
+    # Export script & README now derive/display version dynamically from package.json (no direct version stamping needed)
     
     # Commit and tag
     Write-Status "Creating git commit and tag..."
