@@ -169,12 +169,14 @@ function Update-CargoVersion {
     try {
         $content = Get-Content $FilePath -Raw
         
-        # Update version in [package] section using regex
-        # Matches: version = "x.x.x" (with any whitespace around =)
-        $pattern = '(?<=\[package\][\s\S]*?version\s*=\s*")[^"]+(?=")'
+        # Update ONLY the version in [package] section (not dependencies)
+        # Match the [package] section up to the next section or [dependencies]
+        # Then replace only the first version = "x.x.x" in that section
+        $pattern = '(\[package\][^\[]*?version\s*=\s*")[^"]+(")'
         
         if ($content -match $pattern) {
-            $content = $content -replace $pattern, $NewVersion
+            # Replace only the first match (the [package] version)
+            $content = $content -replace $pattern, "`${1}$NewVersion`${2}"
             $content | Set-Content $FilePath -Encoding UTF8 -NoNewline
             Write-Success "Updated $FilePath to version $NewVersion"
         }
