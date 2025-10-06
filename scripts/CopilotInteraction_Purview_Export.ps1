@@ -401,7 +401,10 @@ ${rangeText} = if ($RAWInputCSV) { if ([string]::IsNullOrWhiteSpace($StartDate) 
 Write-LogHost "Date Range: $rangeText" -ForegroundColor White
 Write-LogHost "Output File: $OutputFile" -ForegroundColor White
 Write-LogHost "Log File: $LogFile" -ForegroundColor White
-Write-LogHost "Authentication: $Auth" -ForegroundColor White
+# Authentication type only relevant for live queries (not replay mode)
+if (-not $RAWInputCSV) {
+    Write-LogHost "Authentication: $Auth" -ForegroundColor White
+}
 Write-LogHost ("Activity Types: " + ($ActivityTypes -join ', ')) -ForegroundColor White
 Write-LogHost "=============================================" -ForegroundColor Cyan
 Write-LogHost ""
