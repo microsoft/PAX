@@ -15,7 +15,7 @@ $ScriptName = "PAX Release Script"
 $PackageJson = "package.json"
 $TauriConf = "src-tauri/tauri.conf.json"
 $CargoToml = "src-tauri/Cargo.toml"
-$ExportScript = "scripts/CopilotInteraction_Purview_Export.ps1"
+$ExportScriptPattern = "scripts/PAX_Purview_Audit_Log_Processor_v*.ps1"
 
 # Function to print colored output
 function Write-Status {
@@ -193,17 +193,27 @@ function Update-CargoVersion {
 # Function to update version in the audit export PowerShell script (both static header and dynamic variable)
 function Update-ExportScriptVersion {
     param(
-        [string]$FilePath,
         [string]$NewVersion
     )
 
-    if (-not (Test-Path $FilePath)) {
-        Write-Warning "Export script not found at $FilePath (skipping)"
+    # Find existing versioned script file
+    $scriptPattern = "scripts/PAX_Purview_Audit_Log_Processor_v*.ps1"
+    $existingScript = Get-ChildItem -Path $scriptPattern -ErrorAction SilentlyContinue | Select-Object -First 1
+    
+    if (-not $existingScript) {
+        Write-Warning "Export script not found matching pattern: $scriptPattern (skipping)"
         return
     }
 
+    $oldPath = $existingScript.FullName
+    $newFilename = "PAX_Purview_Audit_Log_Processor_v$NewVersion.ps1"
+    $newPath = Join-Path (Split-Path $oldPath -Parent) $newFilename
+    
+    Write-Status "Renaming export script: $($existingScript.Name) -> $newFilename"
+
     try {
-        $content = Get-Content $FilePath -Raw -ErrorAction Stop
+        # Read content
+        $content = Get-Content $oldPath -Raw -ErrorAction Stop
         $updated = $false
         
         # Update static version comment at top of file (line 1)
@@ -229,10 +239,24 @@ function Update-ExportScriptVersion {
             Write-Success "Updated dynamic `$ScriptVersion variable to '$NewVersion'"
         }
         
-        # Save changes if any updates were made
-        if ($updated) {
-            $content | Set-Content -Path $FilePath -Encoding UTF8 -NoNewline
-            Write-Success "Updated export script version to $NewVersion"
+        # Update all example command references in the script help section
+        # Replace PAX_Purview_Audit_Log_Processor_vX.X.X.ps1 with new version
+        $scriptNamePattern = "PAX_Purview_Audit_Log_Processor_v[\d\.]+\.ps1"
+        if ($content -match $scriptNamePattern) {
+            $content = [regex]::Replace($content, $scriptNamePattern, $newFilename)
+            Write-Success "Updated script filename references in help examples"
+        }
+        
+        # Save to new file
+        if ($updated -or ($oldPath -ne $newPath)) {
+            $content | Set-Content -Path $newPath -Encoding UTF8 -NoNewline
+            Write-Success "Saved updated script to: $newFilename"
+            
+            # Remove old file if name changed
+            if ($oldPath -ne $newPath) {
+                Remove-Item -Path $oldPath -Force
+                Write-Success "Removed old script file: $($existingScript.Name)"
+            }
         }
         else {
             Write-Warning "No version patterns found in export script to update"
@@ -244,7 +268,7 @@ function Update-ExportScriptVersion {
     }
 }
 
-# Function to update README header version line
+# Function to update README header version line and script references
 function Update-ReadmeVersion {
     param(
         [string]$FilePath,
@@ -258,24 +282,37 @@ function Update-ReadmeVersion {
 
     try {
         $content = Get-Content $FilePath -Raw -ErrorAction Stop
-        $pattern = "(?m)^## Portable Audit eXporter \(PAX\) - Purview Audit Log Exporter v\.[0-9]+\.[0-9]+\.[0-9]+"
-        if ($content -match $pattern) {
-            $newHeader = "## Portable Audit eXporter (PAX) - Purview Audit Log Exporter v.$NewVersion"
-            $updated = [regex]::Replace($content, $pattern, [System.Text.RegularExpressions.MatchEvaluator] { param($m) $newHeader }, 1)
-            if ($updated -ne $content) {
-                $updated | Set-Content -Path $FilePath -Encoding UTF8
-                Write-Success "Updated README version header to v.$NewVersion"
-            }
-            else {
-                Write-Warning "README version header already at v.$NewVersion"
-            }
+        $updated = $false
+        
+        # Update the script reference line (e.g., Script: `PAX_Purview_Audit_Log_Processor_v1.4.2.ps1`)
+        $scriptRefPattern = "Script:\s*``PAX_Purview_Audit_Log_Processor_v[\d\.]+\.ps1``"
+        if ($content -match $scriptRefPattern) {
+            $newScriptRef = "Script: ``PAX_Purview_Audit_Log_Processor_v$NewVersion.ps1``"
+            $content = [regex]::Replace($content, $scriptRefPattern, $newScriptRef, 1)
+            $updated = $true
+            Write-Success "Updated README script reference to v$NewVersion"
+        }
+        
+        # Update all command examples that reference the script
+        $scriptNamePattern = "PAX_Purview_Audit_Log_Processor_v[\d\.]+\.ps1"
+        $newScriptName = "PAX_Purview_Audit_Log_Processor_v$NewVersion.ps1"
+        if ($content -match $scriptNamePattern) {
+            $content = [regex]::Replace($content, $scriptNamePattern, $newScriptName)
+            $updated = $true
+            Write-Success "Updated README command examples to use v$NewVersion"
+        }
+        
+        # Save changes if any updates were made
+        if ($updated) {
+            $content | Set-Content -Path $FilePath -Encoding UTF8 -NoNewline
+            Write-Success "Updated README with version $NewVersion"
         }
         else {
-            Write-Warning "README header pattern not found; skipping version header update."
+            Write-Warning "No version patterns found in README to update"
         }
     }
     catch {
-        Write-Error "Failed to update README version header: $($_.Exception.Message)"
+        Write-Error "Failed to update README version: $($_.Exception.Message)"
         exit 1
     }
 }
@@ -435,7 +472,8 @@ function Main {
     Update-JsonVersion -FilePath $PackageJson -NewVersion $newVersion
     Update-JsonVersion -FilePath $TauriConf -NewVersion $newVersion
     Update-CargoVersion -FilePath $CargoToml -NewVersion $newVersion
-    Update-ExportScriptVersion -FilePath $ExportScript -NewVersion $newVersion
+    Update-ExportScriptVersion -NewVersion $newVersion
+    Update-ReadmeVersion -FilePath "README.md" -NewVersion $newVersion
     
     # Commit and tag
     Write-Status "Creating git commit and tag..."
