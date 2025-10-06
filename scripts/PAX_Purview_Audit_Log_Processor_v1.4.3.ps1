@@ -1054,9 +1054,20 @@ try {
     # Enable parallel processing for large replay datasets (PowerShell 7+ required)
     $replayParallelEligible = $false
     if ($RAWInputCSV -and ($PSVersionTable.PSVersion.Major -ge 7)) {
-        if ($allLogs.Count -gt ($StreamingSchemaSample + 5000)) { $replayParallelEligible = $true }
+        $eligibilityThreshold = ($StreamingSchemaSample + 5000)
+        Write-LogHost "Parallel eligibility check: RAW=$RAWInputCSV, PS=$($PSVersionTable.PSVersion.Major), Count=$($allLogs.Count), Threshold=$eligibilityThreshold" -ForegroundColor DarkGray
+        if ($allLogs.Count -gt $eligibilityThreshold) { 
+            $replayParallelEligible = $true 
+            Write-LogHost "Replay parallel explosion ELIGIBLE -> will parallelize after schema freeze ($($allLogs.Count) records)" -ForegroundColor Green
+        }
+        else {
+            Write-LogHost "Replay parallel NOT eligible (dataset too small: $($allLogs.Count) <= $eligibilityThreshold)" -ForegroundColor DarkYellow
+        }
     }
-    if ($replayParallelEligible) { Write-LogHost "Replay parallel explosion eligible -> will parallelize after schema freeze" -ForegroundColor DarkCyan }
+    else {
+        if (-not $RAWInputCSV) { Write-LogHost "Parallel not eligible: Not in replay mode" -ForegroundColor DarkGray }
+        elseif ($PSVersionTable.PSVersion.Major -lt 7) { Write-LogHost "Parallel not eligible: PowerShell $($PSVersionTable.PSVersion) (need 7+)" -ForegroundColor DarkYellow }
+    }
     $script:progressState.Explode.Total = [int]$allLogs.Count; $script:progressState.Explode.Current = 0; $te0 = Get-Date
     $schemaFrozen = $false; $schemaSampleRows = New-Object System.Collections.Generic.List[object]; $postFreezeNewColumns = 0
     # Track distinct late (post-freeze) columns ignored (deep mode / parallel replay)
