@@ -316,8 +316,29 @@ function Update-Progress {
     }
     $statusText = if ($Status) { "$Status :: $composite" } else { $composite }
     if ($statusText.Length -gt 180) { $statusText = $statusText.Substring(0, 177) + '...' }
+    
+    # Display inline progress bar at current cursor position
+    $progressLine = "[Overall $pct%] $statusText"
+    try {
+        # Save cursor position, write progress, restore cursor
+        $cursorPos = $Host.UI.RawUI.CursorPosition
+        $windowWidth = try { $Host.UI.RawUI.WindowSize.Width } catch { 120 }
+        $paddedLine = $progressLine.PadRight([Math]::Min($windowWidth - 1, $progressLine.Length))
+        Write-Host "`r$paddedLine" -NoNewline -ForegroundColor Cyan
+    }
+    catch {
+        # Fallback for environments that don't support cursor positioning
+        Write-Host $progressLine -ForegroundColor Cyan
+    }
 }
-function Complete-Progress { }
+function Complete-Progress { 
+    # Clear the progress line and move to next line
+    try {
+        Write-Host "`r$(' ' * 120)" -NoNewline
+        Write-Host "`r"
+    }
+    catch {}
+}
 
 $script:highVolumeActivities = @('CopilotInteraction', 'MessageSent', 'FileAccessed', 'MailItemsAccessed')
 $script:mediumVolumeActivities = @('MessageRead', 'FileModified', 'MeetingDetail', 'SearchQueryPerformed')
