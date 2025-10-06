@@ -218,8 +218,8 @@ $script:TenantIndicators = @()
 $ForcedRawInputCsvExplosion = $false
 if ($RAWInputCSV) { $ForcedRawInputCsvExplosion = $true }
 
-# --- PHASE 2/3 PERFORMANCE: Compiled regex patterns & optimized helpers ---
-# Pre-compile regex patterns for faster string matching (avoid recompilation in loops)
+# --- Compiled regex patterns for efficient string matching ---
+# Pre-compile regex patterns to improve performance during data processing
 $script:RegexTrueFalse = [regex]::new('^(?i:true|false)$', [System.Text.RegularExpressions.RegexOptions]::Compiled)
 $script:RegexYes1 = [regex]::new('^(?i:yes|1)$', [System.Text.RegularExpressions.RegexOptions]::Compiled)
 $script:RegexNo0 = [regex]::new('^(?i:no|0)$', [System.Text.RegularExpressions.RegexOptions]::Compiled)
@@ -272,7 +272,7 @@ if ($legacyParallelSwitchUsed) { $ParallelMode = 'On' }
 function Get-ParallelActivationDecision { param([array]$QueryPlan, [string]$ParallelMode, [int]$MaxParallelGroups, [int]$MaxConcurrency) $ps7 = ($PSVersionTable.PSVersion.Major -ge 7); $highGroups = ($QueryPlan | Where-Object { $_.Group -eq 'High' }).Count; $mediumGroups = ($QueryPlan | Where-Object { $_.Group -eq 'Medium' }).Count; $lowGroups = ($QueryPlan | Where-Object { $_.Group -eq 'Low' }).Count; $totalGroups = $QueryPlan.Count; $totalActivities = ($QueryPlan | ForEach-Object { $_.Activities.Count } | Measure-Object -Sum).Sum; $autoEligible = $ps7 -and ($MaxParallelGroups -gt 0) -and ($MaxConcurrency -gt 1) -and ($highGroups -le 1) -and (($mediumGroups + $lowGroups) -ge 1) -and ($totalActivities -le 15) -and ($totalGroups -gt 1); switch ($ParallelMode) { 'On' { return @{ Enabled = ($ps7 -and $MaxParallelGroups -gt 0 -and $MaxConcurrency -gt 0); Reason = if ($ps7) { 'Forced On' } else { 'PS < 7 (cannot parallel)' }; AutoEligible = $autoEligible } } 'Auto' { return @{ Enabled = $autoEligible; Reason = if ($autoEligible) { 'Auto criteria met' } else { 'Auto criteria not met' }; AutoEligible = $autoEligible } } default { return @{ Enabled = $false; Reason = 'Mode Off'; AutoEligible = $autoEligible } } } }
 
 $weights = if ($effectiveExplodeForProgress) { @{ Query = 0.30; Explosion = 0.60; Export = 0.10 } } else { @{ Query = 0.80; Explosion = 0.00; Export = 0.20 } }
-# Replay mode: Use Parsing phase (10%), Explosion (80%), Export (10%) - no Query phase
+# Replay mode: Allocate progress weights to Parsing, Explosion, and Export phases
 if ($RAWInputCSV) {
     try {
         $weights = @{ Parsing = 0.10; Query = 0.0; Explosion = 0.80; Export = 0.10 }
@@ -294,11 +294,10 @@ function Update-Progress {
     $phase = $script:progressState.Phase
     $pDetail = if ($w.ContainsKey('Parsing') -and $w.Parsing -gt 0 -and $ps.Total -gt 0) { "{0}/{1}({2}%)" -f $ps.Current, $ps.Total, ([int]([Math]::Round($pPct * 100))) } else { '' }
     $qDetail = if ($w.Query -gt 0 -and $qs.Total -gt 0) { "{0}/{1}({2}%)" -f $qs.Current, $qs.Total, ([int]([Math]::Round($qPct * 100))) } else { '' }
-    # Build explosion detail without duplicated label when Explosion is the active phase
+    # Format explosion progress display
     $explosionCounts = if ($es.Total -gt 0) { "{0}/{1}({2}%)" -f $es.Current, $es.Total, ([int]([Math]::Round($ePct * 100))) } else { '0/0' }
     $eDetail = if ($w.Explosion -gt 0) {
         if ($phase -eq 'Explosion') {
-            # Only show counts (label provided by phase prefix)
             " | $explosionCounts"
         }
         else {
@@ -309,11 +308,9 @@ function Update-Progress {
     $xDetail = if ($xs.Total -gt 0) { " | Export: {0}/{1}({2}%)" -f $xs.Current, $xs.Total, ([int]([Math]::Round($xPct * 100))) } else { ' | Export: 0/0' }
     $phasePrefix = switch ($phase) { 'Parsing' { 'Pre-parsing JSON' } 'Query' { 'Query' } 'Explosion' { 'Explosion' } 'Export' { 'Export' } 'Complete' { 'Complete' } default { $phase } }
     if ($phase -eq 'Parsing' -and $pDetail) {
-        # Parsing phase: show parsing details
         $composite = "Pre-parsing JSON: $pDetail$eDetail$xDetail"
     }
     elseif ($phase -eq 'Explosion' -and -not $qDetail) {
-        # Avoid 'Explosion: | <counts>' pattern. Produce 'Explosion: <counts> | Export: ...'
         $composite = "Explosion: $explosionCounts$xDetail"
     }
     else {
@@ -620,19 +617,18 @@ function Convert-ToPurviewExplodedRecords {
         [switch]$Deep
     )
     try {
-        # Use pre-parsed AuditData if available (performance optimization)
+        # Use pre-parsed AuditData if available for improved processing speed
         $auditData = if ($Record.PSObject.Properties['_ParsedAuditData']) {
             $Record._ParsedAuditData
         }
         else {
-            # Fallback to parsing (for live queries or non-pre-parsed scenarios)
+            # Parse AuditData JSON if not already parsed
             try { $Record.AuditData | ConvertFrom-Json -ErrorAction Stop } catch { $null }
         }
         if (-not $auditData) { return @() }
         $ced = Get-SafeProperty $auditData 'CopilotEventData'
         
-        # Use optimized script-level helpers (Phase 2/3: avoid per-record function definition overhead)
-        # Extract arrays using cached helper
+        # Extract array properties from CopilotEventData
         $messages = script:GetArrayFast $ced 'Messages'
         $contexts = script:GetArrayFast $ced 'Contexts'
         $resources = script:GetArrayFast $ced 'AccessedResources'
@@ -647,7 +643,7 @@ function Convert-ToPurviewExplodedRecords {
         $plugin0 = if ($pluginsRaw.Count -gt 0) { $pluginsRaw[0] } else { $null }
         $model0 = if ($modelDetRaw.Count -gt 0) { $modelDetRaw[0] } else { $null }
 
-        # Scalar / record-level values (cached once per record - Phase 2 optimization)
+        # Extract record-level values from audit data
         $creationDate = script:Format-DatePurviewFast $Record.CreationDate
         $creationTime = try { script:Format-DatePurviewFast $auditData.CreationTime } catch { '' }
         $appIdentity = Get-SafeProperty $ced 'AppIdentity'
@@ -735,12 +731,12 @@ function Convert-ToStructuredRecord {
         function Local:Get-Num([object]$v) { if ($null -eq $v) { return $null }; try { if ($v -is [string] -and [string]::IsNullOrWhiteSpace($v)) { return $null }; return [double]$v } catch { return $null } }
         function Local:Add-OrUpdate([pscustomobject]$obj, [string]$name, $value) { try { if ($obj.PSObject.Properties[$name]) { $obj.PSObject.Properties[$name].Value = $value } else { Add-Member -InputObject $obj -NotePropertyName $name -NotePropertyValue $value -Force } } catch {} }
         
-        # Use pre-parsed AuditData if available (performance optimization)
+        # Use pre-parsed AuditData if available for improved processing speed
         $auditData = if ($Record.PSObject.Properties['_ParsedAuditData']) {
             $Record._ParsedAuditData
         }
         else {
-            # Fallback to parsing (for live queries or non-pre-parsed scenarios)
+            # Parse AuditData JSON if not already parsed
             try { $Record.AuditData | ConvertFrom-Json -ErrorAction Stop } catch { $null }
         }
         if (-not $auditData) { return @() }
@@ -1055,13 +1051,11 @@ try {
     $structuredDataCount = 0
     Write-LogHost "Streaming export mode enabled (schema sample=$StreamingSchemaSample; base chunk size=$StreamingChunkSize)" -ForegroundColor Yellow
     
-    # EMERGENCY FIX: Disable parallel explosion due to function scope bug in parallel runspaces
-    # Parallel ForEach-Object cannot access script-level functions like Convert-ToPurviewExplodedRecords
-    # TODO: Refactor to pass function definitions via $using: or embed explosion logic inline
+    # Enable parallel processing for large replay datasets (PowerShell 7+ required)
     $replayParallelEligible = $false
-    # if ($RAWInputCSV -and ($PSVersionTable.PSVersion.Major -ge 7)) {
-    #     if ($allLogs.Count -gt ($StreamingSchemaSample + 5000)) { $replayParallelEligible = $true }
-    # }
+    if ($RAWInputCSV -and ($PSVersionTable.PSVersion.Major -ge 7)) {
+        if ($allLogs.Count -gt ($StreamingSchemaSample + 5000)) { $replayParallelEligible = $true }
+    }
     if ($replayParallelEligible) { Write-LogHost "Replay parallel explosion eligible -> will parallelize after schema freeze" -ForegroundColor DarkCyan }
     $script:progressState.Explode.Total = [int]$allLogs.Count; $script:progressState.Explode.Current = 0; $te0 = Get-Date
     $schemaFrozen = $false; $schemaSampleRows = New-Object System.Collections.Generic.List[object]; $postFreezeNewColumns = 0
@@ -1074,14 +1068,14 @@ try {
     $csvWriter = $false  # indicates initialization state
     $explosionError = $null
     
-    # PERFORMANCE OPTIMIZATION: Pre-parse all JSON to avoid repeated ConvertFrom-Json in tight loop
+    # Pre-parse JSON data from CSV for improved processing speed
     if ($RAWInputCSV) {
-        # Set parsing phase and progress tracking (replay mode only)
+        # Initialize parsing phase progress tracking
         Set-ProgressPhase -Phase 'Parsing' -Status 'Pre-parsing JSON from CSV'
         $script:progressState.Parsing.Total = [int]$allLogs.Count
         $script:progressState.Parsing.Current = 0
     }
-    Write-LogHost "Pre-parsing AuditData JSON for $($allLogs.Count) records (performance optimization)..." -ForegroundColor Cyan
+    Write-LogHost "Pre-parsing AuditData JSON for $($allLogs.Count) records..." -ForegroundColor Cyan
     Write-LogHost "NOTE: Pre-parsing may take 5-20 minutes depending on dataset size. Large enterprise exports (50K+ users, 1 month) typically require 10-15 minutes." -ForegroundColor DarkYellow
     $parseStart = Get-Date
     $parseErrors = 0
@@ -1117,7 +1111,7 @@ try {
     $parseElapsed = [int]($parseEnd - $parseStart).TotalSeconds
     Write-LogHost "JSON pre-parsing complete in $parseElapsed seconds ($parseErrors parse errors)" -ForegroundColor Green
     
-    # Transition to Explosion phase
+    # Begin record explosion and transformation phase
     Set-ProgressPhase -Phase 'Explosion' -Status 'Analyzing and exploding records'
     
     try {
@@ -1174,12 +1168,10 @@ try {
                                 Write-LogHost "Starting parallel explosion for remaining logs (consumed=$logsConsumedForSchema, total=$($allLogs.Count))" -ForegroundColor Cyan
                                 $remainingLogs = @()
                                 if ($logsConsumedForSchema -lt $allLogs.Count) { $remainingLogs = $allLogs[$logsConsumedForSchema..($allLogs.Count - 1)] } else { $remainingLogs = @() }
-                                # PERFORMANCE FIX: Dramatically increase batch size to reduce overhead
-                                # Previous: 500-2000 records/batch (too many batches, too much overhead)
-                                # New: 10000-20000 records/batch (fewer batches, amortized overhead)
+                                # Configure parallel processing with optimized batch sizes for large datasets
                                 $parallelBatchSize = [int][Math]::Max(10000, [Math]::Min(20000, [int]($remainingLogs.Count / 20)))
                                 $throttle = [int][Math]::Min([Environment]::ProcessorCount, 8)
-                                $targetMinMs = 3000; $targetMaxMs = 12000  # Target 3-12 second batches (was 0.8-2.5s)
+                                $targetMinMs = 3000; $targetMaxMs = 12000
                                 $remainingCount = $remainingLogs.Count
                                 $processedRemaining = 0
                                 Write-LogHost "Parallel batch config: batchSize=$parallelBatchSize, throttle=$throttle, batches=$([Math]::Ceiling($remainingCount / $parallelBatchSize))" -ForegroundColor DarkCyan
@@ -1247,10 +1239,10 @@ try {
                                     $processedRemaining += $batchSize
                                     $batchElapsed = (Get-Date) - $batchStart
                                     $elapsedMs = [int]$batchElapsed.TotalMilliseconds
-                                    # Dynamic throttle tuning: aim for 3s - 12s batches (updated targets for larger batches)
+                                    # Dynamically adjust throttle based on batch completion time
                                     if ($elapsedMs -lt $targetMinMs -and $throttle -lt [Math]::Min([Environment]::ProcessorCount, 12)) { $throttle += 1 }
                                     elseif ($elapsedMs -gt $targetMaxMs -and $throttle -gt 2) { $throttle = [int][Math]::Max(2, $throttle - 1) }
-                                    # Adjust parallelBatchSize if too slow or too fast (relaxed bounds for larger batches)
+                                    # Adjust batch size based on performance
                                     if ($elapsedMs -lt $targetMinMs -and $parallelBatchSize -lt 40000) { $parallelBatchSize = [int][Math]::Min(40000, [int]($parallelBatchSize * 1.3)) }
                                     elseif ($elapsedMs -gt ($targetMaxMs * 2) -and $parallelBatchSize -gt 5000) { $parallelBatchSize = [int][Math]::Max(5000, [int]($parallelBatchSize * 0.8)) }
                                     $script:progressState.Explode.Current = [Math]::Min($script:progressState.Explode.Total, ($logsConsumedForSchema + $processedRemaining))
