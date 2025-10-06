@@ -1186,6 +1186,21 @@ try {
                                 $remainingCount = $remainingLogs.Count
                                 $processedRemaining = 0
                                 Write-LogHost "Parallel batch config: batchSize=$parallelBatchSize, throttle=$throttle, batches=$([Math]::Ceiling($remainingCount / $parallelBatchSize))" -ForegroundColor DarkCyan
+                                
+                                # Get function definitions to pass into parallel runspace
+                                $convertExplodedDef = ${function:Convert-ToPurviewExplodedRecords}.ToString()
+                                $convertStructuredDef = ${function:Convert-ToStructuredRecord}.ToString()
+                                $getSafePropertyDef = ${function:Get-SafeProperty}.ToString()
+                                $selectFirstNonNullDef = ${function:Select-FirstNonNull}.ToString()
+                                $formatDateDef = ${function:Format-DatePurviewFast}.ToString()
+                                $boolTFDef = ${function:BoolTFFast}.ToString()
+                                # Pass required script variables
+                                $purviewHeader = $PurviewExplodedHeader
+                                $deepExtraColumns = $script:DeepExtraColumns
+                                $regexTrueFalse = $script:RegexTrueFalse
+                                $regexYes1 = $script:RegexYes1
+                                $regexNo0 = $script:RegexNo0
+                                
                                 while ($processedRemaining -lt $remainingCount) {
                                     $batchSize = [Math]::Min($parallelBatchSize, $remainingCount - $processedRemaining)
                                     $batch = $remainingLogs[$processedRemaining..($processedRemaining + $batchSize - 1)]
@@ -1193,6 +1208,21 @@ try {
                                     try {
                                         $batchResults = $batch | ForEach-Object -Parallel {
                                             param($effectiveExplode, $explodeDeep)
+                                            
+                                            # Reconstruct helper functions and variables in parallel runspace
+                                            $script:PurviewExplodedHeader = $using:purviewHeader
+                                            $script:DeepExtraColumns = $using:deepExtraColumns
+                                            $script:RegexTrueFalse = $using:regexTrueFalse
+                                            $script:RegexYes1 = $using:regexYes1
+                                            $script:RegexNo0 = $using:regexNo0
+                                            
+                                            $null = New-Item -Path function: -Name Get-SafeProperty -Value ([scriptblock]::Create($using:getSafePropertyDef)) -Force
+                                            $null = New-Item -Path function: -Name Select-FirstNonNull -Value ([scriptblock]::Create($using:selectFirstNonNullDef)) -Force
+                                            $null = New-Item -Path function: -Name Format-DatePurviewFast -Value ([scriptblock]::Create($using:formatDateDef)) -Force
+                                            $null = New-Item -Path function: -Name BoolTFFast -Value ([scriptblock]::Create($using:boolTFDef)) -Force
+                                            $null = New-Item -Path function: -Name Convert-ToPurviewExplodedRecords -Value ([scriptblock]::Create($using:convertExplodedDef)) -Force
+                                            $null = New-Item -Path function: -Name Convert-ToStructuredRecord -Value ([scriptblock]::Create($using:convertStructuredDef)) -Force
+                                            
                                             $rows = if ($effectiveExplode) { Convert-ToPurviewExplodedRecords -Record $_ -Deep:$explodeDeep } else { Convert-ToStructuredRecord -Record $_ -EnableExplosion:$false }
                                             $rc = 0; if ($null -ne $rows) { if ($rows -is [System.Array]) { $rc = $rows.Count } else { $rc = 1 } }
                                             [pscustomobject]@{ Rows = $rows; RowCount = $rc; ExplosionRows = if ($rc -gt 1) { $rc - 1 } else { 0 }; MaxRows = $rc }
