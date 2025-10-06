@@ -317,28 +317,11 @@ function Update-Progress {
     $statusText = if ($Status) { "$Status :: $composite" } else { $composite }
     if ($statusText.Length -gt 180) { $statusText = $statusText.Substring(0, 177) + '...' }
     
-    # Display inline progress bar at current cursor position
+    # Display inline progress on new line for visibility
     $progressLine = "[Overall $pct%] $statusText"
-    try {
-        # Save cursor position, write progress, restore cursor
-        $cursorPos = $Host.UI.RawUI.CursorPosition
-        $windowWidth = try { $Host.UI.RawUI.WindowSize.Width } catch { 120 }
-        $paddedLine = $progressLine.PadRight([Math]::Min($windowWidth - 1, $progressLine.Length))
-        Write-Host "`r$paddedLine" -NoNewline -ForegroundColor Cyan
-    }
-    catch {
-        # Fallback for environments that don't support cursor positioning
-        Write-Host $progressLine -ForegroundColor Cyan
-    }
+    Write-Host $progressLine -ForegroundColor Cyan
 }
-function Complete-Progress { 
-    # Clear the progress line and move to next line
-    try {
-        Write-Host "`r$(' ' * 120)" -NoNewline
-        Write-Host "`r"
-    }
-    catch {}
-}
+function Complete-Progress { }
 
 $script:highVolumeActivities = @('CopilotInteraction', 'MessageSent', 'FileAccessed', 'MailItemsAccessed')
 $script:mediumVolumeActivities = @('MessageRead', 'FileModified', 'MeetingDetail', 'SearchQueryPerformed')
@@ -1207,6 +1190,7 @@ try {
                                 $convertExplodedDef = ${function:Convert-ToPurviewExplodedRecords}.ToString()
                                 $convertStructuredDef = ${function:Convert-ToStructuredRecord}.ToString()
                                 $getSafePropertyDef = ${function:Get-SafeProperty}.ToString()
+                                $getArrayFastDef = ${function:GetArrayFast}.ToString()
                                 $selectFirstNonNullDef = ${function:Select-FirstNonNull}.ToString()
                                 $formatDateDef = ${function:Format-DatePurviewFast}.ToString()
                                 $boolTFDef = ${function:BoolTFFast}.ToString()
@@ -1232,12 +1216,18 @@ try {
                                             $script:RegexYes1 = $using:regexYes1
                                             $script:RegexNo0 = $using:regexNo0
                                             
-                                            $null = New-Item -Path function: -Name Get-SafeProperty -Value ([scriptblock]::Create($using:getSafePropertyDef)) -Force
-                                            $null = New-Item -Path function: -Name Select-FirstNonNull -Value ([scriptblock]::Create($using:selectFirstNonNullDef)) -Force
-                                            $null = New-Item -Path function: -Name Format-DatePurviewFast -Value ([scriptblock]::Create($using:formatDateDef)) -Force
-                                            $null = New-Item -Path function: -Name BoolTFFast -Value ([scriptblock]::Create($using:boolTFDef)) -Force
-                                            $null = New-Item -Path function: -Name Convert-ToPurviewExplodedRecords -Value ([scriptblock]::Create($using:convertExplodedDef)) -Force
-                                            $null = New-Item -Path function: -Name Convert-ToStructuredRecord -Value ([scriptblock]::Create($using:convertStructuredDef)) -Force
+                                            # Define helper functions in script scope for parallel runspace
+                                            $null = New-Item -Path function:script:Get-SafeProperty -Value ([scriptblock]::Create($using:getSafePropertyDef)) -Force
+                                            $null = New-Item -Path function:script:GetArrayFast -Value ([scriptblock]::Create($using:getArrayFastDef)) -Force
+                                            $null = New-Item -Path function:script:Select-FirstNonNull -Value ([scriptblock]::Create($using:selectFirstNonNullDef)) -Force
+                                            $null = New-Item -Path function:script:Format-DatePurviewFast -Value ([scriptblock]::Create($using:formatDateDef)) -Force
+                                            $null = New-Item -Path function:script:BoolTFFast -Value ([scriptblock]::Create($using:boolTFDef)) -Force
+                                            # Also create non-script versions for functions that may be called without prefix
+                                            $null = New-Item -Path function:Get-SafeProperty -Value ([scriptblock]::Create($using:getSafePropertyDef)) -Force
+                                            $null = New-Item -Path function:Select-FirstNonNull -Value ([scriptblock]::Create($using:selectFirstNonNullDef)) -Force
+                                            # Define conversion functions
+                                            $null = New-Item -Path function:Convert-ToPurviewExplodedRecords -Value ([scriptblock]::Create($using:convertExplodedDef)) -Force
+                                            $null = New-Item -Path function:Convert-ToStructuredRecord -Value ([scriptblock]::Create($using:convertStructuredDef)) -Force
                                             
                                             $rows = if ($effectiveExplode) { Convert-ToPurviewExplodedRecords -Record $_ -Deep:$explodeDeep } else { Convert-ToStructuredRecord -Record $_ -EnableExplosion:$false }
                                             $rc = 0; if ($null -ne $rows) { if ($rows -is [System.Array]) { $rc = $rows.Count } else { $rc = 1 } }
