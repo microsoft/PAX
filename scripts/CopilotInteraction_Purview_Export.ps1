@@ -396,6 +396,8 @@ Log File: $LogFile
 
 Write-LogHost "=== Portable Audit eXporter (PAX) - Purview Audit Log Exporter ===" -ForegroundColor Cyan
 Write-LogHost ("Script Version: v$ScriptVersion") -ForegroundColor White
+$startTimeStamp = try { $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') } catch { (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') }
+Write-LogHost ("Script execution started at $startTimeStamp UTC") -ForegroundColor White
 Write-LogHost "Mode: $scriptMode" -ForegroundColor White
 ${rangeText} = if ($RAWInputCSV) { if ([string]::IsNullOrWhiteSpace($StartDate) -and [string]::IsNullOrWhiteSpace($EndDate)) { 'Full CSV (no date filter)' } else { "$StartDate to $EndDate (filters)" } } else { "$StartDate to $EndDate" }
 Write-LogHost "Date Range: $rangeText" -ForegroundColor White
