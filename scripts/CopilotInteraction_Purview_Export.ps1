@@ -565,7 +565,14 @@ function Convert-ToPurviewExplodedRecords {
         [switch]$Deep
     )
     try {
-        $auditData = $null; try { $auditData = $Record.AuditData | ConvertFrom-Json -ErrorAction Stop } catch { return @() }
+        # Use pre-parsed AuditData if available (performance optimization)
+        $auditData = if ($Record.PSObject.Properties['_ParsedAuditData']) {
+            $Record._ParsedAuditData
+        }
+        else {
+            # Fallback to parsing (for live queries or non-pre-parsed scenarios)
+            try { $Record.AuditData | ConvertFrom-Json -ErrorAction Stop } catch { $null }
+        }
         if (-not $auditData) { return @() }
         $ced = Get-SafeProperty $auditData 'CopilotEventData'
         # Helpers
@@ -611,67 +618,38 @@ function Convert-ToPurviewExplodedRecords {
         $rows = New-Object System.Collections.Generic.List[object]
 
         for ($i = 0; $i -lt $rowCount; $i++) {
-            $h = [ordered]@{}
-            foreach ($col in $PurviewExplodedHeader) { $h[$col] = '' }
-            # Populate static/base fields
-            $h.RecordId = $(try { $auditData.Id } catch { $Record.Identity })
-            $h.CreationDate = $creationDate
-            $h.RecordType = $Record.RecordType
-            $h.Operation = $auditData.Operation
-            $h.UserId = $auditData.UserId
-            $h.AssociatedAdminUnits = (Get-SafeProperty $auditData 'AssociatedAdminUnits')
-            $h.AssociatedAdminUnitsNames = (Get-SafeProperty $auditData 'AssociatedAdminUnitsNames')
-            $h.AgentId = $agentId
-            $h.AgentName = $agentName
-            $h.AppIdentity_AppId = $appId
-            $h.AppIdentity_DisplayName = $appDisp
-            $h.AppIdentity_PublisherId = $appPub
-            $h.ApplicationName = $appName
-            $h.CreationTime = $creationTime
-            $h.ClientRegion = $clientRegion
-            $h.Audit_UserId = $auditUserKey
-            $h.AppHost = $appHost
-            $h.ThreadId = $threadId
-            # Context
-            if ($i -lt $contexts.Count) {
-                $ctx = $contexts[$i]
-                if ($ctx) {
-                    try { $h.Context_Id = (Get-SafeProperty $ctx 'Id') } catch {}
-                    try { $h.Context_Type = (Get-SafeProperty $ctx 'Type') } catch {}
-                }
+            # Use [PSCustomObject] directly for faster object creation (vs [ordered]@{} then New-Object)
+            $rowObj = [PSCustomObject]@{
+                RecordId = $(try { $auditData.Id } catch { $Record.Identity })
+                CreationDate = $creationDate
+                RecordType = $Record.RecordType
+                Operation = $auditData.Operation
+                UserId = $auditData.UserId
+                AssociatedAdminUnits = (Get-SafeProperty $auditData 'AssociatedAdminUnits')
+                AssociatedAdminUnitsNames = (Get-SafeProperty $auditData 'AssociatedAdminUnitsNames')
+                AgentId = $agentId
+                AgentName = $agentName
+                AppIdentity_AppId = $appId
+                AppIdentity_DisplayName = $appDisp
+                AppIdentity_PublisherId = $appPub
+                ApplicationName = $appName
+                CreationTime = $creationTime
+                ClientRegion = $clientRegion
+                Audit_UserId = $auditUserKey
+                AppHost = $appHost
+                ThreadId = $threadId
+                Context_Id = $(if ($i -lt $contexts.Count -and $contexts[$i]) { try { Get-SafeProperty $contexts[$i] 'Id' } catch { '' } } else { '' })
+                Context_Type = $(if ($i -lt $contexts.Count -and $contexts[$i]) { try { Get-SafeProperty $contexts[$i] 'Type' } catch { '' } } else { '' })
+                Message_Id = $(if ($i -lt $messages.Count) { $msg = $messages[$i]; if ($msg -is [psobject]) { try { Get-SafeProperty $msg 'Id' } catch { '' } } else { $msg } } else { '' })
+                Message_isPrompt = $(if ($i -lt $messages.Count) { $msg = $messages[$i]; if ($msg -is [psobject]) { try { Local:BoolTF (Get-SafeProperty $msg 'isPrompt') } catch { '' } } else { '' } } else { '' })
+                AccessedResource_Action = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'Action' } catch { '' } } else { '' })
+                AccessedResource_PolicyDetails = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Local:ToJsonIfObject (Get-SafeProperty $resources[$i] 'PolicyDetails') } catch { '' } } else { '' })
+                AccessedResource_SiteUrl = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'SiteUrl' } catch { '' } } else { '' })
+                AISystemPlugin_Id = $(if ($plugin0) { try { Get-SafeProperty $plugin0 'Id' } catch { '' } } else { '' })
+                AISystemPlugin_Name = $(if ($plugin0) { try { Get-SafeProperty $plugin0 'Name' } catch { '' } } else { '' })
+                ModelTransparencyDetails_ModelName = $(if ($model0) { $modelName } else { '' })
+                MessageIds = $(if ($messageIds.Count -gt 0) { $messageIds -join ';' } else { '' })
             }
-            # Message
-            if ($i -lt $messages.Count) {
-                $msg = $messages[$i]
-                if ($msg -is [psobject]) {
-                    try { $h.Message_Id = (Get-SafeProperty $msg 'Id') } catch {}
-                    try { $h.Message_isPrompt = Local:BoolTF (Get-SafeProperty $msg 'isPrompt') } catch {}
-                }
-                else {
-                    # Scalar message
-                    $h.Message_Id = $msg
-                }
-            }
-            # AccessedResource
-            if ($i -lt $resources.Count) {
-                $res = $resources[$i]
-                if ($res) {
-                    try { $h.AccessedResource_Action = (Get-SafeProperty $res 'Action') } catch {}
-                    try { $h.AccessedResource_PolicyDetails = Local:ToJsonIfObject (Get-SafeProperty $res 'PolicyDetails') } catch {}
-                    try { $h.AccessedResource_SiteUrl = (Get-SafeProperty $res 'SiteUrl') } catch {}
-                }
-            }
-            # Plugin (record level)
-            if ($plugin0) {
-                try { $h.AISystemPlugin_Id = (Get-SafeProperty $plugin0 'Id') } catch {}
-                try { $h.AISystemPlugin_Name = (Get-SafeProperty $plugin0 'Name') } catch {}
-            }
-            # Model transparency
-            if ($model0) { $h.ModelTransparencyDetails_ModelName = $modelName }
-            # MessageIds (joined)
-            if ($messageIds.Count -gt 0) { $h.MessageIds = ($messageIds -join ';') }
-
-            $rowObj = New-Object psobject -Property $h
 
             if ($Deep -and $ced) {
                 $flat = ConvertTo-FlatColumns -Node $ced -Prefix 'CopilotEventData.' -MaxDepth $FlatDepthDeep
@@ -706,7 +684,15 @@ function Convert-ToStructuredRecord {
     try {
         function Local:Get-Num([object]$v) { if ($null -eq $v) { return $null }; try { if ($v -is [string] -and [string]::IsNullOrWhiteSpace($v)) { return $null }; return [double]$v } catch { return $null } }
         function Local:Add-OrUpdate([pscustomobject]$obj, [string]$name, $value) { try { if ($obj.PSObject.Properties[$name]) { $obj.PSObject.Properties[$name].Value = $value } else { Add-Member -InputObject $obj -NotePropertyName $name -NotePropertyValue $value -Force } } catch {} }
-        $auditData = $null; try { $auditData = $Record.AuditData | ConvertFrom-Json -ErrorAction Stop } catch { return @() }
+        
+        # Use pre-parsed AuditData if available (performance optimization)
+        $auditData = if ($Record.PSObject.Properties['_ParsedAuditData']) {
+            $Record._ParsedAuditData
+        }
+        else {
+            # Fallback to parsing (for live queries or non-pre-parsed scenarios)
+            try { $Record.AuditData | ConvertFrom-Json -ErrorAction Stop } catch { $null }
+        }
         if (-not $auditData) { return @() }
         $ced = Get-SafeProperty $auditData 'CopilotEventData'
         $modelId = Select-FirstNonNull -Values @((Get-SafeProperty $ced 'ModelId'), (Get-SafeProperty $ced 'ModelID'), (Get-SafeProperty $auditData 'ModelId'))
@@ -1033,6 +1019,32 @@ try {
     # CSV writer is opened after schema (column order) is finalized
     $csvWriter = $false  # indicates initialization state
     $explosionError = $null
+    
+    # PERFORMANCE OPTIMIZATION: Pre-parse all JSON to avoid repeated ConvertFrom-Json in tight loop
+    Write-LogHost "Pre-parsing AuditData JSON for $($allLogs.Count) records (performance optimization)..." -ForegroundColor Cyan
+    $parseStart = Get-Date
+    $parseErrors = 0
+    foreach ($log in $allLogs) {
+        if ($log.AuditData -and $log.AuditData -is [string]) {
+            try {
+                $parsed = $log.AuditData | ConvertFrom-Json -ErrorAction Stop
+                # Add parsed data as a new property to avoid repeated parsing
+                Add-Member -InputObject $log -NotePropertyName '_ParsedAuditData' -NotePropertyValue $parsed -Force
+            }
+            catch {
+                $parseErrors++
+                Add-Member -InputObject $log -NotePropertyName '_ParsedAuditData' -NotePropertyValue $null -Force
+            }
+        }
+        else {
+            # Already parsed or missing
+            Add-Member -InputObject $log -NotePropertyName '_ParsedAuditData' -NotePropertyValue $log.AuditData -Force
+        }
+    }
+    $parseEnd = Get-Date
+    $parseElapsed = [int]($parseEnd - $parseStart).TotalSeconds
+    Write-LogHost "JSON pre-parsing complete in $parseElapsed seconds ($parseErrors parse errors)" -ForegroundColor Green
+    
     try {
         foreach ($log in $allLogs) {
             $records = if ($effectiveExplode) { Convert-ToPurviewExplodedRecords -Record $log -Deep:$ExplodeDeep } else { Convert-ToStructuredRecord -Record $log -EnableExplosion:$false }
