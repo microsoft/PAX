@@ -435,7 +435,7 @@ function Main {
     Update-JsonVersion -FilePath $PackageJson -NewVersion $newVersion
     Update-JsonVersion -FilePath $TauriConf -NewVersion $newVersion
     Update-CargoVersion -FilePath $CargoToml -NewVersion $newVersion
-    # Export script & README now derive/display version dynamically from package.json (no direct version stamping needed)
+    Update-ExportScriptVersion -FilePath $ExportScript -NewVersion $newVersion
     
     # Commit and tag
     Write-Status "Creating git commit and tag..."

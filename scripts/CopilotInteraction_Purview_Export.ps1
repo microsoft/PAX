@@ -1,4 +1,4 @@
-# Portable Audit eXporter (PAX) - Purview Audit Log Processor - v1.4.1
+# Portable Audit eXporter (PAX) - Purview Audit Log Processor - v1.4.2
 <#
 .SYNOPSIS
     Export Microsoft Purview audit logs for Microsoft 365 Copilot and related activities with optional Purview-aligned row explosion and deep flattening.
