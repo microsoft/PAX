@@ -1280,14 +1280,19 @@ try {
                                     $processedRemaining += $batchSize
                                     $batchElapsed = (Get-Date) - $batchStart
                                     $elapsedMs = [int]$batchElapsed.TotalMilliseconds
+                                    
+                                    # Update progress after each batch (ensures blue bar is always visible)
+                                    $script:progressState.Explode.Current = [Math]::Min($script:progressState.Explode.Total, ($logsConsumedForSchema + $processedRemaining))
+                                    $currentBatch = [Math]::Ceiling($processedRemaining / $parallelBatchSize)
+                                    $totalBatches = [Math]::Ceiling($remainingCount / $parallelBatchSize)
+                                    Update-Progress -Status "Parallel batch $currentBatch/$totalBatches (${elapsedMs}ms) - Processed: $($script:progressState.Explode.Current)/$($script:progressState.Explode.Total)"
+                                    
                                     # Dynamically adjust throttle based on batch completion time
                                     if ($elapsedMs -lt $targetMinMs -and $throttle -lt [Math]::Min([Environment]::ProcessorCount, 12)) { $throttle += 1 }
                                     elseif ($elapsedMs -gt $targetMaxMs -and $throttle -gt 2) { $throttle = [int][Math]::Max(2, $throttle - 1) }
                                     # Adjust batch size based on performance
                                     if ($elapsedMs -lt $targetMinMs -and $parallelBatchSize -lt 40000) { $parallelBatchSize = [int][Math]::Min(40000, [int]($parallelBatchSize * 1.3)) }
                                     elseif ($elapsedMs -gt ($targetMaxMs * 2) -and $parallelBatchSize -gt 5000) { $parallelBatchSize = [int][Math]::Max(5000, [int]($parallelBatchSize * 0.8)) }
-                                    $script:progressState.Explode.Current = [Math]::Min($script:progressState.Explode.Total, ($logsConsumedForSchema + $processedRemaining))
-                                    if ($script:progressState.Explode.Current % 500 -eq 0 -or $processedRemaining -ge $remainingCount) { Update-Progress -Status "Exploding (replay parallel): $($script:progressState.Explode.Current)/$($script:progressState.Explode.Total)" } else { Update-Progress }
                                 }
                                 $script:metrics.ParallelBatchSizeFinal = $parallelBatchSize
                                 $script:metrics.ParallelThrottleFinal = $throttle
