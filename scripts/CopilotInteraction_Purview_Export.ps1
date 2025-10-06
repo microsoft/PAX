@@ -110,7 +110,7 @@ param(
     # Streaming export is always-on
     [Parameter(Mandatory = $false)]
     [ValidateRange(100, 50000)]
-    [int]$StreamingSchemaSample = 2000,
+    [int]$StreamingSchemaSample = 1000,
 
     [Parameter(Mandatory = $false)]
     [ValidateRange(100, 50000)]
@@ -217,6 +217,53 @@ $script:TenantIndicators = @()
 # Forced explosion when using raw/offline input CSV (always at least Purview exploded schema)
 $ForcedRawInputCsvExplosion = $false
 if ($RAWInputCSV) { $ForcedRawInputCsvExplosion = $true }
+
+# --- PHASE 2/3 PERFORMANCE: Compiled regex patterns & optimized helpers ---
+# Pre-compile regex patterns for faster string matching (avoid recompilation in loops)
+$script:RegexTrueFalse = [regex]::new('^(?i:true|false)$', [System.Text.RegularExpressions.RegexOptions]::Compiled)
+$script:RegexYes1 = [regex]::new('^(?i:yes|1)$', [System.Text.RegularExpressions.RegexOptions]::Compiled)
+$script:RegexNo0 = [regex]::new('^(?i:no|0)$', [System.Text.RegularExpressions.RegexOptions]::Compiled)
+
+# Optimized helper functions (defined once at script scope, not per-record)
+function script:Format-DatePurviewFast($dt) {
+    if (-not $dt) { return '' }
+    try {
+        if ($dt -is [datetime]) { 
+            return $dt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+        }
+        else { 
+            $p = [datetime]::Parse($dt)
+            return $p.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+        }
+    }
+    catch { return '' }
+}
+
+function script:BoolTFFast($v) {
+    if ($null -eq $v) { return '' }
+    if ($v -is [bool]) { return $v.ToString().ToUpper() }
+    $vStr = [string]$v
+    if ($script:RegexTrueFalse.IsMatch($vStr)) { return $vStr.ToUpper() }
+    if ($script:RegexYes1.IsMatch($vStr)) { return 'TRUE' }
+    if ($script:RegexNo0.IsMatch($vStr)) { return 'FALSE' }
+    return $vStr
+}
+
+function script:ToJsonIfObjectFast($v) {
+    if ($null -eq $v) { return '' }
+    if (Test-ScalarValue $v) { return $v }
+    try { return ($v | ConvertTo-Json -Depth $JsonDepth -Compress) }
+    catch { return [string]$v }
+}
+
+function script:GetArrayFast($parent, [string]$name) {
+    $val = Get-SafeProperty $parent $name
+    if ($null -eq $val) { return @() }
+    if ($val -is [System.Collections.IEnumerable] -and -not ($val -is [string])) {
+        return @($val)
+    }
+    return @($val)
+}
 
 $effectiveExplodeForProgress = ($ExplodeDeep -or $ExplodeArrays -or $ForcedRawInputCsvExplosion)
 $legacyParallelSwitchUsed = $EnableParallel.IsPresent
@@ -575,19 +622,15 @@ function Convert-ToPurviewExplodedRecords {
         }
         if (-not $auditData) { return @() }
         $ced = Get-SafeProperty $auditData 'CopilotEventData'
-        # Helpers
-        function Local:Format-DatePurview($dt) { try { if ($dt -is [datetime]) { return $dt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $p = [datetime]::Parse($dt); return $p.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } } catch { return '' } }
-        function Local:BoolTF($v) { if ($null -eq $v) { return '' }; if ($v -is [bool]) { return ($v.ToString().ToUpper()) } else { if ($v -match '^(?i:true|false)$') { return $v.ToUpper() } elseif ($v -match '^(?i:yes|1)$') { return 'TRUE' } elseif ($v -match '^(?i:no|0)$') { return 'FALSE' } else { return ($v.ToString()) } } }
-        function Local:ToJsonIfObject($v) { if ($null -eq $v) { return '' }; if (Test-ScalarValue $v) { return $v } try { return ($v | ConvertTo-Json -Depth $JsonDepth -Compress) } catch { return [string]$v } }
-        function Local:GetArray($parent, [string]$name) { $val = Get-SafeProperty $parent $name; if ($null -eq $val) { return @() }; if ($val -is [System.Collections.IEnumerable] -and -not ($val -is [string])) { return @($val) } else { return @($val) } }
-
-        # Extract arrays
-        $messages = Local:GetArray $ced 'Messages'
-        $contexts = Local:GetArray $ced 'Contexts'
-        $resources = Local:GetArray $ced 'AccessedResources'
-        $pluginsRaw = Local:GetArray $ced 'AISystemPlugin'
-        $modelDetRaw = Local:GetArray $ced 'ModelTransparencyDetails'
-        $messageIds = Local:GetArray $ced 'MessageIds'
+        
+        # Use optimized script-level helpers (Phase 2/3: avoid per-record function definition overhead)
+        # Extract arrays using cached helper
+        $messages = script:GetArrayFast $ced 'Messages'
+        $contexts = script:GetArrayFast $ced 'Contexts'
+        $resources = script:GetArrayFast $ced 'AccessedResources'
+        $pluginsRaw = script:GetArrayFast $ced 'AISystemPlugin'
+        $modelDetRaw = script:GetArrayFast $ced 'ModelTransparencyDetails'
+        $messageIds = script:GetArrayFast $ced 'MessageIds'
 
         # Determine max row count across exploded arrays (avoid multi-arg Math.Max which caused errors)
         $rowCount = (1, $messages.Count, $contexts.Count, $resources.Count | Measure-Object -Maximum).Maximum
@@ -596,10 +639,9 @@ function Convert-ToPurviewExplodedRecords {
         $plugin0 = if ($pluginsRaw.Count -gt 0) { $pluginsRaw[0] } else { $null }
         $model0 = if ($modelDetRaw.Count -gt 0) { $modelDetRaw[0] } else { $null }
 
-        # Scalar / record-level values
-        $creationDate = Local:Format-DatePurview ($Record.CreationDate)
-        # Normalize CreationTime to ISO 8601 UTC (consistent with README expectations)
-        $creationTime = try { Local:Format-DatePurview ($auditData.CreationTime) } catch { '' }
+        # Scalar / record-level values (cached once per record - Phase 2 optimization)
+        $creationDate = script:Format-DatePurviewFast $Record.CreationDate
+        $creationTime = try { script:Format-DatePurviewFast $auditData.CreationTime } catch { '' }
         $appIdentity = Get-SafeProperty $ced 'AppIdentity'
         $appId = Get-SafeProperty $appIdentity 'AppId'
         $appDisp = Get-SafeProperty $appIdentity 'DisplayName'
@@ -620,35 +662,35 @@ function Convert-ToPurviewExplodedRecords {
         for ($i = 0; $i -lt $rowCount; $i++) {
             # Use [PSCustomObject] directly for faster object creation (vs [ordered]@{} then New-Object)
             $rowObj = [PSCustomObject]@{
-                RecordId = $(try { $auditData.Id } catch { $Record.Identity })
-                CreationDate = $creationDate
-                RecordType = $Record.RecordType
-                Operation = $auditData.Operation
-                UserId = $auditData.UserId
-                AssociatedAdminUnits = (Get-SafeProperty $auditData 'AssociatedAdminUnits')
-                AssociatedAdminUnitsNames = (Get-SafeProperty $auditData 'AssociatedAdminUnitsNames')
-                AgentId = $agentId
-                AgentName = $agentName
-                AppIdentity_AppId = $appId
-                AppIdentity_DisplayName = $appDisp
-                AppIdentity_PublisherId = $appPub
-                ApplicationName = $appName
-                CreationTime = $creationTime
-                ClientRegion = $clientRegion
-                Audit_UserId = $auditUserKey
-                AppHost = $appHost
-                ThreadId = $threadId
-                Context_Id = $(if ($i -lt $contexts.Count -and $contexts[$i]) { try { Get-SafeProperty $contexts[$i] 'Id' } catch { '' } } else { '' })
-                Context_Type = $(if ($i -lt $contexts.Count -and $contexts[$i]) { try { Get-SafeProperty $contexts[$i] 'Type' } catch { '' } } else { '' })
-                Message_Id = $(if ($i -lt $messages.Count) { $msg = $messages[$i]; if ($msg -is [psobject]) { try { Get-SafeProperty $msg 'Id' } catch { '' } } else { $msg } } else { '' })
-                Message_isPrompt = $(if ($i -lt $messages.Count) { $msg = $messages[$i]; if ($msg -is [psobject]) { try { Local:BoolTF (Get-SafeProperty $msg 'isPrompt') } catch { '' } } else { '' } } else { '' })
-                AccessedResource_Action = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'Action' } catch { '' } } else { '' })
-                AccessedResource_PolicyDetails = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Local:ToJsonIfObject (Get-SafeProperty $resources[$i] 'PolicyDetails') } catch { '' } } else { '' })
-                AccessedResource_SiteUrl = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'SiteUrl' } catch { '' } } else { '' })
-                AISystemPlugin_Id = $(if ($plugin0) { try { Get-SafeProperty $plugin0 'Id' } catch { '' } } else { '' })
-                AISystemPlugin_Name = $(if ($plugin0) { try { Get-SafeProperty $plugin0 'Name' } catch { '' } } else { '' })
+                RecordId                           = $(try { $auditData.Id } catch { $Record.Identity })
+                CreationDate                       = $creationDate
+                RecordType                         = $Record.RecordType
+                Operation                          = $auditData.Operation
+                UserId                             = $auditData.UserId
+                AssociatedAdminUnits               = (Get-SafeProperty $auditData 'AssociatedAdminUnits')
+                AssociatedAdminUnitsNames          = (Get-SafeProperty $auditData 'AssociatedAdminUnitsNames')
+                AgentId                            = $agentId
+                AgentName                          = $agentName
+                AppIdentity_AppId                  = $appId
+                AppIdentity_DisplayName            = $appDisp
+                AppIdentity_PublisherId            = $appPub
+                ApplicationName                    = $appName
+                CreationTime                       = $creationTime
+                ClientRegion                       = $clientRegion
+                Audit_UserId                       = $auditUserKey
+                AppHost                            = $appHost
+                ThreadId                           = $threadId
+                Context_Id                         = $(if ($i -lt $contexts.Count -and $contexts[$i]) { try { Get-SafeProperty $contexts[$i] 'Id' } catch { '' } } else { '' })
+                Context_Type                       = $(if ($i -lt $contexts.Count -and $contexts[$i]) { try { Get-SafeProperty $contexts[$i] 'Type' } catch { '' } } else { '' })
+                Message_Id                         = $(if ($i -lt $messages.Count) { $msg = $messages[$i]; if ($msg -is [psobject]) { try { Get-SafeProperty $msg 'Id' } catch { '' } } else { $msg } } else { '' })
+                Message_isPrompt                   = $(if ($i -lt $messages.Count) { $msg = $messages[$i]; if ($msg -is [psobject]) { try { script:BoolTFFast (Get-SafeProperty $msg 'isPrompt') } catch { '' } } else { '' } } else { '' })
+                AccessedResource_Action            = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'Action' } catch { '' } } else { '' })
+                AccessedResource_PolicyDetails     = $(if ($i -lt $resources.Count -and $resources[$i]) { try { script:ToJsonIfObjectFast (Get-SafeProperty $resources[$i] 'PolicyDetails') } catch { '' } } else { '' })
+                AccessedResource_SiteUrl           = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'SiteUrl' } catch { '' } } else { '' })
+                AISystemPlugin_Id                  = $(if ($plugin0) { try { Get-SafeProperty $plugin0 'Id' } catch { '' } } else { '' })
+                AISystemPlugin_Name                = $(if ($plugin0) { try { Get-SafeProperty $plugin0 'Name' } catch { '' } } else { '' })
                 ModelTransparencyDetails_ModelName = $(if ($model0) { $modelName } else { '' })
-                MessageIds = $(if ($messageIds.Count -gt 0) { $messageIds -join ';' } else { '' })
+                MessageIds                         = $(if ($messageIds.Count -gt 0) { $messageIds -join ';' } else { '' })
             }
 
             if ($Deep -and $ced) {
@@ -1022,6 +1064,7 @@ try {
     
     # PERFORMANCE OPTIMIZATION: Pre-parse all JSON to avoid repeated ConvertFrom-Json in tight loop
     Write-LogHost "Pre-parsing AuditData JSON for $($allLogs.Count) records (performance optimization)..." -ForegroundColor Cyan
+    Write-LogHost "NOTE: Pre-parsing may take 5-20 minutes depending on dataset size. Large enterprise exports (50K+ users, 1 month) typically require 10-15 minutes." -ForegroundColor DarkYellow
     $parseStart = Get-Date
     $parseErrors = 0
     foreach ($log in $allLogs) {
