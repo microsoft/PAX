@@ -277,7 +277,7 @@ if ($RAWInputCSV) {
     }
     catch {}
 }
-$script:progressState = @{ Weights = $weights; Phase = 'Query'; Parsing = @{Current = 0; Total = 0 }; Query = @{Current = 0; Total = 0 }; Explode = @{Current = 0; Total = 0 }; Export = @{Current = 0; Total = 1 }; LastProgressOnSameLine = $false }
+$script:progressState = @{ Weights = $weights; Phase = 'Query'; Parsing = @{Current = 0; Total = 0 }; Query = @{Current = 0; Total = 0 }; Explode = @{Current = 0; Total = 0 }; Export = @{Current = 0; Total = 1 } }
 function Set-ProgressPhase { param([ValidateSet('Parsing', 'Query', 'Explosion', 'Export', 'Complete')] [string]$Phase, [string]$Status = ''); $script:progressState.Phase = $Phase; Update-Progress -Status $Status }
 function Update-Progress {
     param([string]$Status = '')
@@ -317,33 +317,14 @@ function Update-Progress {
     $statusText = if ($Status) { "$Status :: $composite" } else { $composite }
     if ($statusText.Length -gt 180) { $statusText = $statusText.Substring(0, 177) + '...' }
     
-    # Display persistent progress bar that overwrites itself on the same line
-    $progressLine = "[Overall $pct%] $statusText"
     try {
-        # Get terminal width and pad the line to clear previous content
-        $termWidth = try { $Host.UI.RawUI.WindowSize.Width } catch { 120 }
-        if ($progressLine.Length -lt $termWidth - 1) {
-            $progressLine = $progressLine.PadRight($termWidth - 1)
-        }
-        # Use carriage return to overwrite if we're still on the same line
-        if ($script:progressState.LastProgressOnSameLine) {
-            Write-Host "`r$progressLine" -NoNewline -ForegroundColor Cyan
-        }
-        else {
-            Write-Host $progressLine -NoNewline -ForegroundColor Cyan
-            $script:progressState.LastProgressOnSameLine = $true
-        }
+        Write-Progress -Activity "PAX Purview Audit Log Processing" -Status $statusText -PercentComplete $pct
     }
-    catch {
-        Write-Host $progressLine -ForegroundColor Cyan
-        $script:progressState.LastProgressOnSameLine = $false
-    }
+    catch {}
 }
 function Complete-Progress { 
-    # Move to next line after progress completes
     try { 
-        Write-Host ""
-        $script:progressState.LastProgressOnSameLine = $false
+        Write-Progress -Activity "PAX Purview Audit Log Processing" -Completed
     }
     catch {}
 }
@@ -358,11 +339,11 @@ function Update-LearnedBlockSize { param([string]$ActivityType, [double]$BlockHo
 function Get-NextSmallerBlockSize { param([double]$CurrentSize) foreach ($size in $script:subdivisionSequence) { if ($size -lt $CurrentSize) { return $size } } return [Math]::Max(0.016667, $CurrentSize / 2) }
 function Get-ActivityVolumeClassification { param([string]$ActivityType) if ($script:highVolumeActivities -contains $ActivityType) { 'High' } elseif ($script:mediumVolumeActivities -contains $ActivityType) { 'Medium' } else { 'Low' } }
 
-function Invoke-ActivityTimeWindowProcessing { param([Parameter(Mandatory = $true)][string]$ActivityType, [Parameter(Mandatory = $true)][datetime]$StartDate, [Parameter(Mandatory = $true)][datetime]$EndDate) $blockHours = Get-OptimalBlockSize -ActivityType $ActivityType; $allResults = New-Object System.Collections.ArrayList; $current = $StartDate; $blockNumber = 1; while ($current -lt $EndDate) { $blockEnd = $current.AddHours($blockHours); if ($blockEnd -gt $EndDate) { $blockEnd = $EndDate } try { $results = Invoke-SearchUnifiedAuditLogWithRetry -Start $current -End $blockEnd -Operation $ActivityType -ResultSize $ResultSize -AutoSubdivide $true; if ($results -and $results.Count -gt 0) { $null = $allResults.AddRange($results); Update-LearnedBlockSize -ActivityType $ActivityType -BlockHours $blockHours -RecordCount $results.Count -Success $true } } catch { Update-LearnedBlockSize -ActivityType $ActivityType -BlockHours $blockHours -RecordCount 0 -Success $false; if ($blockHours -gt 0.5) { $smallerBlockHours = Get-NextSmallerBlockSize -CurrentSize $blockHours; try { $blockEnd = $current.AddHours($smallerBlockHours); if ($blockEnd -gt $EndDate) { $blockEnd = $EndDate } $results = Invoke-SearchUnifiedAuditLogWithRetry -Start $current -End $blockEnd -Operation $ActivityType -ResultSize $ResultSize -AutoSubdivide $true; if ($results -and $results.Count -gt 0) { $null = $allResults.AddRange($results); Update-LearnedBlockSize -ActivityType $ActivityType -BlockHours $smallerBlockHours -RecordCount $results.Count -Success $true; $blockHours = $smallerBlockHours } } catch {} } } try { if ($script:progressState.Query.Current -ge $script:progressState.Query.Total) { $script:progressState.Query.Total += 1 } $script:progressState.Query.Current += 1; Update-Progress } catch {} $current = $blockEnd; $blockNumber++ } return $allResults.ToArray() }
+function Invoke-ActivityTimeWindowProcessing { param([Parameter(Mandatory = $true)][string]$ActivityType, [Parameter(Mandatory = $true)][datetime]$StartDate, [Parameter(Mandatory = $true)][datetime]$EndDate) Write-Host "Processing $ActivityType from $($StartDate.ToString('yyyy-MM-dd HH:mm')) to $($EndDate.ToString('yyyy-MM-dd HH:mm'))..." -ForegroundColor White; $blockHours = Get-OptimalBlockSize -ActivityType $ActivityType; Write-Host "  Using learned block size: $blockHours hours" -ForegroundColor DarkCyan; $allResults = New-Object System.Collections.ArrayList; $current = $StartDate; $blockNumber = 1; while ($current -lt $EndDate) { $blockEnd = $current.AddHours($blockHours); if ($blockEnd -gt $EndDate) { $blockEnd = $EndDate } Write-Host "  Block $blockNumber`: $($current.ToString('yyyy-MM-dd HH:mm')) to $($blockEnd.ToString('yyyy-MM-dd HH:mm')) ($([math]::Round(($blockEnd - $current).TotalHours,2))h)" -ForegroundColor Yellow; try { $results = Invoke-SearchUnifiedAuditLogWithRetry -Start $current -End $blockEnd -Operation $ActivityType -ResultSize $ResultSize -AutoSubdivide $true; if ($results -and $results.Count -gt 0) { $null = $allResults.AddRange($results); Write-Host "    Added $($results.Count) records (total: $($allResults.Count))" -ForegroundColor Green; Update-LearnedBlockSize -ActivityType $ActivityType -BlockHours $blockHours -RecordCount $results.Count -Success $true } else { Write-Host "    No records found in this block" -ForegroundColor Gray } } catch { Write-Host "    Block failed: $($_.Exception.Message)" -ForegroundColor Red; Update-LearnedBlockSize -ActivityType $ActivityType -BlockHours $blockHours -RecordCount 0 -Success $false; if ($blockHours -gt 0.5) { $smallerBlockHours = Get-NextSmallerBlockSize -CurrentSize $blockHours; Write-Host "    Retrying with smaller $smallerBlockHours hour block..." -ForegroundColor Yellow; try { $blockEnd = $current.AddHours($smallerBlockHours); if ($blockEnd -gt $EndDate) { $blockEnd = $EndDate } $results = Invoke-SearchUnifiedAuditLogWithRetry -Start $current -End $blockEnd -Operation $ActivityType -ResultSize $ResultSize -AutoSubdivide $true; if ($results -and $results.Count -gt 0) { $null = $allResults.AddRange($results); Write-Host "      Smaller block succeeded: $($results.Count) records" -ForegroundColor Green; Update-LearnedBlockSize -ActivityType $ActivityType -BlockHours $smallerBlockHours -RecordCount $results.Count -Success $true; $blockHours = $smallerBlockHours } } catch { Write-Host "      Smaller block also failed: $($_.Exception.Message)" -ForegroundColor Red } } } try { if ($script:progressState.Query.Current -ge $script:progressState.Query.Total) { $script:progressState.Query.Total += 1 } $script:progressState.Query.Current += 1; Update-Progress } catch {} $current = $blockEnd; $blockNumber++ } Write-Host "  Completed $ActivityType`: $($allResults.Count) total records" -ForegroundColor Green; return $allResults.ToArray() }
 
 $LogFile = $OutputFile -replace '\.csv$', '.log'
-function Write-Log { param([Parameter(Mandatory = $true)][string]$Message, [string]$Level = "INFO") $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"; $logEntry = "[$timestamp] [$Level] $Message"; Write-Host $Message; try { Add-Content -Path $LogFile -Value $logEntry -Encoding UTF8 -ErrorAction SilentlyContinue } catch {}; if ($script:progressState) { $script:progressState.LastProgressOnSameLine = $false } }
-function Write-LogHost { param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Message, [string]$ForegroundColor = "White") Write-Host $Message -ForegroundColor $ForegroundColor; try { $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"; $logEntry = "[$timestamp] [INFO] $Message"; Add-Content -Path $LogFile -Value $logEntry -Encoding UTF8 -ErrorAction SilentlyContinue } catch {}; if ($script:progressState) { $script:progressState.LastProgressOnSameLine = $false } }
+function Write-Log { param([Parameter(Mandatory = $true)][string]$Message, [string]$Level = "INFO") $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"; $logEntry = "[$timestamp] [$Level] $Message"; Write-Host $Message; try { Add-Content -Path $LogFile -Value $logEntry -Encoding UTF8 -ErrorAction SilentlyContinue } catch {} }
+function Write-LogHost { param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Message, [string]$ForegroundColor = "White") Write-Host $Message -ForegroundColor $ForegroundColor; try { $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"; $logEntry = "[$timestamp] [INFO] $Message"; Add-Content -Path $LogFile -Value $logEntry -Encoding UTF8 -ErrorAction SilentlyContinue } catch {} }
 
 # --- Fast CSV Writer Utilities ---
 function Open-CsvWriter {
