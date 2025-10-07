@@ -1,4 +1,4 @@
-# Portable Audit eXporter (PAX) - Purview Audit Log Processor - v1.4.5
+# Portable Audit eXporter (PAX) - Purview Audit Log Processor - v1.4.6
 <#
 .SYNOPSIS
     Export Microsoft Purview audit logs for Microsoft 365 Copilot and related activities with optional Purview-aligned row explosion and deep flattening.
@@ -6,8 +6,8 @@
 .DESCRIPTION
     Modes:
         Standard       - One row per audit record (raw CopilotEventData JSON preserved)
-        -ExplodeArrays - Produces canonical Purview exploded schema (29 fixed columns)
-        -ExplodeDeep   - Same 29-column Purview schema + appended deep-flattened CopilotEventData.* columns
+        -ExplodeArrays - Produces canonical Purview exploded schema (35 fixed columns)
+        -ExplodeDeep   - Same 35-column Purview schema + appended deep-flattened CopilotEventData.* columns
     Offline Replay (-RAWInputCSV):
         * Ingest a previously exported raw Purview audit CSV (must contain AuditData JSON column)
         * Skips authentication & live Search-UnifiedAuditLog queries entirely
@@ -23,35 +23,35 @@
 
 .EXECUTIONPOLICY
     No internal execution policy bypass. Use external host invocation if needed:
-        powershell.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.4.5.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-        pwsh.exe       -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.4.5.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+        powershell.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+        pwsh.exe       -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
 
 .POWERSHELLVERSIONS
     PS 5.1 & 7+. Parallelization requires PS 7+.
 
 .EXAMPLE
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.5.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
 .EXAMPLE
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.5.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_exploded.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_exploded.csv
 .EXAMPLE
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.5.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_deep.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_deep.csv
 .EXAMPLE
-    powershell -File .\PAX_Purview_Audit_Log_Processor_v1.4.5.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
+    powershell -File .\PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
 .EXAMPLE
     # Offline replay (simple forced explosion) of a previously exported raw CSV
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.5.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile C:\Temp\Copilot_replay_exploded.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile C:\Temp\Copilot_replay_exploded.csv
 .EXAMPLE
     # Offline replay with date & activity filtering + deep flatten
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.5.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction -OutputFile C:\Temp\Copilot_replay_deep.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction -OutputFile C:\Temp\Copilot_replay_deep.csv
 .EXAMPLE
     # Deep flatten (wide) with higher schema sample & moderate chunk size (balance column coverage vs memory)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.5.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 4000 -StreamingChunkSize 3000 -OutputFile C:\Temp\Copilot_deep_tuned.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 4000 -StreamingChunkSize 3000 -OutputFile C:\Temp\Copilot_deep_tuned.csv
 .EXAMPLE
     # Extremely wide deep flatten: maximize schema sample, reduce chunk size for lower peak memory
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.5.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 6000 -StreamingChunkSize 1500 -OutputFile C:\Temp\Copilot_deep_memoryguard.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 6000 -StreamingChunkSize 1500 -OutputFile C:\Temp\Copilot_deep_memoryguard.csv
 .EXAMPLE
     # Fast header freeze (narrow schema expectation) – smaller sample, larger chunk for throughput (risk: late columns ignored)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.5.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 800 -StreamingChunkSize 6000 -OutputFile C:\Temp\Copilot_deep_fastfreeze.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 800 -StreamingChunkSize 6000 -OutputFile C:\Temp\Copilot_deep_fastfreeze.csv
 #>
 
 param(
@@ -287,7 +287,8 @@ function Update-Progress {
         [int]$BatchRangeStart = 0,
         [int]$BatchRangeEnd = 0,
         [int]$BatchStartPercent = 0,
-        [int]$BatchEndPercent = 0
+        [int]$BatchEndPercent = 0,
+        [bool]$BatchTotalIsEstimate = $false
     )
     $w = $script:progressState.Weights; $ps = $script:progressState.Parsing; $qs = $script:progressState.Query; $es = $script:progressState.Explode; $xs = $script:progressState.Export
     $pPct = if ($ps.Total -gt 0 -and $w.ContainsKey('Parsing') -and $w.Parsing -gt 0) { [double]$ps.Current / [double]$ps.Total } else { 0.0 }
@@ -305,19 +306,22 @@ function Update-Progress {
         # Show record range for current batch with batch number and percentage range inline
         if ($BatchStartPercent -ge 0 -and $BatchEndPercent -gt 0) {
             # Use provided percentage range
-            $batchInfo = if ($BatchTotal -ge 1) { " Batch: {0}/{1}({2}%-{3}%)" -f $BatchCurrent, $BatchTotal, $BatchStartPercent, $BatchEndPercent } else { '' }
+            $batchTotalDisplay = if ($BatchTotalIsEstimate) { "~$BatchTotal" } else { "$BatchTotal" }
+            $batchInfo = if ($BatchTotal -ge 1) { " Batch: {0}/{1}({2}%-{3}%)" -f $BatchCurrent, $batchTotalDisplay, $BatchStartPercent, $BatchEndPercent } else { '' }
         }
         else {
             # Fallback to calculating from batch count
             $batchPct = if ($BatchTotal -gt 0 -and $BatchCurrent -gt 0) { [int]([Math]::Round(([double]$BatchCurrent / [double]$BatchTotal) * 100)) } else { 0 }
-            $batchInfo = if ($BatchTotal -ge 1) { " Batch: {0}/{1}({2}%)" -f $BatchCurrent, $BatchTotal, $batchPct } else { '' }
+            $batchTotalDisplay = if ($BatchTotalIsEstimate) { "~$BatchTotal" } else { "$BatchTotal" }
+            $batchInfo = if ($BatchTotal -ge 1) { " Batch: {0}/{1}({2}%)" -f $BatchCurrent, $batchTotalDisplay, $batchPct } else { '' }
         }
         $explosionCounts = "Records {0}-{1}/{2}{3}" -f $BatchRangeStart, $BatchRangeEnd, $es.Total, $batchInfo
     }
     elseif ($BatchTotal -ge 1) {
         # Fallback: show current record with batch info inline (same style as range format)
         $batchPct = if ($BatchTotal -gt 0 -and $BatchCurrent -gt 0) { [int]([Math]::Round(([double]$BatchCurrent / [double]$BatchTotal) * 100)) } else { 0 }
-        $batchInfo = " Batch: {0}/{1}({2}%)" -f $BatchCurrent, $BatchTotal, $batchPct
+        $batchTotalDisplay = if ($BatchTotalIsEstimate) { "~$BatchTotal" } else { "$BatchTotal" }
+        $batchInfo = " Batch: {0}/{1}({2}%)" -f $BatchCurrent, $batchTotalDisplay, $batchPct
         $explosionCounts = if ($es.Total -gt 0) { "Records {0}/{1}{2}" -f $es.Current, $es.Total, $batchInfo } else { "0/0" }
     }
     else {
@@ -634,13 +638,14 @@ function ConvertTo-FlatColumns {
 
 function Get-SafeProperty { param($obj, [string]$name) try { if ($null -ne $obj -and $obj.PSObject.Properties[$name]) { return $obj.($name) } } catch {}; return $null }
 
-# --- Purview Exploded Schema (29 core columns) ---
+# --- Purview Exploded Schema (35 core columns) ---
 $PurviewExplodedHeader = @(
     'RecordId', 'CreationDate', 'RecordType', 'Operation', 'UserId', 'AssociatedAdminUnits', 'AssociatedAdminUnitsNames',
-    'AgentId', 'AgentName', 'AppIdentity_AppId', 'AppIdentity_DisplayName', 'AppIdentity_PublisherId', 'ApplicationName',
-    'CreationTime', 'ClientRegion', 'Audit_UserId', 'AppHost', 'ThreadId', 'Context_Id', 'Context_Type', 'Message_Id',
+    'AgentId', 'AgentName', 'AppIdentity', 'AppIdentity_DisplayName', 'AppIdentity_PublisherId', 'ApplicationName',
+    'CreationTime', 'ClientRegion', 'ClientIP', 'Audit_UserId', 'AppHost', 'ThreadId', 'Context_Id', 'Context_Type', 'Message_Id',
     'Message_isPrompt', 'AccessedResource_Action', 'AccessedResource_PolicyDetails', 'AccessedResource_SiteUrl',
-    'AISystemPlugin_Id', 'AISystemPlugin_Name', 'ModelTransparencyDetails_ModelName', 'MessageIds'
+    'AISystemPlugin_Id', 'AISystemPlugin_Name', 'ModelTransparencyDetails_ModelName', 'MessageIds',
+    'OrganizationId', 'Version', 'UserType', 'CopilotLogVersion', 'Workload'
 )
 
 # Base schema list used directly when emitting headers (even for empty datasets).
@@ -683,18 +688,45 @@ function Convert-ToPurviewExplodedRecords {
         # Extract record-level values from audit data
         $creationDate = script:Format-DatePurviewFast $Record.CreationDate
         $creationTime = try { script:Format-DatePurviewFast $auditData.CreationTime } catch { '' }
-        $appIdentity = Get-SafeProperty $ced 'AppIdentity'
-        $appId = Get-SafeProperty $appIdentity 'AppId'
-        $appDisp = Get-SafeProperty $appIdentity 'DisplayName'
-        $appPub = Get-SafeProperty $appIdentity 'PublisherId'
+        # AppIdentity can be a string OR an object - check both cases
+        $appIdentityRaw = (Select-FirstNonNull -Values @((Get-SafeProperty $auditData 'AppIdentity'), (Get-SafeProperty $ced 'AppIdentity')))
+        if ($appIdentityRaw -is [string]) {
+            # AppIdentity is a simple string (e.g., "Copilot.Security.SecurityCopilot")
+            $appIdentity = $appIdentityRaw
+            $appId = ''
+            $appDisp = ''
+            $appPub = ''
+        }
+        elseif ($null -ne $appIdentityRaw) {
+            # AppIdentity is an object with properties
+            $appIdentity = ''
+            $appId = Get-SafeProperty $appIdentityRaw 'AppId'
+            $appDisp = Get-SafeProperty $appIdentityRaw 'DisplayName'
+            $appPub = Get-SafeProperty $appIdentityRaw 'PublisherId'
+        }
+        else {
+            # No AppIdentity at all
+            $appIdentity = ''
+            $appId = ''
+            $appDisp = ''
+            $appPub = ''
+        }
         $appHost = (Select-FirstNonNull -Values @((Get-SafeProperty $ced 'AppHost'), (Get-SafeProperty $auditData 'AppHost'), (Get-SafeProperty $auditData 'Workload')))
-        $clientRegion = (Get-SafeProperty $ced 'ClientRegion')
-        $agentId = (Get-SafeProperty $ced 'AgentId')
-        $agentName = (Get-SafeProperty $ced 'AgentName')
-        $appName = (Select-FirstNonNull -Values @((Get-SafeProperty $ced 'ApplicationName'), (Get-SafeProperty $ced 'HostAppName'), (Get-SafeProperty $ced 'ClientAppName')))
+        # ClientRegion is at top-level AuditData
+        $clientRegion = (Get-SafeProperty $auditData 'ClientRegion')
+        $agentId = (Get-SafeProperty $auditData 'AgentId')
+        $agentName = (Get-SafeProperty $auditData 'AgentName')
+        $appName = (Select-FirstNonNull -Values @((Get-SafeProperty $auditData 'ApplicationName'), (Get-SafeProperty $ced 'HostAppName'), (Get-SafeProperty $ced 'ClientAppName')))
         $threadId = (Get-SafeProperty $ced 'ThreadId')
         $auditUserKey = try { $auditData.UserKey } catch { $null }
         $modelName = Get-SafeProperty $model0 'ModelName'
+        # Additional top-level AuditData fields
+        $clientIP = (Get-SafeProperty $auditData 'ClientIP')
+        $organizationId = (Get-SafeProperty $auditData 'OrganizationId')
+        $version = (Get-SafeProperty $auditData 'Version')
+        $userType = (Get-SafeProperty $auditData 'UserType')
+        $copilotLogVersion = (Get-SafeProperty $auditData 'CopilotLogVersion')
+        $workload = (Get-SafeProperty $auditData 'Workload')
 
         $baseSet = New-Object System.Collections.Generic.HashSet[string]
         foreach ($c in $PurviewExplodedHeader) { $null = $baseSet.Add($c) }
@@ -712,12 +744,13 @@ function Convert-ToPurviewExplodedRecords {
                 AssociatedAdminUnitsNames          = (Get-SafeProperty $auditData 'AssociatedAdminUnitsNames')
                 AgentId                            = $agentId
                 AgentName                          = $agentName
-                AppIdentity_AppId                  = $appId
+                AppIdentity                        = $appIdentity
                 AppIdentity_DisplayName            = $appDisp
                 AppIdentity_PublisherId            = $appPub
                 ApplicationName                    = $appName
                 CreationTime                       = $creationTime
                 ClientRegion                       = $clientRegion
+                ClientIP                           = $clientIP
                 Audit_UserId                       = $auditUserKey
                 AppHost                            = $appHost
                 ThreadId                           = $threadId
@@ -732,9 +765,15 @@ function Convert-ToPurviewExplodedRecords {
                 AISystemPlugin_Name                = $(if ($plugin0) { try { Get-SafeProperty $plugin0 'Name' } catch { '' } } else { '' })
                 ModelTransparencyDetails_ModelName = $(if ($model0) { $modelName } else { '' })
                 MessageIds                         = $(if ($messageIds.Count -gt 0) { $messageIds -join ';' } else { '' })
+                OrganizationId                     = $organizationId
+                Version                            = $version
+                UserType                           = $userType
+                CopilotLogVersion                  = $copilotLogVersion
+                Workload                           = $workload
             }
 
             if ($Deep -and $ced) {
+                # Deep flatten CopilotEventData
                 $flat = ConvertTo-FlatColumns -Node $ced -Prefix 'CopilotEventData.' -MaxDepth $FlatDepthDeep
                 foreach ($k in $flat.Keys) {
                     if ($baseSet.Contains($k)) { continue }
@@ -742,6 +781,26 @@ function Convert-ToPurviewExplodedRecords {
                         # Register column ordering globally
                         if (-not $script:DeepExtraColumns.Contains($k)) { [void]$script:DeepExtraColumns.Add($k) }
                         try { Add-Member -InputObject $rowObj -NotePropertyName $k -NotePropertyValue $flat[$k] -Force } catch {}
+                    }
+                }
+            }
+            
+            if ($Deep -and $auditData) {
+                # Deep flatten top-level AuditData (excluding CopilotEventData which is already processed)
+                $auditDataClone = [PSCustomObject]@{}
+                foreach ($prop in $auditData.PSObject.Properties) {
+                    # Skip CopilotEventData as it's already processed above, and skip already-extracted core fields
+                    if ($prop.Name -ne 'CopilotEventData') {
+                        Add-Member -InputObject $auditDataClone -NotePropertyName $prop.Name -NotePropertyValue $prop.Value -Force
+                    }
+                }
+                $flatAudit = ConvertTo-FlatColumns -Node $auditDataClone -Prefix 'AuditData.' -MaxDepth $FlatDepthDeep
+                foreach ($k in $flatAudit.Keys) {
+                    if ($baseSet.Contains($k)) { continue }
+                    if (-not $rowObj.PSObject.Properties[$k]) {
+                        # Register column ordering globally
+                        if (-not $script:DeepExtraColumns.Contains($k)) { [void]$script:DeepExtraColumns.Add($k) }
+                        try { Add-Member -InputObject $rowObj -NotePropertyName $k -NotePropertyValue $flatAudit[$k] -Force } catch {}
                     }
                 }
             }
@@ -1221,11 +1280,14 @@ try {
                                 if ($logsConsumedForSchema -lt $allLogs.Count) { $remainingLogs = $allLogs[$logsConsumedForSchema..($allLogs.Count - 1)] } else { $remainingLogs = @() }
                                 # Configure parallel processing with optimized batch sizes for large datasets
                                 $parallelBatchSize = [int][Math]::Max(10000, [Math]::Min(20000, [int]($remainingLogs.Count / 20)))
+                                $parallelBatchSizeOriginal = $parallelBatchSize  # Preserve original for batch total calculation
                                 $throttle = [int][Math]::Min([Environment]::ProcessorCount, 8)
                                 $targetMinMs = 3000; $targetMaxMs = 12000
                                 $remainingCount = $remainingLogs.Count
                                 $processedRemaining = 0
-                                Write-LogHost "Parallel batch config: batchSize=$parallelBatchSize, throttle=$throttle, batches=$([Math]::Ceiling($remainingCount / $parallelBatchSize))" -ForegroundColor DarkCyan
+                                # Calculate total batches ONCE at the start using ORIGINAL batch size (don't recalculate if batchSize changes mid-stream)
+                                $totalBatchesInitial = [Math]::Ceiling($remainingCount / $parallelBatchSizeOriginal)
+                                Write-LogHost "Parallel batch config: batchSize=$parallelBatchSize, throttle=$throttle, batches=$totalBatchesInitial" -ForegroundColor DarkCyan
                                 Write-LogHost "NOTE: Progress bar updates between batches - progress may appear paused during intensive parallel processing." -ForegroundColor Yellow
                                 
                                 # Get function definitions to pass into parallel runspace
@@ -1244,23 +1306,63 @@ try {
                                 $regexNo0 = $script:RegexNo0
                                 
                                 # Show initial batch progress before starting
-                                # Show batch 1 info since it's about to start
-                                $totalBatches = [Math]::Ceiling($remainingCount / $parallelBatchSize)
+                                # Calculate initial batch display with dynamic total
                                 $firstBatchSize = [Math]::Min($parallelBatchSize, $remainingCount)
                                 $firstRangeStart = 1
                                 $firstRangeEnd = $logsConsumedForSchema + $firstBatchSize
+                                $remainingAfterFirstBatch = $remainingCount - $firstBatchSize
+                                if ($remainingAfterFirstBatch -le 0) {
+                                    # No records left - only one batch
+                                    $firstBatchTotal = 1
+                                    $firstBatchIsEstimate = $false
+                                } else {
+                                    # Smart batch estimation: Account for the fact that the final batch will
+                                    # process ALL remaining records in one go (no splitting of the last batch)
+                                    $estimatedRemainingBatches = [Math]::Ceiling($remainingAfterFirstBatch / $parallelBatchSize)
+                                    # If Math.Ceiling says 2+ batches, but the "excess" in the last batch is small,
+                                    # reduce the estimate by 1 (assuming adaptive sizing or final batch consolidation)
+                                    if ($estimatedRemainingBatches -ge 2) {
+                                        $excessInLastBatch = $remainingAfterFirstBatch - (($estimatedRemainingBatches - 1) * $parallelBatchSize)
+                                        # If the "last batch" would be tiny (< 20% of batch size), assume it gets absorbed
+                                        if ($excessInLastBatch -le ($parallelBatchSize * 0.2)) {
+                                            $estimatedRemainingBatches--
+                                        }
+                                    }
+                                    $firstBatchTotal = 1 + $estimatedRemainingBatches
+                                    $firstBatchIsEstimate = $true
+                                }
                                 # Calculate percentage range for this batch
                                 $firstBatchStartPct = 0
                                 $firstBatchEndPct = [int]([Math]::Round(([double]$firstRangeEnd / [double]$script:progressState.Explode.Total) * 100))
-                                Update-Progress -BatchCurrent 1 -BatchTotal $totalBatches -BatchRangeStart $firstRangeStart -BatchRangeEnd $firstRangeEnd -BatchStartPercent $firstBatchStartPct -BatchEndPercent $firstBatchEndPct
+                                Update-Progress -BatchCurrent 1 -BatchTotal $firstBatchTotal -BatchRangeStart $firstRangeStart -BatchRangeEnd $firstRangeEnd -BatchStartPercent $firstBatchStartPct -BatchEndPercent $firstBatchEndPct -BatchTotalIsEstimate $firstBatchIsEstimate
                                 
                                 while ($processedRemaining -lt $remainingCount) {
                                     $batchSize = [Math]::Min($parallelBatchSize, $remainingCount - $processedRemaining)
                                     $batch = $remainingLogs[$processedRemaining..($processedRemaining + $batchSize - 1)]
                                     
                                     # Calculate batch info for progress display
-                                    $currentBatch = [Math]::Floor($processedRemaining / $parallelBatchSize) + 1
-                                    $totalBatches = [Math]::Ceiling($remainingCount / $parallelBatchSize)
+                                    # Use ORIGINAL batch size to calculate current batch number (not the potentially-reduced size)
+                                    $currentBatch = [Math]::Floor($processedRemaining / $parallelBatchSizeOriginal) + 1
+                                    # Calculate total batches dynamically based on current position and remaining records
+                                    # This accounts for adaptive batch sizing that may have changed the actual number of batches
+                                    $remainingAfterThisBatch = $remainingCount - ($processedRemaining + $batchSize)
+                                    if ($remainingAfterThisBatch -le 0) {
+                                        # This is the last batch - show exact total
+                                        $totalBatches = $currentBatch
+                                        $batchTotalIsEstimate = $false
+                                    } else {
+                                        # Smart batch estimation
+                                        $estimatedRemainingBatches = [Math]::Ceiling($remainingAfterThisBatch / $parallelBatchSize)
+                                        # If the final batch would be tiny, assume it gets absorbed into the previous batch
+                                        if ($estimatedRemainingBatches -ge 2) {
+                                            $excessInLastBatch = $remainingAfterThisBatch - (($estimatedRemainingBatches - 1) * $parallelBatchSize)
+                                            if ($excessInLastBatch -le ($parallelBatchSize * 0.2)) {
+                                                $estimatedRemainingBatches--
+                                            }
+                                        }
+                                        $totalBatches = $currentBatch + $estimatedRemainingBatches
+                                        $batchTotalIsEstimate = $true
+                                    }
                                     
                                     # Calculate the record range for THIS batch being processed (1-indexed display)
                                     $rangeStart = $logsConsumedForSchema + $processedRemaining + 1
@@ -1272,7 +1374,7 @@ try {
                                     
                                     # Update progress BEFORE starting batch to show what's being processed
                                     $script:progressState.Explode.Current = $logsConsumedForSchema + $processedRemaining
-                                    Update-Progress -BatchCurrent $currentBatch -BatchTotal $totalBatches -BatchRangeStart $rangeStart -BatchRangeEnd $rangeEnd -BatchStartPercent $batchStartPct -BatchEndPercent $batchEndPct
+                                    Update-Progress -BatchCurrent $currentBatch -BatchTotal $totalBatches -BatchRangeStart $rangeStart -BatchRangeEnd $rangeEnd -BatchStartPercent $batchStartPct -BatchEndPercent $batchEndPct -BatchTotalIsEstimate $batchTotalIsEstimate
                                     
                                     $batchStart = Get-Date
                                     try {
@@ -1308,9 +1410,11 @@ try {
                                     }
                                     catch {
                                         if ($_.Exception -is [System.OutOfMemoryException]) {
-                                            Write-LogHost "OutOfMemory during parallel batch -> reducing batchSize & throttle" -ForegroundColor Red
+                                            $oldBatchSize = $parallelBatchSize
+                                            $oldThrottle = $throttle
                                             $parallelBatchSize = [int][Math]::Max(200, [int]($parallelBatchSize / 2))
                                             $throttle = [int][Math]::Max(1, [int]($throttle / 2))
+                                            Write-LogHost "OutOfMemory during parallel batch -> reducing batch size from $oldBatchSize to $parallelBatchSize, throttle from $oldThrottle to $throttle (batch totals remain fixed at $totalBatchesInitial)" -ForegroundColor Red
                                             continue
                                         }
                                         else { throw }
