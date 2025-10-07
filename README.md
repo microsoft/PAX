@@ -1,6 +1,6 @@
 ## Portable Audit eXporter (PAX) - Purview Audit Log Exporter
 
-Script: `PAX_Purview_Audit_Log_Processor_v1.4.6.ps1`  
+Script: `PAX_Purview_Audit_Log_Processor_v1.4.7.ps1`  
 Audience: IT admins, security/compliance analysts, BI/data teams  
 Runtime: PowerShell 5.1 (compatible) / 7+ (recommended)
 
@@ -81,7 +81,7 @@ Download: https://aka.ms/powershell
 ### 6. Quick Start
 
 ```powershell
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
 ```
 
 Interactive sign-in unless you specify `-Auth DeviceCode` / `Credential` / `Silent`.
@@ -183,13 +183,13 @@ Example commands (replay):
 
 ```powershell
 # Simple replay (forced explosion implied)
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile .\replay_exploded.csv
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile .\replay_exploded.csv
 
 # Replay with date & activity filtering + deep flatten
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction -OutputFile .\replay_deep.csv
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction -OutputFile .\replay_deep.csv
 
 # Replay limiting to multiple operations
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ActivityTypes CopilotInteraction MessageSent FileAccessed -OutputFile .\replay_multi.csv
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ActivityTypes CopilotInteraction MessageSent FileAccessed -OutputFile .\replay_multi.csv
 ```
 
 Limitations: Does not re-profile adaptive block sizing (query metrics minimal). Ensure source CSV includes `AuditData`. Non‑exploded mode is disabled in replay for consistency.
@@ -337,37 +337,37 @@ MIT License. “AS IS” – no warranties or official support. Validate fit for
 
 ```powershell
 # Standard (1:1)
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile .\Copilot.csv
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile .\Copilot.csv
 
 # Array explosion
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile .\Copilot_exploded.csv
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile .\Copilot_exploded.csv
 
 # Deep flatten + explosion
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile .\Copilot_deep.csv
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile .\Copilot_deep.csv
 
 # Offline replay (forced explosion)
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile .\Copilot_replay_exploded.csv
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile .\Copilot_replay_exploded.csv
 
 # Offline replay deep flatten + filtering
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction -OutputFile .\Copilot_replay_deep.csv
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction -OutputFile .\Copilot_replay_deep.csv
 
 # Parallel heuristic (PS7+)
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -ParallelMode Auto -ActivityTypes CopilotInteraction MessageSent FileAccessed
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -ParallelMode Auto -ActivityTypes CopilotInteraction MessageSent FileAccessed
 
 # Force parallel
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -ParallelMode On -MaxConcurrency 3 -MaxParallelGroups 2 -ActivityTypes CopilotInteraction MessageSent
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -ParallelMode On -MaxConcurrency 3 -MaxParallelGroups 2 -ActivityTypes CopilotInteraction MessageSent
 
 # Deep flatten (wide schema) – advanced streaming tuning
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 4000 -StreamingChunkSize 3000 -OutputFile .\Copilot_deep_tuned.csv
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 4000 -StreamingChunkSize 3000 -OutputFile .\Copilot_deep_tuned.csv
 
 # Extremely wide / memory sensitive: increase sample to capture columns, shrink chunk to lower peak memory
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 6000 -StreamingChunkSize 1500 -OutputFile .\Copilot_deep_memoryguard.csv
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 6000 -StreamingChunkSize 1500 -OutputFile .\Copilot_deep_memoryguard.csv
 
 # Faster header freeze for narrow schemas (accept risk of late columns ignored)
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 800 -StreamingChunkSize 6000 -OutputFile .\Copilot_deep_fastfreeze.csv
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 800 -StreamingChunkSize 6000 -OutputFile .\Copilot_deep_fastfreeze.csv
 
 # Replay deep flatten with tuned streaming (large historical file)
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StreamingSchemaSample 5000 -StreamingChunkSize 2500 -OutputFile .\Copilot_replay_deep_tuned.csv
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StreamingSchemaSample 5000 -StreamingChunkSize 2500 -OutputFile .\Copilot_replay_deep_tuned.csv
 ```
 
 Windows PowerShell 5.1: prefix with `powershell -File`; PS 7+: `pwsh -File` (syntax identical).
@@ -380,43 +380,43 @@ Below is a fuller catalog of invocation patterns. Adjust paths/dates as needed. 
 
 ```powershell
 # 1. Minimal (defaults for everything else)
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
 
 # 2. Specify explicit output path (creates folder if missing)
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Data\Copilot\copilot_20251001.csv
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Data\Copilot\copilot_20251001.csv
 
 # 3. Multiple activity types (mix of presumed high & medium volume)
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-03 -ActivityTypes CopilotInteraction MessageSent FileAccessed MeetingDetail
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -StartDate 2025-10-01 -EndDate 2025-10-03 -ActivityTypes CopilotInteraction MessageSent FileAccessed MeetingDetail
 
 # 4. Narrow block size to improve completeness under heavy load
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -StartDate 2025-10-05 -EndDate 2025-10-05 -BlockHours 0.25
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -StartDate 2025-10-05 -EndDate 2025-10-05 -BlockHours 0.25
 
 # 5. Larger initial block (sparse historical data, multi-day span)
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -StartDate 2025-09-01 -EndDate 2025-09-04 -BlockHours 4
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -StartDate 2025-09-01 -EndDate 2025-09-04 -BlockHours 4
 
 # 6. Reduce ResultSize (fetch fewer records per window intentionally)
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -ResultSize 2500
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -ResultSize 2500
 
 # 7. Add pacing between pages (mitigate throttling bursts)
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -StartDate 2025-10-02 -EndDate 2025-10-03 -PacingMs 500
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -StartDate 2025-10-02 -EndDate 2025-10-03 -PacingMs 500
 
 # 8. Array explosion only (one extra row per element of target arrays)
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile .\copilot_exploded.csv
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile .\copilot_exploded.csv
 
 # 9. Deep flatten (explosion + wide column set)
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile .\copilot_deep.csv
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile .\copilot_deep.csv
 
 # 10. Parallel (forced) with tuned concurrency (PS 7+ only)
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -ParallelMode On -MaxConcurrency 4 -MaxParallelGroups 3 -ActivityTypes CopilotInteraction MessageSent FileAccessed MeetingDetail SearchQueryPerformed
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -ParallelMode On -MaxConcurrency 4 -MaxParallelGroups 3 -ActivityTypes CopilotInteraction MessageSent FileAccessed MeetingDetail SearchQueryPerformed
 
 # 11. Parallel heuristic (Auto) – lets script decide
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -ParallelMode Auto -ActivityTypes CopilotInteraction MessageSent FileAccessed
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -ParallelMode Auto -ActivityTypes CopilotInteraction MessageSent FileAccessed
 
 # 12. Disable progress UI (clean logs / quiet CI runs)
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -NoProgress
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -NoProgress
 
 # 13. Increase export progress granularity (update every 1 row)
-./PAX_Purview_Audit_Log_Processor_v1.4.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-01 -ExportProgressInterval 1
+./PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -StartDate 2025-10-01 -EndDate 2025-10-01 -ExportProgressInterval 1
 
 # 14. Device code authentication (good for headless terminals)
 ./CopilotInteraction_Purview_Export.ps1 -Auth DeviceCode -StartDate 2025-10-01 -EndDate 2025-10-02

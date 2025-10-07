@@ -112,8 +112,17 @@ param(
 
     [Parameter(Mandatory = $false)]
     [ValidateRange(100, 50000)]
-    [int]$StreamingChunkSize = 5000
+    [int]$StreamingChunkSize = 5000,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Help
 )
+
+# Display help if -Help switch is provided
+if ($Help) {
+    Get-Help $PSCommandPath -Full
+    exit 0
+}
 
 # Script version: dynamically read from package.json
 try {
@@ -1336,13 +1345,15 @@ try {
                                 $firstBatchEndPct = [int]([Math]::Round(([double]$firstRangeEnd / [double]$script:progressState.Explode.Total) * 100))
                                 Update-Progress -BatchCurrent 1 -BatchTotal $firstBatchTotal -BatchRangeStart $firstRangeStart -BatchRangeEnd $firstRangeEnd -BatchStartPercent $firstBatchStartPct -BatchEndPercent $firstBatchEndPct -BatchTotalIsEstimate $firstBatchIsEstimate
                                 
+                                # Track actual batch iteration count (not calculated from position)
+                                $actualBatchIteration = 1
                                 while ($processedRemaining -lt $remainingCount) {
                                     $batchSize = [Math]::Min($parallelBatchSize, $remainingCount - $processedRemaining)
                                     $batch = $remainingLogs[$processedRemaining..($processedRemaining + $batchSize - 1)]
                                     
                                     # Calculate batch info for progress display
-                                    # Use ORIGINAL batch size to calculate current batch number (not the potentially-reduced size)
-                                    $currentBatch = [Math]::Floor($processedRemaining / $parallelBatchSizeOriginal) + 1
+                                    # Use actual iteration count (accounts for adaptive batch sizing)
+                                    $currentBatch = $actualBatchIteration
                                     # Calculate total batches dynamically based on current position and remaining records
                                     # This accounts for adaptive batch sizing that may have changed the actual number of batches
                                     $remainingAfterThisBatch = $remainingCount - ($processedRemaining + $batchSize)
@@ -1460,6 +1471,7 @@ try {
                                         }
                                     }
                                     $processedRemaining += $batchSize
+                                    $actualBatchIteration++  # Increment for next iteration
                                     $batchElapsed = (Get-Date) - $batchStart
                                     $elapsedMs = [int]$batchElapsed.TotalMilliseconds
                                     
