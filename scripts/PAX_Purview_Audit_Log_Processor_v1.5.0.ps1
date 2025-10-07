@@ -1,4 +1,4 @@
-# Portable Audit eXporter (PAX) - Purview Audit Log Processor - v1.4.7
+# Portable Audit eXporter (PAX) - Purview Audit Log Processor - v1.5.0
 <#
 .SYNOPSIS
     Export Microsoft Purview audit logs for Microsoft 365 Copilot and related activities with optional Purview-aligned row explosion and deep flattening.
@@ -23,35 +23,35 @@
 
 .EXECUTIONPOLICY
     No internal execution policy bypass. Use external host invocation if needed:
-        powershell.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-        pwsh.exe       -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+        powershell.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+        pwsh.exe       -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
 
 .POWERSHELLVERSIONS
     PS 5.1 & 7+. Parallelization requires PS 7+.
 
 .EXAMPLE
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
 .EXAMPLE
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_exploded.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_exploded.csv
 .EXAMPLE
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_deep.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_deep.csv
 .EXAMPLE
-    powershell -File .\PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
+    powershell -File .\PAX_Purview_Audit_Log_Processor_v1.5.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
 .EXAMPLE
     # Offline replay (simple forced explosion) of a previously exported raw CSV
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile C:\Temp\Copilot_replay_exploded.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.0.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile C:\Temp\Copilot_replay_exploded.csv
 .EXAMPLE
     # Offline replay with date & activity filtering + deep flatten
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction -OutputFile C:\Temp\Copilot_replay_deep.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.0.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction -OutputFile C:\Temp\Copilot_replay_deep.csv
 .EXAMPLE
     # Deep flatten (wide) with higher schema sample & moderate chunk size (balance column coverage vs memory)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 4000 -StreamingChunkSize 3000 -OutputFile C:\Temp\Copilot_deep_tuned.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 4000 -StreamingChunkSize 3000 -OutputFile C:\Temp\Copilot_deep_tuned.csv
 .EXAMPLE
     # Extremely wide deep flatten: maximize schema sample, reduce chunk size for lower peak memory
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 6000 -StreamingChunkSize 1500 -OutputFile C:\Temp\Copilot_deep_memoryguard.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 6000 -StreamingChunkSize 1500 -OutputFile C:\Temp\Copilot_deep_memoryguard.csv
 .EXAMPLE
     # Fast header freeze (narrow schema expectation) – smaller sample, larger chunk for throughput (risk: late columns ignored)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.7.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 800 -StreamingChunkSize 6000 -OutputFile C:\Temp\Copilot_deep_fastfreeze.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 800 -StreamingChunkSize 6000 -OutputFile C:\Temp\Copilot_deep_fastfreeze.csv
 #>
 
 param(
@@ -439,7 +439,7 @@ $scriptMode = if ($ExplodeDeep) { "Deep Column Explosion" } elseif ($ExplodeArra
 Script Start Time (UTC): $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')) UTC
 Script Version: v$ScriptVersion
 Mode: $scriptMode
-Date Range: $(if ($RAWInputCSV) { if ([string]::IsNullOrWhiteSpace($StartDate) -and [string]::IsNullOrWhiteSpace($EndDate)) { 'Full CSV (no date filter)' } else { "$StartDate to $EndDate (filters)" } } else { "$StartDate to $EndDate" })
+Date Range: $(if ($RAWInputCSV) { if ([string]::IsNullOrWhiteSpace($StartDate) -and [string]::IsNullOrWhiteSpace($EndDate)) { 'Full CSV (no date filter)' } else { "$StartDate (inclusive) to $EndDate (exclusive) (filters)" } } else { "$StartDate (inclusive) to $EndDate (exclusive)" })
 Output File: $OutputFile
 Log File: $LogFile
 ========================================================
@@ -451,7 +451,7 @@ Write-LogHost ("Script Version: v$ScriptVersion") -ForegroundColor White
 $startTimeStamp = try { $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') } catch { (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') }
 Write-LogHost ("Script execution started at $startTimeStamp UTC") -ForegroundColor White
 Write-LogHost "Mode: $scriptMode" -ForegroundColor White
-${rangeText} = if ($RAWInputCSV) { if ([string]::IsNullOrWhiteSpace($StartDate) -and [string]::IsNullOrWhiteSpace($EndDate)) { 'Full CSV (no date filter)' } else { "$StartDate to $EndDate (filters)" } } else { "$StartDate to $EndDate" }
+${rangeText} = if ($RAWInputCSV) { if ([string]::IsNullOrWhiteSpace($StartDate) -and [string]::IsNullOrWhiteSpace($EndDate)) { 'Full CSV (no date filter)' } else { "$StartDate (inclusive) to $EndDate (exclusive) (filters)" } } else { "$StartDate (inclusive) to $EndDate (exclusive)" }
 Write-LogHost "Date Range: $rangeText" -ForegroundColor White
 Write-LogHost "Output File: $OutputFile" -ForegroundColor White
 Write-LogHost "Log File: $LogFile" -ForegroundColor White
@@ -471,8 +471,8 @@ if ($RAWInputCSV) {
     $paramSnapshot = [ordered]@{
         Mode                   = $scriptMode
         RAWInputCSV            = $RAWInputCSV
-        StartDate_Filter       = $StartDate
-        EndDate_Filter         = $EndDate
+        'StartDate (inclusive)' = $StartDate
+        'EndDate (exclusive)'   = $EndDate
         ActivityTypes_Filter   = ($ActivityTypes -join ';')
         ForcedExplosion        = $ForcedRawInputCsvExplosion
         ExplodeDeep            = $ExplodeDeep.IsPresent
@@ -486,13 +486,13 @@ if ($RAWInputCSV) {
 }
 else {
     $paramSnapshot = [ordered]@{
-        StartDate              = $StartDate
-        EndDate                = $EndDate
-        OutputFile             = $OutputFile
-        Auth                   = $Auth
-        BlockHours             = $BlockHours
-        ResultSize             = $ResultSize
-        PacingMs               = $PacingMs
+        'StartDate (inclusive)' = $StartDate
+        'EndDate (exclusive)'   = $EndDate
+        OutputFile              = $OutputFile
+        Auth                    = $Auth
+        BlockHours              = $BlockHours
+        ResultSize              = $ResultSize
+        PacingMs                = $PacingMs
         ActivityTypes          = ($ActivityTypes -join ';')
         ExplodeArrays          = ($ExplodeArrays.IsPresent -or $ForcedRawInputCsvExplosion -or $ExplodeDeep.IsPresent)
         ExplodeArrays_Forced   = $ForcedRawInputCsvExplosion
@@ -1067,7 +1067,7 @@ try {
         $endDateObj = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null)
 
         Write-LogHost "Starting enterprise-grade audit log search..." -ForegroundColor Yellow
-        Write-LogHost "Date range: $($startDateObj.ToString('yyyy-MM-dd')) to $($endDateObj.ToString('yyyy-MM-dd'))" -ForegroundColor Gray
+        Write-LogHost "Date range: $($startDateObj.ToString('yyyy-MM-dd')) (inclusive) to $($endDateObj.ToString('yyyy-MM-dd')) (exclusive)" -ForegroundColor Gray
         Write-LogHost "Processing mode: $(if ($ExplodeDeep){'Deep Column Explosion (with Row Explosion)'} elseif ($ExplodeArrays){'Array Explosion'} else {'Standard 1:1'})" -ForegroundColor Gray
         Write-LogHost ""
 
