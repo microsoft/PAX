@@ -285,7 +285,9 @@ function Update-Progress {
         [int]$BatchCurrent = 0,
         [int]$BatchTotal = 0,
         [int]$BatchRangeStart = 0,
-        [int]$BatchRangeEnd = 0
+        [int]$BatchRangeEnd = 0,
+        [int]$BatchStartPercent = 0,
+        [int]$BatchEndPercent = 0
     )
     $w = $script:progressState.Weights; $ps = $script:progressState.Parsing; $qs = $script:progressState.Query; $es = $script:progressState.Explode; $xs = $script:progressState.Export
     $pPct = if ($ps.Total -gt 0 -and $w.ContainsKey('Parsing') -and $w.Parsing -gt 0) { [double]$ps.Current / [double]$ps.Total } else { 0.0 }
@@ -300,9 +302,16 @@ function Update-Progress {
     $qDetail = if ($w.Query -gt 0 -and $qs.Total -gt 0) { "{0}/{1}({2}%)" -f $qs.Current, $qs.Total, ([int]([Math]::Round($qPct * 100))) } else { '' }
     # Format explosion progress display with batch range if provided
     if ($BatchRangeStart -ge 1 -and $BatchRangeEnd -ge 1 -and $es.Total -gt 0) {
-        # Show record range for current batch with batch number inline
-        $batchPct = if ($BatchTotal -gt 0 -and $BatchCurrent -gt 0) { [int]([Math]::Round(([double]$BatchCurrent / [double]$BatchTotal) * 100)) } else { 0 }
-        $batchInfo = if ($BatchTotal -ge 1) { " Batch: {0}/{1}({2}%)" -f $BatchCurrent, $BatchTotal, $batchPct } else { '' }
+        # Show record range for current batch with batch number and percentage range inline
+        if ($BatchStartPercent -ge 0 -and $BatchEndPercent -gt 0) {
+            # Use provided percentage range
+            $batchInfo = if ($BatchTotal -ge 1) { " Batch: {0}/{1}({2}%-{3}%)" -f $BatchCurrent, $BatchTotal, $BatchStartPercent, $BatchEndPercent } else { '' }
+        }
+        else {
+            # Fallback to calculating from batch count
+            $batchPct = if ($BatchTotal -gt 0 -and $BatchCurrent -gt 0) { [int]([Math]::Round(([double]$BatchCurrent / [double]$BatchTotal) * 100)) } else { 0 }
+            $batchInfo = if ($BatchTotal -ge 1) { " Batch: {0}/{1}({2}%)" -f $BatchCurrent, $BatchTotal, $batchPct } else { '' }
+        }
         $explosionCounts = "Records {0}-{1}/{2}{3}" -f $BatchRangeStart, $BatchRangeEnd, $es.Total, $batchInfo
     }
     elseif ($BatchTotal -ge 1) {
@@ -1115,7 +1124,6 @@ try {
         $script:progressState.Parsing.Current = 0
     }
     Write-LogHost "Pre-parsing AuditData JSON for $($allLogs.Count) records..." -ForegroundColor Cyan
-    Write-LogHost "NOTE: Pre-parsing may take 5-20 minutes depending on dataset size. Large enterprise exports (50K+ users, 1 month) typically require 10-15 minutes." -ForegroundColor DarkYellow
     $parseStart = Get-Date
     $parseErrors = 0
     $parseCount = 0
@@ -1235,13 +1243,16 @@ try {
                                 $regexYes1 = $script:RegexYes1
                                 $regexNo0 = $script:RegexNo0
                                 
-                                # Show initial batch progress (0/totalBatches) before starting
-                                # Show range from 1 to end of first batch (including records consumed for schema)
+                                # Show initial batch progress before starting
+                                # Show batch 1 info since it's about to start
                                 $totalBatches = [Math]::Ceiling($remainingCount / $parallelBatchSize)
                                 $firstBatchSize = [Math]::Min($parallelBatchSize, $remainingCount)
                                 $firstRangeStart = 1
                                 $firstRangeEnd = $logsConsumedForSchema + $firstBatchSize
-                                Update-Progress -BatchCurrent 0 -BatchTotal $totalBatches -BatchRangeStart $firstRangeStart -BatchRangeEnd $firstRangeEnd
+                                # Calculate percentage range for this batch
+                                $firstBatchStartPct = 0
+                                $firstBatchEndPct = [int]([Math]::Round(([double]$firstRangeEnd / [double]$script:progressState.Explode.Total) * 100))
+                                Update-Progress -BatchCurrent 1 -BatchTotal $totalBatches -BatchRangeStart $firstRangeStart -BatchRangeEnd $firstRangeEnd -BatchStartPercent $firstBatchStartPct -BatchEndPercent $firstBatchEndPct
                                 
                                 while ($processedRemaining -lt $remainingCount) {
                                     $batchSize = [Math]::Min($parallelBatchSize, $remainingCount - $processedRemaining)
@@ -1251,13 +1262,17 @@ try {
                                     $currentBatch = [Math]::Floor($processedRemaining / $parallelBatchSize) + 1
                                     $totalBatches = [Math]::Ceiling($remainingCount / $parallelBatchSize)
                                     
-                                    # Calculate the record range for this batch being processed (1-indexed for display)
+                                    # Calculate the record range for THIS batch being processed (1-indexed display)
                                     $rangeStart = $logsConsumedForSchema + $processedRemaining + 1
                                     $rangeEnd = $logsConsumedForSchema + $processedRemaining + $batchSize
                                     
+                                    # Calculate percentage range for this batch
+                                    $batchStartPct = [int]([Math]::Round(([double]($logsConsumedForSchema + $processedRemaining) / [double]$script:progressState.Explode.Total) * 100))
+                                    $batchEndPct = [int]([Math]::Round(([double]$rangeEnd / [double]$script:progressState.Explode.Total) * 100))
+                                    
                                     # Update progress BEFORE starting batch to show what's being processed
-                                    $script:progressState.Explode.Current = $rangeStart - 1  # Show position at start of batch
-                                    Update-Progress -BatchCurrent $currentBatch -BatchTotal $totalBatches -BatchRangeStart $rangeStart -BatchRangeEnd $rangeEnd
+                                    $script:progressState.Explode.Current = $logsConsumedForSchema + $processedRemaining
+                                    Update-Progress -BatchCurrent $currentBatch -BatchTotal $totalBatches -BatchRangeStart $rangeStart -BatchRangeEnd $rangeEnd -BatchStartPercent $batchStartPct -BatchEndPercent $batchEndPct
                                     
                                     $batchStart = Get-Date
                                     try {
@@ -1344,16 +1359,8 @@ try {
                                     $batchElapsed = (Get-Date) - $batchStart
                                     $elapsedMs = [int]$batchElapsed.TotalMilliseconds
                                     
-                                    # Update progress after each batch (ensures blue bar is always visible)
+                                    # Update explosion current count after batch completes
                                     $script:progressState.Explode.Current = [Math]::Min($script:progressState.Explode.Total, ($logsConsumedForSchema + $processedRemaining))
-                                    $currentBatch = [Math]::Ceiling($processedRemaining / $parallelBatchSize)
-                                    $totalBatches = [Math]::Ceiling($remainingCount / $parallelBatchSize)
-                                    
-                                    # Calculate the record range for this completed batch (1-indexed for display)
-                                    $rangeStart = $logsConsumedForSchema + ($processedRemaining - $batchSize) + 1
-                                    $rangeEnd = $logsConsumedForSchema + $processedRemaining
-                                    
-                                    Update-Progress -BatchCurrent $currentBatch -BatchTotal $totalBatches -BatchRangeStart $rangeStart -BatchRangeEnd $rangeEnd
                                     
                                     # Dynamically adjust throttle based on batch completion time
                                     if ($elapsedMs -lt $targetMinMs -and $throttle -lt [Math]::Min([Environment]::ProcessorCount, 12)) { $throttle += 1 }
