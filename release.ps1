@@ -581,13 +581,13 @@ function Show-Summary {
     # Switch back to original branch
     git checkout $currentBranch
     Write-Status "Switched back to $currentBranch branch"
-}
-catch {
-    Write-Error "Failed to sync release branch: $($_.Exception.Message)"
-    # Try to switch back to original branch
-    git checkout $currentBranch 2>$null
-    throw
-}
+    }
+    catch {
+        Write-Error "Failed to sync release branch: $($_.Exception.Message)"
+        # Try to switch back to original branch
+        git checkout $currentBranch 2>$null
+        throw
+    }
 }
 
 # Function to create commit and tag
