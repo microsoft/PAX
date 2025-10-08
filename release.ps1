@@ -399,10 +399,12 @@ function New-CommitAndTag {
     git tag "v$NewVersion"
     Write-Success "Created tag: v$NewVersion"
     
-    # Push changes and tag
-    git push origin main
+    # Push changes and tag to both repositories
+    # Note: 'origin' is configured to push to both Microsoft and private repos simultaneously
+    Write-Status "Pushing to Microsoft repo (https://github.com/microsoft/PAX) and private backup (https://github.com/Rance9/PAX)..."
+    git push origin PAX
     git push origin "v$NewVersion"
-    Write-Success "Pushed changes and tag to GitHub"
+    Write-Success "Pushed changes and tag to both GitHub repositories"
 }
 
 # Function to show summary
@@ -429,7 +431,10 @@ function Show-Summary {
     Write-Host "   ✅ Create GitHub release page"
     Write-Host "   ✅ Upload distribution files"
     Write-Host ""
-    Write-Host "View progress at: https://github.com/Rance9/PAX/actions" -ForegroundColor Blue
+    Write-Host "📦 Repositories updated:" -ForegroundColor Cyan
+    Write-Host "   • Microsoft: https://github.com/microsoft/PAX/releases" -ForegroundColor Blue
+    Write-Host "   • Private:   https://github.com/Rance9/PAX/releases" -ForegroundColor Blue
+    Write-Host ""
 }
 
 # Main script logic
