@@ -407,6 +407,9 @@ function Sync-ReleaseBranch {
         # Copy customer-facing files from PAX branch
         Write-Status "Copying customer-facing files from PAX branch..."
         
+        # Create scripts directory
+        New-Item -ItemType Directory -Path "scripts" -Force | Out-Null
+        
         # Copy the latest versioned script
         $scriptFilename = "PAX_Purview_Audit_Log_Processor_v$NewVersion.ps1"
         git checkout $currentBranch -- "scripts/$scriptFilename"
@@ -422,14 +425,12 @@ function Sync-ReleaseBranch {
         )
         
         foreach ($file in $mdFiles) {
-            if (Test-Path "../$file" -PathType Leaf) {
-                git checkout $currentBranch -- $file 2>$null
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Success "✓ Copied $file"
-                }
-                else {
-                    Write-Warning "Could not copy $file (may not exist)"
-                }
+            git checkout $currentBranch -- $file 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "✓ Copied $file"
+            }
+            else {
+                Write-Warning "Could not copy $file (may not exist)"
             }
         }
         
