@@ -304,6 +304,15 @@ function Update-ReadmeVersion {
         $content = Get-Content $FilePath -Raw -ErrorAction Stop
         $updated = $false
         
+        # Update the Version field line (e.g., **Version:** 1.4.7)
+        $versionFieldPattern = "\*\*Version:\*\*\s*[\d\.]+"
+        if ($content -match $versionFieldPattern) {
+            $newVersionField = "**Version:** $NewVersion"
+            $content = [regex]::Replace($content, $versionFieldPattern, $newVersionField, 1)
+            $updated = $true
+            Write-Success "Updated README version field to $NewVersion"
+        }
+        
         # Update the script reference line (e.g., Script: `PAX_Purview_Audit_Log_Processor_v1.4.2.ps1`)
         $scriptRefPattern = "Script:\s*``PAX_Purview_Audit_Log_Processor_v[\d\.]+\.ps1``"
         if ($content -match $scriptRefPattern) {

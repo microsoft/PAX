@@ -1,7 +1,7 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Exporter
 
 **Script:** `PAX_Purview_Audit_Log_Processor_v1.5.5.ps1`  
-**Version:** 1.4.7  
+**Version:** 1.5.5  
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 5.1 (compatible) / PowerShell 7+ (recommended)  
 **License:** MIT
