@@ -2,16 +2,17 @@
 
 ## Branch Overview
 
-| Branch | Purpose | Who Sees It | Content |
-|--------|---------|-------------|---------|
-| **PAX** | Development | Developers only | Everything (UI, scripts, tests, docs) |
-| **release** | Customer-facing | Public/Customers (default) | Script + docs only |
+| Branch      | Purpose         | Who Sees It                | Content                               |
+| ----------- | --------------- | -------------------------- | ------------------------------------- |
+| **PAX**     | Development     | Developers only            | Everything (UI, scripts, tests, docs) |
+| **release** | Customer-facing | Public/Customers (default) | Script + docs only                    |
 
 ---
 
 ## Daily Workflow
 
 ### Normal Development (PAX branch)
+
 ```powershell
 # Make changes, commit, push
 git add .
@@ -20,11 +21,12 @@ git push origin PAX  # Auto-pushes to both Microsoft & Rance9 repos
 ```
 
 ### Release New Version
+
 ```powershell
 # Patch (1.5.0 → 1.5.1)
 .\release.ps1 -Patch -Message "Bug fixes"
 
-# Minor (1.5.0 → 1.6.0)  
+# Minor (1.5.0 → 1.6.0)
 .\release.ps1 -Minor -Message "New features"
 
 # Major (1.5.0 → 2.0.0)
@@ -32,6 +34,7 @@ git push origin PAX  # Auto-pushes to both Microsoft & Rance9 repos
 ```
 
 **Script automatically:**
+
 - ✅ Bumps versions
 - ✅ Updates PAX branch
 - ✅ Syncs release branch with customer files
@@ -42,6 +45,7 @@ git push origin PAX  # Auto-pushes to both Microsoft & Rance9 repos
 ## What's in Each Branch?
 
 ### PAX (Development)
+
 - ✅ All source code (UI/UX)
 - ✅ All scripts (current + development)
 - ✅ Test data
@@ -49,6 +53,7 @@ git push origin PAX  # Auto-pushes to both Microsoft & Rance9 repos
 - ✅ Everything
 
 ### release (Customer-Facing)
+
 - ✅ Latest script only: `scripts/PAX_Purview_Audit_Log_Processor_v1.x.x.ps1`
 - ✅ README.md
 - ✅ LICENSE
@@ -74,12 +79,14 @@ https://github.com/Rance9/PAX/settings/branches
 → Change default from `PAX` to `release`
 
 ### 2. Fix SSO Authentication
+
 https://github.com/settings/connections/applications
 → Authorize "Git Credential Manager" for Microsoft org
 
 ### 3. Initial Release Branch Population
 
 Run your first release:
+
 ```powershell
 .\release.ps1 -Patch -Message "Initial release branch setup"
 ```
@@ -89,22 +96,26 @@ Run your first release:
 ## Troubleshooting
 
 ### Switch between branches manually
+
 ```powershell
 git checkout PAX      # Development
 git checkout release  # Customer view
 ```
 
 ### View all branches
+
 ```powershell
 git branch -a
 ```
 
 ### Check which branch you're on
+
 ```powershell
-git branch  # Current branch has * 
+git branch  # Current branch has *
 ```
 
 ### Reset if something goes wrong
+
 ```powershell
 git checkout PAX  # Always go back to development branch
 ```
@@ -114,17 +125,20 @@ git checkout PAX  # Always go back to development branch
 ## Quick Checks
 
 ✅ **Current branch:** Should be `PAX` for dev work
+
 ```powershell
 git rev-parse --abbrev-ref HEAD
 ```
 
 ✅ **Remote configuration:**
+
 ```powershell
 git remote -v
 # Should show origin with 2 push URLs (Microsoft + Rance9)
 ```
 
 ✅ **Branch sync status:**
+
 ```powershell
 git fetch --all
 git branch -vv
