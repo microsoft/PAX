@@ -590,49 +590,6 @@ function Show-Summary {
     }
 }
 
-# Function to create commit and tag
-function New-CommitAndTag {
-    param(
-        [string]$NewVersion,
-        [string]$BumpType,
-        [string]$CustomMessage
-    )
-    
-    # Add all uncommitted changes to ensure GitHub workflow has access to everything
-    git add .
-    Write-Status "Staged all uncommitted changes for release"
-    
-    # Create commit message - use custom message if provided, otherwise auto-generate
-    $commitMsg = if ($CustomMessage) {
-        "v${NewVersion}: $CustomMessage"
-    }
-    else {
-        switch ($BumpType) {
-            "major" { "v${NewVersion}: Major version release" }
-            "minor" { "v${NewVersion}: Minor version release" }
-            default { "v${NewVersion}: Patch version release" }
-        }
-    }
-    
-    # Commit the changes
-    git commit -m $commitMsg
-    Write-Success "Created commit: $commitMsg"
-    
-    # Create and push tag
-    git tag "v$NewVersion"
-    Write-Success "Created tag: v$NewVersion"
-    
-    # Push changes and tag to both repositories (PAX branch)
-    # Note: 'origin' is configured to push to both Microsoft and private repos simultaneously
-    Write-Status "Pushing PAX branch to Microsoft repo (https://github.com/microsoft/PAX) and private backup (https://github.com/Rance9/PAX)..."
-    git push origin PAX
-    git push origin "v$NewVersion"
-    Write-Success "Pushed PAX branch and tag to both GitHub repositories"
-    
-    # Now sync the release branch with customer-facing files
-    Sync-ReleaseBranch -NewVersion $NewVersion
-}
-
 # Function to show summary
 function Show-Summary {
     param(
