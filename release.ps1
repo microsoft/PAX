@@ -367,6 +367,107 @@ function Test-GitStatus {
     }
 }
 
+# Function to sync release branch with customer-facing files
+function Sync-ReleaseBranch {
+    param(
+        [string]$NewVersion
+    )
+    
+    Write-Status "Syncing release branch with customer-facing files..."
+    
+    # Save current branch
+    $currentBranch = git rev-parse --abbrev-ref HEAD
+    
+    try {
+        # Switch to release branch (create if it doesn't exist locally)
+        $releaseBranchExists = git branch --list release
+        if (-not $releaseBranchExists) {
+            Write-Status "Creating local release branch tracking origin/release..."
+            git fetch origin release:release 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Release branch doesn't exist on remote, creating new orphan branch..."
+                git checkout --orphan release
+                git rm -rf . 2>$null
+            }
+            else {
+                git checkout release
+            }
+        }
+        else {
+            git checkout release
+            Write-Status "Switched to release branch"
+        }
+        
+        # Pull latest from release branch (if it exists on remote)
+        git pull origin release 2>$null
+        
+        # Clear everything in release branch (we'll copy fresh from PAX)
+        git rm -rf . 2>$null
+        
+        # Copy customer-facing files from PAX branch
+        Write-Status "Copying customer-facing files from PAX branch..."
+        
+        # Copy the latest versioned script
+        $scriptFilename = "PAX_Purview_Audit_Log_Processor_v$NewVersion.ps1"
+        git checkout $currentBranch -- "scripts/$scriptFilename"
+        Write-Success "✓ Copied $scriptFilename"
+        
+        # Copy required markdown files
+        $mdFiles = @(
+            "README.md",
+            "LICENSE",
+            "CONTRIBUTORS.md",
+            "SECURITY.md",
+            "CODE_OF_CONDUCT.md"
+        )
+        
+        foreach ($file in $mdFiles) {
+            if (Test-Path "../$file" -PathType Leaf) {
+                git checkout $currentBranch -- $file 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Success "✓ Copied $file"
+                }
+                else {
+                    Write-Warning "Could not copy $file (may not exist)"
+                }
+            }
+        }
+        
+        # Stage all changes
+        git add .
+        
+        # Check if there are changes to commit
+        $changes = git diff --cached --name-only
+        if ($changes) {
+            Write-Status "Changes detected in release branch:"
+            $changes | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+            
+            # Commit changes to release branch
+            git commit -m "Release v${NewVersion}: Sync customer-facing files"
+            Write-Success "Committed changes to release branch"
+            
+            # Push release branch to both repositories
+            Write-Status "Pushing release branch to both repositories..."
+            git push origin release
+            git push backup release
+            Write-Success "Pushed release branch to Microsoft and private repos"
+        }
+        else {
+            Write-Status "No changes detected in release branch (already up to date)"
+        }
+        
+        # Switch back to original branch
+        git checkout $currentBranch
+        Write-Status "Switched back to $currentBranch branch"
+    }
+    catch {
+        Write-Error "Failed to sync release branch: $($_.Exception.Message)"
+        # Try to switch back to original branch
+        git checkout $currentBranch 2>$null
+        throw
+    }
+}
+
 # Function to create commit and tag
 function New-CommitAndTag {
     param(
@@ -399,12 +500,15 @@ function New-CommitAndTag {
     git tag "v$NewVersion"
     Write-Success "Created tag: v$NewVersion"
     
-    # Push changes and tag to both repositories
+    # Push changes and tag to both repositories (PAX branch)
     # Note: 'origin' is configured to push to both Microsoft and private repos simultaneously
-    Write-Status "Pushing to Microsoft repo (https://github.com/microsoft/PAX) and private backup (https://github.com/Rance9/PAX)..."
+    Write-Status "Pushing PAX branch to Microsoft repo (https://github.com/microsoft/PAX) and private backup (https://github.com/Rance9/PAX)..."
     git push origin PAX
     git push origin "v$NewVersion"
-    Write-Success "Pushed changes and tag to both GitHub repositories"
+    Write-Success "Pushed PAX branch and tag to both GitHub repositories"
+    
+    # Now sync the release branch with customer-facing files
+    Sync-ReleaseBranch -NewVersion $NewVersion
 }
 
 # Function to show summary
@@ -425,15 +529,21 @@ function Show-Summary {
     Write-Host "• Git tag:     " -NoNewline; Write-Host "v$NewVersion" -ForegroundColor Yellow
     Write-Host "• Commit msg:  " -NoNewline; Write-Host "$CommitMessage" -ForegroundColor Yellow
     Write-Host ""
+    Write-Host "� Branches Updated:" -ForegroundColor Cyan
+    Write-Host "   ✅ PAX branch (development) - pushed to both repos" -ForegroundColor Green
+    Write-Host "   ✅ release branch (customer-facing) - synced and pushed to both repos" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "🌐 View on GitHub:" -ForegroundColor Cyan
+    Write-Host "   • Microsoft (PAX):     https://github.com/microsoft/PAX/tree/PAX" -ForegroundColor Blue
+    Write-Host "   • Microsoft (release): https://github.com/microsoft/PAX/tree/release" -ForegroundColor Blue
+    Write-Host "   • Private (PAX):       https://github.com/Rance9/PAX/tree/PAX" -ForegroundColor Blue
+    Write-Host "   • Private (release):   https://github.com/Rance9/PAX/tree/release" -ForegroundColor Blue
+    Write-Host ""
     Write-Host "🚀 GitHub Actions workflow will now:" -ForegroundColor Cyan
     Write-Host "   ✅ Build Windows executable"
     Write-Host "   ✅ Build macOS executable" 
     Write-Host "   ✅ Create GitHub release page"
     Write-Host "   ✅ Upload distribution files"
-    Write-Host ""
-    Write-Host "📦 Repositories updated:" -ForegroundColor Cyan
-    Write-Host "   • Microsoft: https://github.com/microsoft/PAX/releases" -ForegroundColor Blue
-    Write-Host "   • Private:   https://github.com/Rance9/PAX/releases" -ForegroundColor Blue
     Write-Host ""
 }
 
