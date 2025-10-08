@@ -444,8 +444,8 @@ function Sync-ReleaseBranch {
             }
         }
         
-        # Stage all changes
-        git add .
+        # Stage all changes (suppress line ending warnings for untracked files)
+        git add . 2>$null
         
         # Check if there are changes to commit
         $changes = git diff --cached --name-only
