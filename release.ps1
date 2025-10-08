@@ -415,6 +415,16 @@ function Sync-ReleaseBranch {
         git checkout $currentBranch -- "scripts/$scriptFilename"
         Write-Success "✓ Copied $scriptFilename"
         
+        # Copy GitHub Actions workflow
+        New-Item -ItemType Directory -Path ".github/workflows" -Force | Out-Null
+        git checkout $currentBranch -- ".github/workflows/build-release.yml" 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "✓ Copied GitHub Actions workflow"
+        }
+        else {
+            Write-Warning "Could not copy workflow (may not exist)"
+        }
+        
         # Copy required markdown files
         $mdFiles = @(
             "README.md",
@@ -467,6 +477,117 @@ function Sync-ReleaseBranch {
         git checkout $currentBranch 2>$null
         throw
     }
+}
+
+# Function to create commit and tag
+function New-CommitAndTag {
+    param(
+        [string]$NewVersion,
+        [string]$BumpType,
+        [string]$CustomMessage
+    )
+    
+    # Add all uncommitted changes to ensure GitHub workflow has access to everything
+    git add .
+    Write-Status "Staged all uncommitted changes for release"
+    
+    # Create commit message - use custom message if provided, otherwise auto-generate
+    $commitMsg = if ($CustomMessage) {
+        "v${NewVersion}: $CustomMessage"
+    }
+    else {
+        switch ($BumpType) {
+            "major" { "v${NewVersion}: Major version release" }
+            "minor" { "v${NewVersion}: Minor version release" }
+            default { "v${NewVersion}: Patch version release" }
+        }
+    }
+    
+    # Commit the changes
+    git commit -m $commitMsg
+    Write-Success "Created commit: $commitMsg"
+    
+    # Create and push tag
+    git tag "v$NewVersion"
+    Write-Success "Created tag: v$NewVersion"
+    
+    # Push changes and tag to both repositories (PAX branch)
+    # Note: 'origin' is configured to push to both Microsoft and private repos simultaneously
+    Write-Status "Pushing PAX branch to Microsoft repo (https://github.com/microsoft/PAX) and private backup (https://github.com/Rance9/PAX)..."
+    git push origin PAX
+    git push origin "v$NewVersion"
+    Write-Success "Pushed PAX branch and tag to both GitHub repositories"
+    
+    # Now sync the release branch with customer-facing files
+    Sync-ReleaseBranch -NewVersion $NewVersion
+}
+
+# Function to show summary
+function Show-Summary {
+    param(
+        [string]$OldVersion,
+        [string]$NewVersion,
+        [string]$BumpType,
+        [string]$CommitMessage
+    )
+    
+    Write-Host ""
+    Write-Host "🎉 Release Summary" -ForegroundColor Green
+    Write-Host "==================" -ForegroundColor Green
+    Write-Host "• Old version: " -NoNewline; Write-Host "v$OldVersion" -ForegroundColor Yellow
+    Write-Host "• New version: " -NoNewline; Write-Host "v$NewVersion" -ForegroundColor Yellow
+    Write-Host "• Bump type:   " -NoNewline; Write-Host "$BumpType" -ForegroundColor Yellow
+    Write-Host "• Git tag:     " -NoNewline; Write-Host "v$NewVersion" -ForegroundColor Yellow
+    Write-Host "• Commit msg:  " -NoNewline; Write-Host "$CommitMessage" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "� Branches Updated:" -ForegroundColor Cyan
+    Write-Host "   ✅ PAX branch (development) - pushed to both repos" -ForegroundColor Green
+    Write-Host "   ✅ release branch (customer-facing) - synced and pushed to both repos" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "🌐 View on GitHub:" -ForegroundColor Cyan
+    Write-Host "   • Microsoft (PAX):     https://github.com/microsoft/PAX/tree/PAX" -ForegroundColor Blue
+    Write-Host "   • Microsoft (release): https://github.com/microsoft/PAX/tree/release" -ForegroundColor Blue
+    Write-Host "   • Private (PAX):       https://github.com/Rance9/PAX/tree/PAX" -ForegroundColor Blue
+    Write-Host "   • Private (release):   https://github.com/Rance9/PAX/tree/release" -ForegroundColor Blue
+    Write-Host ""
+    Write-Host "🚀 GitHub Actions workflow will now:" -ForegroundColor Cyan
+    Write-Host "   ✅ Build Windows executable"
+    Write-Host "   ✅ Build macOS executable" 
+    Write-Host "   ✅ Create GitHub release page"
+    Write-Host "   ✅ Upload distribution files"
+    # Stage all changes
+    git add .
+        
+    # Check if there are changes to commit
+    $changes = git diff --cached --name-only
+    if ($changes) {
+        Write-Status "Changes detected in release branch:"
+        $changes | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+            
+        # Commit changes to release branch
+        git commit -m "Release v${NewVersion}: Sync customer-facing files"
+        Write-Success "Committed changes to release branch"
+            
+        # Push release branch to both repositories
+        Write-Status "Pushing release branch to both repositories..."
+        git push origin release
+        git push backup release
+        Write-Success "Pushed release branch to Microsoft and private repos"
+    }
+    else {
+        Write-Status "No changes detected in release branch (already up to date)"
+    }
+        
+    # Switch back to original branch
+    git checkout $currentBranch
+    Write-Status "Switched back to $currentBranch branch"
+}
+catch {
+    Write-Error "Failed to sync release branch: $($_.Exception.Message)"
+    # Try to switch back to original branch
+    git checkout $currentBranch 2>$null
+    throw
+}
 }
 
 # Function to create commit and tag
