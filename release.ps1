@@ -512,10 +512,11 @@ function New-CommitAndTag {
     Write-Success "Created tag: v$NewVersion"
     
     # Push changes and tag to both repositories (PAX branch)
-    # Note: 'origin' is configured to push to both Microsoft and private repos simultaneously
-    Write-Status "Pushing PAX branch to Microsoft repo (https://github.com/microsoft/PAX) and private backup (https://github.com/Rance9/PAX)..."
-    git push origin PAX
-    git push origin "v$NewVersion"
+    Write-Status "Pushing PAX branch and tag to both repositories..."
+    git push origin PAX 2>$null
+    git push origin "v$NewVersion" 2>$null
+    git push backup PAX
+    git push backup "v$NewVersion"
     Write-Success "Pushed PAX branch and tag to both GitHub repositories"
     
     # Now sync the release branch with customer-facing files
