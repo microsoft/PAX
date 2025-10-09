@@ -875,7 +875,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 
 ### Common Issues
 
-#### Authentication Failures
+#### **Authentication Failures**
 
 **Problem:** "Unable to connect to Exchange Online"
 
@@ -886,7 +886,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 - Try different auth method: `-Auth DeviceCode` for headless sessions
 - Clear cached credentials: Restart PowerShell session
 
-#### No Data Returned
+#### **No Data Returned**
 
 **Problem:** CSV contains only header, no records
 
@@ -898,7 +898,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 - Verify users have generated audit events in the date range
 - Check audit log retention period (default 90 days)
 
-#### 10K Limit Warnings
+#### **10K Limit Warnings**
 
 **Problem:** Log shows "CRITICAL: 10K limit reached"
 
@@ -909,7 +909,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 - Check adaptive subdivision is working (log should show automatic splits)
 - Consider if data is genuinely dense (may need multiple runs)
 
-#### Memory Issues
+#### **Memory Issues**
 
 **Problem:** Script consumes excessive memory or crashes
 
@@ -921,7 +921,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 - Process shorter date ranges
 - Close other applications to free memory
 
-#### Throttling Errors
+#### **Throttling Errors**
 
 **Problem:** Frequent "Throttling detected" messages
 
@@ -937,43 +937,43 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 
 ### Frequently Asked Questions
 
-#### Q: Does the script modify any data?
+#### **Q: Does the script modify any data?**
 
 **A:** No. The script is read-only and only exports audit data. No modifications are made to audit logs or tenant configuration.
 
-#### Q: What timezone are dates in?
+#### **Q: What timezone are dates in?**
 
 **A:** All dates are interpreted as UTC. Output timestamps are also UTC in ISO 8601 format (`yyyy-MM-ddTHH:mm:ss.fffZ`).
 
-#### Q: Can I filter by specific users or models at the source?
+#### **Q: Can I filter by specific users or models at the source?**
 
 **A:** No, filtering happens after export. The Unified Audit Log API does not support user/model filtering. Export data and filter in post-processing or BI tools.
 
-#### Q: How deep does the script flatten JSON?
+#### **Q: How deep does the script flatten JSON?**
 
 **A:** Standard explode: 60 levels. Deep flatten: 120 levels. JSON serialization: 60 levels. These are constants in the script and can be adjusted if needed.
 
-#### Q: Can I run this in an automated schedule?
+#### **Q: Can I run this in an automated schedule?**
 
 **A:** Yes. Use `-Auth Silent` with cached credentials or `-Auth Credential` with saved credentials. Consider using Task Scheduler (Windows) or cron (macOS/Linux).
 
-#### Q: What if I need older audit logs?
+#### **Q: What if I need older audit logs?**
 
 **A:** Audit retention depends on your tenant's licensing. E3/E5 licenses retain 90-365 days. Check Microsoft Purview compliance portal for your retention period.
 
-#### Q: Does the script work on macOS/Linux?
+#### **Q: Does the script work on macOS/Linux?**
 
 **A:** Yes, with PowerShell 7+. Install PowerShell 7 and ExchangeOnlineManagement module. Authentication methods may vary (WebLogin, DeviceCode recommended).
 
-#### Q: How do I handle very large date ranges?
+#### **Q: How do I handle very large date ranges?**
 
 **A:** Break into smaller chunks (weekly or monthly), run separately, then concatenate CSV files. Use `-OutputFile` to name by date range.
 
-#### Q: Can I customize the output schema?
+#### **Q: Can I customize the output schema?**
 
 **A:** The 35-column base schema is fixed to match Purview standards. In `-ExplodeDeep` mode, additional columns are auto-discovered from nested data.
 
-#### Q: What's the difference between `-ExplodeArrays` and `-ExplodeDeep`?
+#### **Q: What's the difference between `-ExplodeArrays` and `-ExplodeDeep`?**
 
 **A:** `-ExplodeArrays` creates 35 columns with array elements as separate rows. `-ExplodeDeep` adds all nested `CopilotEventData.*` fields as additional columns (wide schema).
 
