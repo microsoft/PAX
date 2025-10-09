@@ -8,7 +8,9 @@
 **Runtime:** PowerShell 5.1 (compatible) / PowerShell 7+ (recommended)  
 **License:** MIT
 
----## Table of Contents
+---
+
+## Table of Contents
 
 1. [Overview](#overview)
 2. [Key Features](#key-features)
@@ -19,12 +21,12 @@
 7. [Authentication Methods](#authentication-methods)
 8. [Usage Examples](#usage-examples)
 9. [Output Files & Schema](#output-files--schema)
-10. [Advanced Features](#advanced-features)
-11. [Performance Tuning](#performance-tuning)
-12. [Troubleshooting & FAQ](#troubleshooting--faq)
-13. [Known Limitations](#known-limitations)
-14. [Security & Compliance](#security--compliance)
-15. [Contributing](#contributing)
+10. [Activity Types Reference](#activity-types-reference)
+11. [Advanced Features](#advanced-features)
+12. [Performance Tuning](#performance-tuning)
+13. [Troubleshooting & FAQ](#troubleshooting--faq)
+14. [Known Limitations](#known-limitations)
+15. [Security & Compliance](#security--compliance)
 
 ---
 
@@ -42,6 +44,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - Supports both live querying and offline replay/transformation of previously exported data
 - Implements adaptive time slicing to navigate service limits intelligently
 - Provides detailed logging of all operations, warnings, and performance metrics
+- Automatically handles ExchangeOnlineManagement module installation and connection
 
 **Execution Modes:**
 
@@ -81,7 +84,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 
 - **Composite Progress:** Single weighted percentage across Query/Explosion/Export phases
 - **Detailed Logging:** Comprehensive log file with parameters, decisions, warnings, and metrics
-- **Version Pinning:** `$ScriptVersion` dynamically read from `package.json` for release alignment
+- **Automated Setup:** Detects, installs, and connects ExchangeOnlineManagement module automatically
 - **Offline Replay:** Transform previously exported raw CSVs without Exchange Online connection
 
 ---
@@ -127,14 +130,15 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 
 ## Prerequisites
 
-| Requirement                         | Details                                 | Notes                                                                         |
-| ----------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------- |
-| **PowerShell**                      | 5.1 or 7+                               | 7+ strongly recommended for parallel execution and UTF-8 handling             |
-| **ExchangeOnlineManagement Module** | Any reasonably current version          | Install: `Install-Module -Name ExchangeOnlineManagement`                      |
-| **Unified Audit Logging**           | Enabled in tenant                       | Verify in Microsoft Purview compliance portal                                 |
-| **Permissions**                     | View-Only Audit Logs or Audit Logs role | Least privilege: Use read-only audit role                                     |
-| **Network Access**                  | Microsoft 365 endpoints                 | Ensure firewall allows connections to `*.protection.outlook.com`              |
-| **Execution Policy**                | Bypass or RemoteSigned                  | See [Authentication Methods](#authentication-methods) for invocation patterns |
+| Requirement                 | Details                                 | Notes                                                        |
+| --------------------------- | --------------------------------------- | ------------------------------------------------------------ |
+| **PowerShell**              | 5.1 or 7+                               | 7+ strongly recommended for parallel execution and UTF-8     |
+| **Unified Audit Logging**   | Enabled in tenant                       | Verify in Microsoft Purview compliance portal                |
+| **Permissions**             | View-Only Audit Logs or Audit Logs role | Least privilege: Use read-only audit role                    |
+| **Network Access**          | Microsoft 365 endpoints                 | Ensure firewall allows connections to `*.protection.outlook.com` |
+| **Execution Policy**        | Bypass or RemoteSigned                  | See [Authentication Methods](#authentication-methods)        |
+
+**Note:** The script automatically handles ExchangeOnlineManagement module detection, installation, and connection. No manual setup required.
 
 ### Permission Details
 
@@ -143,16 +147,6 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - **View-Only Audit Logs** role (read-only, recommended for production)
 - **Audit Logs** role (if write operations needed elsewhere)
 - Member of appropriate role groups in Microsoft Purview compliance portal
-
-**Verification:**
-
-```powershell
-# Check if audit logging is enabled
-Get-AdminAuditLogConfig | Select-Object UnifiedAuditLogIngestionEnabled
-
-# Verify your audit search permissions
-Get-ManagementRoleAssignment -RoleAssignee user@domain.com | Where-Object {$_.Role -like "*Audit*"}
-```
 
 ### Why PowerShell 7+?
 
@@ -171,49 +165,11 @@ Get-ManagementRoleAssignment -RoleAssignee user@domain.com | Where-Object {$_.Ro
 
 ## Installation & Setup
 
-### Step 1: Install ExchangeOnlineManagement Module
+### Download the Script
 
-```powershell
-# Install for current user (no admin rights required)
-Install-Module -Name ExchangeOnlineManagement -Scope CurrentUser
+Download [`PAX_Purview_Audit_Log_Processor_v1.5.6.ps1`](PAX_Purview_Audit_Log_Processor_v1.5.6.ps1) and save to a working directory (e.g., `C:\Scripts\PAX\`).
 
-# Or install globally (requires admin)
-Install-Module -Name ExchangeOnlineManagement -Scope AllUsers
-
-# Verify installation
-Get-Module -Name ExchangeOnlineManagement -ListAvailable
-```
-
-### Step 2: Download the Script
-
-**Option A: Clone the repository**
-
-```powershell
-git clone https://github.com/Rance9/PAX.git
-cd PAX/scripts
-```
-
-**Option B: Direct download**
-
-1. Navigate to the [releases page](https://github.com/Rance9/PAX/releases)
-2. Download `PAX_Purview_Audit_Log_Processor_v1.5.6.ps1`
-3. Save to a working directory (e.g., `C:\Scripts\PAX\`)
-
-### Step 3: Verify Audit Log Access
-
-```powershell
-# Quick connectivity test (interactive auth)
-Connect-ExchangeOnline
-
-# Test a simple audit search (last 24 hours)
-$testDate = (Get-Date).AddDays(-1).ToString('yyyy-MM-dd')
-Search-UnifiedAuditLog -StartDate $testDate -EndDate (Get-Date).ToString('yyyy-MM-dd') -ResultSize 10
-
-# Disconnect
-Disconnect-ExchangeOnline -Confirm:$false
-```
-
-### Step 4: First Run (Quick Start)
+### First Run (Quick Start)
 
 ```powershell
 # PowerShell 7+ (recommended)
@@ -225,10 +181,11 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.
 
 **What Happens:**
 
-1. Interactive browser sign-in prompt (unless `-Auth` specified)
-2. Queries Unified Audit Log for the specified date range
-3. Exports to `C:\Temp\CopilotInteraction_<timestamp>.csv` (default path)
-4. Creates matching `.log` file with detailed execution metrics
+1. Script detects and installs ExchangeOnlineManagement module if needed
+2. Interactive browser sign-in prompt (unless `-Auth` specified)
+3. Queries Unified Audit Log for the specified date range
+4. Exports to `C:\Temp\CopilotInteraction_<timestamp>.csv` (default path)
+5. Creates matching `.log` file with detailed execution metrics
 
 ---
 
@@ -242,7 +199,6 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.
 **Format:** `yyyy-MM-dd` (e.g., `2025-10-01`)  
 **Default (Live Mode):** Previous full UTC day if both dates omitted  
 **Default (Replay Mode):** No filter applied if omitted  
-**Use When:** Defining the beginning of your audit window  
 **Example:** `-StartDate 2025-10-01`
 
 #### `-EndDate` (string)
@@ -251,7 +207,6 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.
 **Format:** `yyyy-MM-dd` (e.g., `2025-10-02`)  
 **Default (Live Mode):** Previous full UTC day + 1 if both dates omitted  
 **Default (Replay Mode):** No filter applied if omitted  
-**Use When:** Defining the end of your audit window  
 **Example:** `-EndDate 2025-10-02`
 
 **Date Behavior:**
@@ -306,10 +261,13 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.
 - Frequently hitting 10K limit (reduce to 0.25 or lower)
 - Sparse historical data (increase to 2-8 hours for faster processing)
 - Fine-tuning for tenant-specific data density
-  **Examples:**
+
+**Examples:**
+
 - `-BlockHours 0.25` - Dense periods, many records
 - `-BlockHours 4.0` - Sparse backfills, low activity
-  **Notes:** Script learns optimal sizes during execution; this is just the starting point
+
+**Notes:** Script learns optimal sizes during execution; this is just the starting point
 
 #### `-ResultSize` (int)
 
@@ -321,8 +279,9 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.
 - Managing memory usage (lower values = smaller batches)
 - Testing with small samples
 - Avoiding service throttling (reduce to 2500-5000)
-  **Example:** `-ResultSize 5000`  
-  **Notes:** Actual results may be less; this is the requested maximum
+
+**Example:** `-ResultSize 5000`  
+**Notes:** Actual results may be less; this is the requested maximum
 
 #### `-PacingMs` (int)
 
@@ -334,10 +293,13 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.
 - Experiencing frequent throttling errors
 - Running during peak tenant usage
 - Spreading load over time for politeness
-  **Examples:**
+
+**Examples:**
+
 - `-PacingMs 250` - Moderate pacing
 - `-PacingMs 500` - Conservative pacing
-  **Notes:** Increases total execution time proportionally
+
+**Notes:** Increases total execution time proportionally
 
 #### `-ActivityTypes` (string[])
 
@@ -348,11 +310,14 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.
 - Querying multiple activity types in one run
 - Analyzing cross-functional behaviors (Teams + Copilot)
 - Comparative analysis across services
-  **Examples:**
+
+**Examples:**
+
 - Single: `-ActivityTypes CopilotInteraction`
 - Multiple: `-ActivityTypes CopilotInteraction,MessageSent,FileAccessed`
 - Custom: `-ActivityTypes @('MeetingDetail','SearchQueryPerformed')`
-  **Notes:** See [Activity Types Reference](#activity-types-reference) for common operations
+
+**Notes:** See [Activity Types Reference](#activity-types-reference) for common operations
 
 ---
 
@@ -367,8 +332,9 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.
 - Need one row per array element for pivoting
 - Matching Microsoft Purview export format
 - Preparing for relational BI tools
-  **Example:** `-ExplodeArrays`  
-  **Notes:** Forced ON automatically in replay mode
+
+**Example:** `-ExplodeArrays`  
+**Notes:** Forced ON automatically in replay mode
 
 #### `-ExplodeDeep` (switch)
 
@@ -379,8 +345,9 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.
 - Maximum data extraction for BI/ML pipelines
 - Need every nested field as a separate column
 - Building wide-schema data warehouses
-  **Example:** `-ExplodeDeep`  
-  **Notes:** Significantly increases CSV width; test with short date range first
+
+**Example:** `-ExplodeDeep`  
+**Notes:** Significantly increases CSV width; test with short date range first
 
 ---
 
@@ -395,488 +362,211 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.
 - Re-processing raw exports with different explosion settings
 - Development/testing without live tenant access
 - Reproducible transformations for auditing
-  **Example:** `-RAWInputCSV "C:\PreviousExports\Copilot_RAW_20251001.csv"`  
-  **Restrictions:** Cannot combine with live query parameters (`-Auth`, `-BlockHours`, `-ResultSize`, `-PacingMs`, `-ParallelMode`, `-MaxConcurrency`, `-MaxParallelGroups`)  
-  **Allowed with RAWInputCSV:** `-StartDate`, `-EndDate`, `-ActivityTypes`, `-OutputFile`, `-ExplodeDeep`, `-ExportProgressInterval`, `-StreamingSchemaSample`, `-StreamingChunkSize`
+
+**Example:** `-RAWInputCSV "C:\PreviousExports\Copilot_RAW_20251001.csv"`
+
+**Restrictions:** Cannot combine with live query parameters (`-Auth`, `-BlockHours`, `-ResultSize`, `-PacingMs`, `-ParallelMode`, `-MaxConcurrency`, `-MaxParallelGroups`)
+
+**Allowed with RAWInputCSV:** `-StartDate`, `-EndDate`, `-ActivityTypes`, `-OutputFile`, `-ExplodeDeep`, `-ExportProgressInterval`, `-StreamingSchemaSample`, `-StreamingChunkSize`
 
 ---
 
-### Parallel Execution Parameters (PowerShell 7+ Only)
+### Parallel Execution Parameters (PowerShell 7+ only)
 
 #### `-ParallelMode` (string)
 
-**Purpose:** Controls parallel execution of multiple activity type groups  
+**Purpose:** Control parallel execution of multiple activity types  
 **Valid Values:** `Off`, `On`, `Auto`  
 **Default:** `Off`  
 **Use When:**
 
-- **Off:** Predictable sequential processing, easier debugging
-- **On:** Force parallel (PS7+ required), maximum speed for multi-activity runs
-- **Auto:** Let heuristics decide based on workload characteristics
-  **Examples:**
-- `-ParallelMode Off` - Always sequential
-- `-ParallelMode On -MaxConcurrency 4` - Force parallel with 4 threads
-- `-ParallelMode Auto` - Smart activation
-  **Auto Criteria:** PS7+, ≤1 High volume group, ≥1 Medium/Low group, ≤15 activities, >1 group, concurrency >1  
-  **Notes:** Only affects live queries; replay is always sequential explosion phase
+- Processing multiple high-volume activity types
+- Maximizing throughput on multi-core systems
+- Need `Auto` heuristic to decide based on activity count
+
+**Examples:**
+
+- `-ParallelMode Auto` - Let script decide based on activity count and volume
+- `-ParallelMode On` - Force parallel execution
+- `-ParallelMode Off` - Sequential processing (PS 5.1 compatible)
 
 #### `-MaxConcurrency` (int)
 
-**Purpose:** Maximum concurrent threads per activity group in parallel mode  
-**Range:** `1` to `50`  
+**Purpose:** Maximum concurrent threads per activity group  
+**Range:** `1` to `10`  
 **Default:** `2`  
-**Use When:** Balancing speed vs. throttling risk  
-**Example:** `-MaxConcurrency 4`  
-**Notes:** Higher values increase speed but may trigger rate limiting
+**Use When:** Fine-tuning parallel execution to avoid throttling  
+**Example:** `-MaxConcurrency 4`
 
 #### `-MaxParallelGroups` (int)
 
 **Purpose:** Maximum number of activity groups to process concurrently  
-**Range:** `0` to `50`  
+**Range:** `1` to `5`  
 **Default:** `3`  
-**Use When:**
-
-- Limiting overall parallelism across groups
-- Preventing excessive API pressure
-- Tuning for tenant throttling thresholds
-  **Example:** `-MaxParallelGroups 2`  
-  **Notes:** Set to `0` to disable parallel group processing entirely
-
-#### `-EnableParallel` (switch)
-
-**Purpose:** Legacy synonym for `-ParallelMode On`  
-**Default:** Off  
-**Use When:** Maintaining backward compatibility with older scripts  
-**Example:** `-EnableParallel` (equivalent to `-ParallelMode On`)  
-**Notes:** Prefer `-ParallelMode` syntax in new scripts
+**Use When:** Limiting total concurrent operations  
+**Example:** `-MaxParallelGroups 2`
 
 ---
 
-### Progress & UI Parameters
-
-#### `-ExportProgressInterval` (int)
-
-**Purpose:** How many rows to process before updating export progress indicator  
-**Range:** `1` to `10000`  
-**Default:** `10`  
-**Use When:**
-
-- Monitoring large exports (lower value = more updates)
-- Reducing console noise (higher value = fewer updates)
-  **Examples:**
-- `-ExportProgressInterval 1` - Update every row (testing)
-- `-ExportProgressInterval 100` - Reduce UI overhead (large files)
-  **Notes:** Does not affect actual processing, only display frequency
-
----
-
-### Advanced Streaming Parameters
+### Advanced Tuning Parameters
 
 #### `-StreamingSchemaSample` (int)
 
-**Purpose:** Number of rows to sample initially for column schema discovery  
-**Range:** `100` to `50000`  
-**Default:** `1000`  
+**Purpose:** Number of initial records to sample for schema discovery  
+**Range:** `100` to `10000`  
+**Default:** `2000`  
 **Use When:**
 
-- Wide schemas with many optional fields (increase to 3000-6000)
-- Narrow/consistent schemas (decrease to 500 for faster header freeze)
-- Memory constraints (balance with chunk size)
-  **Examples:**
-- `-StreamingSchemaSample 5000` - Comprehensive column discovery
-- `-StreamingSchemaSample 500` - Fast freeze, risk late columns ignored
-  **Notes:** New columns after freeze are counted but not written (warning emitted)
+- Wide schemas need more samples to discover all columns
+- Narrow schemas can use smaller samples for faster processing
+
+**Example:** `-StreamingSchemaSample 5000`
 
 #### `-StreamingChunkSize` (int)
 
-**Purpose:** Number of rows to accumulate before flushing to CSV file  
-**Range:** `100` to `50000`  
+**Purpose:** Number of records to write per CSV flush operation  
+**Range:** `100` to `20000`  
 **Default:** `5000`  
 **Use When:**
 
-- Balancing memory usage vs. I/O efficiency
-- Very wide schemas (reduce to 1500-2500 for lower peak memory)
-- Narrow schemas (increase to 10000+ for throughput)
-  **Examples:**
-- `-StreamingChunkSize 2000` - Memory-constrained environments
-- `-StreamingChunkSize 10000` - Fast I/O, ample memory
-  **Notes:** Auto-adjusts dynamically based on column count (>250, >500, >750, >1000 cols)
+- Managing memory usage (lower = more frequent flushes)
+- Optimizing write performance (higher = fewer I/O operations)
+
+**Example:** `-StreamingChunkSize 10000`
+
+#### `-ExportProgressInterval` (int)
+
+**Purpose:** Row interval for export progress updates  
+**Range:** `1` to `10000`  
+**Default:** `10`  
+**Use When:** Need more granular progress updates  
+**Example:** `-ExportProgressInterval 5`
 
 ---
 
-### Help Parameter
+### Helper Parameters
 
 #### `-Help` (switch)
 
-**Purpose:** Display full inline help from script synopsis/description  
-**Use When:** Quick reference without opening documentation  
+**Purpose:** Display built-in help documentation  
 **Example:** `.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -Help`  
-**Notes:** Uses PowerShell `Get-Help` cmdlet; exits after displaying help
+**Use When:** Quick reference without opening documentation
 
 ---
 
 ## Authentication Methods
 
-### WebLogin (Default - Interactive Browser)
+The script supports four authentication methods for Exchange Online:
 
-**Best For:** Interactive sessions, first-time setup, MFA-enabled accounts  
-**Requirements:** Web browser access, interactive session  
-**Example:**
+### 1. WebLogin (Default)
+
+Interactive browser-based authentication. Best for ad-hoc queries and interactive sessions.
 
 ```powershell
-.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-# Browser window opens for authentication
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -Auth WebLogin -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
-### DeviceCode (Headless/Remote Sessions)
+### 2. DeviceCode
 
-**Best For:** Remote servers, SSH sessions, locked-down environments  
-**Requirements:** Access to any device with web browser and internet  
-**Example:**
+Device code flow for headless/remote sessions or terminals without browser access.
 
 ```powershell
 .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -Auth DeviceCode -StartDate 2025-10-01 -EndDate 2025-10-02
-# Displays URL and code - authenticate from any device
 ```
 
-**Flow:**
+### 3. Credential
 
-1. Script displays: "To sign in, use a web browser to open https://microsoft.com/devicelogin and enter code ABC123"
-2. User opens browser on any device, enters code
-3. Completes authentication
-4. Script continues automatically
-
-### Credential (Username/Password Prompt)
-
-**Best For:** Service accounts without MFA, testing scenarios  
-**Requirements:** Valid username/password, no MFA  
-**Example:**
+Username/password prompt. Credentials stored in memory only during script execution.
 
 ```powershell
 .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -Auth Credential -StartDate 2025-10-01 -EndDate 2025-10-02
-# PowerShell credential prompt appears
 ```
 
-**Security Note:** Credential stored in memory only for session duration
+### 4. Silent
 
-### Silent (Cached Token Reuse)
-
-**Best For:** Repeated runs in short succession, managed workstations  
-**Requirements:** Valid cached token from previous authentication  
-**Example:**
+Attempts to use cached authentication token. Falls back to WebLogin if no valid token exists.
 
 ```powershell
-# First run with interactive auth
-.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-
-# Subsequent runs can use silent (within token lifetime)
-.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -Auth Silent -StartDate 2025-10-03 -EndDate 2025-10-04
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -Auth Silent -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
-
-**Behavior:** Falls back to WebLogin if no valid cached token found
 
 ---
 
 ## Usage Examples
 
-### Basic Scenarios
-
-#### Example 1: Minimal Run (Default Settings)
+### Basic Queries
 
 ```powershell
-# Queries previous full UTC day, exports to default location
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1
+# Standard mode - previous day (auto-default)
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1
 
-# Or specify dates explicitly
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+# Specific date range
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+
+# Custom output path
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile "C:\AuditData\Copilot.csv"
+
+# Multiple activity types
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
 ```
 
-#### Example 2: Custom Output Path
+### Exploded Schema Queries
 
 ```powershell
-# Specify explicit output location
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02 `
-  -OutputFile "C:\AuditData\Copilot\October_2025.csv"
+# Array explosion (35-column Purview schema)
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02
+
+# Deep flatten (maximum column extraction)
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
-#### Example 3: Multiple Activity Types
+### Performance Tuning
 
 ```powershell
-# Query Copilot, Teams messages, and file access in one run
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-03 `
-  -ActivityTypes CopilotInteraction,MessageSent,FileAccessed,MeetingDetail
+# Reduce block size for dense data (hitting 10K limit)
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -BlockHours 0.25 -StartDate 2025-10-01 -EndDate 2025-10-01
+
+# Increase block size for sparse historical data
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -BlockHours 4.0 -StartDate 2025-09-01 -EndDate 2025-09-07
+
+# Add pacing to reduce throttling
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -PacingMs 250 -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
----
-
-### Exploded Schema Examples
-
-#### Example 4: Array Explosion (Purview 35-column Schema)
+### Parallel Execution (PowerShell 7+ only)
 
 ```powershell
-# One row per array element - matches Purview export format
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ExplodeArrays `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02 `
-  -OutputFile ".\Copilot_exploded.csv"
+# Auto-detect parallel benefit
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ParallelMode Auto -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
+
+# Force parallel with custom concurrency
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ParallelMode On -MaxConcurrency 4 -MaxParallelGroups 2 -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
 ```
 
-#### Example 5: Deep Flatten (Maximum Column Extraction)
+### Offline Replay
 
 ```powershell
-# Base 29 columns + all CopilotEventData.* fields flattened
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ExplodeDeep `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02 `
-  -OutputFile ".\Copilot_deep_flat.csv"
+# Basic replay (forced explosion)
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -RAWInputCSV "C:\PreviousExports\Copilot_RAW.csv" -OutputFile "C:\AuditData\Copilot_Exploded.csv"
+
+# Replay with deep flatten and date filtering
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -RAWInputCSV "C:\PreviousExports\Copilot_RAW.csv" -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile "C:\AuditData\Copilot_Deep.csv"
+
+# Replay with activity filtering
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -RAWInputCSV "C:\PreviousExports\Multi_Activity_RAW.csv" -ActivityTypes CopilotInteraction -OutputFile "C:\AuditData\Copilot_Only.csv"
 ```
 
----
-
-### Performance Tuning Examples
-
-#### Example 6: Dense Data Period (Reduce Block Size)
+### Authentication Variations
 
 ```powershell
-# Hitting 10K limits - reduce window to 15 minutes
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -BlockHours 0.25 `
-  -StartDate 2025-10-03 `
-  -EndDate 2025-10-03 `
-  -ActivityTypes CopilotInteraction
-```
+# Device code for headless session
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -Auth DeviceCode -StartDate 2025-10-01 -EndDate 2025-10-02
 
-#### Example 7: Sparse Historical Backfill (Increase Block Size)
+# Credential prompt
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -Auth Credential -StartDate 2025-10-01 -EndDate 2025-10-02
 
-```powershell
-# Low activity period - use larger windows for speed
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -BlockHours 8 `
-  -StartDate 2025-07-01 `
-  -EndDate 2025-07-15 `
-  -ActivityTypes CopilotInteraction
-```
-
-#### Example 8: Throttle Mitigation
-
-```powershell
-# Add pacing delays between API calls
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -PacingMs 300 `
-  -ResultSize 5000 `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
-```
-
----
-
-### Parallel Execution Examples (PowerShell 7+ Only)
-
-#### Example 9: Automatic Parallel Mode
-
-```powershell
-# Let script decide whether to parallelize
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ParallelMode Auto `
-  -ActivityTypes CopilotInteraction,MessageSent,FileAccessed,SearchQueryPerformed `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
-```
-
-#### Example 10: Forced Parallel with Custom Concurrency
-
-```powershell
-# Force parallel execution with higher thread count
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ParallelMode On `
-  -MaxConcurrency 4 `
-  -MaxParallelGroups 3 `
-  -ActivityTypes CopilotInteraction,MessageSent,FileAccessed `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
-```
-
----
-
-### Authentication Examples
-
-#### Example 11: Device Code Authentication
-
-```powershell
-# Best for remote/headless sessions
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -Auth DeviceCode `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
-```
-
-#### Example 12: Silent Authentication (Cached Token)
-
-```powershell
-# Reuse cached token from previous session
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -Auth Silent `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
-```
-
----
-
-### Offline Replay Examples
-
-#### Example 13: Basic Replay (Forced Explosion)
-
-```powershell
-# Transform previously exported raw CSV - explosion forced
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -RAWInputCSV ".\output\Copilot_RAW_20251001.csv" `
-  -OutputFile ".\Copilot_replay_exploded.csv"
-```
-
-#### Example 14: Replay with Date Filtering
-
-```powershell
-# Filter subset of dates from existing export
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -RAWInputCSV ".\output\Copilot_RAW_October.csv" `
-  -StartDate 2025-10-05 `
-  -EndDate 2025-10-07 `
-  -OutputFile ".\Copilot_Oct5to7.csv"
-```
-
-#### Example 15: Replay with Deep Flatten + Activity Filter
-
-```powershell
-# Deep transformation on specific operations only
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -RAWInputCSV ".\output\Copilot_RAW_Q4.csv" `
-  -ExplodeDeep `
-  -ActivityTypes CopilotInteraction `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-31 `
-  -OutputFile ".\Copilot_October_Deep.csv"
-```
-
----
-
-### Advanced Streaming Tuning Examples
-
-#### Example 16: Wide Schema (High Schema Sample, Low Chunk Size)
-
-```powershell
-# Maximize column discovery, minimize peak memory
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ExplodeDeep `
-  -StreamingSchemaSample 6000 `
-  -StreamingChunkSize 1500 `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02 `
-  -OutputFile ".\Copilot_wide_schema.csv"
-```
-
-#### Example 17: Fast Freeze (Low Sample, High Chunk)
-
-```powershell
-# Quick header freeze for narrow/consistent schemas
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ExplodeDeep `
-  -StreamingSchemaSample 500 `
-  -StreamingChunkSize 10000 `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02 `
-  -OutputFile ".\Copilot_fast_freeze.csv"
-```
-
----
-
-### Production & Automation Examples
-
-#### Example 18: Scheduled Daily Export (Task Scheduler / Cron)
-
-```powershell
-# Script for daily automated runs - captures previous day
-# No dates needed - uses auto-default (previous full UTC day)
-pwsh -File "C:\Scripts\PAX\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1" `
-  -Auth Silent `
-  -ExplodeArrays `
-  -OutputFile "C:\AuditData\Daily\Copilot_$(Get-Date -Format 'yyyyMMdd').csv" `
-```
-
-#### Example 19: Multi-Week Historical Backfill
-
-```powershell
-# Large date range with optimized settings
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -StartDate 2025-09-01 `
-  -EndDate 2025-10-01 `
-  -BlockHours 2 `
-  -PacingMs 200 `
-  -ActivityTypes CopilotInteraction,MessageSent `
-  -OutputFile ".\Copilot_September.csv"
-```
-
-#### Example 20: Clean Logs for CI/CD
-
-```powershell
-# Suppress progress for log file clarity
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02 `
-  -OutputFile ".\Copilot.csv"
-```
-
----
-
-### Windows PowerShell 5.1 Examples
-
-#### Example 21: PowerShell 5.1 with ExecutionPolicy Bypass
-
-```powershell
-# Windows PowerShell 5.1 invocation
-powershell.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02 `
-  -OutputFile "C:\Temp\Copilot.csv"
-```
-
----
-
-### Activity Types Reference
-
-**Common High-Volume Activities:**
-
-- `CopilotInteraction` - Microsoft 365 Copilot usage events
-- `MessageSent` - Teams/Exchange message sending
-- `FileAccessed` - SharePoint/OneDrive file access
-- `MailItemsAccessed` - Email access events
-
-**Common Medium-Volume Activities:**
-
-- `MessageRead` - Message read receipts
-- `FileModified` - File edit operations
-- `MeetingDetail` - Teams meeting metadata
-- `SearchQueryPerformed` - Search queries
-
-**Common Low-Volume Activities:**
-
-- `CreatePlugin` - Copilot plugin creation
-- `UpdatePlugin` - Plugin modifications
-- `DeletePlugin` - Plugin removal
-- `EnablePlugin` / `DisablePlugin` - Plugin state changes
-
-**Finding Available Activities:**
-
-```powershell
-# Query all available record types
-Get-UnifiedAuditLog -StartDate (Get-Date).AddDays(-1) -EndDate (Get-Date) -ResultSize 100 |
-  Select-Object -Unique Operations |
-  Sort-Object Operations
+# Silent (cached token)
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -Auth Silent -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
 ---
@@ -889,7 +579,7 @@ Every execution produces two files:
 
 #### 1. CSV File (Data Export)
 
-- **Location:** Specified by `-OutputFile` parameter
+- **Location:** Specified by `-OutputFile` parameter (default: `C:\Temp\CopilotInteraction_<timestamp>.csv`)
 - **Encoding:** UTF-8 without BOM
 - **Format:** Standard CSV with quoted fields
 - **Header:** Always written (even when zero records match)
@@ -898,127 +588,114 @@ Every execution produces two files:
 #### 2. Log File (Execution Metrics)
 
 - **Location:** Same directory as CSV, `.csv` replaced with `.log`
-- **Contents:**
-  - Runtime parameters and date range
-  - Authentication and connection details
-  - Adaptive block size decisions
-  - Warnings (10K limits, throttling, truncation)
-  - Performance metrics (query/explosion/export timing)
-  - Per-activity record counts
-  - Parallel execution summary
-  - Error messages and stack traces
+- **Contains:** 
+  - Script parameters and version
+  - Authentication method and connection details
+  - Query plan and adaptive block sizing decisions
+  - Progress updates and phase transitions
+  - Warnings (10K limits, throttling, schema changes)
+  - Final metrics (records processed, time elapsed, throughput)
 
 ### Schema Modes
 
-#### Standard Mode (Default - 1:1 Rows)
+#### Standard Mode (Default)
 
-**Columns:** Base audit fields + single `CopilotEventData` JSON blob  
-**Row Count:** One row per audit record  
-**Use When:** Fastest processing, preserving original structure  
-**Example Row:**
+**One row per audit record.** CopilotEventData preserved as JSON string in a single column.
 
-```csv
-RecordId,CreationDate,Operation,UserId,CopilotEventData
-abc123,2025-10-01T14:23:45.123Z,CopilotInteraction,user@domain.com,"{""Tokens"":150,""Model"":""GPT-4"",…}"
-```
+**Column Count:** Variable (base audit fields + `CopilotEventData` JSON column)
 
-#### Exploded Arrays Mode (`-ExplodeArrays`)
+**Use When:** Need raw data for custom processing or minimal transformation
 
-**Columns:** Purview canonical 35-column schema  
-**Row Count:** Multiple rows per audit record (one per array element combination)  
-**Use When:** Matching Microsoft Purview export format, relational analysis  
-**Base 35 Columns:**
+#### Exploded Mode (`-ExplodeArrays`)
 
-1. `RecordId` - Unique audit record identifier (GUID)
-2. `CreationDate` - UTC timestamp when record created (ISO 8601)
-3. `RecordType` - Numeric record type (e.g., 261 = CopilotInteraction)
-4. `Operation` - Operation name (e.g., "CopilotInteraction")
-5. `UserId` - User principal name (UPN)
-6. `AssociatedAdminUnits` - Admin unit IDs (semicolon-separated)
-7. `AssociatedAdminUnitsNames` - Admin unit names (semicolon-separated)
-8. `AgentId` - AI agent identifier
-9. `AgentName` - AI agent display name
-10. `AppIdentity` - Application identity object
-11. `AppIdentity_DisplayName` - Application display name
-12. `AppIdentity_PublisherId` - Publisher identifier
-13. `ApplicationName` - Application name string
-14. `CreationTime` - UTC timestamp of actual event occurrence
-15. `ClientRegion` - Geographic region code
-16. `ClientIP` - Client IP address
-17. `Audit_UserId` - Audit-specific user identifier
-18. `AppHost` - Hosting application identifier
-19. `ThreadId` - Conversation thread identifier
-20. `Context_Id` - Context identifier
-21. `Context_Type` - Context type designation
-22. `Message_Id` - Message unique identifier
-23. `Message_isPrompt` - Boolean indicator (TRUE/FALSE)
-24. `AccessedResource_Action` - Resource action type
-25. `AccessedResource_PolicyDetails` - Policy metadata
-26. `AccessedResource_SiteUrl` - SharePoint site URL
-27. `AISystemPlugin_Id` - Plugin identifier
-28. `AISystemPlugin_Name` - Plugin name
-29. `ModelTransparencyDetails_ModelName` - AI model name
-30. `MessageIds` - Related message IDs (semicolon-separated)
-31. `OrganizationId` - Organization identifier (tenant ID)
-32. `Version` - Schema version number
-33. `UserType` - User type code (0=Regular, 2=Admin, etc.)
-34. `CopilotLogVersion` - Copilot log schema version
-35. `Workload` - Workload identifier
+**Purview canonical 35-column schema.** Array elements (Messages, AccessedResources, AISystemPlugins) expanded to separate rows.
 
-**Explosion Metadata Columns (when explosion occurs):**
+**Column Count:** 35 base columns
 
-- `ArrayIndex_Messages` - Index position in Messages array
-- `ArrayIndex_Contexts` - Index position in Contexts array
-- `ArrayIndex_References` - Index position in References array
-- `ExplosionTruncated` - TRUE if row cap (1000) exceeded
+**Base Columns (35):**
+1. RecordId
+2. CreationDate
+3. RecordType
+4. Operation
+5. UserId
+6. AssociatedAdminUnits
+7. AssociatedAdminUnitsNames
+8. AgentId
+9. AgentName
+10. AppIdentity_AppId
+11. AppIdentity_DisplayName
+12. AppIdentity_PublisherId
+13. ApplicationName
+14. CreationTime
+15. ClientRegion
+16. Audit_UserId
+17. AppHost
+18. ThreadId
+19. Context_Id
+20. Context_Type
+21. Message_Id
+22. Message_isPrompt
+23. AccessedResource_Action
+24. AccessedResource_PolicyDetails
+25. AccessedResource_SiteUrl
+26. AISystemPlugin_Id
+27. AISystemPlugin_Name
+28. ModelTransparencyDetails_ModelName
+29. MessageIds
+30. Message_AcceptanceState
+31. Message_TokenCount
+32. Message_CharacterCount
+33. Message_LengthPreference
+34. Message_LatencyMilliseconds
+35. ExplosionTruncated
+
+**Use When:** Need relational format for BI tools or matching Microsoft Purview exports
 
 #### Deep Flatten Mode (`-ExplodeDeep`)
 
-**Columns:** Base 35 columns + all `CopilotEventData.*` dynamically flattened  
-**Row Count:** Multiple rows per audit record  
-**Use When:** Maximum data extraction, ML pipelines, wide-schema data warehouses  
-**Additional Columns (examples):**
+**35 base columns + all nested `CopilotEventData.*` columns.** Maximum data extraction with every nested field as a separate column.
 
-- `CopilotEventData.TokensPrompt` - Input token count
-- `CopilotEventData.TokensCompletion` - Output token count
-- `CopilotEventData.ModelFamily` - Model family designation
-- `CopilotEventData.OutcomeStatus` - Success/failure status
-- `CopilotEventData.DurationMs` - Request duration milliseconds
-- `CopilotEventData.ConversationId` - Conversation identifier
-- `CopilotEventData.TurnNumber` - Turn sequence number
-- `CopilotEventData.AcceptanceRate` - Suggestion acceptance percentage
-- `CopilotEventData.RetryCount` - Number of retries
-- _(Hundreds more depending on event structure)_
+**Column Count:** 35+ (dynamic based on data)
 
-**Schema Freeze Behavior:**
+**Use When:** 
+- Maximum data extraction for BI/ML pipelines
+- Need every nested field accessible as a column
+- Building wide-schema data warehouses
 
-- First N rows (default 1000, configurable via `-StreamingSchemaSample`) determine column set
-- Columns discovered after freeze are counted but ignored (warning emitted)
-- Increase `-StreamingSchemaSample` if seeing late-ignored column warnings
+**Warning:** Significantly increases CSV width and processing time. Test with short date range first.
 
-### Date/Time Normalization
+---
 
-All timestamps normalized to ISO 8601 UTC with millisecond precision:
+## Activity Types Reference
 
-- **Format:** `yyyy-MM-ddTHH:mm:ss.fffZ`
-- **Example:** `2025-10-01T14:23:45.123Z`
-- **Columns Affected:** `CreationDate`, `CreationTime`, all other datetime fields
+### Common High-Volume Activities
 
-### Multi-Value Field Handling
+- `CopilotInteraction` - Microsoft 365 Copilot usage events
+- `MessageSent` - Teams/Exchange message sending
+- `FileAccessed` - SharePoint/OneDrive file access
+- `MailItemsAccessed` - Email access events
 
-Arrays and collections rendered as semicolon-delimited strings:
+### Common Medium-Volume Activities
 
-- **Format:** `value1; value2; value3`
-- **Example:** `MessageId1; MessageId2; MessageId3`
-- **Columns:** `MessageIds`, `AssociatedAdminUnits`, `AssociatedAdminUnitsNames`, etc.
+- `MessageRead` - Message read receipts
+- `FileModified` - File edit operations
+- `MeetingDetail` - Teams meeting metadata
+- `SearchQueryPerformed` - Search queries
 
-### Boolean Normalization
+### Common Low-Volume Activities
 
-Boolean values standardized:
+- `CreatePlugin` - Copilot plugin creation
+- `UpdatePlugin` - Plugin modifications
+- `DeletePlugin` - Plugin removal
+- `EnablePlugin` / `DisablePlugin` - Plugin state changes
 
-- **True:** `TRUE`
-- **False:** `FALSE`
-- **Null/Empty:** (empty string)
+### Finding Available Activities
+
+For a complete list of available Purview audit activities and operations, refer to the Microsoft Learn documentation:
+
+**📚 [Audit log activities - Microsoft Purview](https://learn.microsoft.com/en-us/purview/audit-log-activities)**
+
+This comprehensive reference includes all available operations across Microsoft 365 services, including SharePoint, Exchange, Teams, Copilot, and more.
 
 ---
 
@@ -1026,185 +703,42 @@ Boolean values standardized:
 
 ### Adaptive Block Sizing
 
-The script learns optimal time window sizes during execution:
+The script automatically adjusts time window sizes based on observed data density:
 
-**Initial Sizing:**
+- **Initial Block:** Starts with `-BlockHours` parameter (default 30 minutes)
+- **Learning Phase:** Monitors record counts per window
+- **Automatic Subdivision:** Splits windows hitting the 10K service limit
+- **Progressive Refinement:** Shrinks blocks for dense periods, expands for sparse periods
+- **Per-Activity Learning:** Maintains separate learned block sizes for each activity type
 
-- **High-volume activities:** 30 minutes (0.5 hours)
-- **Medium-volume activities:** 2 hours
-- **Low-volume activities:** 8 hours
-- **Custom/unknown:** `-BlockHours` parameter value
+### Parallel Execution (PowerShell 7+)
 
-**Learning Behavior:**
+When processing multiple activity types, parallel execution can significantly improve performance:
 
-- **Saturated window (exactly ResultSize records):** Shrink by 30% for next window
-- **Sparse window (<10% of ResultSize):** Grow by 50% for next window
-- **Failed window:** Shrink by 50% and retry
-
-**Subdivision Strategy:**
-When exactly 10,000 records returned (service limit):
-
-1. Emits CRITICAL warning with time window details
-2. Automatically subdivides window (binary or aggressive split)
-3. Continues with smaller chunks
-4. Logs recommendation to reduce `-BlockHours` for future runs
-
-**Subdivision Sequence:**
-`30min → 15min → 8min → 4min → 2min → 1min`
-
-### Parallel Execution Engine (PowerShell 7+)
-
-**Group Classification:**
-
-- **High Volume:** `CopilotInteraction`, `MessageSent`, `FileAccessed`, `MailItemsAccessed`
-- **Medium Volume:** `MessageRead`, `FileModified`, `MeetingDetail`, `SearchQueryPerformed`
-- **Low Volume:** All plugin operations, custom activities
-
-**Batching Strategy:**
-
-- High-volume activities: Individual groups (1 activity per group)
-- Medium-volume activities: Batches of 3
-- Low-volume activities: Batches of 5
-
-**Auto-Activation Criteria (`-ParallelMode Auto`):**
-✅ PowerShell 7+  
-✅ MaxParallelGroups > 0  
-✅ MaxConcurrency > 1  
-✅ ≤ 1 High-volume group  
-✅ ≥ 1 Medium or Low-volume group  
-✅ Total activities ≤ 15  
-✅ Total groups > 1
-
-**Manual Activation (`-ParallelMode On`):**
-
-- Bypasses heuristics
-- Requires PowerShell 7+
-- Honors MaxConcurrency and MaxParallelGroups settings
-- Monitor logs for throttling warnings
-
-### Streaming Export Architecture
-
-**Phase 1: Schema Sampling**
-
-1. Collect first N rows (default 1000, `-StreamingSchemaSample`)
-2. Discover all unique columns across samples
-3. Freeze column order (deterministic across runs)
-4. Write CSV header
-
-**Phase 2: Chunked Processing**
-
-1. Process rows in batches (default 5000, `-StreamingChunkSize`)
-2. Flush each batch to file immediately
-3. Dynamic chunk size adjustment:
-   - **Narrow schemas (≤60 columns):** Boost to 15,000 rows
-   - **Wide schemas (>250 columns):** Reduce progressively
-     - > 250 cols: 3,500 rows
-     - > 500 cols: 2,000 rows
-     - > 750 cols: 1,500 rows
-     - > 1000 cols: 1,000 rows
-
-**Phase 3: Post-Freeze Handling**
-
-- New columns after freeze: Count but ignore (warning emitted)
-- Rows with new columns: Written with empty values for new columns
-- Metrics: `postFreezeNewColumns` counter in log
-
-**Memory Benefits:**
-
-- Eliminates need to hold entire dataset in memory
-- Predictable memory ceiling regardless of row count
-- Suitable for multi-million row exports
+- **Auto Mode:** Script heuristically determines if parallel execution will benefit
+- **Forced Mode:** Always use parallel execution regardless of activity count
+- **Throttling Control:** Configurable concurrency limits to avoid overwhelming the service
+- **Group Processing:** Activities classified by volume (High/Medium/Low) and processed in batches
 
 ### Offline Replay Mode
 
-**Purpose:** Re-process previously exported raw Purview audit CSV files without querying Exchange Online
+Re-process previously exported raw audit CSV files without querying Exchange Online:
 
-**Workflow:**
-
-1. Initial export (live query, standard mode):
-
-   ```powershell
-   pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-     -StartDate 2025-10-01 `
-     -EndDate 2025-10-31 `
-     -OutputFile ".\October_RAW.csv"
-   ```
-
-2. Subsequent transformations (offline replay):
-
-   ```powershell
-   # Exploded version
-   pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-     -RAWInputCSV ".\October_RAW.csv" `
-     -OutputFile ".\October_Exploded.csv"
-
-   # Deep flatten version
-   pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-     -RAWInputCSV ".\October_RAW.csv" `
-     -ExplodeDeep `
-     -OutputFile ".\October_Deep.csv"
-
-   # Filtered subset
-   pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-     -RAWInputCSV ".\October_RAW.csv" `
-     -StartDate 2025-10-15 `
-     -EndDate 2025-10-20 `
-     -ActivityTypes CopilotInteraction `
-     -OutputFile ".\October_Mid_Copilot.csv"
-   ```
-
-**Requirements:**
-
-- Source CSV must contain `AuditData` column with JSON
-- Explosion mode automatically forced (cannot disable)
-- Authentication skipped entirely
-
-**Allowed Parameters with `-RAWInputCSV`:**
-✅ `-StartDate` (optional filter)  
-✅ `-EndDate` (optional filter)  
-✅ `-ActivityTypes` (optional filter)  
-✅ `-OutputFile`  
-✅ `-ExplodeDeep`  
-✅ `-ExportProgressInterval`  
-✅ `-StreamingSchemaSample`  
-✅ `-StreamingChunkSize`
-
-**Disallowed Parameters (error if present):**
-❌ `-Auth`  
-❌ `-BlockHours`  
-❌ `-ResultSize`  
-❌ `-PacingMs`  
-❌ `-ParallelMode`  
-❌ `-MaxConcurrency`  
-❌ `-MaxParallelGroups`  
-❌ `-EnableParallel`
-
-**Benefits:**
-
-- Reproducible transformations for auditing
-- Development/testing without live tenant access
-- Multiple output formats from single raw export
-- Experimentation with explosion settings
+- **No Authentication Required:** Skip connection to Microsoft 365
+- **Flexible Filtering:** Apply date and activity filters to existing data
+- **Schema Transformation:** Convert raw exports to exploded or deep flatten schemas
+- **Reproducible Analysis:** Test transformations against known datasets
+- **Development Workflow:** Build pipelines without production access
 
 ### Progress Tracking System
 
-**Weighted Phases:**
-
-- **Live Query + Explosion:** Query 30% | Explosion 60% | Export 10%
-- **Live Query Only:** Query 80% | Export 20%
-- **Replay Mode:** Parsing 10% | Explosion 80% | Export 10%
+Real-time progress updates across three phases:
 
 **Display Format:**
 
 ```
 PAX Purview Audit Log Processing
 Status: Query: 45/100(45%) | Explosion: 12000/25000(48%) | Export: 0/1(0%) :: 42%
-```
-
-**Batch Progress (Explosion Phase):**
-
-```
-Explosion: Records 5001-10000/50000 Batch: 2/~10(20%-40%) | Export: 0/1(0%) :: 68%
 ```
 
 **Components:**
@@ -1251,111 +785,66 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 
 **Symptoms:**
 
-- Frequent "429 Too Many Requests" errors
-- Extended retry sequences in logs
-- Slow overall completion times
+- Log shows: `WARNING: Throttling detected, backing off...`
+- Frequent retry attempts
+- Extended execution times
 
-**Mitigation Strategies:**
-
-**Strategy 1: Add Pacing**
+**Solutions:**
 
 ```powershell
-# Conservative: 250-500ms between pages
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -PacingMs 300 `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
+# Add inter-page pacing (250ms delay between API calls)
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -PacingMs 250 -StartDate 2025-10-01 -EndDate 2025-10-02
+
+# Reduce ResultSize to smaller batches
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ResultSize 5000 -StartDate 2025-10-01 -EndDate 2025-10-02
+
+# Combine both approaches
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ResultSize 5000 -PacingMs 250 -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
-
-**Strategy 2: Reduce ResultSize**
-
-```powershell
-# Fetch fewer records per window
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ResultSize 5000 `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
-```
-
-**Strategy 3: Disable/Reduce Parallelism**
-
-```powershell
-# Force sequential processing
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ParallelMode Off `
-  -ActivityTypes CopilotInteraction,MessageSent `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
-```
-
-**Strategy 4: Run Off-Peak**
-
-- Schedule during low-tenant-usage hours (nights, weekends)
-- Avoid concurrent audit queries from other tools
 
 ### Memory Optimization
 
-**For Wide Schemas (ExplodeDeep):**
+**For Deep Flatten with Wide Schemas:**
 
 ```powershell
-# Increase schema sample, decrease chunk size
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ExplodeDeep `
+# Increase schema sample, reduce chunk size
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ExplodeDeep `
   -StreamingSchemaSample 5000 `
-  -StreamingChunkSize 1500 `
+  -StreamingChunkSize 2000 `
   -StartDate 2025-10-01 `
   -EndDate 2025-10-02
 ```
 
-**For Narrow Schemas (Fast Processing):**
+**For Narrow Schemas (Faster Processing):**
 
 ```powershell
-# Decrease sample, increase chunk for throughput
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ExplodeArrays `
-  -StreamingSchemaSample 500 `
+# Reduce schema sample, increase chunk size
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ExplodeArrays `
+  -StreamingSchemaSample 1000 `
   -StreamingChunkSize 10000 `
   -StartDate 2025-10-01 `
   -EndDate 2025-10-02
 ```
 
-**Large Date Ranges:**
+### Parallel Execution Tuning
 
-- Break into smaller chunks (weekly/monthly)
-- Process sequentially rather than one massive run
-- Monitor disk space for output files
-
-### Speed Optimization
-
-**Fastest Configuration:**
+**Conservative Approach (Avoid Throttling):**
 
 ```powershell
-# Standard mode, no explosion, large blocks, no progress UI
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -BlockHours 4 `
-  -StartDate 2025-09-01 `
-  -EndDate 2025-09-30
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ParallelMode On `
+  -MaxConcurrency 2 `
+  -MaxParallelGroups 2 `
+  -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
 ```
 
-**Parallel Speed (PS7+):**
+**Aggressive Approach (Maximum Throughput):**
 
 ```powershell
-# Force parallel with multiple activity types
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ParallelMode On `
+.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ParallelMode On `
   -MaxConcurrency 4 `
   -MaxParallelGroups 3 `
-  -ActivityTypes CopilotInteraction,MessageSent,FileAccessed,MeetingDetail `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
+  -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
 ```
-
-**Benchmark Expectations (typical tenant):**
-
-- **Standard mode:** 50,000-100,000 records/hour
-- **Exploded mode:** 30,000-60,000 records/hour
-- **Deep flatten mode:** 10,000-30,000 records/hour
-- **Replay transformation:** 100,000-500,000 records/hour (CPU-bound)
 
 ---
 
@@ -1363,555 +852,141 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 
 ### Common Issues
 
-#### Issue: Zero Records Returned (Header-Only CSV)
+#### Authentication Failures
 
-**Symptoms:**
-
-- CSV file contains only header row
-- Log shows "Records exported: 0"
-
-**Causes & Solutions:**
-
-| Cause                     | Solution                                                                   |
-| ------------------------- | -------------------------------------------------------------------------- |
-| No activity in date range | Verify audit events exist: `Search-UnifiedAuditLog` manually               |
-| Incorrect date format     | Ensure `yyyy-MM-dd` format, UTC interpretation                             |
-| Insufficient permissions  | Verify audit log roles: `Get-ManagementRoleAssignment`                     |
-| Audit logging disabled    | Check: `Get-AdminAuditLogConfig \| Select UnifiedAuditLogIngestionEnabled` |
-| Time zone confusion       | Dates are UTC; convert local times before passing                          |
-
-**Verification:**
-
-```powershell
-# Manual test query
-Connect-ExchangeOnline
-Search-UnifiedAuditLog -StartDate "10/01/2025" -EndDate "10/02/2025" -Operations CopilotInteraction -ResultSize 10
-```
-
----
-
-#### Issue: 10K Limit Warnings
-
-**Symptoms:**
-
-- Log shows: `CRITICAL: 10K limit reached`
-- `Hit10KLimit: True` in metrics
-- Missing records suspected
-
-**Solution:**
-
-```powershell
-# Reduce block hours incrementally
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -BlockHours 0.25 `  # Start with 15 minutes
-  -StartDate 2025-10-03 `
-  -EndDate 2025-10-03
-
-# If still hitting limit, go smaller
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -BlockHours 0.066667 `  # 4 minutes
-  -StartDate 2025-10-03 `
-  -EndDate 2025-10-03
-```
-
-**Verification:**
-
-- Re-run with reduced `-BlockHours`
-- Check log for "Data retrieval completed without hitting limits"
-- Compare record counts between runs
-
----
-
-#### Issue: Frequent Throttling (429 Errors)
-
-**Symptoms:**
-
-- Many retry attempts in log
-- Extended execution times
-- "Too Many Requests" errors
+**Problem:** "Unable to connect to Exchange Online"
 
 **Solutions:**
 
-**Step 1: Add Pacing**
+- Verify you have View-Only Audit Logs or Audit Logs role assigned
+- Check network connectivity to `*.protection.outlook.com`
+- Try different auth method: `-Auth DeviceCode` for headless sessions
+- Clear cached credentials: Restart PowerShell session
 
-```powershell
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -PacingMs 500 `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
-```
+#### No Data Returned
 
-**Step 2: Reduce Concurrency**
-
-```powershell
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ParallelMode Off `
-  -ResultSize 5000 `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
-```
-
-**Step 3: Schedule Off-Peak**
-
-- Run during nights/weekends
-- Avoid overlap with other audit tools
-- Coordinate with tenant admin team
-
----
-
-#### Issue: Slow Deep Flatten Performance
-
-**Symptoms:**
-
-- Explosion phase takes hours
-- High CPU usage
-- Large CSV output (hundreds of MB)
+**Problem:** CSV contains only header, no records
 
 **Solutions:**
 
-**Test First:**
+- Verify Unified Audit Logging is enabled in your tenant
+- Check date range (dates are UTC, not local time)
+- Confirm activity type spelling: `-ActivityTypes CopilotInteraction` (case-sensitive)
+- Verify users have generated audit events in the date range
+- Check audit log retention period (default 90 days)
 
-```powershell
-# Always test deep flatten with short date range
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ExplodeDeep `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-01  # Single day only
-```
+#### 10K Limit Warnings
 
-**Optimize Settings:**
-
-```powershell
-# Balance schema width vs. memory
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ExplodeDeep `
-  -StreamingSchemaSample 3000 `
-  -StreamingChunkSize 2500 `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
-```
-
-**Alternative:**
-
-- Use standard `-ExplodeArrays` instead (much faster)
-- Do deep analysis on subset of records only
-- Post-process deep flatten in dedicated BI tool
-
----
-
-#### Issue: Parallel Mode Ignored
-
-**Symptoms:**
-
-- Log shows "Parallel mode: Off" despite setting `-ParallelMode Auto`
-- Sequential execution even with multiple activities
-
-**Causes:**
-
-| Condition              | Auto Eligibility  |
-| ---------------------- | ----------------- |
-| PowerShell 5.1         | ❌ Requires PS7+  |
-| >1 High-volume groups  | ❌ Fails criteria |
-| Zero Medium/Low groups | ❌ Fails criteria |
-| >15 total activities   | ❌ Fails criteria |
-| Single group           | ❌ Fails criteria |
-| MaxConcurrency = 1     | ❌ Fails criteria |
+**Problem:** Log shows "CRITICAL: 10K limit reached"
 
 **Solutions:**
 
-**Check PowerShell Version:**
+- Reduce `-BlockHours` parameter (try 0.25 or 0.133333)
+- Run script multiple times with shorter date ranges
+- Check adaptive subdivision is working (log should show automatic splits)
+- Consider if data is genuinely dense (may need multiple runs)
 
-```powershell
-$PSVersionTable.PSVersion  # Should be 7.0+
-```
+#### Memory Issues
 
-**Force Parallel (if PS7+):**
-
-```powershell
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ParallelMode On `
-  -MaxConcurrency 3 `
-  -ActivityTypes CopilotInteraction,MessageSent,FileAccessed `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
-```
-
-**Review Heuristics in Log:**
-
-```
-Auto criteria (PS7+, MPG>0, MC>1, <=1 High, >=1 Med/Low, activities<=15, groups>1): not met
-High=2 Medium=0 Low=0 Activities=2 Groups=2
-```
-
----
-
-#### Issue: Late-Ignored Columns Warning
-
-**Symptoms:**
-
-- Log shows: "NOTICE: N row(s) contained new columns after schema freeze (ignored)"
-- Some fields missing from output
-
-**Cause:**
-
-- Column discovered after initial schema sample
-- Heterogeneous data structures across records
-- `-StreamingSchemaSample` too small
-
-**Solution:**
-
-```powershell
-# Increase schema sample size
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ExplodeDeep `
-  -StreamingSchemaSample 5000 `  # Up from default 1000
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
-```
-
-**Trade-off:**
-
-- Larger sample = more complete schema, slower header freeze
-- Smaller sample = faster start, risk missing columns
-- Review log for list of ignored columns to assess impact
-
----
-
-#### Issue: Authentication Failures
-
-**Symptoms:**
-
-- "Access Denied" errors
-- "Unable to connect to Exchange Online"
-- MFA challenges failing
+**Problem:** Script consumes excessive memory or crashes
 
 **Solutions:**
 
-**Verify Permissions:**
+- Reduce `-StreamingChunkSize` (try 2000 or 1000)
+- Increase `-StreamingSchemaSample` to discover schema earlier (try 5000)
+- Avoid `-ExplodeDeep` for initial runs (use `-ExplodeArrays` instead)
+- Process shorter date ranges
+- Close other applications to free memory
 
-```powershell
-Connect-ExchangeOnline
-Get-ManagementRoleAssignment -RoleAssignee your.email@domain.com |
-  Where-Object {$_.Role -like "*Audit*"}
-```
+#### Throttling Errors
 
-**Try Alternative Auth:**
-
-```powershell
-# Device code for MFA
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -Auth DeviceCode `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
-```
-
-**Check Module Version:**
-
-```powershell
-Get-Module -Name ExchangeOnlineManagement -ListAvailable
-Update-Module -Name ExchangeOnlineManagement
-```
-
----
-
-#### Issue: Replay Mode Errors
-
-**Symptoms:**
-
-- "ERROR: -RAWInputCSV cannot be combined with..."
-- File not found errors
-- Parsing failures
+**Problem:** Frequent "Throttling detected" messages
 
 **Solutions:**
 
-**Check File Path:**
+- Add pacing: `-PacingMs 250` or `-PacingMs 500`
+- Reduce ResultSize: `-ResultSize 5000`
+- Run during off-peak hours
+- Disable parallel mode if enabled
+- Consider if tenant is under heavy load
 
-```powershell
-# Verify file exists and has AuditData column
-Import-Csv ".\path\to\file.csv" | Select-Object -First 1 | Get-Member
-```
+### FAQ
 
-**Remove Conflicting Parameters:**
+**Q: Does the script modify any data?**  
+A: No. The script is read-only and only exports audit data. No modifications are made to audit logs or tenant configuration.
 
-```powershell
-# WRONG - has live query params
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -RAWInputCSV ".\export.csv" `
-  -Auth WebLogin `  # ❌ Not allowed
-  -BlockHours 2     # ❌ Not allowed
+**Q: What timezone are dates in?**  
+A: All dates are interpreted as UTC. Output timestamps are also UTC in ISO 8601 format (`yyyy-MM-ddTHH:mm:ss.fffZ`).
 
-# CORRECT - only filtering params
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -RAWInputCSV ".\export.csv" `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02 `
-  -ExplodeDeep
-```
+**Q: Can I filter by specific users or models at the source?**  
+A: No, filtering happens after export. The Unified Audit Log API does not support user/model filtering. Export data and filter in post-processing or BI tools.
 
-**Verify CSV Format:**
+**Q: How deep does the script flatten JSON?**  
+A: Standard explode: 60 levels. Deep flatten: 120 levels. JSON serialization: 60 levels. These are constants in the script and can be adjusted if needed.
 
-- Must have `AuditData` column with JSON
-- Use standard Purview export format
-- Check for encoding issues (UTF-8 expected)
+**Q: Can I run this in an automated schedule?**  
+A: Yes. Use `-Auth Silent` with cached credentials or `-Auth Credential` with saved credentials. Consider using Task Scheduler (Windows) or cron (macOS/Linux).
 
----
+**Q: What if I need older audit logs?**  
+A: Audit retention depends on your tenant's licensing. E3/E5 licenses retain 90-365 days. Check Microsoft Purview compliance portal for your retention period.
 
-### Frequently Asked Questions
+**Q: Does the script work on macOS/Linux?**  
+A: Yes, with PowerShell 7+. Install PowerShell 7 and ExchangeOnlineManagement module. Authentication methods may vary (WebLogin, DeviceCode recommended).
 
-#### Q: Does the script modify or delete any audit data?
+**Q: How do I handle very large date ranges?**  
+A: Break into smaller chunks (weekly or monthly), run separately, then concatenate CSV files. Use `-OutputFile` to name by date range.
 
-**A:** No. The script is read-only. It queries the Unified Audit Log via `Search-UnifiedAuditLog` cmdlet and exports to CSV. No write operations are performed on Microsoft 365 services.
+**Q: Can I customize the output schema?**  
+A: The 35-column base schema is fixed to match Purview standards. In `-ExplodeDeep` mode, additional columns are auto-discovered from nested data.
 
----
-
-#### Q: How are time zones handled?
-
-**A:** All dates are interpreted as UTC. Input parameters (`-StartDate`, `-EndDate`) must be in UTC. Output timestamps (`CreationDate`, `CreationTime`) are UTC in ISO 8601 format (`yyyy-MM-ddTHH:mm:ss.fffZ`). Convert local times to UTC before passing to script.
-
----
-
-#### Q: Can I filter by specific users or models at query time?
-
-**A:** Not directly. The `Search-UnifiedAuditLog` cmdlet filters by operation/date only. For user/model filtering, export all data then post-process:
-
-```powershell
-# Export all, filter in Power Query or SQL
-Import-Csv ".\Copilot.csv" | Where-Object {$_.UserId -eq "user@domain.com"}
-```
-
----
-
-#### Q: What's the maximum flatten depth?
-
-**A:**
-
-- **Standard explosion:** 60 levels
-- **Deep flatten (`-ExplodeDeep`):** 120 levels
-- **JSON serialization:** 60 levels (all modes)
-- Constants: `$FlatDepthStandard`, `$FlatDepthDeep`, `$JsonDepth` (can be modified in script)
-
----
-
-#### Q: How long are audit logs retained?
-
-**A:**
-
-- **Audit Standard:** 180 days (changed from 90 days after October 17, 2023)
-- **Audit Premium:** 1 year (E5 licenses) or up to 10 years with add-ons
-- Verify your tenant's retention: `Get-AdminAuditLogConfig`
-
----
-
-#### Q: Can I run this on a schedule?
-
-**A:** Yes. Recommended approach:
-
-```powershell
-# Daily Task Scheduler / Cron job
-pwsh -File "C:\Scripts\PAX\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1" `
-  -Auth Silent `
-  -ExplodeArrays `
-  -OutputFile "C:\AuditArchive\Daily_$(Get-Date -Format 'yyyyMMdd').csv" `
-# Dates default to previous full UTC day when omitted
-```
-
-**Task Scheduler Setup (Windows):**
-
-1. Program: `pwsh.exe`
-2. Arguments: `-File "C:\Scripts\PAX\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1" -Auth Silent
-3. Schedule: Daily, 2:00 AM
-4. Run with: Service account with audit permissions
-
----
-
-#### Q: How do I join audit data with license information?
-
-**A:** Audit logs don't contain license data. Export separately and join:
-
-```powershell
-# Step 1: Export audit data
-.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-
-# Step 2: Export license data (requires Microsoft.Graph module)
-Connect-MgGraph -Scopes "User.Read.All", "Directory.Read.All"
-Get-MgUser -All | Select-Object UserPrincipalName, AssignedLicenses |
-  Export-Csv ".\licenses.csv"
-
-# Step 3: Join in Power Query, SQL, or pandas
-# Match on UserPrincipalName (audit UserId) = UserPrincipalName (license)
-```
-
----
-
-#### Q: What if I see "ExplosionTruncated: TRUE" in output?
-
-**A:** One or more audit records expanded to >1000 rows (per-record cap). This is rare but possible with extremely large arrays.
-
-**Mitigation:**
-
-- Review affected records manually
-- Consider narrower date ranges
-- Filter to specific operations with `-ActivityTypes`
-- Investigate data quality (unusually large arrays may indicate issues)
-
-**Check Metrics:**
-
-```
-Explosion events: 1523 | Max rows in a single record: 847
-WARNING: One or more exploded records exceeded row cap (1000) and were truncated.
-```
-
----
-
-#### Q: Can I use this for non-Copilot activities?
-
-**A:** Absolutely. The script supports ANY operation available in Unified Audit Log:
-
-```powershell
-# SharePoint activity
-.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ActivityTypes FileAccessed,FileModified,FileDeleted `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
-
-# Exchange activity
-.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ActivityTypes MessageSent,MessageReceived,MailItemsAccessed `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
-
-# Teams activity
-.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -ActivityTypes MeetingDetail,MessageSent,CallRecord `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
-```
-
----
-
-#### Q: How do I calculate ROI from the exported data?
-
-**A:** Use token counts and time savings:
-
-```sql
--- Example SQL query on exported data
-SELECT
-  UserId,
-  COUNT(*) as Interactions,
-  SUM(CAST(CopilotEventData_TokensPrompt as INT) +
-      CAST(CopilotEventData_TokensCompletion as INT)) as TotalTokens,
-  AVG(CAST(CopilotEventData_DurationMs as INT)) as AvgLatencyMs,
-  SUM(CASE WHEN CopilotEventData_AcceptanceRate > 0.5 THEN 1 ELSE 0 END) as HighAcceptanceCount
-FROM CopilotAudit
-WHERE CreationDate BETWEEN '2025-10-01' AND '2025-10-31'
-GROUP BY UserId
-```
-
-**ROI Metrics:**
-
-- Token consumption → API costs
-- Acceptance rates → User satisfaction
-- Interaction frequency → Adoption rates
-- Time saved per interaction → Productivity gains
-
----
-
-#### Q: What's the difference between `CreationDate` and `CreationTime`?
-
-**A:**
-
-- **`CreationDate`:** When the audit record was ingested into the log system
-- **`CreationTime`:** When the actual event occurred
-- Usually very close (seconds/minutes apart)
-- Use `CreationTime` for event analysis
-- Use `CreationDate` for audit trail integrity
-
----
-
-#### Q: Can I export to formats other than CSV?
-
-**A:** CSV is the only native format. For other formats, post-process:
-
-```powershell
-# CSV to JSON
-$data = Import-Csv ".\Copilot.csv"
-$data | ConvertTo-Json -Depth 10 | Out-File ".\Copilot.json"
-
-# CSV to Excel (requires ImportExcel module)
-Install-Module -Name ImportExcel
-Import-Csv ".\Copilot.csv" | Export-Excel ".\Copilot.xlsx" -AutoSize -TableName "CopilotAudit"
-
-# CSV to Azure SQL / Synapse
-# Use Data Factory, SSIS, or bcp utility
-```
-
----
-
-#### Q: How do I handle very large exports (millions of rows)?
-
-**A:** Chunking strategies:
-
-**Option 1: Date Sharding**
-
-```powershell
-# Process one week at a time
-$start = Get-Date "2025-01-01"
-$end = Get-Date "2025-12-31"
-while ($start -lt $end) {
-  $weekEnd = $start.AddDays(7)
-  if ($weekEnd -gt $end) { $weekEnd = $end }
-
-  .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-    -StartDate $start.ToString('yyyy-MM-dd') `
-    -EndDate $weekEnd.ToString('yyyy-MM-dd') `
-    -OutputFile ".\Archive\Copilot_$($start.ToString('yyyyMMdd')).csv" `
-  $start = $weekEnd
-}
-```
-
-**Option 2: Streaming Settings**
-
-```powershell
-# Optimize for large datasets
-.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
-  -StreamingSchemaSample 2000 `
-  -StreamingChunkSize 10000 `
-  -StartDate 2025-01-01 `
-  -EndDate 2025-12-31
-```
-
-**Option 3: Direct DB Load**
-
-```powershell
-# Export and load in batches
-.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-# Then use SQL BULK INSERT or Azure Data Factory
-```
+**Q: What's the difference between `-ExplodeArrays` and `-ExplodeDeep`?**  
+A: `-ExplodeArrays` creates 35 columns with array elements as separate rows. `-ExplodeDeep` adds all nested `CopilotEventData.*` fields as additional columns (wide schema).
 
 ---
 
 ## Known Limitations
 
-| Area                         | Limitation                                         | Mitigation                                               |
-| ---------------------------- | -------------------------------------------------- | -------------------------------------------------------- |
-| **Service Cap**              | 10,000 records per `Search-UnifiedAuditLog` window | Reduce `-BlockHours`, script auto-subdivides             |
-| **Explosion Row Cap**        | 1,000 exploded rows per original record            | Review affected records, filter operations               |
-| **JSON Depth**               | Serialization depth 60 levels                      | Extremely rare; adjust `$JsonDepth` constant if needed   |
-| **Flatten Depth**            | Standard 60 / Deep 120 recursion levels            | Adjust `$FlatDepthStandard` / `$FlatDepthDeep` constants |
-| **Replay Non-Exploded**      | Cannot replay in 1:1 standard mode                 | Use live query for standard mode output                  |
-| **Parallel Single Activity** | Parallel only helps multi-activity sets            | Accept serial path or add more activity types            |
-| **Module Dependency**        | Requires ExchangeOnlineManagement                  | Auto-check at runtime; install if missing                |
-| **Date Filtering**           | UTC only, no time-of-day granularity               | Filter by hour post-export if needed                     |
-| **User/Model Filtering**     | No source filtering in query                       | Post-process CSV for user/model filtering                |
-| **Real-Time**                | Not designed for streaming/live monitoring         | Use Microsoft Sentinel for real-time scenarios           |
-| **Chain of Custody**         | No cryptographic hashing/signing                   | Implement external hash verification if required         |
+| Area                        | Limitation / Behavior                                                          | Mitigation / Guidance                                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| Unified Audit 10K cap       | Each `Search-UnifiedAuditLog` window tops at 10,000 records                    | Script auto-subdivides; if still saturated, re-run with smaller `-BlockHours` (≤30m)                         |
+| Row explosion cap           | Per original record explosion capped at 1,000 rows (`ExplosionTruncated` flag) | Investigate fan-out; consider narrower date, filter operations, or deep analysis separately                  |
+| JSON / flatten depth        | JSON serialization depth fixed at 60; deep flatten recursion capped at 120     | Extremely deep structures beyond caps truncated; adjust constants if required                                |
+| Memory usage                | Streaming, chunked export by default                                           | Tune with `-StreamingSchemaSample` / `-StreamingChunkSize`; shard by date for extreme spans                  |
+| Replay mode                 | Non‑exploded mode disabled; always at least exploded schema                    | Use live mode if raw 1:1 row shape required                                                                  |
+| Parallel mode               | Only helps multi-activity sets; single high-volume activity remains serial     | Add more activity types or accept serial path                                                                |
+| Time zones                  | Dates interpreted as UTC; `yyyy-MM-dd` must be UTC                             | Convert local times to UTC prior to invocation to avoid DST drift                                            |
+| Streaming export            | Always on (chunked)                                                            | Adjust sample/chunk sizes for schema width & memory balance                                                  |
 
-**Architectural Constraints:**
+### Additional Notes
 
-- **Memory:** Streaming mitigates most issues; extremely wide schemas (>2000 cols) may challenge chunk processing
-- **Disk I/O:** CSV writes are chunked and flushed; ensure sufficient disk space (estimate 1-5KB per row)
-- **Network:** Relies on stable internet; transient failures handled via retry logic
-- **Authentication:** Token expiration during long runs (hours+) may require re-authentication
+**Streaming Export Behavior:**
+
+- Samples initial records (default 2000) to finalize column schema
+- Writes header once, then processes rows in chunks (default 5000)
+- Auto-adjusts chunk size based on column count (>250/500/750/1000 columns → smaller chunks)
+- Boosts chunk size for narrow schemas (≤60 columns → up to 15K)
+- New columns discovered after schema freeze are ignored (warning emitted)
+
+**Fast CSV Writer:**
+
+- Uses in-process UTF‑8 `StreamWriter` with manual escaping
+- No repeated `Export-Csv` invocations
+- Significantly faster for large exports (>300K rows)
+- Transparent to user (no parameter required)
+
+**Timestamp Normalization:**
+
+- All timestamps output in UTC
+- ISO 8601 format with millisecond precision: `yyyy-MM-ddTHH:mm:ss.fffZ`
+- Eliminates locale ambiguity
+- Simplifies downstream parsing
+
+**Parallel Replay Explosion (PS 7+ only):**
+
+- When replaying raw CSV with large record count
+- Switches to controlled parallel explosion
+- Dynamic throttle + batch resizing (targets ~0.8s–2.5s batches)
+- Metrics emitted at completion
 
 ---
 
@@ -1919,164 +994,43 @@ while ($start -lt $end) {
 
 ### Data Handling
 
-**No Anonymization:**
+- **Read-Only Operations:** Script never modifies audit logs or tenant configuration
+- **Credential Security:** Authentication credentials never written to disk (memory only)
+- **Audit Trail:** All operations logged with timestamps and parameters
+- **No External Services:** No data transmitted to third-party services
+- **Local Processing:** All data processing occurs on the execution machine
 
-- Script exports data as-is from audit logs
-- User identities (UPN), IP addresses, and content metadata included
-- Treat output files as sensitive/confidential
+### Permissions & Least Privilege
 
-**Access Control:**
+**Recommended:**
 
-- Store CSV and log files in secure locations
-- Apply ACLs to restrict access to authorized personnel only
-- Consider encryption at rest for archived files
+- Use **View-Only Audit Logs** role (read-only)
+- Create dedicated service account for automated runs
+- Limit access to output files (contain sensitive audit data)
+- Review Microsoft Purview RBAC documentation
 
-**Data Retention:**
+**Not Required:**
 
-- Apply external retention policies matching regulatory requirements
-- Audit logs have built-in retention; exports are YOUR responsibility
-- Document retention schedule and destruction procedures
-
-### Network Security
-
-**Endpoints Accessed:**
-
-- `*.protection.outlook.com` (Exchange Online Management)
-- `login.microsoftonline.com` (Azure AD authentication)
-- `*.office365.com` (Microsoft 365 services)
-
-**Firewall Rules:**
-
-- Ensure outbound HTTPS (443) allowed to above domains
-- Use proxy/PAC files if organizational policy requires
-
-### Authentication Security
-
-**Credential Storage:**
-
-- Script does NOT store credentials to disk
-- Credentials held in memory only during execution
-- Clear PowerShell session history if credential prompts used
-
-**Token Caching:**
-
-- ExchangeOnlineManagement module may cache tokens per Microsoft Graph SDK behavior
-- Tokens stored in user profile (encrypted by OS)
-- Use `-Auth Silent` for token reuse; automatic expiration after ~1 hour
-
-**Recommended Practices:**
-
-- Use service accounts with minimum required permissions (View-Only Audit Logs)
-- Enable MFA on accounts with audit access
-- Rotate service account credentials regularly
-- Monitor audit logs for script usage (log the logger!)
+- No Global Administrator rights needed
+- No tenant configuration changes
+- No write access to audit logs
 
 ### Compliance Considerations
 
-**Regulatory Frameworks:**
+- **Data Residency:** Export files remain on execution machine (control geography)
+- **Retention:** Manage CSV retention per organizational policies
+- **Encryption:** Consider encrypting output files for sensitive environments
+- **Access Control:** Limit script execution to authorized personnel
+- **Audit Review:** Regularly review log files for anomalies
 
-- **GDPR:** Audit data may contain PII; apply data minimization and purpose limitation
-- **HIPAA:** Healthcare audit data requires BAA coverage and encryption
-- **SOX:** Financial audit trails should include hash verification
-- **ISO 27001:** Document script usage in ISMS procedures
+### Security Best Practices
 
-**Audit Trail:**
-
-- Script logs all executions with timestamps, parameters, and outcomes
-- Retain log files alongside CSV exports for complete audit trail
-- Consider forwarding logs to SIEM (Splunk, Sentinel, etc.)
-
-**Validation:**
-
-- Compare record counts against Microsoft Purview compliance portal
-- Spot-check exported data against source audit logs
-- Validate schema consistency across runs
-
-### Responsible Disclosure
-
-Security vulnerabilities should be reported privately:
-
-1. **DO NOT** open public GitHub issues for security concerns
-2. Follow process in **[SECURITY.md](./SECURITY.md)**
-3. Allow reasonable time for patching before public disclosure
-4. Security researchers eligible for acknowledgment (with permission)
-
----
-
-## Contributing
-
-Community contributions are welcome! By participating, you agree to follow our **[Code of Conduct](./CODE_OF_CONDUCT.md)**.
-
-### Contribution Workflow
-
-**Step 1: Open an Issue**
-
-- Describe enhancement, bug, or feature request
-- Include repro steps for bugs (PowerShell version, parameters, error messages)
-- Tag appropriately (bug, enhancement, documentation, etc.)
-
-**Step 2: Fork & Branch**
-
-```bash
-git clone https://github.com/<your-username>/PAX.git
-cd PAX
-git checkout -b feat/short-description  # or fix/short-description
-```
-
-**Step 3: Make Changes**
-
-- Keep commits focused and atomic
-- Update documentation if behavior changes
-- Add examples for new features
-- Test with both PowerShell 5.1 and 7+
-
-**Step 4: Submit Pull Request**
-
-- Reference the related issue number
-- Describe changes and rationale
-- Include before/after examples for UI/output changes
-- Respond to review feedback
-
-**Step 5: Review & Merge**
-
-- Maintainers will review within 1-2 weeks (best effort)
-- CI validates syntax and basic execution (if configured)
-- Squash commits if requested for clean history
-
-### Scope Guidelines
-
-**In-Scope Contributions:**
-
-- Bug fixes (authentication, parsing, performance)
-- New explosion modes or schema variations
-- Performance optimizations (memory, speed, parallelism)
-- Documentation improvements (examples, FAQ, troubleshooting)
-- Error handling and retry logic enhancements
-- Support for additional activity types
-
-**Out-of-Scope:**
-
-- Real-time streaming or event-driven architectures (different design paradigm)
-- GUI/web interfaces (CLI-first philosophy)
-- Non-audit-log data sources (scope creep)
-- Major rewrites without prior discussion (open issue first!)
-
-### Code Standards
-
-- **Style:** Follow existing PowerShell conventions (PascalCase functions, camelCase variables)
-- **Comments:** Explain WHY, not WHAT (code should be self-documenting)
-- **Error Handling:** Use try/catch with actionable error messages
-- **Logging:** Use `Write-LogHost` for user-facing messages, `Write-Log` for file-only
-- **Testing:** Validate with `-StartDate 2025-01-01 -EndDate 2025-01-02` (minimal run)
-
-### Security-Impacting Changes
-
-Changes affecting authentication, script execution policy, module installation, or credential handling require:
-
-- Detailed risk assessment in PR description
-- Consideration of least-privilege principles
-- Validation on multiple OS platforms (Windows, macOS, Linux for PS7+)
-- Documentation of security tradeoffs
+1. **Execution Policy:** Use `Bypass` or `RemoteSigned` (avoid `Unrestricted`)
+2. **Script Verification:** Validate script hash before execution
+3. **Credential Management:** Avoid storing passwords in scripts (use `-Auth Silent` or `-Auth DeviceCode`)
+4. **Network Security:** Ensure TLS 1.2+ for Exchange Online connections
+5. **Output Protection:** Store CSV files in encrypted volumes or secure file shares
+6. **Access Logging:** Enable filesystem auditing for output directories
 
 ---
 
@@ -2092,428 +1046,19 @@ Changes affecting authentication, script execution policy, module installation, 
 
 ## Additional Resources
 
-### Documentation
+### Microsoft Documentation
 
-| `PacingMs` | 0 | Inter-page delay for throttle tuning |
-| `ActivityTypes` | CopilotInteraction | Operations set |
-| `ExplodeArrays` | (off) | Purview exploded 35-column schema |
-| `ExplodeDeep` | (off) | 35-column schema + deep CopilotEventData.\* |
-| `RAWInputCSV` | (blank) | Offline replay of prior raw Purview audit CSV (forces explosion) |
-| `MaxConcurrency` | 2 | Per-group concurrency cap |
-| `ParallelMode` | Off | Off / On / Auto (heuristic) |
-| `MaxParallelGroups` | 3 | Limit concurrent groups |
-| `ExportProgressInterval` | 10 | Row interval for export updates |
+- **[Microsoft Purview Audit (Premium)](https://learn.microsoft.com/en-us/purview/audit-premium)** - Overview of audit capabilities
+- **[Audit log activities](https://learn.microsoft.com/en-us/purview/audit-log-activities)** - Complete list of auditable activities
+- **[Search the audit log](https://learn.microsoft.com/en-us/purview/audit-log-search)** - Audit log search basics
+- **[Exchange Online PowerShell](https://learn.microsoft.com/en-us/powershell/exchange/exchange-online-powershell)** - Exchange Online module documentation
 
-Date range tip: If 10K window warnings appear, reduce `BlockHours` or shorten the total span.
+### Related Tools
 
-Live date defaults: Omitting BOTH `StartDate` and `EndDate` in live mode auto-runs for the previous full UTC day. Provide both to override (partial specification is rejected).
-Replay date behavior: With `-RAWInputCSV`, omitting `StartDate`/`EndDate` applies no date filtering (entire CSV ingested). Supplying either/both filters by `CreationDate` (inclusive lower / exclusive upper).
-
-RAWInputCSV notes: When you supply `-RAWInputCSV` the script skips live queries and always produces at least the 35‑column exploded schema. Allowed additional switches with `-RAWInputCSV`: `StartDate`, `EndDate`, `ActivityTypes`, `OutputFile`, `-ExplodeDeep`, `-ExportProgressInterval`, `-StreamingSchemaSample`, `-StreamingChunkSize`. Disallowed (error if present): `BlockHours`, `ResultSize`, `PacingMs`, `Auth`, `ParallelMode`, `MaxParallelGroups`, `MaxConcurrency`, `EnableParallel`.
-
-Replay progress weighting: Because no live query phase runs, the Query weight is removed and the Explosion / Export weights are re-normalized so Overall begins at 0% (no immediate 30% jump after trivial ingestion). Live mode retains 30/60/10 weighting (Query/Explosion/Export) when explosion is active; non-exploded runs use 80/20 (Query/Export).
+- **[Power BI](https://powerbi.microsoft.com/)** - Visualize exported audit data
+- **[Azure Synapse Analytics](https://azure.microsoft.com/en-us/products/synapse-analytics/)** - Data warehousing for large audit datasets
+- **[Microsoft Sentinel](https://azure.microsoft.com/en-us/products/microsoft-sentinel/)** - SIEM integration for audit logs
 
 ---
 
-### 8. Outputs
-
-| File | Contents                                          |
-| ---- | ------------------------------------------------- |
-| CSV  | Structured (exploded if chosen) rows              |
-| LOG  | Parameters, adaptive decisions, warnings, metrics |
-
-Behavioral notes:
-
-- Header-only stability: If zero rows are returned (no matching audit events after filtering) the script still writes a CSV containing ONLY the header row (base 29 columns plus any deep `CopilotEventData.*` columns if `-ExplodeDeep`). This guarantees downstream pipelines always see a stable schema instead of a missing file.
-- Encoding: UTF-8 (no BOM) via in-process `StreamWriter`.
-- Line endings: CRLF on Windows, LF elsewhere (PowerShell default). Either is generally auto-handled by BI tools.
-
----
-
-### 9. Purview Exploded Schema (Base 29 Columns)
-
-`RecordId`, `CreationDate`, `RecordType`, `Operation`, `UserId`, `AssociatedAdminUnits`, `AssociatedAdminUnitsNames`, `AgentId`, `AgentName`, `AppIdentity_AppId`, `AppIdentity_DisplayName`, `AppIdentity_PublisherId`, `ApplicationName`, `CreationTime`, `ClientRegion`, `Audit_UserId`, `AppHost`, `ThreadId`, `Context_Id`, `Context_Type`, `Message_Id`, `Message_isPrompt`, `AccessedResource_Action`, `AccessedResource_PolicyDetails`, `AccessedResource_SiteUrl`, `AISystemPlugin_Id`, `AISystemPlugin_Name`, `ModelTransparencyDetails_ModelName`, `MessageIds`.
-
-Deep mode appends additional `CopilotEventData.*` flattened columns (dynamic; order stable after base 29). Standard mode instead keeps a single `CopilotEventData` JSON blob.
-
-Date/time normalization:
-
-- `CreationDate` (record ingestion) and `CreationTime` (event occurrence) are emitted in invariant ISO 8601 UTC with millisecond precision: `yyyy-MM-ddTHH:mm:ss.fffZ`.
-- All other date/time fields introduced in deep mode (if any) follow the same normalization strategy.
-- Input `-StartDate` / `-EndDate` are interpreted as UTC dates (midnight boundaries) before filtering.
-
----
-
-### 10. Handling the 10K Per-Window Limit
-
-Service returns max 10,000 for a single `Search-UnifiedAuditLog` window. Script behavior:
-
-1. Emits CRITICAL warning when exactly 10K boundary hit.
-2. Notes the affected time window.
-3. Auto-subdivides (binary or aggressive) if feasible.
-4. Advises re-run with finer granularity (≤ 30 min) if still saturated.
-
----
-
-### 11. Offline Replay (`-RAWInputCSV`)
-
-Use when you already have a raw Unified Audit export (containing `AuditData` JSON column). The script will:
-
-1. Skip authentication and live queries entirely (no ExchangeOnline connection).
-2. Force Purview row explosion (equivalent to `-ExplodeArrays`) even if you don't specify it **(so adding `-ExplodeArrays` while using `-RAWInputCSV` is redundant but harmless)**.
-3. Optionally honor `-ExplodeDeep` (if supplied) to append deep `CopilotEventData.*` columns.
-4. Treat each CSV row as if returned by `Search-UnifiedAuditLog` and then explode.
-
-Optional filters when using `-RAWInputCSV`:
-
-| Filter Param    | Behavior (Replay Mode)                                                                 |
-| --------------- | -------------------------------------------------------------------------------------- |
-| `StartDate`     | Inclusive lower UTC boundary (row `CreationDate` >= StartDate) if provided             |
-| `EndDate`       | Exclusive upper UTC boundary (row `CreationDate` < EndDate) if provided                |
-| `ActivityTypes` | Only keep rows whose `Operation` matches one of the provided values (case-insensitive) |
-
-Ideal for: reproducible transformations, development against synthetic datasets, or working offline.
-
-Example commands (replay):
-
-```powershell
-# Simple replay (forced explosion implied)
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile .\replay_exploded.csv
-
-# Replay with date & activity filtering + deep flatten
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction -OutputFile .\replay_deep.csv
-
-# Replay limiting to multiple operations
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ActivityTypes CopilotInteraction MessageSent FileAccessed -OutputFile .\replay_multi.csv
-```
-
-Limitations: Does not re-profile adaptive block sizing (query metrics minimal). Ensure source CSV includes `AuditData`. Non‑exploded mode is disabled in replay for consistency.
-
-Safeguard: If you provide `-RAWInputCSV`, you must NOT supply live query / performance parameters (`BlockHours`, `ResultSize`, `PacingMs`, `Auth`, `ParallelMode`, `MaxParallelGroups`, `MaxConcurrency`, `EnableParallel`). These are ignored in offline mode and will trigger an error if present. Filtering parameters (`StartDate`, `EndDate`, `ActivityTypes`) remain allowed and optional.
-
-### 11a. Parameter Applicability (Live vs. Replay)
-
-| Parameter                 | Live Mode        | Replay (-RAWInputCSV) | Notes                                                              |
-| ------------------------- | ---------------- | --------------------- | ------------------------------------------------------------------ |
-| `StartDate`               | Yes (required)   | Optional (filter)     | Inclusive lower UTC boundary in both; replay filters existing rows |
-| `EndDate`                 | Yes (required)   | Optional (filter)     | Exclusive upper UTC boundary; replay filters existing rows         |
-| `OutputFile`              | Yes              | Yes                   | Target CSV path (always honored)                                   |
-| `Auth`                    | Yes              | Error                 | Authentication skipped in replay                                   |
-| `BlockHours`              | Yes              | Error                 | Adaptive query window sizing not used in replay                    |
-| `ResultSize`              | Yes              | Error                 | Pagination sizing irrelevant in replay                             |
-| `PacingMs`                | Yes              | Error                 | Throttle pacing not applicable offline                             |
-| `ActivityTypes`           | Yes              | Optional (filter)     | Live=operations to query; replay=post-filter by Operation          |
-| `ExplodeArrays`           | Optional         | Forced (redundant)    | Replay always produces at least exploded schema                    |
-| `ExplodeDeep`             | Optional         | Optional              | Adds deep CopilotEventData.\* columns in both                      |
-| `RAWInputCSV`             | (unused)         | Required to enable    | Presence switches script to replay mode                            |
-| `MaxConcurrency`          | Yes (PS7+)       | Error                 | Parallelism not executed in replay                                 |
-| `ParallelMode`            | Yes (PS7+)       | Error                 | Parallel heuristics skipped offline                                |
-| `MaxParallelGroups`       | Yes (PS7+)       | Error                 | Group parallelization not used offline                             |
-| `EnableParallel` (legacy) | Yes (maps to On) | Error                 | Legacy synonym still enforced as disallowed in replay              |
-| `ExportProgressInterval`  | Optional         | Optional              | Affects row progress emission; replay counts exploded rows         |
-| `StreamingSchemaSample`   | Optional         | Optional              | Initial sampling for column discovery                              |
-| `StreamingChunkSize`      | Optional         | Optional              | CSV flush batch size                                               |
-
-Legend: "Error" = script terminates if provided with `-RAWInputCSV`.
-
-### 12. Parallel Mode
-
-| Mode | Use When                             | Avoid When                     |
-| ---- | ------------------------------------ | ------------------------------ |
-| Off  | Predictable processing               | Large multi-activity harvests  |
-| On   | You need maximum speed & PS 7+       | High throttle sensitivity      |
-| Auto | Mixed workloads; let heuristics gate | You demand guaranteed parallel |
-
-Auto criteria: PS 7+, ≤1 High group, ≥1 Medium/Low, total activities ≤15, >1 group, concurrency >1.
-
----
-
-### 13. Privacy / Compliance
-
-- No anonymization/redaction
-- Treat exported identities as sensitive
-- Restrict access & apply retention externally
-
----
-
-### 13. Troubleshooting (Common)
-
-| Symptom                         | Cause                     | Action                                                                                  |
-| ------------------------------- | ------------------------- | --------------------------------------------------------------------------------------- |
-| 10K limit warning               | Dense window              | Reduce `BlockHours` / narrow range                                                      |
-| Zero records (header-only file) | No activity / permissions | Verify RBAC / test recent small window (header-only CSV is expected schema placeholder) |
-| Frequent throttling             | Service load              | Add `-PacingMs`, accept retries                                                         |
-| Slow deep mode                  | Large nested arrays       | Start with standard mode first                                                          |
-| Parallel ignored                | PS 5.1 / heuristic off    | Force with `-ParallelMode On` (PS7+)                                                    |
-
----
-
-### 14. Security Recommendations
-
-- Use modern auth (WebLogin / DeviceCode)
-- Store CSV + log in secure location
-
----
-
-### 15. Versioning
-
-`$ScriptVersion` logged (header & completion). Git history = authoritative change trail (no separate CHANGELOG).
-
----
-
-### 16. Known Limitations & Operational Notes
-
-| Area                        | Limitation / Behavior                                                          | Mitigation / Guidance                                                                                        |
-| --------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| Unified Audit 10K cap       | Each `Search-UnifiedAuditLog` window tops at 10,000 records                    | Script auto-subdivides; if still saturated, re-run with smaller `-BlockHours` (≤30m)                         |
-| Row explosion cap           | Per original record explosion capped at 1,000 rows (`ExplosionTruncated` flag) | Investigate fan-out; consider narrower date, filter operations, or deep analysis separately                  |
-| JSON / flatten depth        | JSON serialization depth fixed at 60; deep flatten recursion capped at 120     | Extremely deep structures beyond caps truncated; adjust constants `$JsonDepth`, `$FlatDepthDeep` if required |
-| Memory usage                | Streaming, chunked export by default                                           | Tune with `-StreamingSchemaSample` / `-StreamingChunkSize`; shard by date for extreme spans                  |
-| Replay mode                 | Non‑exploded mode disabled; always at least exploded schema                    | Use live mode if raw 1:1 row shape required                                                                  |
-| Parallel mode               | Only helps multi-activity sets; single high-volume activity remains serial     | Add more activity types or accept serial path; do not force parallel for a lone high group                   |
-| ExchangeOnline module       | Any reasonably current version works (baseline enforcement removed)            | Optional: update to latest for new auth features, but not required                                           |
-| Time zones                  | Dates interpreted as UTC; `yyyy-MM-dd` must be UTC                             | Convert local times to UTC prior to invocation to avoid DST drift                                            |
-| Explosion truncation signal | Truncated rows flagged only via `ExplosionTruncated` column                    | Downstream pipelines should check & alert if true appears                                                    |
-| Streaming export            | Always on (chunked)                                                            | Adjust sample/chunk sizes for schema width & memory balance                                                  |
-
-Streaming export (default): samples an initial set (default 2k via `-StreamingSchemaSample`) to finalize the column schema, writes header, then processes & flushes rows in chunks (default 5k via `-StreamingChunkSize`) to bound peak memory. After schema freeze the chunk size auto-adjusts LOWER when column count exceeds thresholds ( >250, >500, >750, >1000 ) to maintain memory efficiency and AUTO-BOOSTS for narrow schemas (≤60 columns) up to 15K to reduce flush overhead. New columns discovered after schema freeze are counted & ignored (warning emitted); increase sample size if needed.
-
-Fast CSV writer: The export path now uses an in-process UTF‑8 `StreamWriter` + manual escaping rather than repeated `Export-Csv` invocations. Benefits: fewer allocations, no header re-discovery per chunk, materially lower overhead on large (>300K rows) replay transformations. This is transparent—no parameter required.
-
-Timestamp normalization: All emitted timestamps are already in UTC and rendered in ISO 8601 with millisecond precision (`yyyy-MM-ddTHH:mm:ss.fffZ`) to simplify downstream parsing and eliminate locale ambiguity.
-
-Parallel replay explosion (PS 7+ only): When replaying a raw CSV and the remaining unprocessed records substantially exceed the schema sample, the script switches to a controlled parallel explosion phase (dynamic throttle + batch resizing targeting ~0.8s–2.5s batches). Metrics `ParallelBatchSizeFinal`, `ParallelThrottleFinal`, and structured explosion counters are emitted at completion.
-
----
-
-### 17. FAQ
-
-**Modify data?** No (read-only).  
-**Timezone?** Input interpreted as UTC; output UTC.  
-**Filter by user/model at source?** Not currently—filter after export.  
-**Flatten depth?** Standard explode: 60; deep (`-ExplodeDeep`): 120; JSON serialization depth: 60 (constants: `$FlatDepthStandard`, `$FlatDepthDeep`, `$JsonDepth`).
-
----
-
-### 18. Support & Feedback
-
-Open a GitHub Issue (no SLA). Include PowerShell version, log excerpt, parameter line (omit sensitive paths).
-
----
-
-### 19. License & Disclaimer
-
-MIT License. “AS IS” – no warranties or official support. Validate fit for purpose before production use.
-
----
-
-### 20. Power BI (Preview Guidance)
-
-1. Get Data → Text/CSV → pick export.
-2. Set data types (e.g., `CreationTime` Date/Time; tokens numeric).
-3. Split semicolon multi-value fields for dimension tables as needed.
-4. Create measures (Interactions, Avg Tokens, Acceptance Rate).
-5. Build visuals (trend, latency distribution, acceptance funnel).
-
----
-
-### 21. Execution Flow
-
-1. Connect & collect tenant indicators
-2. Build query plan (volume-classification)
-3. Adaptive block querying + pagination
-4. Optional parallel groups (PS7+)
-5. Transform (explode/flatten) & enrich
-6. Metrics + limit warnings
-7. Export CSV + log summary
-
----
-
-### 22. Command Reference
-
-```powershell
-# Standard (1:1)
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile .\Copilot.csv
-
-# Array explosion
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile .\Copilot_exploded.csv
-
-# Deep flatten + explosion
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile .\Copilot_deep.csv
-
-# Offline replay (forced explosion)
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile .\Copilot_replay_exploded.csv
-
-# Offline replay deep flatten + filtering
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction -OutputFile .\Copilot_replay_deep.csv
-
-# Parallel heuristic (PS7+)
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ParallelMode Auto -ActivityTypes CopilotInteraction MessageSent FileAccessed
-
-# Force parallel
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ParallelMode On -MaxConcurrency 3 -MaxParallelGroups 2 -ActivityTypes CopilotInteraction MessageSent
-
-# Deep flatten (wide schema) – advanced streaming tuning
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 4000 -StreamingChunkSize 3000 -OutputFile .\Copilot_deep_tuned.csv
-
-# Extremely wide / memory sensitive: increase sample to capture columns, shrink chunk to lower peak memory
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 6000 -StreamingChunkSize 1500 -OutputFile .\Copilot_deep_memoryguard.csv
-
-# Faster header freeze for narrow schemas (accept risk of late columns ignored)
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 800 -StreamingChunkSize 6000 -OutputFile .\Copilot_deep_fastfreeze.csv
-
-# Replay deep flatten with tuned streaming (large historical file)
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StreamingSchemaSample 5000 -StreamingChunkSize 2500 -OutputFile .\Copilot_replay_deep_tuned.csv
-```
-
-Windows PowerShell 5.1: prefix with `powershell -File`; PS 7+: `pwsh -File` (syntax identical).
-
----
-
-### 23. Comprehensive Examples
-
-Below is a fuller catalog of invocation patterns. Adjust paths/dates as needed. Dates are UTC.
-
-```powershell
-# 1. Minimal (defaults for everything else)
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-
-# 2. Specify explicit output path (creates folder if missing)
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Data\Copilot\copilot_20251001.csv
-
-# 3. Multiple activity types (mix of presumed high & medium volume)
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-03 -ActivityTypes CopilotInteraction MessageSent FileAccessed MeetingDetail
-
-# 4. Narrow block size to improve completeness under heavy load
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -StartDate 2025-10-05 -EndDate 2025-10-05 -BlockHours 0.25
-
-# 5. Larger initial block (sparse historical data, multi-day span)
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -StartDate 2025-09-01 -EndDate 2025-09-04 -BlockHours 4
-
-# 6. Reduce ResultSize (fetch fewer records per window intentionally)
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -ResultSize 2500
-
-# 7. Add pacing between pages (mitigate throttling bursts)
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -StartDate 2025-10-02 -EndDate 2025-10-03 -PacingMs 500
-
-# 8. Array explosion only (one extra row per element of target arrays)
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile .\copilot_exploded.csv
-
-# 9. Deep flatten (explosion + wide column set)
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile .\copilot_deep.csv
-
-# 10. Parallel (forced) with tuned concurrency (PS 7+ only)
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ParallelMode On -MaxConcurrency 4 -MaxParallelGroups 3 -ActivityTypes CopilotInteraction MessageSent FileAccessed MeetingDetail SearchQueryPerformed
-
-# 11. Parallel heuristic (Auto) – lets script decide
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -ParallelMode Auto -ActivityTypes CopilotInteraction MessageSent FileAccessed
-
-# 12. Disable progress UI (clean logs / quiet CI runs)
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-# 13. Increase export progress granularity (update every 1 row)
-./PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -StartDate 2025-10-01 -EndDate 2025-10-01 -ExportProgressInterval 1
-
-# 14. Device code authentication (good for headless terminals)
-./CopilotInteraction_Purview_Export.ps1 -Auth DeviceCode -StartDate 2025-10-01 -EndDate 2025-10-02
-
-# 15. Interactive credential prompt (stores credential only in memory)
-./CopilotInteraction_Purview_Export.ps1 -Auth Credential -StartDate 2025-10-01 -EndDate 2025-10-02
-
-# 16. Attempt silent auth first (fall back if not applicable)
-./CopilotInteraction_Purview_Export.ps1 -Auth Silent -StartDate 2025-10-01 -EndDate 2025-10-02
-
-# 17. Long span + conservative block + pacing (dense tenant mitigation)
-./CopilotInteraction_Purview_Export.ps1 -StartDate 2025-09-20 -EndDate 2025-09-27 -BlockHours 0.5 -PacingMs 250 -ActivityTypes CopilotInteraction MessageSent FileAccessed
-
-# 18. Focus only on Copilot interactions with deeper structure for BI
-./CopilotInteraction_Purview_Export.ps1 -ExplodeDeep -ActivityTypes CopilotInteraction -StartDate 2025-10-01 -EndDate 2025-10-02
-
-# 19. Mixed mode: multiple activities but only explode arrays (faster than deep)
-./CopilotInteraction_Purview_Export.ps1 -ExplodeArrays -ActivityTypes CopilotInteraction MessageSent -StartDate 2025-10-01 -EndDate 2025-10-02
-
-# 20. Tune for very sparse historical backfill (huge blocks)
-./CopilotInteraction_Purview_Export.ps1 -StartDate 2025-07-01 -EndDate 2025-07-15 -BlockHours 12 -ActivityTypes CopilotInteraction
-
-# 21. Combine: deep flatten + parallel + pacing (aggressive, watch throttling)
-./CopilotInteraction_Purview_Export.ps1 -ExplodeDeep -ParallelMode On -MaxConcurrency 3 -PacingMs 200 -StartDate 2025-10-01 -EndDate 2025-10-02
-
-# 22. Small block hours when consistently hitting 10K in larger windows
-./CopilotInteraction_Purview_Export.ps1 -BlockHours 0.25 -StartDate 2025-10-03 -EndDate 2025-10-03 -ActivityTypes CopilotInteraction
-
-# 23. Custom output directory with spaces (quote the path)
-./CopilotInteraction_Purview_Export.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile "C:\Data Exports\Copilot\copilot.csv"
-
-# 24. Sequential override (explicit) even if Auto would enable parallel
-./CopilotInteraction_Purview_Export.ps1 -ParallelMode Off -ActivityTypes CopilotInteraction MessageSent FileAccessed -StartDate 2025-10-01 -EndDate 2025-10-02
-
-# 25. Lower ResultSize + pacing to reduce transient throttling noise
-./CopilotInteraction_Purview_Export.ps1 -ResultSize 4000 -PacingMs 300 -StartDate 2025-10-01 -EndDate 2025-10-01
-
-# 26. Export with minimal console noise (quiet mode + custom file)
-./CopilotInteraction_Purview_Export.ps1 -NoProgress -OutputFile C:\Temp\quiet_run.csv -StartDate 2025-10-01 -EndDate 2025-10-01
-
-# 27. High fan-out: many operations, let Auto decide; if disabled you can review heuristics in log
-./CopilotInteraction_Purview_Export.ps1 -ParallelMode Auto -ActivityTypes CopilotInteraction MessageSent FileAccessed MeetingDetail SearchQueryPerformed FileModified MailItemsAccessed -StartDate 2025-10-01 -EndDate 2025-10-02
-
-# 28. PowerShell 5.1 invocation (explicit host) standard mode
-powershell -ExecutionPolicy Bypass -File .\CopilotInteraction_Purview_Export.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-
-# 29. PowerShell 7 (pwsh) parallel deep flatten
-pwsh -File .\CopilotInteraction_Purview_Export.ps1 -ExplodeDeep -ParallelMode On -MaxConcurrency 4 -StartDate 2025-10-01 -EndDate 2025-10-01
-
-# 30. Credential reuse pattern (capture credential once)
-$cred = Get-Credential
-./CopilotInteraction_Purview_Export.ps1 -Auth Credential -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction MessageSent -OutputFile C:\Temp\copilot_secure.csv
-
-# 31. Silent auth attempt (useful in managed workstation with cached token)
-./CopilotInteraction_Purview_Export.ps1 -Auth Silent -ActivityTypes CopilotInteraction -StartDate 2025-10-01 -EndDate 2025-10-02
-
-# 32. Very granular export progress (for small test windows)
-./CopilotInteraction_Purview_Export.ps1 -ExportProgressInterval 2 -StartDate 2025-10-01 -EndDate 2025-10-01
-```
-
-```powershell
-# 33. Offline replay (basic forced explosion)
-./CopilotInteraction_Purview_Export.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile .\replay_exploded.csv
-
-# 34. Offline replay with date filtering & selected operations
-./CopilotInteraction_Purview_Export.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction MessageSent -OutputFile .\replay_filtered.csv
-
-# 35. Offline replay deep flatten for BI readiness
-./CopilotInteraction_Purview_Export.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -ActivityTypes CopilotInteraction -OutputFile .\replay_deep.csv
-
-# 36. (Demonstration) Disallowed param with RAWInputCSV (will error) – do NOT use together
-# ./CopilotInteraction_Purview_Export.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ResultSize 5000
-```
-
-Guidance:
-
-- Prefer smaller `-BlockHours` if you frequently see the 10K limit warning in logs.
-- Use `-PacingMs` only when throttling messages appear; too much pacing slows total throughput.
-- `-ExplodeDeep` can significantly increase CSV width and processing time—validate with a short window first.
-- `-ParallelMode On` + large activity sets may increase throttling; review retries in the log.
-- `-ResultSize` below 10K can smooth memory usage when exploding deeply nested records.
-
----
-
-## Contributing & Governance
-
-Community contributions are welcome via Issues and Pull Requests. By participating you agree to follow the project’s **[Code of Conduct](./CODE_OF_CONDUCT.md)**. For responsible disclosure of security vulnerabilities, **do not** open a public issue—follow the process in **[SECURITY.md](./SECURITY.md)** instead. Code is released under the **[MIT License](./LICENSE)**; include copyright and license notices in any redistributed copies. High‑level workflow:
-
-1. Open an Issue describing enhancement / bug (include repro steps & environment).
-2. Fork & branch (`feat/short-description` or `fix/short-description`).
-3. Add or update minimal tests / manual test notes where applicable.
-4. Submit PR referencing the Issue; CI or manual review validates build & script syntax.
-5. Respond to review feedback; maintain clean, focused commits (squash if requested).
-
-Scope guidelines:
-
-- Feature PRs: keep UI, script logic, and docs changes in separate commits for review clarity.
-- Avoid introducing new runtime dependencies without discussion.
-- Security-impacting changes (auth flows, script execution policy, module installation paths) must note risk tradeoffs in the PR description.
-
-Questions outside security or code changes? Open a Discussion/Issue with the appropriate label.
-
----
-
-© Microsoft Corporation — MIT Licensed.
+© Microsoft Corporation — MIT Licensed
