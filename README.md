@@ -1,14 +1,14 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Exporter
 
+> **📥 Quick Start:** Download the latest script → [`PAX_Purview_Audit_Log_Processor_v1.5.6.ps1`](PAX_Purview_Audit_Log_Processor_v1.5.6.ps1) | [📦 View All Releases](https://github.com/microsoft/PAX/releases)
+
 **Script:** `PAX_Purview_Audit_Log_Processor_v1.5.6.ps1`  
 **Version:** 1.5.6  
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 5.1 (compatible) / PowerShell 7+ (recommended)  
 **License:** MIT
 
----
-
-## Table of Contents
+---## Table of Contents
 
 1. [Overview](#overview)
 2. [Key Features](#key-features)
