@@ -56,3 +56,6 @@ rustup-init.exe
 
 # Release artifacts
 releases/
+
+# Internal documents (not for public repo)
+PAX_One_Pager_CVP.md
