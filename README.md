@@ -852,6 +852,29 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 
 ### Common Issues
 
+- [Authentication Failures](#authentication-failures)
+- [No Data Returned](#no-data-returned)
+- [10K Limit Warnings](#10k-limit-warnings)
+- [Memory Issues](#memory-issues)
+- [Throttling Errors](#throttling-errors)
+
+### Frequently Asked Questions
+
+- [Does the script modify any data?](#q-does-the-script-modify-any-data)
+- [What timezone are dates in?](#q-what-timezone-are-dates-in)
+- [Can I filter by specific users or models at the source?](#q-can-i-filter-by-specific-users-or-models-at-the-source)
+- [How deep does the script flatten JSON?](#q-how-deep-does-the-script-flatten-json)
+- [Can I run this in an automated schedule?](#q-can-i-run-this-in-an-automated-schedule)
+- [What if I need older audit logs?](#q-what-if-i-need-older-audit-logs)
+- [Does the script work on macOS/Linux?](#q-does-the-script-work-on-macoslinux)
+- [How do I handle very large date ranges?](#q-how-do-i-handle-very-large-date-ranges)
+- [Can I customize the output schema?](#q-can-i-customize-the-output-schema)
+- [What's the difference between `-ExplodeArrays` and `-ExplodeDeep`?](#q-whats-the-difference-between--explodearrays-and--explodedeep)
+
+---
+
+### Common Issues
+
 #### Authentication Failures
 
 **Problem:** "Unable to connect to Exchange Online"
@@ -910,37 +933,49 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 - Disable parallel mode if enabled
 - Consider if tenant is under heavy load
 
-### FAQ
+---
 
-**Q: Does the script modify any data?**  
-A: No. The script is read-only and only exports audit data. No modifications are made to audit logs or tenant configuration.
+### Frequently Asked Questions
 
-**Q: What timezone are dates in?**  
-A: All dates are interpreted as UTC. Output timestamps are also UTC in ISO 8601 format (`yyyy-MM-ddTHH:mm:ss.fffZ`).
+#### Q: Does the script modify any data?
 
-**Q: Can I filter by specific users or models at the source?**  
-A: No, filtering happens after export. The Unified Audit Log API does not support user/model filtering. Export data and filter in post-processing or BI tools.
+**A:** No. The script is read-only and only exports audit data. No modifications are made to audit logs or tenant configuration.
 
-**Q: How deep does the script flatten JSON?**  
-A: Standard explode: 60 levels. Deep flatten: 120 levels. JSON serialization: 60 levels. These are constants in the script and can be adjusted if needed.
+#### Q: What timezone are dates in?
 
-**Q: Can I run this in an automated schedule?**  
-A: Yes. Use `-Auth Silent` with cached credentials or `-Auth Credential` with saved credentials. Consider using Task Scheduler (Windows) or cron (macOS/Linux).
+**A:** All dates are interpreted as UTC. Output timestamps are also UTC in ISO 8601 format (`yyyy-MM-ddTHH:mm:ss.fffZ`).
 
-**Q: What if I need older audit logs?**  
-A: Audit retention depends on your tenant's licensing. E3/E5 licenses retain 90-365 days. Check Microsoft Purview compliance portal for your retention period.
+#### Q: Can I filter by specific users or models at the source?
 
-**Q: Does the script work on macOS/Linux?**  
-A: Yes, with PowerShell 7+. Install PowerShell 7 and ExchangeOnlineManagement module. Authentication methods may vary (WebLogin, DeviceCode recommended).
+**A:** No, filtering happens after export. The Unified Audit Log API does not support user/model filtering. Export data and filter in post-processing or BI tools.
 
-**Q: How do I handle very large date ranges?**  
-A: Break into smaller chunks (weekly or monthly), run separately, then concatenate CSV files. Use `-OutputFile` to name by date range.
+#### Q: How deep does the script flatten JSON?
 
-**Q: Can I customize the output schema?**  
-A: The 35-column base schema is fixed to match Purview standards. In `-ExplodeDeep` mode, additional columns are auto-discovered from nested data.
+**A:** Standard explode: 60 levels. Deep flatten: 120 levels. JSON serialization: 60 levels. These are constants in the script and can be adjusted if needed.
 
-**Q: What's the difference between `-ExplodeArrays` and `-ExplodeDeep`?**  
-A: `-ExplodeArrays` creates 35 columns with array elements as separate rows. `-ExplodeDeep` adds all nested `CopilotEventData.*` fields as additional columns (wide schema).
+#### Q: Can I run this in an automated schedule?
+
+**A:** Yes. Use `-Auth Silent` with cached credentials or `-Auth Credential` with saved credentials. Consider using Task Scheduler (Windows) or cron (macOS/Linux).
+
+#### Q: What if I need older audit logs?
+
+**A:** Audit retention depends on your tenant's licensing. E3/E5 licenses retain 90-365 days. Check Microsoft Purview compliance portal for your retention period.
+
+#### Q: Does the script work on macOS/Linux?
+
+**A:** Yes, with PowerShell 7+. Install PowerShell 7 and ExchangeOnlineManagement module. Authentication methods may vary (WebLogin, DeviceCode recommended).
+
+#### Q: How do I handle very large date ranges?
+
+**A:** Break into smaller chunks (weekly or monthly), run separately, then concatenate CSV files. Use `-OutputFile` to name by date range.
+
+#### Q: Can I customize the output schema?
+
+**A:** The 35-column base schema is fixed to match Purview standards. In `-ExplodeDeep` mode, additional columns are auto-discovered from nested data.
+
+#### Q: What's the difference between `-ExplodeArrays` and `-ExplodeDeep`?
+
+**A:** `-ExplodeArrays` creates 35 columns with array elements as separate rows. `-ExplodeDeep` adds all nested `CopilotEventData.*` fields as additional columns (wide schema).
 
 ---
 
