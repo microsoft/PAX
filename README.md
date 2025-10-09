@@ -53,6 +53,8 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 3. **Deep Flatten Mode** (`-ExplodeDeep`) - 35-column base schema + fully flattened `CopilotEventData.*` columns
 4. **Offline Replay Mode** (`-RAWInputCSV`) - Re-process previously exported raw audit CSV files without querying the service
 
+[📑 Back to Table of Contents](#table-of-contents)
+
 ---
 
 ## Key Features
@@ -86,6 +88,8 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - **Detailed Logging:** Comprehensive log file with parameters, decisions, warnings, and metrics
 - **Automated Setup:** Detects, installs, and connects ExchangeOnlineManagement module automatically
 - **Offline Replay:** Transform previously exported raw CSVs without Exchange Online connection
+
+[📑 Back to Table of Contents](#table-of-contents)
 
 ---
 
@@ -126,6 +130,8 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - Validate data pipelines without querying production audit logs
 - Develop downstream analytics without live tenant access
 
+[📑 Back to Table of Contents](#table-of-contents)
+
 ---
 
 ## Prerequisites
@@ -161,6 +167,8 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 
 **Download PowerShell 7:** https://aka.ms/powershell
 
+[📑 Back to Table of Contents](#table-of-contents)
+
 ---
 
 ## Installation & Setup
@@ -186,6 +194,8 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.
 3. Queries Unified Audit Log for the specified date range
 4. Exports to `C:\Temp\CopilotInteraction_<timestamp>.csv` (default path)
 5. Creates matching `.log` file with detailed execution metrics
+
+[📑 Back to Table of Contents](#table-of-contents)
 
 ---
 
@@ -452,6 +462,8 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.
 **Example:** `.\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -Help`  
 **Use When:** Quick reference without opening documentation
 
+[📑 Back to Table of Contents](#table-of-contents)
+
 ---
 
 ## Authentication Methods
@@ -489,6 +501,8 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 ```powershell
 .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -Auth Silent -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
+
+[📑 Back to Table of Contents](#table-of-contents)
 
 ---
 
@@ -568,6 +582,8 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 # Silent (cached token)
 .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 -Auth Silent -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
+
+[📑 Back to Table of Contents](#table-of-contents)
 
 ---
 
@@ -697,6 +713,8 @@ For a complete list of available Purview audit activities and operations, refer 
 
 This comprehensive reference includes all available operations across Microsoft 365 services, including SharePoint, Exchange, Teams, Copilot, and more.
 
+[📑 Back to Table of Contents](#table-of-contents)
+
 ---
 
 ## Advanced Features
@@ -747,6 +765,8 @@ Status: Query: 45/100(45%) | Explosion: 12000/25000(48%) | Export: 0/1(0%) :: 42
 - **Phase detail:** Current/Total (percentage) for each active phase
 - **Batch info:** Current batch number, estimated total, percentage range
 - **Record range:** Shows which records currently processing (in batches)
+
+[📑 Back to Table of Contents](#table-of-contents)
 
 ---
 
@@ -845,6 +865,8 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
   -MaxParallelGroups 3 `
   -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
 ```
+
+[📑 Back to Table of Contents](#table-of-contents)
 
 ---
 
@@ -977,6 +999,8 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 
 **A:** `-ExplodeArrays` creates 35 columns with array elements as separate rows. `-ExplodeDeep` adds all nested `CopilotEventData.*` fields as additional columns (wide schema).
 
+[📑 Back to Table of Contents](#table-of-contents)
+
 ---
 
 ## Known Limitations
@@ -1023,6 +1047,8 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 - Dynamic throttle + batch resizing (targets ~0.8s–2.5s batches)
 - Metrics emitted at completion
 
+[📑 Back to Table of Contents](#table-of-contents)
+
 ---
 
 ## Security & Compliance
@@ -1067,6 +1093,8 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 5. **Output Protection:** Store CSV files in encrypted volumes or secure file shares
 6. **Access Logging:** Enable filesystem auditing for output directories
 
+[📑 Back to Table of Contents](#table-of-contents)
+
 ---
 
 ## License & Disclaimer
@@ -1076,6 +1104,8 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 **Copyright:** © Microsoft Corporation
 
 **Disclaimer:** This script is provided "AS IS" without warranties or official support. Validate fit for purpose before production use. Not endorsed or officially supported by Microsoft Product Groups. Community-driven maintenance model.
+
+[📑 Back to Table of Contents](#table-of-contents)
 
 ---
 
@@ -1093,6 +1123,8 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 - **[Power BI](https://powerbi.microsoft.com/)** - Visualize exported audit data
 - **[Azure Synapse Analytics](https://azure.microsoft.com/en-us/products/synapse-analytics/)** - Data warehousing for large audit datasets
 - **[Microsoft Sentinel](https://azure.microsoft.com/en-us/products/microsoft-sentinel/)** - SIEM integration for audit logs
+
+[📑 Back to Table of Contents](#table-of-contents)
 
 ---
 
