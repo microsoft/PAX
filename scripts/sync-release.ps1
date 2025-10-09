@@ -4,6 +4,10 @@
 Write-Host "🔄 Syncing release branch files with PAX branch..." -ForegroundColor Cyan
 Write-Host ""
 
+# Change to repository root (parent of scripts folder)
+$ScriptRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $ScriptRoot
+
 # Ensure we're in the PAX branch
 $currentBranch = git rev-parse --abbrev-ref HEAD
 if ($currentBranch -ne "PAX") {
@@ -11,8 +15,8 @@ if ($currentBranch -ne "PAX") {
     exit 1
 }
 
-# Find the current versioned script file dynamically
-$scriptPattern = "scripts/PAX_Purview_Audit_Log_Processor_v*.ps1"
+# Find the current versioned script file dynamically in root
+$scriptPattern = "PAX_Purview_Audit_Log_Processor_v*.ps1"
 $currentScript = Get-ChildItem -Path $scriptPattern -ErrorAction SilentlyContinue | Select-Object -First 1
 
 if (-not $currentScript) {
@@ -21,11 +25,10 @@ if (-not $currentScript) {
 }
 
 $scriptFilename = $currentScript.Name
-$scriptRelativePath = "scripts/$scriptFilename"
 Write-Host "📄 Found current script: $scriptFilename" -ForegroundColor Green
 Write-Host ""
 
-# The 8 files that exist in both branches (with dynamic script filename)
+# The 8 files that exist in both branches (with dynamic script filename in root)
 $releaseFiles = @(
     ".gitattributes"
     ".github/workflows/build-release.yml"
@@ -34,7 +37,7 @@ $releaseFiles = @(
     "LICENSE"
     "README.md"
     "SECURITY.md"
-    $scriptRelativePath
+    $scriptFilename
 )
 
 Write-Host "📋 Files to sync:" -ForegroundColor Yellow

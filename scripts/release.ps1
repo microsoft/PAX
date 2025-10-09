@@ -20,7 +20,7 @@ Set-Location $ScriptRoot
 $PackageJson = "package.json"
 $TauriConf = "src-tauri/tauri.conf.json"
 $CargoToml = "src-tauri/Cargo.toml"
-$ExportScriptPattern = "scripts/PAX_Purview_Audit_Log_Processor_v*.ps1"
+$ExportScriptPattern = "PAX_Purview_Audit_Log_Processor_v*.ps1"
 
 # Function to print colored output
 function Write-Status {
@@ -201,8 +201,8 @@ function Update-ExportScriptVersion {
         [string]$NewVersion
     )
 
-    # Find existing versioned script file
-    $scriptPattern = "scripts/PAX_Purview_Audit_Log_Processor_v*.ps1"
+    # Find existing versioned script file in root
+    $scriptPattern = "PAX_Purview_Audit_Log_Processor_v*.ps1"
     $existingScript = Get-ChildItem -Path $scriptPattern -ErrorAction SilentlyContinue | Select-Object -First 1
     
     if (-not $existingScript) {
@@ -213,7 +213,7 @@ function Update-ExportScriptVersion {
     $oldPath = $existingScript.FullName
     $oldFilename = $existingScript.Name
     $newFilename = "PAX_Purview_Audit_Log_Processor_v$NewVersion.ps1"
-    $newPath = Join-Path (Split-Path $oldPath -Parent) $newFilename
+    $newPath = Join-Path (Get-Location) $newFilename
     
     # Extract old version from filename for verification
     if ($oldFilename -match "v([\d\.]+)\.ps1$") {
@@ -224,20 +224,10 @@ function Update-ExportScriptVersion {
     Write-Status "Updating export script: $oldFilename -> $newFilename"
 
     try {
-        # STEP 1: Archive old version to LegacyScripts folder (preserve with original filename)
-        if ($oldPath -ne $newPath) {
-            $legacyFolder = "scripts/LegacyScripts"
-            if (-not (Test-Path $legacyFolder)) {
-                New-Item -Path $legacyFolder -ItemType Directory -Force | Out-Null
-                Write-Success "Created LegacyScripts folder"
-            }
-            
-            $legacyPath = Join-Path $legacyFolder $oldFilename
-            Copy-Item -Path $oldPath -Destination $legacyPath -Force
-            Write-Success "Archived old version to: LegacyScripts/$oldFilename"
-        }
+        # Note: Old versions are not archived since scripts/ folder is not in release branch
+        # Users can find old versions in git history if needed
         
-        # STEP 2: Read and update content for new version
+        # Read and update content for new version
         $content = Get-Content $oldPath -Raw -ErrorAction Stop
         $updated = $false
         
@@ -272,15 +262,15 @@ function Update-ExportScriptVersion {
             Write-Success "Updated script filename references in help examples"
         }
         
-        # STEP 3: Save updated content to new versioned filename
+        # Save updated content to new versioned filename in root
         if ($updated -or ($oldPath -ne $newPath)) {
             $content | Set-Content -Path $newPath -Encoding UTF8 -NoNewline
             Write-Success "Saved updated script to: $newFilename"
             
-            # Remove old file from scripts/ root (already archived in LegacyScripts)
+            # Remove old file from root (replaced with new version)
             if ($oldPath -ne $newPath) {
                 Remove-Item -Path $oldPath -Force
-                Write-Success "Removed old script file from root: $oldFilename (preserved in LegacyScripts)"
+                Write-Success "Removed old script file: $oldFilename"
             }
         }
         else {
@@ -412,8 +402,8 @@ function Sync-ReleaseBranch {
         
         Write-Status "Release worktree location: $releaseWorktreePath"
         
-        # Find the current versioned script file dynamically
-        $scriptPattern = "scripts/PAX_Purview_Audit_Log_Processor_v*.ps1"
+        # Find the current versioned script file dynamically in root
+        $scriptPattern = "PAX_Purview_Audit_Log_Processor_v*.ps1"
         $currentScript = Get-ChildItem -Path $scriptPattern -ErrorAction SilentlyContinue | Select-Object -First 1
         
         if (-not $currentScript) {
@@ -424,7 +414,7 @@ function Sync-ReleaseBranch {
         $scriptFilename = $currentScript.Name
         Write-Status "Found script to sync: $scriptFilename"
         
-        # Define customer-facing files to sync
+        # Define customer-facing files to sync (excluding scripts/ folder entirely)
         $filesToSync = @{
             ".gitattributes" = ".gitattributes"
             ".github/workflows/build-release.yml" = ".github/workflows/build-release.yml"
@@ -433,7 +423,7 @@ function Sync-ReleaseBranch {
             "LICENSE" = "LICENSE"
             "README.md" = "README.md"
             "SECURITY.md" = "SECURITY.md"
-            "scripts/$scriptFilename" = "scripts/$scriptFilename"
+            $scriptFilename = $scriptFilename
         }
         
         # Copy files from PAX to release worktree
@@ -460,10 +450,10 @@ function Sync-ReleaseBranch {
             }
         }
         
-        # Clean up old versioned scripts in release worktree (keep only current version)
-        $releaseScriptsPath = Join-Path $releaseWorktreePath "scripts"
-        if (Test-Path $releaseScriptsPath) {
-            Get-ChildItem -Path "$releaseScriptsPath/PAX_Purview_Audit_Log_Processor_v*.ps1" | 
+        # Clean up old versioned scripts in release worktree root (keep only current version)
+        $releaseRootPath = $releaseWorktreePath
+        if (Test-Path $releaseRootPath) {
+            Get-ChildItem -Path "$releaseRootPath/PAX_Purview_Audit_Log_Processor_v*.ps1" | 
                 Where-Object { $_.Name -ne $scriptFilename } | 
                 ForEach-Object {
                     Remove-Item $_.FullName -Force
@@ -518,8 +508,8 @@ function Sync-ReleaseBranch {
             # Pull latest
             git pull origin release 2>$null
             
-            # Find the current versioned script file dynamically
-            $scriptPattern = "scripts/PAX_Purview_Audit_Log_Processor_v*.ps1"
+            # Find the current versioned script file dynamically in root
+            $scriptPattern = "PAX_Purview_Audit_Log_Processor_v*.ps1"
             git checkout $currentBranch -- $scriptPattern 2>$null
             $currentScript = Get-ChildItem -Path $scriptPattern -ErrorAction SilentlyContinue | Select-Object -First 1
             
@@ -530,14 +520,13 @@ function Sync-ReleaseBranch {
             
             $scriptFilename = $currentScript.Name
             
-            # Copy customer-facing files from PAX branch
+            # Copy customer-facing files from PAX branch (excluding scripts/ folder)
             Write-Status "Copying customer-facing files from PAX branch..."
             
-            # Create directories
-            New-Item -ItemType Directory -Path "scripts" -Force | Out-Null
+            # Create .github/workflows directory
             New-Item -ItemType Directory -Path ".github/workflows" -Force | Out-Null
             
-            # Copy files
+            # Copy files (script is now in root, not scripts/)
             git checkout $currentBranch -- ".gitattributes" 2>$null
             git checkout $currentBranch -- ".github/workflows/build-release.yml" 2>$null
             git checkout $currentBranch -- "CODE_OF_CONDUCT.md" 2>$null
@@ -545,12 +534,12 @@ function Sync-ReleaseBranch {
             git checkout $currentBranch -- "LICENSE" 2>$null
             git checkout $currentBranch -- "README.md" 2>$null
             git checkout $currentBranch -- "SECURITY.md" 2>$null
-            git checkout $currentBranch -- "scripts/$scriptFilename" 2>$null
+            git checkout $currentBranch -- "$scriptFilename" 2>$null
             
             Write-Success "✓ Copied customer-facing files"
             
-            # Clean up old script versions
-            Get-ChildItem -Path "scripts/PAX_Purview_Audit_Log_Processor_v*.ps1" | 
+            # Clean up old script versions from root
+            Get-ChildItem -Path "PAX_Purview_Audit_Log_Processor_v*.ps1" | 
                 Where-Object { $_.Name -ne $scriptFilename } | 
                 ForEach-Object {
                     Remove-Item $_.FullName -Force
