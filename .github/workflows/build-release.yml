@@ -1,0 +1,316 @@
+name: Build Multi-Platform Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (e.g., v1.0.0)"
+        required: true
+        default: "v1.0.0"
+
+permissions:
+  contents: write
+  actions: read
+  packages: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Tauri CLI
+        run: npm install -g @tauri-apps/cli@1.6.0
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build Tauri app for Windows
+        run: npm run tauri build
+
+      - name: Create Windows distribution
+        shell: pwsh
+        run: |
+          mkdir windows-dist
+          # Extract version from git tag
+          $version = if ($env:GITHUB_REF -like "refs/tags/*") { 
+            $env:GITHUB_REF -replace "refs/tags/", "" 
+          } elseif ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
+            "${{ github.event.inputs.version }}"
+          } else {
+            "v1.0.19"
+          }
+
+          $exePath = Get-ChildItem "src-tauri/target/release" -Name "*.exe" | Where-Object { $_ -like "*portable-audit-exporter*" }
+          if ($exePath) {
+            Copy-Item "src-tauri/target/release/$exePath" "windows-dist/"
+            Rename-Item "windows-dist/$exePath" "PAX-$version-Windows-Portable.exe"
+          } else {
+            # Fallback: try to find any exe file in release directory
+            $exePath = Get-ChildItem "src-tauri/target/release" -Name "*.exe" | Select-Object -First 1
+            if ($exePath) {
+              Copy-Item "src-tauri/target/release/$exePath" "windows-dist/"
+              Rename-Item "windows-dist/$exePath" "PAX-$version-Windows-Portable.exe"
+            } else {
+              Write-Host "Error: No executable found in release directory"
+              Get-ChildItem "src-tauri/target/release" -Recurse
+            }
+          }
+          # Also include MSI installer if available
+          $msiPath = Get-ChildItem "src-tauri/target/release/bundle/msi" -Name "*.msi" -ErrorAction SilentlyContinue
+          if ($msiPath) {
+            Copy-Item "src-tauri/target/release/bundle/msi/$msiPath" "windows-dist/"
+            Rename-Item "windows-dist/$msiPath" "PAX-$version-Windows-Installer.msi"
+          }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PAX-Windows
+          path: windows-dist/*
+
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          # Install system dependencies that might be needed for Tauri on macOS
+          echo "Installing system dependencies..."
+
+      - name: Install Tauri CLI
+        run: npm install -g @tauri-apps/cli@1.6.0
+
+      - name: Verify Tauri CLI installation
+        run: |
+          npm list -g @tauri-apps/cli
+          tauri --version
+          echo "Validating Tauri configuration..."
+          tauri info || echo "Tauri info failed, but continuing..."
+
+      - name: Verify frontend build
+        run: |
+          echo "Ensuring frontend is built..."
+          if [ ! -d "dist" ] || [ -z "$(ls -A dist)" ]; then
+            echo "Frontend not built, building now..."
+            npm run build
+          else
+            echo "Frontend already built"
+          fi
+          echo "Frontend dist contents:"
+          ls -la dist/
+
+      - name: Build Tauri app for native macOS (no cross-compilation)
+        run: |
+          echo "=== Pre-build checks ==="
+          echo "Current working directory: $(pwd)"
+          echo "Node.js version: $(node --version)"
+          echo "npm version: $(npm --version)"
+          echo "Rust version: $(rustc --version)"
+          echo "Cargo version: $(cargo --version)"
+          echo "Tauri CLI version: $(tauri --version)"
+
+          echo "=== File system checks ==="
+          echo "Tauri config file exists: $(test -f src-tauri/tauri.conf.json && echo 'yes' || echo 'no')"
+          echo "Cargo.toml exists: $(test -f src-tauri/Cargo.toml && echo 'yes' || echo 'no')"
+          echo "Frontend dist exists: $(test -d dist && echo 'yes' || echo 'no')"
+          echo "Frontend dist contents:"
+          ls -la dist/ || echo "dist directory not found"
+
+          echo "=== Starting Tauri build ==="
+          echo "Running: tauri build --verbose"
+          tauri build --verbose 2>&1 | tee tauri-build.log
+          BUILD_EXIT_CODE=${PIPESTATUS[0]}
+          echo "Tauri build exit code: $BUILD_EXIT_CODE"
+
+          echo "=== Post-build directory scan ==="
+          echo "Entire src-tauri/target structure:"
+          find src-tauri/target -type f -name "*.app" 2>/dev/null || echo "No .app files found"
+          find src-tauri/target -type d -name "*.app" 2>/dev/null || echo "No .app directories found"
+
+          if [ $BUILD_EXIT_CODE -ne 0 ]; then
+            echo "=== Build failed with exit code $BUILD_EXIT_CODE ==="
+            exit $BUILD_EXIT_CODE
+          fi
+
+      - name: Debug native build output
+        run: |
+          echo "=== Native build completed, checking output ==="
+          echo "Release directory contents:"
+          ls -la "src-tauri/target/release/" 2>/dev/null || echo "Release directory not found"
+          echo "Bundle directory contents:"
+          ls -la "src-tauri/target/release/bundle/" 2>/dev/null || echo "Bundle directory not found"
+          echo "macOS bundle directory contents:"
+          ls -la "src-tauri/target/release/bundle/macos/" 2>/dev/null || echo "macOS bundle directory not found"
+          echo "Searching for any .app bundles:"
+          find src-tauri/target/ -name "*.app" -type d 2>/dev/null || echo "No .app bundles found anywhere"
+          echo "=== End debug output ==="
+
+      - name: Create macOS distribution (native build)
+        run: |
+          # Extract version from git tag
+          VERSION=$(if [[ "$GITHUB_REF" == refs/tags/* ]]; then 
+            echo "${GITHUB_REF#refs/tags/}"
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "${{ github.event.inputs.version }}"
+          else
+            echo "v1.0.19"
+          fi)
+
+          # Look for app bundle in the native release directory
+          APP_PATH=$(find "src-tauri/target/release/bundle/macos/" -name "*.app" -type d 2>/dev/null | head -1)
+
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: No .app bundle found in native build!"
+            echo "This suggests a fundamental issue with the Tauri macOS configuration."
+            exit 1
+          fi
+
+          APP_NAME=$(basename "$APP_PATH")
+          echo "Found native app bundle: $APP_NAME at $APP_PATH"
+
+          # Create clean distribution directory
+          mkdir -p "macos-dist-native"
+
+          # Copy ONLY the app bundle to the distribution directory
+          cp -r "$APP_PATH" "macos-dist-native/"
+
+          # Change to the distribution directory and create a clean ZIP with just the app
+          cd "macos-dist-native"
+
+          # Create ZIP file containing only the .app bundle (no extra folders)
+          zip -r "PAX-${VERSION}-macOS-Universal.zip" "$APP_NAME"
+
+          # Verify the ZIP contents
+          echo "=== ZIP contents verification ==="
+          unzip -l "PAX-${VERSION}-macOS-Universal.zip" | head -10
+
+          echo "Created universal macOS app bundle: PAX-${VERSION}-macOS-Universal.zip"
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PAX-macOS-Universal
+          path: |
+            macos-dist-native/*.zip
+
+  create-release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Debug downloaded artifacts
+        run: |
+          echo "=== All downloaded content ==="
+          find . -type f -name "*.exe" -o -name "*.zip" -o -name "*.msi" -o -name "*.app" 2>/dev/null || echo "No app files found"
+          echo "=== Directory structure ==="
+          ls -la
+          echo "=== Subdirectories ==="
+          find . -type d -maxdepth 2
+          echo "=== All files ==="
+          find . -type f -maxdepth 3
+
+      - name: Prepare release assets
+        run: |
+          # Extract version from git tag or workflow input
+          VERSION=$(if [[ "$GITHUB_REF" == refs/tags/* ]]; then 
+            echo "${GITHUB_REF#refs/tags/}"
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "${{ github.event.inputs.version }}"
+          else
+            echo "v1.0.19"
+          fi)
+
+          mkdir release-assets
+          # Copy Windows artifacts with dynamic version
+          find . -name "PAX-${VERSION}-Windows-Portable.exe" -exec cp {} release-assets/ \; 2>/dev/null || echo "No Windows exe found"
+          find . -name "PAX-${VERSION}-Windows-Installer.msi" -exec cp {} release-assets/ \; 2>/dev/null || echo "No Windows msi found"
+          # Copy macOS artifacts with dynamic version  
+          find . -name "PAX-${VERSION}-macOS-Universal.zip" -exec cp {} release-assets/ \; 2>/dev/null || echo "No macOS universal zip found"
+          # Copy any other artifacts
+          find . -name "*.zip" -path "*/PAX-*" -exec cp {} release-assets/ \; 2>/dev/null || echo "No other zips found"
+
+          echo "=== Release assets prepared ==="
+          ls -la release-assets/
+
+          if [ -z "$(ls -A release-assets/)" ]; then
+            echo "ERROR: No release assets found!"
+            echo "This means the build artifacts were not properly created or uploaded."
+            exit 1
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          name: "PAX ${{ github.event.inputs.version || github.ref_name }}"
+          body: |
+            ## PAX (Purview Audit eXporter) Release
+
+            ### Downloads
+
+            **Windows Users:**
+            - `PAX-${{ github.event.inputs.version || github.ref_name }}-Windows-Portable.exe` - Single executable, no installation required
+            - `PAX-${{ github.event.inputs.version || github.ref_name }}-Windows-Installer.msi` - Traditional Windows installer
+
+            **Mac Users:**
+            - `PAX-${{ github.event.inputs.version || github.ref_name }}-macOS-Universal.zip` - Universal app for all Mac computers (Intel & Apple Silicon)
+
+            ### Quick Start
+
+            1. **Windows**: Download and run the .exe file
+            2. **Mac**: Download the .zip file, extract, then:
+               - **Right-click** the app and choose "Open" (don't double-click)
+               - If you see "damaged" error, run in Terminal: `xattr -d com.apple.quarantine "/path/to/app"`
+               - See MAC_USER_GUIDE.md for detailed instructions
+
+            ### Requirements
+
+            - PowerShell (automatically detected)
+            - Microsoft 365 account with audit log access
+            - Internet connection for authentication
+
+            No administrative privileges required on any platform!
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
