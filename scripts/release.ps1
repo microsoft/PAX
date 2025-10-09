@@ -224,10 +224,20 @@ function Update-ExportScriptVersion {
     Write-Status "Updating export script: $oldFilename -> $newFilename"
 
     try {
-        # Note: Old versions are not archived since scripts/ folder is not in release branch
-        # Users can find old versions in git history if needed
+        # STEP 1: Archive old version to scripts/LegacyScripts folder (PAX branch only)
+        if ($oldPath -ne $newPath) {
+            $legacyFolder = "scripts/LegacyScripts"
+            if (-not (Test-Path $legacyFolder)) {
+                New-Item -Path $legacyFolder -ItemType Directory -Force | Out-Null
+                Write-Success "Created LegacyScripts folder"
+            }
+            
+            $legacyPath = Join-Path $legacyFolder $oldFilename
+            Copy-Item -Path $oldPath -Destination $legacyPath -Force
+            Write-Success "Archived old version to: scripts/LegacyScripts/$oldFilename"
+        }
         
-        # Read and update content for new version
+        # STEP 2: Read and update content for new version
         $content = Get-Content $oldPath -Raw -ErrorAction Stop
         $updated = $false
         
@@ -262,15 +272,15 @@ function Update-ExportScriptVersion {
             Write-Success "Updated script filename references in help examples"
         }
         
-        # Save updated content to new versioned filename in root
+        # STEP 3: Save updated content to new versioned filename in root
         if ($updated -or ($oldPath -ne $newPath)) {
             $content | Set-Content -Path $newPath -Encoding UTF8 -NoNewline
             Write-Success "Saved updated script to: $newFilename"
             
-            # Remove old file from root (replaced with new version)
+            # Remove old file from root (already archived in scripts/LegacyScripts)
             if ($oldPath -ne $newPath) {
                 Remove-Item -Path $oldPath -Force
-                Write-Success "Removed old script file: $oldFilename"
+                Write-Success "Removed old script from root: $oldFilename (archived in scripts/LegacyScripts)"
             }
         }
         else {
