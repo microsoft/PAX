@@ -480,9 +480,9 @@ function Sync-ReleaseBranch {
                 Write-Status "Changes detected in release worktree:"
                 $changes | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
                 
-                # Stage and commit changes
+                # Stage and commit changes with version number
                 git add .
-                git commit -m "Release v${NewVersion}: Sync customer-facing files"
+                git commit -m "PAX Release v${NewVersion}"
                 Write-Success "Committed changes to release branch"
                 
                 # Push release branch to both repositories
@@ -560,7 +560,7 @@ function Sync-ReleaseBranch {
             git add . 2>$null
             $changes = git diff --cached --name-only
             if ($changes) {
-                git commit -m "Release v${NewVersion}: Sync customer-facing files"
+                git commit -m "PAX Release v${NewVersion}"
                 Write-Success "Committed changes to release branch"
                 
                 # Push
