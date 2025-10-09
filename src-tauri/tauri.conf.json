@@ -7,7 +7,7 @@
   },
   "package": {
     "productName": "Portable Audit eXporter (PAX)",
-    "version": "1.5.7"
+    "version": "1.5.8"
   },
   "tauri": {
     "allowlist": {
@@ -47,7 +47,7 @@
     },
     "windows": [
       {
-        "title": "Portable Audit eXporter (PAX) v1.5.7",
+        "title": "Portable Audit eXporter (PAX) v1.5.8",
         "width": 640,
         "height": 920,
         "minHeight": 600,
