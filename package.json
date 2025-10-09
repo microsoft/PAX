@@ -1,6 +1,6 @@
 {
   "name": "portable-audit-exporter",
-  "version": "1.5.5",
+  "version": "1.5.6",
   "description": "Cross-platform audit log export wizard (Tauri + React + TypeScript).",
   "license": "MIT",
   "private": true,
