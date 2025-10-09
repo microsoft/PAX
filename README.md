@@ -850,7 +850,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 
 ## Troubleshooting & FAQ
 
-### Common Issues
+**Common Issues:**
 
 - [Authentication Failures](#authentication-failures)
 - [No Data Returned](#no-data-returned)
@@ -858,7 +858,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 - [Memory Issues](#memory-issues)
 - [Throttling Errors](#throttling-errors)
 
-### Frequently Asked Questions
+**Frequently Asked Questions:**
 
 - [Does the script modify any data?](#q-does-the-script-modify-any-data)
 - [What timezone are dates in?](#q-what-timezone-are-dates-in)
@@ -873,7 +873,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 
 ---
 
-### Common Issues
+## Common Issues
 
 ### Authentication Failures
 
@@ -935,7 +935,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.6.ps1 `
 
 ---
 
-### Frequently Asked Questions
+## Frequently Asked Questions
 
 ### Q: Does the script modify any data?
 
