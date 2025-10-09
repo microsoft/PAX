@@ -431,6 +431,7 @@ function Sync-ReleaseBranch {
             "CODE_OF_CONDUCT.md" = "CODE_OF_CONDUCT.md"
             "CONTRIBUTORS.md" = "CONTRIBUTORS.md"
             "LICENSE" = "LICENSE"
+            "PAX_Overview.pdf" = "PAX_Overview.pdf"
             "README.md" = "README.md"
             "SECURITY.md" = "SECURITY.md"
             $scriptFilename = $scriptFilename
@@ -542,6 +543,7 @@ function Sync-ReleaseBranch {
             git checkout $currentBranch -- "CODE_OF_CONDUCT.md" 2>$null
             git checkout $currentBranch -- "CONTRIBUTORS.md" 2>$null
             git checkout $currentBranch -- "LICENSE" 2>$null
+            git checkout $currentBranch -- "PAX_Overview.pdf" 2>$null
             git checkout $currentBranch -- "README.md" 2>$null
             git checkout $currentBranch -- "SECURITY.md" 2>$null
             git checkout $currentBranch -- "$scriptFilename" 2>$null
