@@ -12,6 +12,11 @@ param(
 
 # Script configuration
 $ScriptName = "PAX Release Script"
+
+# Change to repository root (parent of scripts folder)
+$ScriptRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $ScriptRoot
+
 $PackageJson = "package.json"
 $TauriConf = "src-tauri/tauri.conf.json"
 $CargoToml = "src-tauri/Cargo.toml"
@@ -384,107 +389,199 @@ function Sync-ReleaseBranch {
     
     Write-Status "Syncing release branch with customer-facing files..."
     
-    # Save current branch
-    $currentBranch = git rev-parse --abbrev-ref HEAD
+    # Check if we're using worktrees
+    $worktrees = git worktree list 2>$null
+    $usingWorktrees = $worktrees -match "release"
     
-    try {
-        # Switch to release branch (create if it doesn't exist locally)
-        $releaseBranchExists = git branch --list release
-        if (-not $releaseBranchExists) {
-            Write-Status "Creating local release branch tracking origin/release..."
-            git fetch origin release:release 2>$null
-            if ($LASTEXITCODE -ne 0) {
-                Write-Warning "Release branch doesn't exist on remote, creating new orphan branch..."
-                git checkout --orphan release
-                git rm -rf . 2>$null
+    if ($usingWorktrees) {
+        # Worktree approach - no branch switching needed!
+        Write-Status "Detected worktree setup - syncing files directly..."
+        
+        # Find the release worktree path
+        $releaseWorktreePath = $null
+        $worktrees | ForEach-Object {
+            if ($_ -match "^\s*(.+?)\s+[a-f0-9]+\s+\[release\]") {
+                $releaseWorktreePath = $matches[1].Trim()
+            }
+        }
+        
+        if (-not $releaseWorktreePath -or -not (Test-Path $releaseWorktreePath)) {
+            Write-Warning "Release worktree not found. Run: git worktree add `"..\PAX App-release`" release"
+            return
+        }
+        
+        Write-Status "Release worktree location: $releaseWorktreePath"
+        
+        # Find the current versioned script file dynamically
+        $scriptPattern = "scripts/PAX_Purview_Audit_Log_Processor_v*.ps1"
+        $currentScript = Get-ChildItem -Path $scriptPattern -ErrorAction SilentlyContinue | Select-Object -First 1
+        
+        if (-not $currentScript) {
+            Write-Error "Could not find export script matching pattern: $scriptPattern"
+            throw "Export script not found"
+        }
+        
+        $scriptFilename = $currentScript.Name
+        Write-Status "Found script to sync: $scriptFilename"
+        
+        # Define customer-facing files to sync
+        $filesToSync = @{
+            ".gitattributes" = ".gitattributes"
+            ".github/workflows/build-release.yml" = ".github/workflows/build-release.yml"
+            "CODE_OF_CONDUCT.md" = "CODE_OF_CONDUCT.md"
+            "CONTRIBUTORS.md" = "CONTRIBUTORS.md"
+            "LICENSE" = "LICENSE"
+            "README.md" = "README.md"
+            "SECURITY.md" = "SECURITY.md"
+            "scripts/$scriptFilename" = "scripts/$scriptFilename"
+        }
+        
+        # Copy files from PAX to release worktree
+        $copiedFiles = @()
+        foreach ($sourceFile in $filesToSync.Keys) {
+            $destFile = $filesToSync[$sourceFile]
+            $sourcePath = Join-Path (Get-Location) $sourceFile
+            $destPath = Join-Path $releaseWorktreePath $destFile
+            
+            if (Test-Path $sourcePath) {
+                # Create destination directory if needed
+                $destDir = Split-Path $destPath -Parent
+                if (-not (Test-Path $destDir)) {
+                    New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+                }
+                
+                # Copy file
+                Copy-Item -Path $sourcePath -Destination $destPath -Force
+                $copiedFiles += $destFile
+                Write-Success "✓ Synced $destFile"
             }
             else {
-                git checkout release
+                Write-Warning "Source file not found: $sourceFile (skipping)"
             }
         }
-        else {
-            git checkout release
-            Write-Status "Switched to release branch"
+        
+        # Clean up old versioned scripts in release worktree (keep only current version)
+        $releaseScriptsPath = Join-Path $releaseWorktreePath "scripts"
+        if (Test-Path $releaseScriptsPath) {
+            Get-ChildItem -Path "$releaseScriptsPath/PAX_Purview_Audit_Log_Processor_v*.ps1" | 
+                Where-Object { $_.Name -ne $scriptFilename } | 
+                ForEach-Object {
+                    Remove-Item $_.FullName -Force
+                    Write-Status "Removed old script version: $($_.Name)"
+                }
         }
         
-        # Pull latest from release branch (if it exists on remote)
-        git pull origin release 2>$null
-        
-        # Clear everything in release branch (we'll copy fresh from PAX)
-        git rm -rf . 2>$null
-        
-        # Copy customer-facing files from PAX branch
-        Write-Status "Copying customer-facing files from PAX branch..."
-        
-        # Create scripts directory
-        New-Item -ItemType Directory -Path "scripts" -Force | Out-Null
-        
-        # Copy the latest versioned script
-        $scriptFilename = "PAX_Purview_Audit_Log_Processor_v$NewVersion.ps1"
-        git checkout $currentBranch -- "scripts/$scriptFilename"
-        Write-Success "✓ Copied $scriptFilename"
-        
-        # Copy GitHub Actions workflow
-        New-Item -ItemType Directory -Path ".github/workflows" -Force | Out-Null
-        git checkout $currentBranch -- ".github/workflows/build-release.yml" 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Success "✓ Copied GitHub Actions workflow"
-        }
-        else {
-            Write-Warning "Could not copy workflow (may not exist)"
-        }
-        
-        # Copy required markdown files
-        $mdFiles = @(
-            "README.md",
-            "LICENSE",
-            "CONTRIBUTORS.md",
-            "SECURITY.md",
-            "CODE_OF_CONDUCT.md"
-        )
-        
-        foreach ($file in $mdFiles) {
-            git checkout $currentBranch -- $file 2>$null
-            if ($LASTEXITCODE -eq 0) {
-                Write-Success "✓ Copied $file"
+        # Navigate to release worktree and commit changes
+        Push-Location $releaseWorktreePath
+        try {
+            # Check if there are changes
+            $changes = git status --porcelain
+            if ($changes) {
+                Write-Status "Changes detected in release worktree:"
+                $changes | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+                
+                # Stage and commit changes
+                git add .
+                git commit -m "Release v${NewVersion}: Sync customer-facing files"
+                Write-Success "Committed changes to release branch"
+                
+                # Push release branch to both repositories
+                Write-Status "Pushing release branch to both repositories..."
+                git push origin release
+                git push backup release 2>$null
+                Write-Success "Pushed release branch to remote repositories"
             }
             else {
-                Write-Warning "Could not copy $file (may not exist)"
+                Write-Status "No changes detected in release worktree (already up to date)"
             }
         }
-        
-        # Stage all changes (suppress line ending warnings for untracked files)
-        git add . 2>$null
-        
-        # Check if there are changes to commit
-        $changes = git diff --cached --name-only
-        if ($changes) {
-            Write-Status "Changes detected in release branch:"
-            $changes | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
-            
-            # Commit changes to release branch
-            git commit -m "Release v${NewVersion}: Sync customer-facing files"
-            Write-Success "Committed changes to release branch"
-            
-            # Push release branch to both repositories
-            Write-Status "Pushing release branch to both repositories..."
-            git push origin release
-            git push backup release
-            Write-Success "Pushed release branch to Microsoft and private repos"
+        finally {
+            Pop-Location
         }
-        else {
-            Write-Status "No changes detected in release branch (already up to date)"
-        }
-        
-        # Switch back to original branch
-        git checkout $currentBranch
-        Write-Status "Switched back to $currentBranch branch"
     }
-    catch {
-        Write-Error "Failed to sync release branch: $($_.Exception.Message)"
-        # Try to switch back to original branch
-        git checkout $currentBranch 2>$null
-        throw
+    else {
+        # Legacy approach - branch switching (for backward compatibility)
+        Write-Warning "Not using worktrees - consider setting up worktree for better workflow"
+        Write-Status "To set up worktree, run: git worktree add `"..\PAX App-release`" release"
+        
+        $currentBranch = git rev-parse --abbrev-ref HEAD
+        
+        try {
+            # Switch to release branch
+            git checkout release 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Release branch doesn't exist locally, skipping sync"
+                return
+            }
+            Write-Status "Switched to release branch"
+            
+            # Pull latest
+            git pull origin release 2>$null
+            
+            # Find the current versioned script file dynamically
+            $scriptPattern = "scripts/PAX_Purview_Audit_Log_Processor_v*.ps1"
+            git checkout $currentBranch -- $scriptPattern 2>$null
+            $currentScript = Get-ChildItem -Path $scriptPattern -ErrorAction SilentlyContinue | Select-Object -First 1
+            
+            if (-not $currentScript) {
+                Write-Error "Could not find export script on PAX branch"
+                throw "Export script not found"
+            }
+            
+            $scriptFilename = $currentScript.Name
+            
+            # Copy customer-facing files from PAX branch
+            Write-Status "Copying customer-facing files from PAX branch..."
+            
+            # Create directories
+            New-Item -ItemType Directory -Path "scripts" -Force | Out-Null
+            New-Item -ItemType Directory -Path ".github/workflows" -Force | Out-Null
+            
+            # Copy files
+            git checkout $currentBranch -- ".gitattributes" 2>$null
+            git checkout $currentBranch -- ".github/workflows/build-release.yml" 2>$null
+            git checkout $currentBranch -- "CODE_OF_CONDUCT.md" 2>$null
+            git checkout $currentBranch -- "CONTRIBUTORS.md" 2>$null
+            git checkout $currentBranch -- "LICENSE" 2>$null
+            git checkout $currentBranch -- "README.md" 2>$null
+            git checkout $currentBranch -- "SECURITY.md" 2>$null
+            git checkout $currentBranch -- "scripts/$scriptFilename" 2>$null
+            
+            Write-Success "✓ Copied customer-facing files"
+            
+            # Clean up old script versions
+            Get-ChildItem -Path "scripts/PAX_Purview_Audit_Log_Processor_v*.ps1" | 
+                Where-Object { $_.Name -ne $scriptFilename } | 
+                ForEach-Object {
+                    Remove-Item $_.FullName -Force
+                    Write-Status "Removed old script version: $($_.Name)"
+                }
+            
+            # Stage and commit
+            git add . 2>$null
+            $changes = git diff --cached --name-only
+            if ($changes) {
+                git commit -m "Release v${NewVersion}: Sync customer-facing files"
+                Write-Success "Committed changes to release branch"
+                
+                # Push
+                git push origin release
+                git push backup release 2>$null
+                Write-Success "Pushed release branch to remote repositories"
+            }
+            else {
+                Write-Status "No changes detected (already up to date)"
+            }
+            
+            # Switch back
+            git checkout $currentBranch
+            Write-Status "Switched back to $currentBranch branch"
+        }
+        catch {
+            Write-Error "Failed to sync release branch: $($_.Exception.Message)"
+            git checkout $currentBranch 2>$null
+            throw
+        }
     }
 }
 
