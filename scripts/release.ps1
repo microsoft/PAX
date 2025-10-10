@@ -598,17 +598,8 @@ function New-CommitAndTag {
     git add .
     Write-Status "Staged all uncommitted changes for release"
     
-    # Create commit message - use custom message if provided, otherwise auto-generate
-    $commitMsg = if ($CustomMessage) {
-        "v${NewVersion}: $CustomMessage"
-    }
-    else {
-        switch ($BumpType) {
-            "major" { "v${NewVersion}: Major version release" }
-            "minor" { "v${NewVersion}: Minor version release" }
-            default { "v${NewVersion}: Patch version release" }
-        }
-    }
+    # Create commit message - always use "PAX Release vX.X.X" format for consistency across all branches
+    $commitMsg = "PAX Release v${NewVersion}"
     
     # Commit the changes
     git commit -m $commitMsg
