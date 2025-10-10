@@ -51,6 +51,46 @@ function Write-Header {
     Write-Host ""
 }
 
+# Function to clean up old temporary PR branches
+function Remove-OldPRBranches {
+    param([string]$Pattern = "release-sync-v*")
+    
+    Write-Status "Cleaning up old temporary PR branches..."
+    
+    # Get all remote branches matching the pattern
+    $remoteBranches = git ls-remote --heads origin | Where-Object { $_ -match "refs/heads/$Pattern" }
+    
+    if ($remoteBranches) {
+        $branchesToDelete = $remoteBranches | ForEach-Object {
+            if ($_ -match "refs/heads/(.+)$") {
+                $matches[1]
+            }
+        }
+        
+        foreach ($branch in $branchesToDelete) {
+            # Check if there's a merged PR for this branch
+            $prStatus = gh pr list --repo microsoft/PAX --head $branch --state merged --json number --jq '.[0].number' 2>$null
+            
+            if ($prStatus) {
+                # PR was merged, safe to delete
+                Write-Status "Deleting merged temporary branch: $branch"
+                git push origin --delete $branch 2>$null
+            } else {
+                # Check if PR is closed (not merged)
+                $closedPR = gh pr list --repo microsoft/PAX --head $branch --state closed --json number --jq '.[0].number' 2>$null
+                if ($closedPR) {
+                    Write-Status "Deleting closed temporary branch: $branch"
+                    git push origin --delete $branch 2>$null
+                }
+                # If PR is still open, leave the branch alone
+            }
+        }
+        Write-Success "Cleanup complete"
+    } else {
+        Write-Status "No temporary branches to clean up"
+    }
+}
+
 # Function to show usage
 function Show-Usage {
     Write-Host "Usage: .\release.ps1 [OPTIONS]"
@@ -486,11 +526,35 @@ function Sync-ReleaseBranch {
                 git commit -m "PAX Release v${NewVersion}"
                 Write-Success "Committed changes to release branch"
                 
-                # Push release branch to both repositories
-                Write-Status "Pushing release branch to both repositories..."
-                git push origin release
+                # Push release branch to Rance9/PAX (backup) - no protection
+                Write-Status "Pushing release branch to Rance9/PAX..."
                 git push backup release 2>$null
-                Write-Success "Pushed release branch to remote repositories"
+                Write-Success "Pushed release branch to Rance9/PAX"
+                
+                # For microsoft/PAX, create PR due to branch protection
+                Write-Status "Creating PR for microsoft/PAX release branch..."
+                $tempBranch = "release-sync-v${NewVersion}"
+                
+                # Push to temporary branch on microsoft/PAX
+                git push origin release:$tempBranch -f 2>$null
+                
+                # Check if PR already exists
+                $existingPR = gh pr list --repo microsoft/PAX --base release --head $tempBranch --json number --jq '.[0].number' 2>$null
+                
+                if ($existingPR) {
+                    Write-Status "PR already exists: https://github.com/microsoft/PAX/pull/$existingPR"
+                } else {
+                    # Create new PR
+                    $prUrl = gh pr create --repo microsoft/PAX --base release --head $tempBranch --title "PAX Release v${NewVersion}" --body "Automated release sync for v${NewVersion}`n`nSynced files from PAX branch to release branch." 2>&1
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Success "PR created: $prUrl"
+                        Write-Host "`n⚠️  ACTION REQUIRED: Please approve and merge the PR at: $prUrl" -ForegroundColor Yellow
+                    } else {
+                        Write-Error "Failed to create PR: $prUrl"
+                    }
+                }
+                
+                Write-Status "Release branch updates complete (microsoft/PAX requires PR approval)"
             }
             else {
                 Write-Status "No changes detected in release worktree (already up to date)"
@@ -565,10 +629,35 @@ function Sync-ReleaseBranch {
                 git commit -m "PAX Release v${NewVersion}"
                 Write-Success "Committed changes to release branch"
                 
-                # Push
-                git push origin release
+                # Push release branch to Rance9/PAX (backup) - no protection
+                Write-Status "Pushing release branch to Rance9/PAX..."
                 git push backup release 2>$null
-                Write-Success "Pushed release branch to remote repositories"
+                Write-Success "Pushed release branch to Rance9/PAX"
+                
+                # For microsoft/PAX, create PR due to branch protection
+                Write-Status "Creating PR for microsoft/PAX release branch..."
+                $tempBranch = "release-sync-v${NewVersion}"
+                
+                # Push to temporary branch on microsoft/PAX
+                git push origin release:$tempBranch -f 2>$null
+                
+                # Check if PR already exists
+                $existingPR = gh pr list --repo microsoft/PAX --base release --head $tempBranch --json number --jq '.[0].number' 2>$null
+                
+                if ($existingPR) {
+                    Write-Status "PR already exists: https://github.com/microsoft/PAX/pull/$existingPR"
+                } else {
+                    # Create new PR
+                    $prUrl = gh pr create --repo microsoft/PAX --base release --head $tempBranch --title "PAX Release v${NewVersion}" --body "Automated release sync for v${NewVersion}`n`nSynced files from PAX branch to release branch." 2>&1
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Success "PR created: $prUrl"
+                        Write-Host "`n⚠️  ACTION REQUIRED: Please approve and merge the PR at: $prUrl" -ForegroundColor Yellow
+                    } else {
+                        Write-Error "Failed to create PR: $prUrl"
+                    }
+                }
+                
+                Write-Status "Release branch updates complete (microsoft/PAX requires PR approval)"
             }
             else {
                 Write-Status "No changes detected (already up to date)"
@@ -726,6 +815,9 @@ function Main {
     
     # Show summary
     Show-Summary -OldVersion $currentVersion -NewVersion $newVersion -BumpType $bumpType -CommitMessage $finalCommitMsg
+    
+    # Clean up old temporary PR branches
+    Remove-OldPRBranches
     
     Write-Success "Release process completed successfully! 🎉"
 }
