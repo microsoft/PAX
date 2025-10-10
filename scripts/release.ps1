@@ -482,8 +482,16 @@ function Sync-ReleaseBranch {
                 $changes | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
                 
                 # Stage and commit changes with version number
+                # TEMPORARY: Adding co-authors for this release only
+                $releaseCommitMsg = @"
+PAX Release v${NewVersion}
+
+Co-authored-by: Shailendra Hegde <shailendrahegde@users.noreply.github.com>
+Co-authored-by: Jordan King <jordankingisalive@users.noreply.github.com>
+Co-authored-by: Keith Mcgrane <Keithland89@users.noreply.github.com>
+"@
                 git add .
-                git commit -m "PAX Release v${NewVersion}"
+                git commit -m $releaseCommitMsg
                 Write-Success "Committed changes to release branch"
                 
                 # Push release branch to both repositories
@@ -562,7 +570,15 @@ function Sync-ReleaseBranch {
             git add . 2>$null
             $changes = git diff --cached --name-only
             if ($changes) {
-                git commit -m "PAX Release v${NewVersion}"
+                # TEMPORARY: Adding co-authors for this release only
+                $legacyReleaseCommitMsg = @"
+PAX Release v${NewVersion}
+
+Co-authored-by: Shailendra Hegde <shailendrahegde@users.noreply.github.com>
+Co-authored-by: Jordan King <jordankingisalive@users.noreply.github.com>
+Co-authored-by: Keith Mcgrane <Keithland89@users.noreply.github.com>
+"@
+                git commit -m $legacyReleaseCommitMsg
                 Write-Success "Committed changes to release branch"
                 
                 # Push
@@ -599,7 +615,14 @@ function New-CommitAndTag {
     Write-Status "Staged all uncommitted changes for release"
     
     # Create commit message - always use "PAX Release vX.X.X" format for consistency across all branches
-    $commitMsg = "PAX Release v${NewVersion}"
+    # TEMPORARY: Adding co-authors for this release only
+    $commitMsg = @"
+PAX Release v${NewVersion}
+
+Co-authored-by: Shailendra Hegde <shailendrahegde@users.noreply.github.com>
+Co-authored-by: Jordan King <jordankingisalive@users.noreply.github.com>
+Co-authored-by: Keith Mcgrane <Keithland89@users.noreply.github.com>
+"@
     
     # Commit the changes
     git commit -m $commitMsg
