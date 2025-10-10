@@ -482,16 +482,8 @@ function Sync-ReleaseBranch {
                 $changes | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
                 
                 # Stage and commit changes with version number
-                # TEMPORARY: Adding co-authors for this release only
-                $releaseCommitMsg = @"
-PAX Release v${NewVersion}
-
-Co-authored-by: Shailendra Hegde <shailendrahegde@users.noreply.github.com>
-Co-authored-by: Jordan King <jordankingisalive@users.noreply.github.com>
-Co-authored-by: Keith Mcgrane <Keithland89@users.noreply.github.com>
-"@
                 git add .
-                git commit -m $releaseCommitMsg
+                git commit -m "PAX Release v${NewVersion}"
                 Write-Success "Committed changes to release branch"
                 
                 # Push release branch to both repositories
@@ -570,15 +562,7 @@ Co-authored-by: Keith Mcgrane <Keithland89@users.noreply.github.com>
             git add . 2>$null
             $changes = git diff --cached --name-only
             if ($changes) {
-                # TEMPORARY: Adding co-authors for this release only
-                $legacyReleaseCommitMsg = @"
-PAX Release v${NewVersion}
-
-Co-authored-by: Shailendra Hegde <shailendrahegde@users.noreply.github.com>
-Co-authored-by: Jordan King <jordankingisalive@users.noreply.github.com>
-Co-authored-by: Keith Mcgrane <Keithland89@users.noreply.github.com>
-"@
-                git commit -m $legacyReleaseCommitMsg
+                git commit -m "PAX Release v${NewVersion}"
                 Write-Success "Committed changes to release branch"
                 
                 # Push
@@ -615,14 +599,7 @@ function New-CommitAndTag {
     Write-Status "Staged all uncommitted changes for release"
     
     # Create commit message - always use "PAX Release vX.X.X" format for consistency across all branches
-    # TEMPORARY: Adding co-authors for this release only
-    $commitMsg = @"
-PAX Release v${NewVersion}
-
-Co-authored-by: Shailendra Hegde <shailendrahegde@users.noreply.github.com>
-Co-authored-by: Jordan King <jordankingisalive@users.noreply.github.com>
-Co-authored-by: Keith Mcgrane <Keithland89@users.noreply.github.com>
-"@
+    $commitMsg = "PAX Release v${NewVersion}"
     
     # Commit the changes
     git commit -m $commitMsg
