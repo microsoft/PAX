@@ -474,7 +474,6 @@ async fn run_audit_script(
         let mut phase: &str = "queries"; // or "keywords" | "post"
         let mut q_cur: u64 = 0;
         let mut q_tot: u64 = q_tot_fixed;
-        let mut k_cur: u64 = 0;
         let mut k_tot: u64 = k_tot_fixed;
         let mut p_cur: u64 = 0;
         let mut p_tot: u64 = 0;
@@ -486,10 +485,8 @@ async fn run_audit_script(
         let mut post_current_cat: Option<String> = None;
         // Track dynamic totals seen in the stream (x/y) and marker-provided totals
         let mut q_tot_dyn: u64 = 0;
-        let mut k_tot_dyn: u64 = 0;
         let mut p_tot_dyn: u64 = 0;
         let mut q_tot_marker: u64 = 0;
-        let mut k_tot_marker: u64 = 0;
         let mut p_tot_marker: u64 = 0;
         // Keep overall progress monotonic non-decreasing
         let mut last_overall: f64 = 0.0;
@@ -515,7 +512,6 @@ async fn run_audit_script(
                                 .unwrap_or(Ok(k_tot_fixed)),
                         ) {
                             q_tot_marker = a;
-                            k_tot_marker = b; // capture marker totals
                             q_tot_fixed = a;
                             k_tot_fixed = b; // align fixed totals to markers when available
                             if let Some(pm) = c.name("p") {
@@ -553,7 +549,7 @@ async fn run_audit_script(
                 }
                 if let Some(rx) = &re_kw {
                     if let Some(c) = rx.captures(&l) {
-                        if let (Ok(a), Ok(b)) = (
+                        if let (Ok(_a), Ok(b)) = (
                             c.name("cur")
                                 .map(|m| m.as_str().parse::<u64>())
                                 .unwrap_or(Ok(0)),
@@ -561,9 +557,7 @@ async fn run_audit_script(
                                 .map(|m| m.as_str().parse::<u64>())
                                 .unwrap_or(Ok(0)),
                         ) {
-                            k_cur = a;
                             k_tot = b;
-                            k_tot_dyn = b;
                             phase = "keywords";
                         }
                     }
@@ -687,13 +681,6 @@ async fn run_audit_script(
                     q_tot_marker
                 } else {
                     q_tot_fixed
-                };
-                let eff_k_tot = if k_tot_dyn > 0 {
-                    k_tot_dyn
-                } else if k_tot_marker > 0 {
-                    k_tot_marker
-                } else {
-                    k_tot_fixed
                 };
                 let eff_p_tot = if p_tot_dyn > 0 {
                     p_tot_dyn
