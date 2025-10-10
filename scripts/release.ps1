@@ -51,46 +51,6 @@ function Write-Header {
     Write-Host ""
 }
 
-# Function to clean up old temporary PR branches
-function Remove-OldPRBranches {
-    param([string]$Pattern = "release-sync-v*")
-    
-    Write-Status "Cleaning up old temporary PR branches..."
-    
-    # Get all remote branches matching the pattern
-    $remoteBranches = git ls-remote --heads origin | Where-Object { $_ -match "refs/heads/$Pattern" }
-    
-    if ($remoteBranches) {
-        $branchesToDelete = $remoteBranches | ForEach-Object {
-            if ($_ -match "refs/heads/(.+)$") {
-                $matches[1]
-            }
-        }
-        
-        foreach ($branch in $branchesToDelete) {
-            # Check if there's a merged PR for this branch
-            $prStatus = gh pr list --repo microsoft/PAX --head $branch --state merged --json number --jq '.[0].number' 2>$null
-            
-            if ($prStatus) {
-                # PR was merged, safe to delete
-                Write-Status "Deleting merged temporary branch: $branch"
-                git push origin --delete $branch 2>$null
-            } else {
-                # Check if PR is closed (not merged)
-                $closedPR = gh pr list --repo microsoft/PAX --head $branch --state closed --json number --jq '.[0].number' 2>$null
-                if ($closedPR) {
-                    Write-Status "Deleting closed temporary branch: $branch"
-                    git push origin --delete $branch 2>$null
-                }
-                # If PR is still open, leave the branch alone
-            }
-        }
-        Write-Success "Cleanup complete"
-    } else {
-        Write-Status "No temporary branches to clean up"
-    }
-}
-
 # Function to show usage
 function Show-Usage {
     Write-Host "Usage: .\release.ps1 [OPTIONS]"
@@ -535,7 +495,27 @@ function Sync-ReleaseBranch {
                 Write-Status "Creating PR for microsoft/PAX release branch..."
                 $tempBranch = "release-sync-v${NewVersion}"
                 
-                # Push to temporary branch on microsoft/PAX
+                # Clean up old temporary branches before creating new one
+                Write-Status "Checking for old temporary branches..."
+                $oldTempBranches = git ls-remote --heads origin | Where-Object { $_ -match "release-sync-v" -and $_ -notmatch $tempBranch }
+                if ($oldTempBranches) {
+                    $oldTempBranches | ForEach-Object {
+                        if ($_ -match "refs/heads/(.+)$") {
+                            $oldBranch = $matches[1]
+                            # Check if there's a merged or closed PR for this branch
+                            $prState = gh pr list --repo microsoft/PAX --head $oldBranch --state all --json state,number --jq '.[0] | "\(.state)|\(.number)"' 2>$null
+                            if ($prState) {
+                                $state, $prNum = $prState -split '\|'
+                                if ($state -eq "MERGED" -or $state -eq "CLOSED") {
+                                    Write-Status "Deleting old temporary branch: $oldBranch (PR #$prNum was $state)"
+                                    git push origin --delete $oldBranch 2>$null
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                # Push to temporary branch on microsoft/PAX only (not Rance9)
                 git push origin release:$tempBranch -f 2>$null
                 
                 # Check if PR already exists
@@ -638,7 +618,27 @@ function Sync-ReleaseBranch {
                 Write-Status "Creating PR for microsoft/PAX release branch..."
                 $tempBranch = "release-sync-v${NewVersion}"
                 
-                # Push to temporary branch on microsoft/PAX
+                # Clean up old temporary branches before creating new one
+                Write-Status "Checking for old temporary branches..."
+                $oldTempBranches = git ls-remote --heads origin | Where-Object { $_ -match "release-sync-v" -and $_ -notmatch $tempBranch }
+                if ($oldTempBranches) {
+                    $oldTempBranches | ForEach-Object {
+                        if ($_ -match "refs/heads/(.+)$") {
+                            $oldBranch = $matches[1]
+                            # Check if there's a merged or closed PR for this branch
+                            $prState = gh pr list --repo microsoft/PAX --head $oldBranch --state all --json state,number --jq '.[0] | "\(.state)|\(.number)"' 2>$null
+                            if ($prState) {
+                                $state, $prNum = $prState -split '\|'
+                                if ($state -eq "MERGED" -or $state -eq "CLOSED") {
+                                    Write-Status "Deleting old temporary branch: $oldBranch (PR #$prNum was $state)"
+                                    git push origin --delete $oldBranch 2>$null
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                # Push to temporary branch on microsoft/PAX only (not Rance9)
                 git push origin release:$tempBranch -f 2>$null
                 
                 # Check if PR already exists
@@ -815,9 +815,6 @@ function Main {
     
     # Show summary
     Show-Summary -OldVersion $currentVersion -NewVersion $newVersion -BumpType $bumpType -CommitMessage $finalCommitMsg
-    
-    # Clean up old temporary PR branches
-    Remove-OldPRBranches
     
     Write-Success "Release process completed successfully! 🎉"
 }
