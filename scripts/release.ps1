@@ -523,7 +523,7 @@ function Sync-ReleaseBranch {
                 
                 # Stage and commit changes with version number
                 git add .
-                git commit -m "PAX Release v${NewVersion}"
+                git commit -m "v${NewVersion}"
                 Write-Success "Committed changes to release branch"
                 
                 # Push release branch to Rance9/PAX (backup) - no protection
@@ -545,7 +545,7 @@ function Sync-ReleaseBranch {
                     Write-Status "PR already exists: https://github.com/microsoft/PAX/pull/$existingPR"
                 } else {
                     # Create new PR
-                    $prUrl = gh pr create --repo microsoft/PAX --base release --head $tempBranch --title "PAX Release v${NewVersion}" --body "Automated release sync for v${NewVersion}`n`nSynced files from PAX branch to release branch." 2>&1
+                    $prUrl = gh pr create --repo microsoft/PAX --base release --head $tempBranch --title "v${NewVersion}" --body "Automated release sync for v${NewVersion}`n`nSynced files from PAX branch to release branch." 2>&1
                     if ($LASTEXITCODE -eq 0) {
                         Write-Success "PR created: $prUrl"
                         Write-Host "`n⚠️  ACTION REQUIRED: Please approve and merge the PR at: $prUrl" -ForegroundColor Yellow
@@ -626,7 +626,7 @@ function Sync-ReleaseBranch {
             git add . 2>$null
             $changes = git diff --cached --name-only
             if ($changes) {
-                git commit -m "PAX Release v${NewVersion}"
+                git commit -m "v${NewVersion}"
                 Write-Success "Committed changes to release branch"
                 
                 # Push release branch to Rance9/PAX (backup) - no protection
@@ -648,7 +648,7 @@ function Sync-ReleaseBranch {
                     Write-Status "PR already exists: https://github.com/microsoft/PAX/pull/$existingPR"
                 } else {
                     # Create new PR
-                    $prUrl = gh pr create --repo microsoft/PAX --base release --head $tempBranch --title "PAX Release v${NewVersion}" --body "Automated release sync for v${NewVersion}`n`nSynced files from PAX branch to release branch." 2>&1
+                    $prUrl = gh pr create --repo microsoft/PAX --base release --head $tempBranch --title "v${NewVersion}" --body "Automated release sync for v${NewVersion}`n`nSynced files from PAX branch to release branch." 2>&1
                     if ($LASTEXITCODE -eq 0) {
                         Write-Success "PR created: $prUrl"
                         Write-Host "`n⚠️  ACTION REQUIRED: Please approve and merge the PR at: $prUrl" -ForegroundColor Yellow
@@ -687,8 +687,8 @@ function New-CommitAndTag {
     git add .
     Write-Status "Staged all uncommitted changes for release"
     
-    # Create commit message - always use "PAX Release vX.X.X" format for consistency across all branches
-    $commitMsg = "PAX Release v${NewVersion}"
+    # Create commit message - simple version number only
+    $commitMsg = "v${NewVersion}"
     
     # Commit the changes
     git commit -m $commitMsg
