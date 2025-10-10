@@ -110,3 +110,5 @@ xattr -d com.apple.quarantine "~/Downloads/Portable Audit eXporter (PAX).app"
 ---
 
 **Ready to start?** Just right-click the app and choose "Open"!
+
+

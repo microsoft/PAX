@@ -178,3 +178,4 @@ export const ALL_ACTIVITIES: Record<string, Activity[]> = {
 if (process.argv[1] === new URL(import.meta.url).pathname) {
   main();
 }
+

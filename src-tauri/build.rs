@@ -12,3 +12,5 @@ fn main() {
   println!("cargo:rustc-env=PAX_BUILD_TS={}", ts);
   tauri_build::build()
 }
+
+

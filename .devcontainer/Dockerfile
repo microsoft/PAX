@@ -16,3 +16,5 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 RUN npm i -g @tauri-apps/cli
 
 WORKDIR /workspace
+
+

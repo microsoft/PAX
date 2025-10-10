@@ -1008,3 +1008,5 @@ injectWorkloadAnchors(EMAIL_PATH, /User Principal Name/i, /Last Activity Date/i,
 
 fs.writeFileSync(PURVIEW_OUT_PATH, out.join('\n'));
 console.log(`Wrote ${PURVIEW_OUT_PATH} with ${out.length-1} rows`);
+
+

@@ -99,3 +99,5 @@ const out = {
 
 writeJson('audit-activities.merged.json', out);
 console.log(`Merged dataset written: ${path.join(DIR, 'audit-activities.merged.json')}\n  - Categories: ${out.meta.categoryCount}\n  - Items: ${out.meta.itemCount}\n  - Presets: all=${out.presets.all.length}, curated=${out.presets.curated.length}, recommended=${out.presets.recommended.length}`);
+
+

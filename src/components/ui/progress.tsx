@@ -4,3 +4,5 @@ export const Progress: React.FC<{value?:number; indeterminate?:boolean}> = ({val
     <div className={`h-full bg-blue-600 transition-all ${indeterminate? 'animate-pulse w-1/2':''} ${value!==undefined? '' : ''}`} style={value!==undefined? {width: `${value}%`}: undefined} />
   </div>;
 };
+
+

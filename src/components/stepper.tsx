@@ -13,3 +13,5 @@ export function Stepper({ step, steps }: { step:number; steps:string[] }) {
     </div>
   );
 }
+
+

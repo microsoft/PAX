@@ -80,3 +80,5 @@ export function ActivityMultiSelect({ value, onChange, error, categories, releva
     {error && <div className="text-red-600 text-sm mt-1">{error}</div>}
   </div>;
 }
+
+

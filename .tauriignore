@@ -10,3 +10,5 @@ scripts/*.cjs
 
 # But explicitly allow runtime resources copied by copy-script if needed
 !scripts/copy-script.cjs
+
+

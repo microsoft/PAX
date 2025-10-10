@@ -60,3 +60,5 @@ export const ALL_ACTIVITIES: Record<string, Activity[]> = {
   'Security & Compliance': RELEVANT_ACTIVITIES.filter(a=>a.category==='Security & Compliance'),
   'Other / General': RELEVANT_ACTIVITIES.filter(a=>a.category==='Other / General')
 };
+
+
