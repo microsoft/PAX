@@ -1,4 +1,4 @@
-# Portable Audit eXporter (PAX) - Purview Audit Log Processor - v1.5.8
+# Portable Audit eXporter (PAX) - Purview Audit Log Processor - v1.5.9
 <#
 .SYNOPSIS
     Export Microsoft Purview audit logs for Microsoft 365 Copilot and related activities with optional Purview-aligned row explosion and deep flattening.
@@ -23,35 +23,35 @@
 
 .EXECUTIONPOLICY
     No internal execution policy bypass. Use external host invocation if needed:
-        powershell.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.8.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-        pwsh.exe       -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.8.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+        powershell.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+        pwsh.exe       -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
 
 .POWERSHELLVERSIONS
     PS 5.1 & 7+. Parallelization requires PS 7+.
 
 .EXAMPLE
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.8.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
 .EXAMPLE
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.8.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_exploded.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_exploded.csv
 .EXAMPLE
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.8.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_deep.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_deep.csv
 .EXAMPLE
-    powershell -File .\PAX_Purview_Audit_Log_Processor_v1.5.8.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
+    powershell -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
 .EXAMPLE
     # Offline replay (simple forced explosion) of a previously exported raw CSV
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.8.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile C:\Temp\Copilot_replay_exploded.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile C:\Temp\Copilot_replay_exploded.csv
 .EXAMPLE
     # Offline replay with date & activity filtering + deep flatten
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.8.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction -OutputFile C:\Temp\Copilot_replay_deep.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction -OutputFile C:\Temp\Copilot_replay_deep.csv
 .EXAMPLE
     # Deep flatten (wide) with higher schema sample & moderate chunk size (balance column coverage vs memory)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.8.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 4000 -StreamingChunkSize 3000 -OutputFile C:\Temp\Copilot_deep_tuned.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 4000 -StreamingChunkSize 3000 -OutputFile C:\Temp\Copilot_deep_tuned.csv
 .EXAMPLE
     # Extremely wide deep flatten: maximize schema sample, reduce chunk size for lower peak memory
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.8.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 6000 -StreamingChunkSize 1500 -OutputFile C:\Temp\Copilot_deep_memoryguard.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 6000 -StreamingChunkSize 1500 -OutputFile C:\Temp\Copilot_deep_memoryguard.csv
 .EXAMPLE
     # Fast header freeze (narrow schema expectation) – smaller sample, larger chunk for throughput (risk: late columns ignored)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.8.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 800 -StreamingChunkSize 6000 -OutputFile C:\Temp\Copilot_deep_fastfreeze.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 800 -StreamingChunkSize 6000 -OutputFile C:\Temp\Copilot_deep_fastfreeze.csv
 #>
 
 param(
@@ -1619,4 +1619,6 @@ try {
 }
 catch { Write-LogHost "Script failed: $($_.Exception.Message)" -ForegroundColor Red; Write-LogHost $_.ScriptStackTrace -ForegroundColor Red }
 finally { $endUtc = (Get-Date).ToUniversalTime(); try { if ($script:metrics -and $script:metrics.StartTime) { $startTail = $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss'); Write-Log ("Script execution started at $startTail UTC") } } catch {}; Write-Log "Script execution completed at $($endUtc.ToString('yyyy-MM-dd HH:mm:ss')) UTC"; Write-Log "Script version: v$ScriptVersion"; try { if ($script:metrics -and $script:metrics.StartTime) { $elapsed = $endUtc - $script:metrics.StartTime; $totalHours = [math]::Floor($elapsed.TotalHours); $remainder = $elapsed - [TimeSpan]::FromHours($totalHours); $elapsedFormatted = ("{0}:{1:00}:{2:00}.{3:000}" -f $totalHours, $remainder.Minutes, $remainder.Seconds, $remainder.Milliseconds); Write-Log ("Total elapsed time: {0} (hours:minutes:seconds.milliseconds)" -f $elapsedFormatted) } } catch {}; if ($script:Connected) { try { Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue | Out-Null; Write-LogHost "Disconnected from Exchange Online" -ForegroundColor Gray } catch {} } }
+
+
 
