@@ -1,4 +1,4 @@
-# Portable Audit eXporter (PAX) - Purview Audit Log Processor - v1.5.9
+# Portable Audit eXporter (PAX) - Purview Audit Log Processor - v1.6.0
 <#
 .SYNOPSIS
     Export Microsoft Purview audit logs for Microsoft 365 Copilot and related activities with optional Purview-aligned row explosion and deep flattening.
@@ -13,45 +13,46 @@
         * Skips authentication & live Search-UnifiedAuditLog queries entirely
         * Forces at least Purview array explosion even if -ExplodeArrays not supplied
         * Optional -ExplodeDeep further deep‑flattens CopilotEventData.*
-        * Allows only filtering parameters (StartDate / EndDate / ActivityTypes) plus OutputFile & explosion switches
+        * Allows only filtering parameters (StartDate / EndDate / ActivityTypes / AgentId / AgentOnly) plus OutputFile & explosion switches
         * Disallowed with RAWInputCSV (error if present): BlockHours, ResultSize, PacingMs, Auth, ParallelMode, MaxParallelGroups, MaxConcurrency, EnableParallel
         * StartDate / EndDate act as inclusive(lower)/exclusive(upper) UTC filters on CreationDate in the replay dataset
         * ActivityTypes filters by Operation (case‑insensitive membership)
+        * AgentId filters for specific AgentId value(s); AgentOnly includes any record with an AgentId present
         * Non‑exploded 1:1 mode is intentionally disabled for deterministic schema in offline transforms
 
     PowerShell 5.1 & 7+ supported. Parallel (Auto/On) requires 7+.
 
 .EXECUTIONPOLICY
     No internal execution policy bypass. Use external host invocation if needed:
-        powershell.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-        pwsh.exe       -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+        powershell.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+        pwsh.exe       -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
 
 .POWERSHELLVERSIONS
     PS 5.1 & 7+. Parallelization requires PS 7+.
 
 .EXAMPLE
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
 .EXAMPLE
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_exploded.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_exploded.csv
 .EXAMPLE
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_deep.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_deep.csv
 .EXAMPLE
-    powershell -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
+    powershell -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
 .EXAMPLE
     # Offline replay (simple forced explosion) of a previously exported raw CSV
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile C:\Temp\Copilot_replay_exploded.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile C:\Temp\Copilot_replay_exploded.csv
 .EXAMPLE
     # Offline replay with date & activity filtering + deep flatten
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction -OutputFile C:\Temp\Copilot_replay_deep.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction -OutputFile C:\Temp\Copilot_replay_deep.csv
 .EXAMPLE
     # Deep flatten (wide) with higher schema sample & moderate chunk size (balance column coverage vs memory)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 4000 -StreamingChunkSize 3000 -OutputFile C:\Temp\Copilot_deep_tuned.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 4000 -StreamingChunkSize 3000 -OutputFile C:\Temp\Copilot_deep_tuned.csv
 .EXAMPLE
     # Extremely wide deep flatten: maximize schema sample, reduce chunk size for lower peak memory
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 6000 -StreamingChunkSize 1500 -OutputFile C:\Temp\Copilot_deep_memoryguard.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 6000 -StreamingChunkSize 1500 -OutputFile C:\Temp\Copilot_deep_memoryguard.csv
 .EXAMPLE
     # Fast header freeze (narrow schema expectation) – smaller sample, larger chunk for throughput (risk: late columns ignored)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 800 -StreamingChunkSize 6000 -OutputFile C:\Temp\Copilot_deep_fastfreeze.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 800 -StreamingChunkSize 6000 -OutputFile C:\Temp\Copilot_deep_fastfreeze.csv
 #>
 
 param(
@@ -115,6 +116,12 @@ param(
     [int]$StreamingChunkSize = 5000,
 
     [Parameter(Mandatory = $false)]
+    [string[]]$AgentId,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$AgentOnly,
+
+    [Parameter(Mandatory = $false)]
     [switch]$Help
 )
 
@@ -126,11 +133,11 @@ if ($Help) {
 
 # Script version: dynamically read from package.json
 try {
-    $pkgPath = Join-Path $PSScriptRoot '..' | Join-Path -ChildPath 'package.json'
+    $pkgPath = Join-Path $PSScriptRoot 'package.json'
     if (Test-Path $pkgPath) { $ScriptVersion = ((Get-Content -Raw $pkgPath) | ConvertFrom-Json).version }
-    if (-not $ScriptVersion) { $ScriptVersion = '<unknown>' }
+    if (-not $ScriptVersion) { $ScriptVersion = '1.5.9' }
 }
-catch { $ScriptVersion = '<unknown>' }
+catch { $ScriptVersion = '1.5.9' }
 
 # --- Early parameter validation & environment sanity checks ---
 
@@ -171,14 +178,14 @@ if ($BlockHours -le 0) { Write-Host "ERROR: BlockHours must be positive." -Foreg
 
 try { if ($PSVersionTable.PSEdition -eq 'Core' -and ($global:InformationPreference -in @('SilentlyContinue', 'Ignore'))) { $global:InformationPreference = 'Continue' } } catch {}
 
-# Safeguard: When using -RAWInputCSV, only filtering params (StartDate, EndDate, ActivityTypes) are allowed; others are invalid.
+# Safeguard: When using -RAWInputCSV, only filtering params (StartDate, EndDate, ActivityTypes, AgentId, AgentOnly) are allowed; others are invalid.
 if ($RAWInputCSV) {
     $rawConflictParams = @('BlockHours', 'ResultSize', 'PacingMs', 'Auth', 'ParallelMode', 'MaxParallelGroups', 'MaxConcurrency', 'EnableParallel')
     $specifiedConflicts = @()
     foreach ($cp in $rawConflictParams) { if ($PSBoundParameters.ContainsKey($cp)) { $specifiedConflicts += $cp } }
     if ($specifiedConflicts.Count -gt 0) {
         Write-Host "ERROR: -RAWInputCSV cannot be combined with live query parameter(s): $($specifiedConflicts -join ', ')" -ForegroundColor Red
-        Write-Host "Remove those conflicting parameters and re-run. Allowed with RAWInputCSV: StartDate, EndDate, ActivityTypes, OutputFile, explosion switches." -ForegroundColor Yellow
+        Write-Host "Remove those conflicting parameters and re-run. Allowed with RAWInputCSV: StartDate, EndDate, ActivityTypes, AgentId, AgentOnly, OutputFile, explosion switches." -ForegroundColor Yellow
         exit 1
     }
 }
@@ -349,9 +356,16 @@ function Update-Progress {
     # Batch detail is now always included inline with explosion when BatchTotal is provided
     $batchDetail = ''
     $xDetail = if ($xs.Total -gt 0) { " | Export: {0}/{1}({2}%)" -f $xs.Current, $xs.Total, ([int]([Math]::Round($xPct * 100))) } else { ' | Export: 0/0' }
-    $phasePrefix = switch ($phase) { 'Parsing' { 'Pre-parsing JSON' } 'Query' { 'Query' } 'Explosion' { 'Explosion' } 'Export' { 'Export' } 'Complete' { 'Complete' } default { $phase } }
+    
+    # Build phase prefix with agent filter indicator
+    $parsingLabel = 'Pre-parsing JSON'
+    if (($AgentId -or $AgentOnly) -and $phase -eq 'Parsing') {
+        $parsingLabel = 'Pre-parse+AgentFilter'
+    }
+    $phasePrefix = switch ($phase) { 'Parsing' { $parsingLabel } 'Query' { 'Query' } 'Explosion' { 'Explosion' } 'Export' { 'Export' } 'Complete' { 'Complete' } default { $phase } }
+    
     if ($phase -eq 'Parsing' -and $pDetail) {
-        $composite = "Pre-parsing JSON: $pDetail$eDetail$batchDetail$xDetail"
+        $composite = "${phasePrefix}: $pDetail$eDetail$batchDetail$xDetail"
     }
     elseif ($phase -eq 'Explosion' -and -not $qDetail) {
         $composite = "Explosion: $explosionCounts$batchDetail$xDetail"
@@ -432,6 +446,61 @@ function Write-CsvRows {
     if ($sb.Length -gt 0) { $script:PAX_CsvWriter.Write($sb.ToString()) }
 }
 
+# --- Agent Filtering Function ---
+function Test-AgentFilter {
+    param(
+        [Parameter(Mandatory = $true)]
+        $ParsedAuditData,
+        [string[]]$AgentIdFilter,
+        [bool]$AgentOnlyFilter
+    )
+    
+    # If no agent filters specified, include the record
+    if (-not $AgentIdFilter -and -not $AgentOnlyFilter) {
+        return $true
+    }
+    
+    # Extract AgentId from parsed JSON (top-level property)
+    $recordAgentId = $null
+    try {
+        if ($ParsedAuditData.AgentId) {
+            $recordAgentId = [string]$ParsedAuditData.AgentId
+        }
+    }
+    catch {
+        # If parsing fails, skip this record
+        return $false
+    }
+    
+    # If AgentOnly filter is active, check if AgentId exists
+    if ($AgentOnlyFilter) {
+        if ([string]::IsNullOrWhiteSpace($recordAgentId)) {
+            return $false
+        }
+        # If only AgentOnly is specified (no specific AgentId filter), include any record with an AgentId
+        if (-not $AgentIdFilter) {
+            return $true
+        }
+    }
+    
+    # If specific AgentId filter is provided, check if this record matches
+    if ($AgentIdFilter) {
+        if ([string]::IsNullOrWhiteSpace($recordAgentId)) {
+            return $false
+        }
+        # Check if the record's AgentId matches any of the specified AgentIds
+        foreach ($filterId in $AgentIdFilter) {
+            if ($recordAgentId -eq $filterId) {
+                return $true
+            }
+        }
+        return $false
+    }
+    
+    # Default: include the record
+    return $true
+}
+
 $outputDir = Split-Path $OutputFile -Parent; if (-not (Test-Path $outputDir)) { New-Item -Path $outputDir -ItemType Directory -Force | Out-Null }
 $scriptMode = if ($ExplodeDeep) { "Deep Column Explosion" } elseif ($ExplodeArrays -or $ForcedRawInputCsvExplosion) { if ($ForcedRawInputCsvExplosion -and -not $ExplodeArrays.IsPresent -and -not $ExplodeDeep.IsPresent) { "Array Explosion (RAWInput implied)" } else { "Array Explosion" } } else { "Standard (1:1)" }
 @"
@@ -460,6 +529,36 @@ if (-not $RAWInputCSV) {
     Write-LogHost "Authentication: $Auth" -ForegroundColor White
 }
 Write-LogHost ("Activity Types: " + ($ActivityTypes -join ', ')) -ForegroundColor White
+
+# Show agent filtering if enabled
+if ($AgentId -or $AgentOnly) {
+    if ($AgentOnly) {
+        Write-LogHost "Agent Filter: AgentOnly (any records with AgentId present)" -ForegroundColor Yellow
+    }
+    if ($AgentId) {
+        $agentDisplay = if ($AgentId.Count -eq 1) {
+            "Specific AgentId: $($AgentId[0])"
+        }
+        elseif ($AgentId.Count -le 3) {
+            "Specific AgentIds ($($AgentId.Count)): " + ($AgentId -join '; ')
+        }
+        else {
+            "Specific AgentIds ($($AgentId.Count) total):"
+        }
+        Write-LogHost "Agent Filter: $agentDisplay" -ForegroundColor Yellow
+        if ($AgentId.Count -gt 3) {
+            # Show first 3 and indicate there are more (with truncation for very long IDs)
+            for ($i = 0; $i -lt [Math]::Min(3, $AgentId.Count); $i++) {
+                $displayId = if ($AgentId[$i].Length -gt 80) { $AgentId[$i].Substring(0, 77) + '...' } else { $AgentId[$i] }
+                Write-LogHost "  [$($i+1)] $displayId" -ForegroundColor Gray
+            }
+            if ($AgentId.Count -gt 3) {
+                Write-LogHost "  ... and $($AgentId.Count - 3) more" -ForegroundColor Gray
+            }
+        }
+    }
+}
+
 Write-LogHost "=============================================" -ForegroundColor Cyan
 Write-LogHost ""
 if ($ExplodeDeep -and $ExplodeArrays) { Write-LogHost "Note: -ExplodeDeep takes precedence over -ExplodeArrays (arrays will still explode, plus deep flatten)." -ForegroundColor DarkYellow }
@@ -474,6 +573,8 @@ if ($RAWInputCSV) {
         'StartDate (inclusive)' = $StartDate
         'EndDate (exclusive)'   = $EndDate
         ActivityTypes_Filter   = ($ActivityTypes -join ';')
+        AgentOnly              = $AgentOnly.IsPresent
+        AgentId                = $(if ($AgentId) { ($AgentId -join ';') } else { '' })
         ForcedExplosion        = $ForcedRawInputCsvExplosion
         ExplodeDeep            = $ExplodeDeep.IsPresent
         OutputFile             = $OutputFile
@@ -494,6 +595,8 @@ else {
         ResultSize              = $ResultSize
         PacingMs                = $PacingMs
         ActivityTypes          = ($ActivityTypes -join ';')
+        AgentOnly              = $AgentOnly.IsPresent
+        AgentId                = $(if ($AgentId) { ($AgentId -join ';') } else { '' })
         ExplodeArrays          = ($ExplodeArrays.IsPresent -or $ForcedRawInputCsvExplosion -or $ExplodeDeep.IsPresent)
         ExplodeArrays_Forced   = $ForcedRawInputCsvExplosion
         ExplodeDeep            = $ExplodeDeep.IsPresent
@@ -1097,6 +1200,21 @@ try {
 
     Write-LogHost ""; Write-LogHost "=== Enterprise Processing Summary ===" -ForegroundColor Green
     Write-LogHost "Total audit records retrieved: $($allLogs.Count)" -ForegroundColor Cyan
+    
+    # Show agent filter metrics if filtering was applied
+    if ($script:metrics.AgentFilterApplied) {
+        Write-LogHost ""
+        Write-LogHost "Agent Filtering Metrics:" -ForegroundColor Yellow
+        Write-LogHost "  Records before agent filter: $($script:metrics.AgentFilterPreCount)" -ForegroundColor Cyan
+        Write-LogHost "  Records after agent filter: $($script:metrics.AgentFilterPostCount)" -ForegroundColor Cyan
+        Write-LogHost "  Records filtered out: $($script:metrics.AgentFilterRemovedCount)" -ForegroundColor Gray
+        $retentionPct = if ($script:metrics.AgentFilterPreCount -gt 0) { 
+            [math]::Round(($script:metrics.AgentFilterPostCount / $script:metrics.AgentFilterPreCount) * 100, 2) 
+        } else { 0 }
+        Write-LogHost "  Retention rate: $retentionPct%" -ForegroundColor Cyan
+        Write-LogHost "  Filter processing time: $($script:metrics.AgentFilterElapsedSec) seconds" -ForegroundColor Gray
+    }
+    
     if (-not $RAWInputCSV) {
         Write-LogHost "Learned block sizes: $(if ($script:learnedActivityBlockSize.Count -gt 0){ ($script:learnedActivityBlockSize.GetEnumerator()|ForEach-Object{\"$($_.Key)=$($_.Value)h\"}) -join ', ' } else {'Using defaults'})" -ForegroundColor Gray
         Write-LogHost "Global learned size: $($script:globalLearnedBlockSize) hours" -ForegroundColor Gray
@@ -1156,24 +1274,8 @@ try {
     $structuredDataCount = 0
     Write-LogHost "Streaming export mode enabled (schema sample=$StreamingSchemaSample; base chunk size=$StreamingChunkSize)" -ForegroundColor Yellow
     
-    # Enable parallel processing for large replay datasets (PowerShell 7+ required)
-    $replayParallelEligible = $false
-    if ($RAWInputCSV -and ($PSVersionTable.PSVersion.Major -ge 7)) {
-        $eligibilityThreshold = ($StreamingSchemaSample + 5000)
-        Write-LogHost "Parallel eligibility check: RAW=$RAWInputCSV, PS=$($PSVersionTable.PSVersion.Major), Count=$($allLogs.Count), Threshold=$eligibilityThreshold" -ForegroundColor DarkGray
-        if ($allLogs.Count -gt $eligibilityThreshold) { 
-            $replayParallelEligible = $true 
-            Write-LogHost "Replay parallel explosion ELIGIBLE -> will parallelize after schema freeze ($($allLogs.Count) records)" -ForegroundColor Green
-        }
-        else {
-            Write-LogHost "Replay parallel NOT eligible (dataset too small: $($allLogs.Count) <= $eligibilityThreshold)" -ForegroundColor DarkYellow
-        }
-    }
-    else {
-        if (-not $RAWInputCSV) { Write-LogHost "Parallel not eligible: Not in replay mode" -ForegroundColor DarkGray }
-        elseif ($PSVersionTable.PSVersion.Major -lt 7) { Write-LogHost "Parallel not eligible: PowerShell $($PSVersionTable.PSVersion) (need 7+)" -ForegroundColor DarkYellow }
-    }
-    $script:progressState.Explode.Total = [int]$allLogs.Count; $script:progressState.Explode.Current = 0; $te0 = Get-Date
+    # Note: Parallel eligibility will be checked after agent filtering (if applicable) to use correct filtered count
+    $te0 = Get-Date
     $schemaFrozen = $false; $schemaSampleRows = New-Object System.Collections.Generic.List[object]; $postFreezeNewColumns = 0
     # Track distinct late (post-freeze) columns ignored (deep mode / parallel replay)
     $lateIgnoredColumns = New-Object System.Collections.Generic.HashSet[string]
@@ -1187,7 +1289,11 @@ try {
     # Pre-parse JSON data from CSV for improved processing speed
     if ($RAWInputCSV) {
         # Initialize parsing phase progress tracking
-        Set-ProgressPhase -Phase 'Parsing' -Status 'Pre-parsing JSON from CSV'
+        $parsingStatus = 'Pre-parsing JSON from CSV'
+        if ($AgentId -or $AgentOnly) {
+            $parsingStatus += ' + Agent filter'
+        }
+        Set-ProgressPhase -Phase 'Parsing' -Status $parsingStatus
         $script:progressState.Parsing.Total = [int]$allLogs.Count
         $script:progressState.Parsing.Current = 0
     }
@@ -1215,7 +1321,9 @@ try {
         # Update parsing progress (replay mode only)
         if ($RAWInputCSV) {
             $parseCount++
-            $script:progressState.Parsing.Current = $parseCount
+            # Pre-parsing represents 90% of the parsing+filtering task
+            # Scale current to 90% of actual progress
+            $script:progressState.Parsing.Current = [int]($parseCount * 0.9)
             # Update progress bar every 500 records or at completion
             if ($parseCount % 500 -eq 0 -or $parseCount -eq $allLogs.Count) {
                 Update-Progress
@@ -1225,6 +1333,81 @@ try {
     $parseEnd = Get-Date
     $parseElapsed = [int]($parseEnd - $parseStart).TotalSeconds
     Write-LogHost "JSON pre-parsing complete in $parseElapsed seconds ($parseErrors parse errors)" -ForegroundColor Green
+    
+    # --- Agent Filtering (if specified) ---
+    $preFilterCount = $allLogs.Count
+    if ($AgentId -or $AgentOnly) {
+        Write-LogHost "Applying Agent filtering..." -ForegroundColor Yellow
+        if ($AgentId) {
+            Write-LogHost "  Filtering for AgentId values: $($AgentId -join ', ')" -ForegroundColor Gray
+        }
+        if ($AgentOnly) {
+            Write-LogHost "  Filtering for records with any AgentId present" -ForegroundColor Gray
+        }
+        
+        $filterStart = Get-Date
+        $filteredLogs = New-Object System.Collections.Generic.List[object]
+        $filterCount = 0
+        
+        foreach ($log in $allLogs) {
+            if (Test-AgentFilter -ParsedAuditData $log._ParsedAuditData -AgentIdFilter $AgentId -AgentOnlyFilter $AgentOnly.IsPresent) {
+                $filteredLogs.Add($log)
+            }
+            $filterCount++
+            
+            # Update parsing progress bar during filtering (replay mode only)
+            if ($RAWInputCSV -and ($filterCount % 500 -eq 0 -or $filterCount -eq $preFilterCount)) {
+                # Agent filtering represents the final 10% (from 90% to 100%)
+                $filterProgress = $filterCount / $preFilterCount
+                $script:progressState.Parsing.Current = [int](($allLogs.Count * 0.9) + ($allLogs.Count * 0.1 * $filterProgress))
+                Update-Progress
+            }
+        }
+        
+        $allLogs = $filteredLogs
+        $postFilterCount = $allLogs.Count
+        $filterEnd = Get-Date
+        $filterElapsed = [int]($filterEnd - $filterStart).TotalSeconds
+        $filteredOutCount = $preFilterCount - $postFilterCount
+        
+        # Store agent filter metrics
+        $script:metrics.AgentFilterApplied = $true
+        $script:metrics.AgentFilterPreCount = $preFilterCount
+        $script:metrics.AgentFilterPostCount = $postFilterCount
+        $script:metrics.AgentFilterRemovedCount = $filteredOutCount
+        $script:metrics.AgentFilterElapsedSec = $filterElapsed
+        
+        Write-LogHost "Agent filtering complete in $filterElapsed seconds" -ForegroundColor Green
+        Write-LogHost "  Records before filtering: $preFilterCount" -ForegroundColor Gray
+        Write-LogHost "  Records after filtering: $postFilterCount" -ForegroundColor Gray
+        Write-LogHost "  Records filtered out: $filteredOutCount" -ForegroundColor Gray
+        
+        if ($postFilterCount -eq 0) {
+            Write-LogHost "WARNING: No records match the Agent filter criteria. Output will contain header only." -ForegroundColor Yellow
+        }
+    }
+    
+    # Set explosion phase total based on final filtered count
+    $script:progressState.Explode.Total = [int]$allLogs.Count
+    $script:progressState.Explode.Current = 0
+    
+    # Check parallel eligibility AFTER agent filtering (uses filtered count)
+    $replayParallelEligible = $false
+    if ($RAWInputCSV -and ($PSVersionTable.PSVersion.Major -ge 7)) {
+        $eligibilityThreshold = ($StreamingSchemaSample + 5000)
+        Write-LogHost "Parallel eligibility check: RAW=$RAWInputCSV, PS=$($PSVersionTable.PSVersion.Major), Count=$($allLogs.Count), Threshold=$eligibilityThreshold" -ForegroundColor DarkGray
+        if ($allLogs.Count -gt $eligibilityThreshold) { 
+            $replayParallelEligible = $true 
+            Write-LogHost "Replay parallel explosion ELIGIBLE -> will parallelize after schema freeze ($($allLogs.Count) records)" -ForegroundColor Green
+        }
+        else {
+            Write-LogHost "Replay parallel NOT eligible (dataset too small: $($allLogs.Count) <= $eligibilityThreshold)" -ForegroundColor DarkYellow
+        }
+    }
+    else {
+        if (-not $RAWInputCSV) { Write-LogHost "Parallel not eligible: Not in replay mode" -ForegroundColor DarkGray }
+        elseif ($PSVersionTable.PSVersion.Major -lt 7) { Write-LogHost "Parallel not eligible: PowerShell $($PSVersionTable.PSVersion) (need 7+)" -ForegroundColor DarkYellow }
+    }
     
     # Begin record explosion and transformation phase
     Set-ProgressPhase -Phase 'Explosion' -Status 'Analyzing and exploding records'
@@ -1297,7 +1480,8 @@ try {
                                 # Calculate total batches ONCE at the start using ORIGINAL batch size (don't recalculate if batchSize changes mid-stream)
                                 $totalBatchesInitial = [Math]::Ceiling($remainingCount / $parallelBatchSizeOriginal)
                                 Write-LogHost "Parallel batch config: batchSize=$parallelBatchSize, throttle=$throttle, batches=$totalBatchesInitial" -ForegroundColor DarkCyan
-                                Write-LogHost "NOTE: Progress bar updates between batches - progress may appear paused during intensive parallel processing." -ForegroundColor Yellow
+                                # Show progress note in terminal only (not in log file)
+                                Write-Host "NOTE: Progress bar updates between batches - progress may appear paused during intensive parallel processing." -ForegroundColor Yellow
                                 
                                 # Get function definitions to pass into parallel runspace
                                 $convertExplodedDef = ${function:Convert-ToPurviewExplodedRecords}.ToString()
@@ -1580,41 +1764,54 @@ try {
     Write-LogHost "File size: $([math]::Round((Get-Item $OutputFile).Length / 1KB,2)) KB" -ForegroundColor White
     try { $endDomain = if ($script:TenantPrimaryDomain) { $script:TenantPrimaryDomain } else { $primaryDomain }; $endTenantId = if ($script:TenantId) { $script:TenantId } else { $tenantId }; $endFallback = if ($script:TenantIndicators -and $script:TenantIndicators.Count -gt 0) { $script:TenantIndicators } else { $fallbackIndicators }; if (-not $endDomain) { $endDomain = '<unknown>' }; if (-not $endTenantId) { $endTenantId = '<unresolved>' }; $endParts = @("Domain=$endDomain", "TenantId=$endTenantId"); if ($endFallback -and $endFallback.Count -gt 0) { $endParts += ("Indicators=" + ($endFallback -join ',')) }; Write-LogHost ("Tenant context: " + ($endParts -join ' | ')) -ForegroundColor DarkCyan } catch {}
 
-    Write-LogHost ""; Write-LogHost "=== Performance Optimization Summary ===" -ForegroundColor Cyan
-    Write-LogHost "Adaptive sizing results:" -ForegroundColor White
-    if ($script:learnedActivityBlockSize.Count -gt 0) { foreach ($kvp in $script:learnedActivityBlockSize.GetEnumerator()) { Write-LogHost ("  {0}: {1} hours (learned)" -f $($kvp.Key), $($kvp.Value)) -ForegroundColor Gray } } else { Write-LogHost "  No adaptive learning occurred (used defaults)" -ForegroundColor Gray }
-    Write-LogHost "Global learned size: $($script:globalLearnedBlockSize) hours" -ForegroundColor Gray
-    if ($script:Hit10KLimit) { Write-LogHost ""; Write-LogHost "  DATA COMPLETENESS WARNING " -ForegroundColor Red; Write-LogHost "Exchange Online 10K server limit was reached!" -ForegroundColor Red; Write-LogHost "Affected time window: $($script:LimitTimeWindow)" -ForegroundColor Yellow; Write-LogHost "RECOMMENDATION: Re-run with smaller time windows (30min blocks)" -ForegroundColor Cyan; Write-LogHost "This ensures complete data retrieval for high-volume periods" -ForegroundColor Yellow } else { Write-LogHost ""; Write-LogHost " Data retrieval completed without hitting limits" -ForegroundColor Green }
+    # Show agent filtering metrics if filter was applied
+    if ($script:metrics.AgentFilterApplied) {
+        Write-LogHost ""; Write-LogHost "=== Agent Filtering Summary ===" -ForegroundColor Cyan
+        Write-LogHost ("Records before agent filter: {0}" -f $script:metrics.AgentFilterPreCount) -ForegroundColor White
+        Write-LogHost ("Records after agent filter: {0}" -f $script:metrics.AgentFilterPostCount) -ForegroundColor White
+        Write-LogHost ("Records filtered out: {0}" -f $script:metrics.AgentFilterRemovedCount) -ForegroundColor Gray
+        $retentionRate = if ($script:metrics.AgentFilterPreCount -gt 0) { [Math]::Round(($script:metrics.AgentFilterPostCount / $script:metrics.AgentFilterPreCount) * 100, 2) } else { 0 }
+        Write-LogHost ("Retention rate: {0}%" -f $retentionRate) -ForegroundColor White
+        Write-LogHost ("Agent filter time: {0:F2} seconds" -f $script:metrics.AgentFilterElapsedSec) -ForegroundColor Gray
+    }
 
-    Write-LogHost ""; Write-LogHost "=== Explosion & Progress Metrics ===" -ForegroundColor Cyan
-    Write-LogHost ("Query time: {0} ms | Explosion time: {1} ms | Export time: {2} ms" -f $script:metrics.QueryMs, $script:metrics.ExplosionMs, $script:metrics.ExportMs) -ForegroundColor Gray
-    Write-LogHost ("Pages fetched: {0}" -f $script:metrics.PagesFetched) -ForegroundColor Gray
-    Write-LogHost ("Records fetched: {0} | Structured rows: {1}" -f $script:metrics.TotalRecordsFetched, $script:metrics.TotalStructuredRows) -ForegroundColor Gray
-    if ($script:metrics.ExplosionEvents -gt 0) { $avg = [math]::Round(($script:metrics.ExplosionRowsFromEvents + $script:metrics.ExplosionEvents) / $script:metrics.ExplosionEvents, 2); Write-LogHost ("Explosion events: {0} | Avg rows/record (exploded): {1} | Max rows in a single record: {2}" -f $script:metrics.ExplosionEvents, $avg, $script:metrics.ExplosionMaxPerRecord) -ForegroundColor Gray } else { Write-LogHost "Explosion events: 0 (no multi-row expansions)" -ForegroundColor Gray }
-    if ($script:metrics.ExplosionTruncated) { Write-LogHost "WARNING: One or more exploded records exceeded row cap (1000) and were truncated." -ForegroundColor Yellow }
-    if ($script:metrics.EffectiveChunkSize -gt 0) { Write-LogHost ("Effective chunk size: {0}" -f $script:metrics.EffectiveChunkSize) -ForegroundColor Gray }
-    if ($script:metrics.ParallelBatchSizeFinal -gt 0) { Write-LogHost ("Final parallel batch size: {0}" -f $script:metrics.ParallelBatchSizeFinal) -ForegroundColor Gray }
-    if ($script:metrics.ParallelThrottleFinal -gt 0) { Write-LogHost ("Final parallel throttle: {0}" -f $script:metrics.ParallelThrottleFinal) -ForegroundColor Gray }
-    if ($script:metrics.Activities.Count -gt 0) { Write-LogHost "Per-activity counts:" -ForegroundColor Gray; foreach ($k in $script:metrics.Activities.Keys) { $a = $script:metrics.Activities[$k]; Write-LogHost ([string]::Format('  {0} - retrieved={1} structured={2}', $k, $a.Retrieved, $a.Structured)) -ForegroundColor Gray } }
-    Write-LogHost "" -ForegroundColor Gray
-    Write-LogHost "=== Parallel Execution Summary ===" -ForegroundColor Cyan
-    Write-LogHost ("Total query groups: {0}" -f $queryPlan.Count) -ForegroundColor Gray
-    Write-LogHost ("Groups executed in parallel: {0}" -f $parallelGroupsUsed) -ForegroundColor Gray
-    Write-LogHost ("Groups executed sequentially: {0}" -f ($sequentialGroups + ($queryPlan.Count - $parallelGroupsUsed - $sequentialGroups))) -ForegroundColor Gray
-    Write-LogHost ("MaxConcurrency: {0} | MaxParallelGroups: {1} | ParallelMode: {2}" -f $MaxConcurrency, $MaxParallelGroups, $ParallelMode) -ForegroundColor Gray
-    if ($ParallelMode -eq 'Auto') { $highGroups = ($queryPlan | Where-Object { $_.Group -eq 'High' }).Count; $mediumGroups = ($queryPlan | Where-Object { $_.Group -eq 'Medium' }).Count; $lowGroups = ($queryPlan | Where-Object { $_.Group -eq 'Low' }).Count; $activitiesTotal = ($queryPlan | ForEach-Object { $_.Activities.Count } | Measure-Object -Sum).Sum; $groupsTotal = $queryPlan.Count; $autoStatus = if ($parallelOverallEnabled) { 'met' } else { 'not met' }; Write-LogHost ("Auto criteria (PS7+, MPG>0, MC>1, <=1 High, >=1 Med/Low, activities<=15, groups>1): {0}; High={1} Medium={2} Low={3} Activities={4} Groups={5}" -f $autoStatus, $highGroups, $mediumGroups, $lowGroups, $activitiesTotal, $groupsTotal) -ForegroundColor Gray }
+    # Only show Performance Optimization Summary if adaptive sizing was used (live query mode)
+    if (-not $RAWInputCSV) {
+        Write-LogHost ""; Write-LogHost "=== Performance Optimization Summary ===" -ForegroundColor Cyan
+        Write-LogHost "Adaptive sizing results:" -ForegroundColor White
+        if ($script:learnedActivityBlockSize.Count -gt 0) { foreach ($kvp in $script:learnedActivityBlockSize.GetEnumerator()) { Write-LogHost ("  {0}: {1} hours (learned)" -f $($kvp.Key), $($kvp.Value)) -ForegroundColor Gray } } else { Write-LogHost "  No adaptive learning occurred (used defaults)" -ForegroundColor Gray }
+        Write-LogHost "Global learned size: $($script:globalLearnedBlockSize) hours" -ForegroundColor Gray
+        if ($script:Hit10KLimit) { Write-LogHost ""; Write-LogHost "  DATA COMPLETENESS WARNING " -ForegroundColor Red; Write-LogHost "Exchange Online 10K server limit was reached!" -ForegroundColor Red; Write-LogHost "Affected time window: $($script:LimitTimeWindow)" -ForegroundColor Yellow; Write-LogHost "RECOMMENDATION: Re-run with smaller time windows (30min blocks)" -ForegroundColor Cyan; Write-LogHost "This ensures complete data retrieval for high-volume periods" -ForegroundColor Yellow } else { Write-LogHost ""; Write-LogHost " Data retrieval completed without hitting limits" -ForegroundColor Green }
+    }
+
+    # Only show Explosion & Progress Metrics if explosion mode was used
+    if ($effectiveExplode) {
+        Write-LogHost ""; Write-LogHost "=== Explosion & Progress Metrics ===" -ForegroundColor Cyan
+        Write-LogHost ("Query time: {0} ms | Explosion time: {1} ms | Export time: {2} ms" -f $script:metrics.QueryMs, $script:metrics.ExplosionMs, $script:metrics.ExportMs) -ForegroundColor Gray
+        Write-LogHost ("Pages fetched: {0}" -f $script:metrics.PagesFetched) -ForegroundColor Gray
+        Write-LogHost ("Records fetched: {0} | Structured rows: {1}" -f $script:metrics.TotalRecordsFetched, $script:metrics.TotalStructuredRows) -ForegroundColor Gray
+        if ($script:metrics.ExplosionEvents -gt 0) { $avg = [math]::Round(($script:metrics.ExplosionRowsFromEvents + $script:metrics.ExplosionEvents) / $script:metrics.ExplosionEvents, 2); Write-LogHost ("Explosion events: {0} | Avg rows/record (exploded): {1} | Max rows in a single record: {2}" -f $script:metrics.ExplosionEvents, $avg, $script:metrics.ExplosionMaxPerRecord) -ForegroundColor Gray } else { Write-LogHost "Explosion events: 0 (no multi-row expansions)" -ForegroundColor Gray }
+        if ($script:metrics.ExplosionTruncated) { Write-LogHost "WARNING: One or more exploded records exceeded row cap (1000) and were truncated." -ForegroundColor Yellow }
+        if ($script:metrics.EffectiveChunkSize -gt 0) { Write-LogHost ("Effective chunk size: {0}" -f $script:metrics.EffectiveChunkSize) -ForegroundColor Gray }
+        if ($script:metrics.ParallelBatchSizeFinal -gt 0) { Write-LogHost ("Final parallel batch size: {0}" -f $script:metrics.ParallelBatchSizeFinal) -ForegroundColor Gray }
+        if ($script:metrics.ParallelThrottleFinal -gt 0) { Write-LogHost ("Final parallel throttle: {0}" -f $script:metrics.ParallelThrottleFinal) -ForegroundColor Gray }
+        if ($script:metrics.Activities.Count -gt 0) { Write-LogHost "Per-activity counts:" -ForegroundColor Gray; foreach ($k in $script:metrics.Activities.Keys) { $a = $script:metrics.Activities[$k]; Write-LogHost ([string]::Format('  {0} - retrieved={1} structured={2}', $k, $a.Retrieved, $a.Structured)) -ForegroundColor Gray } }
+        Write-LogHost "" -ForegroundColor Gray
+    }
+    
+    # Only show Parallel Execution Summary if parallel mode was actually used
+    if (-not $RAWInputCSV -and $parallelGroupsUsed -gt 0) {
+        Write-LogHost "=== Parallel Execution Summary ===" -ForegroundColor Cyan
+        Write-LogHost ("Total query groups: {0}" -f $queryPlan.Count) -ForegroundColor Gray
+        Write-LogHost ("Groups executed in parallel: {0}" -f $parallelGroupsUsed) -ForegroundColor Gray
+        Write-LogHost ("Groups executed sequentially: {0}" -f ($sequentialGroups + ($queryPlan.Count - $parallelGroupsUsed - $sequentialGroups))) -ForegroundColor Gray
+        Write-LogHost ("MaxConcurrency: {0} | MaxParallelGroups: {1} | ParallelMode: {2}" -f $MaxConcurrency, $MaxParallelGroups, $ParallelMode) -ForegroundColor Gray
+        if ($ParallelMode -eq 'Auto') { $highGroups = ($queryPlan | Where-Object { $_.Group -eq 'High' }).Count; $mediumGroups = ($queryPlan | Where-Object { $_.Group -eq 'Medium' }).Count; $lowGroups = ($queryPlan | Where-Object { $_.Group -eq 'Low' }).Count; $activitiesTotal = ($queryPlan | ForEach-Object { $_.Activities.Count } | Measure-Object -Sum).Sum; $groupsTotal = $queryPlan.Count; $autoStatus = if ($parallelOverallEnabled) { 'met' } else { 'not met' }; Write-LogHost ("Auto criteria (PS7+, MPG>0, MC>1, <=1 High, >=1 Med/Low, activities<=15, groups>1): {0}; High={1} Medium={2} Low={3} Activities={4} Groups={5}" -f $autoStatus, $highGroups, $mediumGroups, $lowGroups, $activitiesTotal, $groupsTotal) -ForegroundColor Gray }
+        Write-LogHost "" -ForegroundColor Gray
+    }
     
     # Always show timing summary (inline console output)
     $totalMs = [Math]::Max(1, ($script:metrics.QueryMs + $script:metrics.ExplosionMs + $script:metrics.ExportMs)); $qPct = if ($totalMs -gt 0) { [Math]::Round(($script:metrics.QueryMs / $totalMs) * 100, 1) } else { 0 }; $xPct = if ($totalMs -gt 0 -and $script:metrics.ExplosionMs -gt 0) { [Math]::Round(($script:metrics.ExplosionMs / $totalMs) * 100, 1) } else { 0 }; $ePct = if ($totalMs -gt 0) { [Math]::Round(($script:metrics.ExportMs / $totalMs) * 100, 1) } else { 0 }; $startStamp = try { $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') } catch { '' }; if ($startStamp) { Write-Host ("Execution start time (UTC): {0} UTC" -f $startStamp) }; Write-Host ("Final durations -> query={0}ms ({1}%)  explosion={2}ms ({3}%)  export={4}ms ({5}%)" -f $script:metrics.QueryMs, $qPct, $script:metrics.ExplosionMs, $xPct, $script:metrics.ExportMs, $ePct)
-
-
-    Write-LogHost ""; Write-LogHost "The CSV file contains the following columns (plus many more if -ExplodeDeep is used):" -ForegroundColor Cyan
-    Write-LogHost "- RecordType, CreationDate, UserIds, Operations" -ForegroundColor Gray
-    Write-LogHost "- Id, Operation, OrganizationId, UserId" -ForegroundColor Gray
-    Write-LogHost "- Usage/ROI fields (AgentId, AgentName, AppIdentity, ApplicationName, Tokens*, Model*, OutcomeStatus, DurationMs, ConversationId, TurnNumber, ClientVersion, ClientPlatform, RetryCount)" -ForegroundColor Gray
-    Write-LogHost "- Suggestions.*, Actions.*, References.*, Participants.* aggregates" -ForegroundColor Gray
-    Write-LogHost "- CopilotEventData $(if ($ExplodeDeep -or $ExplodeArrays){ '(exploded/flattened elements)' } else { '(JSON string with complete arrays)' })" -ForegroundColor Gray
-    Write-LogHost "- OriginalAuditData (Complete raw audit data)" -ForegroundColor Gray
     if ($ExplodeArrays) { Write-LogHost "- ArrayIndex_* (Explosion metadata fields)" -ForegroundColor Gray }
 }
 catch { Write-LogHost "Script failed: $($_.Exception.Message)" -ForegroundColor Red; Write-LogHost $_.ScriptStackTrace -ForegroundColor Red }
