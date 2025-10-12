@@ -775,7 +775,7 @@ The `AgentId` field appears in Copilot audit records and identifies the specific
 - `AgentId` - The unique agent identifier
 - `AgentName` - Human-readable agent name (if available)
 - `AppIdentity` - Application context for the agent
-- Plus all standard Copilot usage fields (tokens, model, duration, etc.)
+- Plus all standard Copilot usage fields
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
 
