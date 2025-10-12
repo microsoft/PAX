@@ -713,6 +713,12 @@ Agent Filtering enables targeted extraction of Copilot agent-specific audit reco
     -ExplodeDeep `
     -OutputFile "C:\Exports\AgentActivity_Exploded.csv"
 
+# Replay mode: Filter specific AgentId from previously exported data
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
+    -RAWInputCSV "C:\Exports\RawAuditLogs.csv" `
+    -AgentId "CopilotStudio.Declarative.a1b2c3d4" `
+    -OutputFile "C:\Exports\SpecificAgent_Replay.csv"
+
 # Combine with deep explosion for maximum analysis detail
 .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
     -StartDate 2025-10-01 `
@@ -724,11 +730,11 @@ Agent Filtering enables targeted extraction of Copilot agent-specific audit reco
 
 ### How Agent Filtering Works
 
-1. **Pre-Parsing Phase** (90% of progress):
+1. **Pre-Parsing Phase**:
    - In replay mode, JSON audit data is pre-parsed for all records
    - Enables fast filtering without repeated JSON parsing
 
-2. **Agent Filtering Phase** (10% of progress):
+2. **Agent Filtering Phase**:
    - Each record's `ParsedAuditData.AgentId` field is evaluated
    - `-AgentOnly`: Includes any record where `AgentId` is present and non-empty
    - `-AgentId`: Includes records where `AgentId` matches one of the specified values (case-insensitive)
@@ -748,7 +754,7 @@ Agent Filtering enables targeted extraction of Copilot agent-specific audit reco
 
 **Replay Mode:**
 - Processes up to ~5,000 records/second during filtering
-- Progress bar shows pre-parsing (90%) and filtering (10%) phases separately
+- Progress bar shows pre-parsing and filtering phases separately
 - Example: 367,796 records → 20,240 agent records in ~80 seconds total
 
 **Memory Usage:**
@@ -765,7 +771,7 @@ The `AgentId` field appears in Copilot audit records and identifies the specific
 - `CustomAgent.<name>` - Custom-built agents
 - Copilot-specific identifiers for built-in agents
 
-**Output Columns (with `-ExplodeDeep`):**
+**Output Columns:**
 - `AgentId` - The unique agent identifier
 - `AgentName` - Human-readable agent name (if available)
 - `AppIdentity` - Application context for the agent
