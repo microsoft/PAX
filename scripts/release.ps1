@@ -519,18 +519,26 @@ function Sync-ReleaseBranch {
         [string]$NewVersion
     )
     
-    Write-Status "Generating README.pdf from README.md..."
+    Write-Status "Generating PAX_Documentation_v${NewVersion}.pdf from README.md..."
     
     # Generate PDF from README.md using VS Code Markdown PDF extension
     $readmePath = Join-Path (Get-Location) "README.md"
-    $pdfPath = Join-Path (Get-Location) "README.pdf"
+    $pdfFilename = "PAX_Documentation_v${NewVersion}.pdf"
+    $pdfPath = Join-Path (Get-Location) $pdfFilename
     
     if (Test-Path $readmePath) {
         try {
-            # Remove old PDF if it exists
-            if (Test-Path $pdfPath) {
-                Remove-Item $pdfPath -Force
-                Write-Status "Removed existing README.pdf"
+            # Remove old versioned PDFs
+            Get-ChildItem -Path "PAX_Documentation_v*.pdf" -ErrorAction SilentlyContinue | ForEach-Object {
+                Remove-Item $_.FullName -Force
+                Write-Status "Removed old PDF: $($_.Name)"
+            }
+            
+            # Also remove README.pdf if it exists (legacy name)
+            $legacyPdfPath = Join-Path (Get-Location) "README.pdf"
+            if (Test-Path $legacyPdfPath) {
+                Remove-Item $legacyPdfPath -Force
+                Write-Status "Removed legacy README.pdf"
             }
             
             Write-Status "Attempting to generate PDF using VS Code Markdown PDF extension..."
@@ -563,30 +571,38 @@ function Sync-ReleaseBranch {
             # Check if PDF was created
             Start-Sleep -Milliseconds 500  # Brief pause for file system
             
-            if (Test-Path $pdfPath) {
+            # First check for the default README.pdf that Markdown PDF creates
+            $defaultPdfPath = Join-Path (Get-Location) "README.pdf"
+            if (Test-Path $defaultPdfPath) {
+                # Rename it to the versioned name
+                Move-Item $defaultPdfPath $pdfPath -Force
                 $pdfSize = (Get-Item $pdfPath).Length / 1KB
-                Write-Success "✓ README.pdf generated successfully ($([math]::Round($pdfSize, 2)) KB)"
+                Write-Success "✓ $pdfFilename generated successfully ($([math]::Round($pdfSize, 2)) KB)"
+            } elseif (Test-Path $pdfPath) {
+                # Already has correct name
+                $pdfSize = (Get-Item $pdfPath).Length / 1KB
+                Write-Success "✓ $pdfFilename generated successfully ($([math]::Round($pdfSize, 2)) KB)"
             } else {
-                Write-Warning "README.pdf was not found. Checking common locations..."
+                Write-Warning "$pdfFilename was not found. Checking common locations..."
                 
                 # Check if user saved it elsewhere
                 $altPdfPath = Join-Path (Split-Path $readmePath) "README.pdf"
                 if (Test-Path $altPdfPath) {
                     Move-Item $altPdfPath $pdfPath -Force
-                    Write-Success "✓ Found and moved README.pdf to root directory"
+                    Write-Success "✓ Found and renamed to $pdfFilename"
                 } else {
-                    Write-Error "README.pdf was not generated. Please generate it manually and re-run the script."
+                    Write-Error "$pdfFilename was not generated. Please generate it manually and re-run the script."
                     Write-Host "To generate PDF manually:" -ForegroundColor Yellow
                     Write-Host "  1. Open README.md in VS Code" -ForegroundColor White
                     Write-Host "  2. Right-click → 'Markdown PDF: Export (pdf)'" -ForegroundColor White
-                    Write-Host "  3. Save as README.pdf in the repository root" -ForegroundColor White
+                    Write-Host "  3. It will create README.pdf (script will rename it automatically)" -ForegroundColor White
                     throw "PDF generation incomplete"
                 }
             }
         }
         catch {
             Write-Error "PDF generation failed: $($_.Exception.Message)"
-            Write-Host "Please generate README.pdf manually before continuing." -ForegroundColor Yellow
+            Write-Host "Please generate $pdfFilename manually before continuing." -ForegroundColor Yellow
             throw
         }
     }
@@ -632,6 +648,10 @@ function Sync-ReleaseBranch {
         $scriptFilename = $currentScript.Name
         Write-Status "Found script to sync: $scriptFilename"
         
+        # Set versioned PDF filename
+        $pdfFilename = "PAX_Documentation_v${NewVersion}.pdf"
+        Write-Status "PDF file to sync: $pdfFilename"
+        
         # Define customer-facing files to sync (excluding scripts/ folder entirely)
         $filesToSync = @{
             ".gitattributes" = ".gitattributes"
@@ -640,7 +660,7 @@ function Sync-ReleaseBranch {
             "CONTRIBUTORS.md" = "CONTRIBUTORS.md"
             "LICENSE" = "LICENSE"
             "README.md" = "README.md"
-            "README.pdf" = "README.pdf"
+            $pdfFilename = $pdfFilename
             "SECURITY.md" = "SECURITY.md"
             $scriptFilename = $scriptFilename
         }
@@ -677,6 +697,14 @@ function Sync-ReleaseBranch {
                 ForEach-Object {
                     Remove-Item $_.FullName -Force
                     Write-Status "Removed old script version: $($_.Name)"
+                }
+            
+            # Clean up old versioned PDFs in release worktree root (keep only current version)
+            Get-ChildItem -Path "$releaseRootPath/PAX_Documentation_v*.pdf" | 
+                Where-Object { $_.Name -ne $pdfFilename } | 
+                ForEach-Object {
+                    Remove-Item $_.FullName -Force
+                    Write-Status "Removed old PDF version: $($_.Name)"
                 }
         }
         
@@ -783,6 +811,9 @@ function Sync-ReleaseBranch {
             
             $scriptFilename = $currentScript.Name
             
+            # Set versioned PDF filename
+            $pdfFilename = "PAX_Documentation_v${NewVersion}.pdf"
+            
             # Copy customer-facing files from PAX branch (excluding scripts/ folder)
             Write-Status "Copying customer-facing files from PAX branch..."
             
@@ -796,7 +827,7 @@ function Sync-ReleaseBranch {
             git checkout $currentBranch -- "CONTRIBUTORS.md" 2>$null
             git checkout $currentBranch -- "LICENSE" 2>$null
             git checkout $currentBranch -- "README.md" 2>$null
-            git checkout $currentBranch -- "README.pdf" 2>$null
+            git checkout $currentBranch -- "$pdfFilename" 2>$null
             git checkout $currentBranch -- "SECURITY.md" 2>$null
             git checkout $currentBranch -- "$scriptFilename" 2>$null
             
@@ -808,6 +839,14 @@ function Sync-ReleaseBranch {
                 ForEach-Object {
                     Remove-Item $_.FullName -Force
                     Write-Status "Removed old script version: $($_.Name)"
+                }
+            
+            # Clean up old PDF versions from root
+            Get-ChildItem -Path "PAX_Documentation_v*.pdf" | 
+                Where-Object { $_.Name -ne $pdfFilename } | 
+                ForEach-Object {
+                    Remove-Item $_.FullName -Force
+                    Write-Status "Removed old PDF version: $($_.Name)"
                 }
             
             # Stage and commit
