@@ -1741,6 +1741,11 @@ try {
         if ($postPromptCount -eq 0) {
             Write-LogHost "WARNING: No records match the PromptFilter criteria. Output will contain header only." -ForegroundColor Yellow
         }
+        elseif ($PromptFilter -eq 'Null' -and $totalMsgAfter -eq 0) {
+            Write-LogHost "WARNING: PromptFilter=Null found no matching messages." -ForegroundColor Yellow
+            Write-LogHost "  This means all messages in the filtered records have explicit isPrompt values (True or False)." -ForegroundColor Yellow
+            Write-LogHost "  Consider using PromptFilter=Prompt or PromptFilter=Response instead." -ForegroundColor Yellow
+        }
     }
     
     # Set explosion phase total based on final filtered count
@@ -2192,6 +2197,18 @@ try {
         Write-LogHost ("  Messages filtered out: {0}" -f $script:metrics.PromptFilterMsgRemoved) -ForegroundColor Gray
         $msgRetentionRate = if ($script:metrics.PromptFilterMsgBefore -gt 0) { [Math]::Round(($script:metrics.PromptFilterMsgAfter / $script:metrics.PromptFilterMsgBefore) * 100, 2) } else { 0 }
         Write-LogHost ("  Retention rate: {0}%" -f $msgRetentionRate) -ForegroundColor White
+        
+        # Add explanation if PromptFilter=Null produced no output
+        if ($script:metrics.PromptFilterType -eq 'Null' -and $script:metrics.PromptFilterMsgAfter -eq 0) {
+            Write-LogHost ""
+            Write-LogHost "Explanation of PromptFilter=Null results:" -ForegroundColor Yellow
+            Write-LogHost "  No messages with null/undefined isPrompt values were found." -ForegroundColor White
+            Write-LogHost ("  All {0} messages in the {1} analyzed records had explicit isPrompt values (True or False)." -f $script:metrics.PromptFilterMsgBefore, $script:metrics.PromptFilterPreCount) -ForegroundColor White
+            if ($script:metrics.PromptFilterRecordsNoMessages -gt 0) {
+                Write-LogHost ("  Note: {0} record(s) had no Messages array and were excluded." -f $script:metrics.PromptFilterRecordsNoMessages) -ForegroundColor Gray
+            }
+            Write-LogHost "  To export data, use PromptFilter=Prompt, PromptFilter=Response, or PromptFilter=Both." -ForegroundColor Cyan
+        }
         
         Write-LogHost ""
         Write-LogHost ("PromptFilter processing time: {0:F2} seconds" -f $script:metrics.PromptFilterElapsedSec) -ForegroundColor Gray
