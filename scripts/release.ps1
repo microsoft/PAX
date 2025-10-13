@@ -599,6 +599,22 @@ function Sync-ReleaseBranch {
                     throw "PDF generation incomplete"
                 }
             }
+            
+            # Copy PDF to release_documentation folder for historical archive
+            Write-Status "Archiving PDF to release_documentation folder..."
+            $releaseDocFolder = Join-Path (Get-Location) "release_documentation"
+            if (-not (Test-Path $releaseDocFolder)) {
+                New-Item -ItemType Directory -Path $releaseDocFolder -Force | Out-Null
+                Write-Status "Created release_documentation folder"
+            }
+            
+            $archivePdfPath = Join-Path $releaseDocFolder $pdfFilename
+            if (Test-Path $pdfPath) {
+                Copy-Item -Path $pdfPath -Destination $archivePdfPath -Force
+                Write-Success "✓ Archived $pdfFilename to release_documentation/"
+            } else {
+                Write-Warning "Could not archive PDF - source file not found"
+            }
         }
         catch {
             Write-Error "PDF generation failed: $($_.Exception.Message)"
@@ -686,6 +702,21 @@ function Sync-ReleaseBranch {
             }
             else {
                 Write-Warning "Source file not found: $sourceFile (skipping)"
+            }
+        }
+        
+        # Sync release_documentation folder (entire directory with all PDFs)
+        Write-Status "Syncing release_documentation folder..."
+        $sourceDocFolder = Join-Path (Get-Location) "release_documentation"
+        $destDocFolder = Join-Path $releaseWorktreePath "release_documentation"
+        if (Test-Path $sourceDocFolder) {
+            if (-not (Test-Path $destDocFolder)) {
+                New-Item -ItemType Directory -Path $destDocFolder -Force | Out-Null
+            }
+            # Copy all files from source to destination
+            Get-ChildItem -Path $sourceDocFolder -File | ForEach-Object {
+                Copy-Item -Path $_.FullName -Destination $destDocFolder -Force
+                Write-Success "✓ Synced release_documentation/$($_.Name)"
             }
         }
         
@@ -830,6 +861,10 @@ function Sync-ReleaseBranch {
             git checkout $currentBranch -- "$pdfFilename" 2>$null
             git checkout $currentBranch -- "SECURITY.md" 2>$null
             git checkout $currentBranch -- "$scriptFilename" 2>$null
+            
+            # Copy release_documentation folder
+            Write-Status "Copying release_documentation folder..."
+            git checkout $currentBranch -- "release_documentation" 2>$null
             
             Write-Success "✓ Copied customer-facing files"
             
