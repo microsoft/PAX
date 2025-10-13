@@ -6,7 +6,6 @@
 >
 > **📚 Documentation Archive:** Version-specific docs → [`release_documentation/`](release_documentation/)
 
-
 **Script:** `PAX_Purview_Audit_Log_Processor_v1.6.0.ps1`  
 **Version:** 1.6.0  
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
@@ -26,13 +25,14 @@
 7. [Authentication Methods](#authentication-methods)
 8. [Usage Examples](#usage-examples)
 9. [Agent Filtering](#agent-filtering)
-10. [Output Files & Schema](#output-files--schema)
-11. [Activity Types Reference](#activity-types-reference)
-12. [Advanced Features](#advanced-features)
-13. [Performance Tuning](#performance-tuning)
-14. [Troubleshooting & FAQ](#troubleshooting--faq)
-15. [Known Limitations](#known-limitations)
-16. [Security & Compliance](#security--compliance)
+10. [Message Filtering (PromptFilter)](#message-filtering-promptfilter)
+11. [Output Files & Schema](#output-files--schema)
+12. [Activity Types Reference](#activity-types-reference)
+13. [Advanced Features](#advanced-features)
+14. [Performance Tuning](#performance-tuning)
+15. [Troubleshooting & FAQ](#troubleshooting--faq)
+16. [Known Limitations](#known-limitations)
+17. [Security & Compliance](#security--compliance)
 
 ---
 
@@ -58,7 +58,8 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 2. **Array Explosion Mode** (`-ExplodeArrays`) - Canonical Purview 35-column schema with array elements expanded
 3. **Deep Flatten Mode** (`-ExplodeDeep`) - 35-column base schema + fully flattened `CopilotEventData.*` columns
 4. **Offline Replay Mode** (`-RAWInputCSV`) - Re-process previously exported raw audit CSV files without querying the service
-5. **Agent Filtering Mode** (`-AgentOnly` or `-AgentId`) - Filter for records containing Copilot agent activity (works with live queries and replay mode)
+5. **Agent Filtering Mode** (`-AgentsOnly` or `-AgentId` or `-ExcludeAgents`) - Filter for records based on Copilot agent presence (works with live queries and replay mode)
+6. **Message Filtering Mode** (`-PromptFilter`) - Filter messages by isPrompt property to isolate prompts, responses, or both
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
@@ -358,11 +359,11 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.6.
 **Notes:** 
 - Works in both live query and replay modes
 - AgentId is a top-level field in AuditData JSON
-- Takes precedence if both `-AgentId` and `-AgentOnly` are specified
+- Takes precedence if both `-AgentId` and `-AgentsOnly` are specified
 
 ---
 
-#### `-AgentOnly` (switch)
+#### `-AgentsOnly` (switch)
 
 **Purpose:** Filter audit records to include only those with any AgentId present  
 **Default:** Off (no agent filtering)  
@@ -372,12 +373,59 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.6.
 - Identifying records that involve Copilot Studio agents
 - Filtering out non-agent Copilot interactions
 
-**Example:** `-AgentOnly`
+**Example:** `-AgentsOnly`
 
 **Notes:**
 - Works in both live query and replay modes
 - More inclusive than `-AgentId` (includes any record with AgentId field populated)
 - Combined with `-ActivityTypes` for refined filtering
+
+---
+
+#### `-ExcludeAgents` (switch)
+
+**Purpose:** Filter audit records to EXCLUDE those with AgentId present (inverse of `-AgentsOnly`)  
+**Default:** Off (no agent filtering)  
+**Use When:**
+
+- Analyzing non-agent Copilot interactions only
+- Removing agent activity from analysis
+- Comparing agent vs non-agent usage patterns
+
+**Example:** `-ExcludeAgents`
+
+**Notes:**
+- Works in both live query and replay modes
+- Mutually exclusive with `-AgentId` and `-AgentsOnly`
+- Filters at record level during parsing phase
+
+---
+
+#### `-PromptFilter` (string)
+
+**Purpose:** Filter messages by `Message_isPrompt` property to isolate specific message types  
+**Default:** Not set (no message filtering)  
+**Valid Values:** `Prompt`, `Response`, `Both`, `Null`  
+**Use When:**
+
+- **Prompt**: Analyzing user input patterns, query types, intent analysis
+- **Response**: Evaluating Copilot response quality, latency, acceptance rates
+- **Both**: Full conversation analysis with defined isPrompt values
+- **Null**: Debugging records with malformed or missing isPrompt properties
+
+**Examples:**
+- `-PromptFilter Prompt` - Only messages where Message_isPrompt = True
+- `-PromptFilter Response` - Only messages where Message_isPrompt = False
+- `-PromptFilter Both` - Messages with either True or False (excludes nulls)
+- `-PromptFilter Null` - Messages with null/undefined isPrompt values
+
+**Notes:**
+- Works in both live query and replay modes
+- Uses two-stage filtering: pre-filter records, then filter messages during explosion
+- Can be combined with `-AgentsOnly`, `-ExcludeAgents`, or `-AgentId`
+- Provides detailed metrics in summary (record/message retention, type breakdown)
+- Stage 1 reduces records before explosion for performance
+- Stage 2 ensures clean output with no blank Message_isPrompt values
 
 ---
 
@@ -427,7 +475,7 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.6.
 
 **Restrictions:** Cannot combine with live query parameters (`-Auth`, `-BlockHours`, `-ResultSize`, `-PacingMs`, `-ParallelMode`, `-MaxConcurrency`, `-MaxParallelGroups`)
 
-**Allowed with RAWInputCSV:** `-StartDate`, `-EndDate`, `-ActivityTypes`, `-AgentId`, `-AgentOnly`, `-OutputFile`, `-ExplodeDeep`, `-ExportProgressInterval`, `-StreamingSchemaSample`, `-StreamingChunkSize`
+**Allowed with RAWInputCSV:** `-StartDate`, `-EndDate`, `-ActivityTypes`, `-AgentId`, `-AgentsOnly`, `-ExcludeAgents`, `-PromptFilter`, `-OutputFile`, `-ExplodeDeep`, `-ExportProgressInterval`, `-StreamingSchemaSample`, `-StreamingChunkSize`
 
 ---
 
@@ -620,7 +668,7 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -RAWInputCSV "C:\PreviousExports\Multi_Activity_RAW.csv" -ActivityTypes CopilotInteraction -OutputFile "C:\AuditData\Copilot_Only.csv"
 
 # Replay with agent filtering (any agent)
-.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -RAWInputCSV "C:\PreviousExports\Copilot_RAW.csv" -AgentOnly -OutputFile "C:\AuditData\Agent_Records.csv"
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -RAWInputCSV "C:\PreviousExports\Copilot_RAW.csv" -AgentsOnly -OutputFile "C:\AuditData\Agent_Records.csv"
 
 # Replay with specific agent ID
 .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -RAWInputCSV "C:\PreviousExports\Copilot_RAW.csv" -AgentId "CopilotStudio.Declarative.T_4e671777-fa6c-601a-b416-df08b6ae4c14.03dc0b8b-a75a-4b77-86d7-98185a176d1b" -OutputFile "C:\AuditData\Specific_Agent.csv"
@@ -630,7 +678,7 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 
 ```powershell
 # Filter for any agent-related records (live query)
-.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -AgentOnly -StartDate 2025-10-01 -EndDate 2025-10-02
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -AgentsOnly -StartDate 2025-10-01 -EndDate 2025-10-02
 
 # Filter for specific agent ID(s)
 .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -AgentId "SYSTEM_CreateGPT.declarativeCopilot" -StartDate 2025-10-01 -EndDate 2025-10-02
@@ -639,7 +687,7 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ExplodeDeep -AgentId "SYSTEM_CreateGPT.declarativeCopilot","CopilotStudio.Declarative.T_..." -StartDate 2025-10-01 -EndDate 2025-10-02
 
 # Agent filtering in replay mode
-.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -RAWInputCSV "C:\PreviousExports\Copilot_RAW.csv" -AgentOnly -OutputFile "C:\AuditData\All_Agents.csv"
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -RAWInputCSV "C:\PreviousExports\Copilot_RAW.csv" -AgentsOnly -OutputFile "C:\AuditData\All_Agents.csv"
 ```
 
 ### Authentication Variations
@@ -675,7 +723,7 @@ Agent Filtering enables targeted extraction of Copilot agent-specific audit reco
 
 ### When to Use Agent Filtering
 
-**Use `-AgentOnly`** when:
+**Use `-AgentsOnly`** when:
 - You want all records that contain any AgentId (any Copilot agent activity)
 - Building comprehensive agent usage dashboards
 - Analyzing overall agent adoption across the organization
@@ -694,7 +742,7 @@ Agent Filtering enables targeted extraction of Copilot agent-specific audit reco
 .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
     -StartDate 2025-10-01 `
     -EndDate 2025-10-02 `
-    -AgentOnly `
+    -AgentsOnly `
     -OutputFile "C:\Exports\AgentActivity.csv"
 
 # Filter for specific AgentId (single)
@@ -714,7 +762,7 @@ Agent Filtering enables targeted extraction of Copilot agent-specific audit reco
 # Replay mode: Filter agents from previously exported data
 .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
     -RAWInputCSV "C:\Exports\RawAuditLogs.csv" `
-    -AgentOnly `
+    -AgentsOnly `
     -ExplodeDeep `
     -OutputFile "C:\Exports\AgentActivity_Exploded.csv"
 
@@ -728,7 +776,7 @@ Agent Filtering enables targeted extraction of Copilot agent-specific audit reco
 .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
     -StartDate 2025-10-01 `
     -EndDate 2025-10-02 `
-    -AgentOnly `
+    -AgentsOnly `
     -ExplodeDeep `
     -OutputFile "C:\Exports\AgentActivity_DeepAnalysis.csv"
 ```
@@ -741,7 +789,7 @@ Agent Filtering enables targeted extraction of Copilot agent-specific audit reco
 
 2. **Agent Filtering Phase**:
    - Each record's `ParsedAuditData.AgentId` field is evaluated
-   - `-AgentOnly`: Includes any record where `AgentId` is present and non-empty
+   - `-AgentsOnly`: Includes any record where `AgentId` is present and non-empty
    - `-AgentId`: Includes records where `AgentId` matches one of the specified values (case-insensitive)
    - Non-matching records are excluded from output
 
@@ -781,6 +829,123 @@ The `AgentId` field appears in Copilot audit records and identifies the specific
 - `AgentName` - Human-readable agent name (if available)
 - `AppIdentity` - Application context for the agent
 - Plus all standard Copilot usage fields
+
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
+
+---
+
+## Message Filtering (PromptFilter)
+
+### Overview
+
+Message Filtering (`-PromptFilter`) enables targeted extraction of specific message types from Copilot audit logs based on the `Message_isPrompt` property. This feature is essential for analyzing prompt engineering, response quality, conversation patterns, and user interaction behaviors.
+
+**Why Use PromptFilter?**
+
+- **Prompt Analysis**: Isolate user prompts to analyze query patterns, intent, and demand
+- **Response Analysis**: Extract only Copilot responses for quality assessment and evaluation
+- **Conversation Segmentation**: Separate prompts from responses for training data or analysis pipelines
+- **Data Reduction**: Reduce output size by 50%+ when only prompts or responses are needed
+- **Performance**: Two-stage filtering optimizes processing (pre-filter records + message-level filtering)
+
+### PromptFilter Options
+
+| Option | Description | Message_isPrompt Value | Use Case |
+|--------|-------------|------------------------|----------|
+| `Prompt` | Only prompts (user inputs) | `True` | Analyze what users are asking |
+| `Response` | Only responses (Copilot outputs) | `False` | Evaluate response quality |
+| `Both` | Both prompts and responses | `True` or `False` | Full conversation analysis |
+| `Null` | Messages with no isPrompt value | `null` or empty | Debug malformed data |
+
+### PromptFilter Examples
+
+```powershell
+# Export only user prompts
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -ExplodeArrays `
+    -PromptFilter Prompt `
+    -OutputFile "C:\Exports\UserPrompts.csv"
+
+# Export only Copilot responses
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -ExplodeArrays `
+    -PromptFilter Response `
+    -OutputFile "C:\Exports\CopilotResponses.csv"
+
+# Combine with agent filtering: Agent prompts only
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -ExplodeArrays `
+    -AgentsOnly `
+    -PromptFilter Prompt `
+    -OutputFile "C:\Exports\AgentPrompts.csv"
+
+# Replay mode: Filter prompts from previous export
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
+    -RAWInputCSV "C:\Exports\RawAuditLogs.csv" `
+    -PromptFilter Prompt `
+    -OutputFile "C:\Exports\PromptsOnly.csv"
+```
+
+### How PromptFilter Works
+
+**Two-Stage Filtering for Optimal Performance:**
+
+1. **Stage 1 (Pre-Filter)**: Record-level filtering BEFORE explosion
+   - Analyzes each record's Messages array
+   - Categorizes records: Mixed (prompts+responses), Prompt-only, Response-only, No messages
+   - Filters out records without matching messages (saves explosion work)
+   - Typical reduction: 10-15% of records filtered before explosion
+
+2. **Stage 2 (Message-Level)**: Message filtering DURING explosion
+   - Filters individual messages within each record
+   - Only outputs rows for messages matching the filter
+   - Prevents blank `Message_isPrompt` values in output
+
+**PromptFilter Behavior by Option:**
+
+- **Prompt**: Stage 1 keeps records with at least one prompt; Stage 2 outputs only prompt messages
+- **Response**: Stage 1 keeps records with at least one response; Stage 2 outputs only response messages
+- **Both**: Stage 1 keeps all records with messages; Stage 2 outputs messages with defined isPrompt values
+- **Null**: Stage 1 keeps records with null isPrompt messages; Stage 2 outputs only messages with null isPrompt
+
+### PromptFilter + ExcludeAgents Combination
+
+PromptFilter works independently with all agent switches:
+
+```powershell
+# Non-agent interactions, prompts only
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -ExplodeArrays `
+    -ExcludeAgents `
+    -PromptFilter Prompt `
+    -OutputFile "C:\Exports\NonAgentPrompts.csv"
+```
+
+### Performance Metrics
+
+The script provides detailed PromptFilter metrics in the summary:
+
+- **Record-level**: Records before/after filter, retention rate
+- **Record type breakdown**: Mixed, Prompt-only, Response-only, No messages (with percentages)
+- **Message-level**: Messages before/after filter, retention rate
+- **Processing time**: Stage 1 pre-filter execution time
+
+### Output Schema
+
+When using PromptFilter with `-ExplodeArrays` or `-ExplodeDeep`, the `Message_isPrompt` column will contain:
+
+- **PromptFilter=Prompt**: All rows have `Message_isPrompt = True`
+- **PromptFilter=Response**: All rows have `Message_isPrompt = False`
+- **PromptFilter=Both**: Mix of `True` and `False` values
+- **PromptFilter=Null**: All rows have blank `Message_isPrompt` values
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 

@@ -8,17 +8,33 @@
         Standard       - One row per audit record (raw CopilotEventData JSON preserved)
         -ExplodeArrays - Produces canonical Purview exploded schema (35 fixed columns)
         -ExplodeDeep   - Same 35-column Purview schema + appended deep-flattened CopilotEventData.* columns
+    
     Offline Replay (-RAWInputCSV):
         * Ingest a previously exported raw Purview audit CSV (must contain AuditData JSON column)
         * Skips authentication & live Search-UnifiedAuditLog queries entirely
         * Forces at least Purview array explosion even if -ExplodeArrays not supplied
         * Optional -ExplodeDeep further deep‑flattens CopilotEventData.*
-        * Allows only filtering parameters (StartDate / EndDate / ActivityTypes / AgentId / AgentOnly) plus OutputFile & explosion switches
+        * Allows only filtering parameters (StartDate / EndDate / ActivityTypes / AgentId / AgentsOnly / PromptFilter / ExcludeAgents) plus OutputFile & explosion switches
         * Disallowed with RAWInputCSV (error if present): BlockHours, ResultSize, PacingMs, Auth, ParallelMode, MaxParallelGroups, MaxConcurrency, EnableParallel
         * StartDate / EndDate act as inclusive(lower)/exclusive(upper) UTC filters on CreationDate in the replay dataset
         * ActivityTypes filters by Operation (case‑insensitive membership)
-        * AgentId filters for specific AgentId value(s); AgentOnly includes any record with an AgentId present
+        * AgentId filters for specific AgentId value(s); AgentsOnly includes any record with an AgentId present
+        * PromptFilter filters messages by isPrompt property (Prompt/Response/Both/Null)
+        * ExcludeAgents removes records with AgentId present (inverse of AgentsOnly)
         * Non‑exploded 1:1 mode is intentionally disabled for deterministic schema in offline transforms
+    
+    Filtering:
+        -AgentId <string[]>         : Filter to records matching specific AgentId value(s)
+        -AgentsOnly                 : Filter to records with any AgentId present (mutually exclusive with -ExcludeAgents)
+        -ExcludeAgents              : Filter to records WITHOUT AgentId (mutually exclusive with -AgentId/-AgentsOnly)
+        -PromptFilter <Prompt|Response|Both|Null>
+            Prompt   : Only export messages where Message_isPrompt = True
+            Response : Only export messages where Message_isPrompt = False
+            Both     : Export messages with either True or False isPrompt values
+            Null     : Only export messages with null/undefined isPrompt values (rare)
+            Note: PromptFilter uses two-stage filtering for optimal performance:
+                  Stage 1 (Pre-filter): Filters records before explosion based on message content
+                  Stage 2 (Message-level): Filters individual messages during explosion
 
     PowerShell 5.1 & 7+ supported. Parallel (Auto/On) requires 7+.
 
@@ -53,6 +69,21 @@
 .EXAMPLE
     # Fast header freeze (narrow schema expectation) – smaller sample, larger chunk for throughput (risk: late columns ignored)
     pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 800 -StreamingChunkSize 6000 -OutputFile C:\Temp\Copilot_deep_fastfreeze.csv
+.EXAMPLE
+    # Filter to only records with agents present
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -AgentsOnly -OutputFile C:\Temp\Copilot_agents.csv
+.EXAMPLE
+    # Filter to only records WITHOUT agents
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -ExcludeAgents -OutputFile C:\Temp\Copilot_no_agents.csv
+.EXAMPLE
+    # Filter to only prompt messages (Message_isPrompt = True)
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -PromptFilter Prompt -OutputFile C:\Temp\Copilot_prompts.csv
+.EXAMPLE
+    # Filter to only response messages (Message_isPrompt = False)
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -PromptFilter Response -OutputFile C:\Temp\Copilot_responses.csv
+.EXAMPLE
+    # Combine filters: agents + prompts only
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -AgentsOnly -PromptFilter Prompt -OutputFile C:\Temp\Copilot_agent_prompts.csv
 #>
 
 param(
@@ -119,7 +150,7 @@ param(
     [string[]]$AgentId,
 
     [Parameter(Mandatory = $false)]
-    [switch]$AgentOnly,
+    [switch]$AgentsOnly,
 
     [Parameter(Mandatory = $false)]
     [ValidateSet('Prompt', 'Response', 'Both', 'Null')]
@@ -179,11 +210,11 @@ catch {
 
 # --- Early parameter validation & environment sanity checks ---
 
-# Validate mutual exclusivity of ExcludeAgents with AgentId/AgentOnly
-if ($ExcludeAgents -and ($AgentId -or $AgentOnly)) {
-    Write-Host "ERROR: -ExcludeAgents cannot be used with -AgentId or -AgentOnly switches." -ForegroundColor Red
+# Validate mutual exclusivity of ExcludeAgents with AgentId/AgentsOnly
+if ($ExcludeAgents -and ($AgentId -or $AgentsOnly)) {
+    Write-Host "ERROR: -ExcludeAgents cannot be used with -AgentId or -AgentsOnly switches." -ForegroundColor Red
     Write-Host "These switches are mutually exclusive:" -ForegroundColor Yellow
-    Write-Host "  -AgentId/-AgentOnly: Filter to ONLY records with agents" -ForegroundColor Yellow
+    Write-Host "  -AgentId/-AgentsOnly: Filter to ONLY records with agents" -ForegroundColor Yellow
     Write-Host "  -ExcludeAgents: Filter to ONLY records without agents" -ForegroundColor Yellow
     Write-Host "Please use only one filtering approach and re-run." -ForegroundColor Yellow
     exit 1
@@ -241,14 +272,14 @@ if ($BlockHours -le 0) { Write-Host "ERROR: BlockHours must be positive." -Foreg
 
 try { if ($PSVersionTable.PSEdition -eq 'Core' -and ($global:InformationPreference -in @('SilentlyContinue', 'Ignore'))) { $global:InformationPreference = 'Continue' } } catch {}
 
-# Safeguard: When using -RAWInputCSV, only filtering params (StartDate, EndDate, ActivityTypes, AgentId, AgentOnly) are allowed; others are invalid.
+# Safeguard: When using -RAWInputCSV, only filtering params (StartDate, EndDate, ActivityTypes, AgentId, AgentsOnly) are allowed; others are invalid.
 if ($RAWInputCSV) {
     $rawConflictParams = @('BlockHours', 'ResultSize', 'PacingMs', 'Auth', 'ParallelMode', 'MaxParallelGroups', 'MaxConcurrency', 'EnableParallel')
     $specifiedConflicts = @()
     foreach ($cp in $rawConflictParams) { if ($PSBoundParameters.ContainsKey($cp)) { $specifiedConflicts += $cp } }
     if ($specifiedConflicts.Count -gt 0) {
         Write-Host "ERROR: -RAWInputCSV cannot be combined with live query parameter(s): $($specifiedConflicts -join ', ')" -ForegroundColor Red
-        Write-Host "Remove those conflicting parameters and re-run. Allowed with RAWInputCSV: StartDate, EndDate, ActivityTypes, AgentId, AgentOnly, OutputFile, explosion switches." -ForegroundColor Yellow
+        Write-Host "Remove those conflicting parameters and re-run. Allowed with RAWInputCSV: StartDate, EndDate, ActivityTypes, AgentId, AgentsOnly, OutputFile, explosion switches." -ForegroundColor Yellow
         exit 1
     }
 }
@@ -445,7 +476,7 @@ function Update-Progress {
     
     # Build phase prefix with filter indicator
     $parsingLabel = 'Pre-parsing JSON'
-    if (($AgentId -or $AgentOnly -or $ExcludeAgents -or $PromptFilter) -and $phase -eq 'Parsing') {
+    if (($AgentId -or $AgentsOnly -or $ExcludeAgents -or $PromptFilter) -and $phase -eq 'Parsing') {
         $parsingLabel = 'Pre-parsing + Filtering'
     }
     $phasePrefix = switch ($phase) { 'Parsing' { $parsingLabel } 'Query' { 'Query' } 'Explosion' { 'Explosion' } 'Export' { 'Export' } 'Complete' { 'Complete' } default { $phase } }
@@ -538,11 +569,11 @@ function Test-AgentFilter {
         [Parameter(Mandatory = $true)]
         $ParsedAuditData,
         [string[]]$AgentIdFilter,
-        [bool]$AgentOnlyFilter
+        [bool]$AgentsOnlyFilter
     )
     
     # If no agent filters specified, include the record
-    if (-not $AgentIdFilter -and -not $AgentOnlyFilter) {
+    if (-not $AgentIdFilter -and -not $AgentsOnlyFilter) {
         return $true
     }
     
@@ -558,12 +589,12 @@ function Test-AgentFilter {
         return $false
     }
     
-    # If AgentOnly filter is active, check if AgentId exists
-    if ($AgentOnlyFilter) {
+    # If AgentsOnly filter is active, check if AgentId exists
+    if ($AgentsOnlyFilter) {
         if ([string]::IsNullOrWhiteSpace($recordAgentId)) {
             return $false
         }
-        # If only AgentOnly is specified (no specific AgentId filter), include any record with an AgentId
+        # If only AgentsOnly is specified (no specific AgentId filter), include any record with an AgentId
         if (-not $AgentIdFilter) {
             return $true
         }
@@ -617,12 +648,12 @@ if (-not $RAWInputCSV) {
 Write-LogHost ("Activity Types: " + ($ActivityTypes -join ', ')) -ForegroundColor White
 
 # Show filters if enabled
-if ($AgentId -or $AgentOnly -or $ExcludeAgents -or $PromptFilter) {
+if ($AgentId -or $AgentsOnly -or $ExcludeAgents -or $PromptFilter) {
     Write-LogHost "Filters:" -ForegroundColor Yellow
     
     # Agent filters
-    if ($AgentOnly) {
-        Write-LogHost "  AgentOnly: Only records with AgentId present" -ForegroundColor Gray
+    if ($AgentsOnly) {
+        Write-LogHost "  AgentsOnly: Only records with AgentId present" -ForegroundColor Gray
     }
     if ($AgentId) {
         $agentDisplay = if ($AgentId.Count -eq 1) {
@@ -678,7 +709,7 @@ if ($RAWInputCSV) {
         'StartDate (inclusive)' = $StartDate
         'EndDate (exclusive)'   = $EndDate
         ActivityTypes          = ($ActivityTypes -join ';')
-        AgentOnly              = $AgentOnly.IsPresent
+        AgentsOnly              = $AgentsOnly.IsPresent
         AgentId                = $(if ($AgentId) { ($AgentId -join ';') } else { '' })
         ExcludeAgents          = $ExcludeAgents.IsPresent
         PromptFilter           = $(if ($PromptFilter) { $PromptFilter } else { '' })
@@ -703,7 +734,7 @@ else {
         ResultSize              = $ResultSize
         PacingMs                = $PacingMs
         ActivityTypes          = ($ActivityTypes -join ';')
-        AgentOnly              = $AgentOnly.IsPresent
+        AgentsOnly              = $AgentsOnly.IsPresent
         AgentId                = $(if ($AgentId) { ($AgentId -join ';') } else { '' })
         ExcludeAgents          = $ExcludeAgents.IsPresent
         PromptFilter           = $(if ($PromptFilter) { $PromptFilter } else { '' })
@@ -1478,7 +1509,7 @@ try {
     if ($RAWInputCSV) {
         # Initialize parsing phase progress tracking
         $parsingStatus = 'Pre-parsing JSON from CSV'
-        if ($AgentId -or $AgentOnly) {
+        if ($AgentId -or $AgentsOnly) {
             $parsingStatus += ' + Agent filter'
         }
         Set-ProgressPhase -Phase 'Parsing' -Status $parsingStatus
@@ -1524,12 +1555,12 @@ try {
     
     # --- Agent Filtering (if specified) ---
     $preFilterCount = $allLogs.Count
-    if ($AgentId -or $AgentOnly) {
+    if ($AgentId -or $AgentsOnly) {
         Write-LogHost "Applying Agent filtering..." -ForegroundColor Yellow
         if ($AgentId) {
             Write-LogHost "  Filtering for AgentId values: $($AgentId -join ', ')" -ForegroundColor Gray
         }
-        if ($AgentOnly) {
+        if ($AgentsOnly) {
             Write-LogHost "  Filtering for records with any AgentId present" -ForegroundColor Gray
         }
         
@@ -1538,7 +1569,7 @@ try {
         $filterCount = 0
         
         foreach ($log in $allLogs) {
-            if (Test-AgentFilter -ParsedAuditData $log._ParsedAuditData -AgentIdFilter $AgentId -AgentOnlyFilter $AgentOnly.IsPresent) {
+            if (Test-AgentFilter -ParsedAuditData $log._ParsedAuditData -AgentIdFilter $AgentId -AgentsOnlyFilter $AgentsOnly.IsPresent) {
                 $filteredLogs.Add($log)
             }
             $filterCount++
