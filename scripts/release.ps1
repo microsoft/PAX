@@ -225,17 +225,17 @@ function Update-ExportScriptVersion {
     Write-Status "Updating export script: $oldFilename -> $newFilename"
 
     try {
-        # STEP 1: Archive old version to scripts/LegacyScripts folder (PAX branch only)
+        # STEP 1: Archive old version to script_archive/Purview_Audit_Log_Processor folder (PAX branch only)
         if ($oldPath -ne $newPath) {
-            $legacyFolder = "scripts/LegacyScripts"
-            if (-not (Test-Path $legacyFolder)) {
-                New-Item -Path $legacyFolder -ItemType Directory -Force | Out-Null
-                Write-Success "Created LegacyScripts folder"
+            $archiveFolder = "script_archive/Purview_Audit_Log_Processor"
+            if (-not (Test-Path $archiveFolder)) {
+                New-Item -Path $archiveFolder -ItemType Directory -Force | Out-Null
+                Write-Success "Created script archive folder"
             }
             
-            $legacyPath = Join-Path $legacyFolder $oldFilename
-            Copy-Item -Path $oldPath -Destination $legacyPath -Force
-            Write-Success "Archived old version to: scripts/LegacyScripts/$oldFilename"
+            $archivePath = Join-Path $archiveFolder $oldFilename
+            Copy-Item -Path $oldPath -Destination $archivePath -Force
+            Write-Success "Archived old version to: $archiveFolder/$oldFilename"
         }
         
         # STEP 2: Read and update content for new version
@@ -278,10 +278,10 @@ function Update-ExportScriptVersion {
             $content | Set-Content -Path $newPath -Encoding UTF8 -NoNewline
             Write-Success "Saved updated script to: $newFilename"
             
-            # Remove old file from root (already archived in scripts/LegacyScripts)
+            # Remove old file from root (already archived in script_archive/Purview_Audit_Log_Processor)
             if ($oldPath -ne $newPath) {
                 Remove-Item -Path $oldPath -Force
-                Write-Success "Removed old script from root: $oldFilename (archived in scripts/LegacyScripts)"
+                Write-Success "Removed old script from root: $oldFilename (archived in script_archive/Purview_Audit_Log_Processor)"
             }
         }
         else {

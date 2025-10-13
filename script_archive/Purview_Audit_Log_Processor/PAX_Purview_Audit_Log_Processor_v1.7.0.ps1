@@ -1,4 +1,4 @@
-# Portable Audit eXporter (PAX) - Purview Audit Log Processor - v1.4.4
+# Portable Audit eXporter (PAX) - Purview Audit Log Processor - v1.7.0
 <#
 .SYNOPSIS
     Export Microsoft Purview audit logs for Microsoft 365 Copilot and related activities with optional Purview-aligned row explosion and deep flattening.
@@ -6,52 +6,84 @@
 .DESCRIPTION
     Modes:
         Standard       - One row per audit record (raw CopilotEventData JSON preserved)
-        -ExplodeArrays - Produces canonical Purview exploded schema (29 fixed columns)
-        -ExplodeDeep   - Same 29-column Purview schema + appended deep-flattened CopilotEventData.* columns
+        -ExplodeArrays - Produces canonical Purview exploded schema (35 fixed columns)
+        -ExplodeDeep   - Same 35-column Purview schema + appended deep-flattened CopilotEventData.* columns
+    
     Offline Replay (-RAWInputCSV):
         * Ingest a previously exported raw Purview audit CSV (must contain AuditData JSON column)
         * Skips authentication & live Search-UnifiedAuditLog queries entirely
         * Forces at least Purview array explosion even if -ExplodeArrays not supplied
         * Optional -ExplodeDeep further deep‑flattens CopilotEventData.*
-        * Allows only filtering parameters (StartDate / EndDate / ActivityTypes) plus OutputFile & explosion switches
+        * Allows only filtering parameters (StartDate / EndDate / ActivityTypes / AgentId / AgentsOnly / PromptFilter / ExcludeAgents) plus OutputFile & explosion switches
         * Disallowed with RAWInputCSV (error if present): BlockHours, ResultSize, PacingMs, Auth, ParallelMode, MaxParallelGroups, MaxConcurrency, EnableParallel
         * StartDate / EndDate act as inclusive(lower)/exclusive(upper) UTC filters on CreationDate in the replay dataset
         * ActivityTypes filters by Operation (case‑insensitive membership)
+        * AgentId filters for specific AgentId value(s); AgentsOnly includes any record with an AgentId present
+        * PromptFilter filters messages by isPrompt property (Prompt/Response/Both/Null)
+        * ExcludeAgents removes records with AgentId present (inverse of AgentsOnly)
         * Non‑exploded 1:1 mode is intentionally disabled for deterministic schema in offline transforms
+    
+    Filtering:
+        -AgentId <string[]>         : Filter to records matching specific AgentId value(s)
+        -AgentsOnly                 : Filter to records with any AgentId present (mutually exclusive with -ExcludeAgents)
+        -ExcludeAgents              : Filter to records WITHOUT AgentId (mutually exclusive with -AgentId/-AgentsOnly)
+        -PromptFilter <Prompt|Response|Both|Null>
+            Prompt   : Only export messages where Message_isPrompt = True
+            Response : Only export messages where Message_isPrompt = False
+            Both     : Export messages with either True or False isPrompt values
+            Null     : Only export messages with null/undefined isPrompt values (rare)
+            Note: PromptFilter uses two-stage filtering for optimal performance:
+                  Stage 1 (Pre-filter): Filters records before explosion based on message content
+                  Stage 2 (Message-level): Filters individual messages during explosion
 
     PowerShell 5.1 & 7+ supported. Parallel (Auto/On) requires 7+.
 
 .EXECUTIONPOLICY
     No internal execution policy bypass. Use external host invocation if needed:
-        powershell.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.4.4.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-        pwsh.exe       -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.4.4.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+        powershell.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+        pwsh.exe       -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
 
 .POWERSHELLVERSIONS
     PS 5.1 & 7+. Parallelization requires PS 7+.
 
 .EXAMPLE
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.4.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
 .EXAMPLE
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.4.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_exploded.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_exploded.csv
 .EXAMPLE
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.4.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_deep.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_deep.csv
 .EXAMPLE
-    powershell -File .\PAX_Purview_Audit_Log_Processor_v1.4.4.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
+    powershell -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
 .EXAMPLE
     # Offline replay (simple forced explosion) of a previously exported raw CSV
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.4.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile C:\Temp\Copilot_replay_exploded.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile C:\Temp\Copilot_replay_exploded.csv
 .EXAMPLE
     # Offline replay with date & activity filtering + deep flatten
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.4.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction -OutputFile C:\Temp\Copilot_replay_deep.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction -OutputFile C:\Temp\Copilot_replay_deep.csv
 .EXAMPLE
     # Deep flatten (wide) with higher schema sample & moderate chunk size (balance column coverage vs memory)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.4.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 4000 -StreamingChunkSize 3000 -OutputFile C:\Temp\Copilot_deep_tuned.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 4000 -StreamingChunkSize 3000 -OutputFile C:\Temp\Copilot_deep_tuned.csv
 .EXAMPLE
     # Extremely wide deep flatten: maximize schema sample, reduce chunk size for lower peak memory
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.4.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 6000 -StreamingChunkSize 1500 -OutputFile C:\Temp\Copilot_deep_memoryguard.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 6000 -StreamingChunkSize 1500 -OutputFile C:\Temp\Copilot_deep_memoryguard.csv
 .EXAMPLE
     # Fast header freeze (narrow schema expectation) – smaller sample, larger chunk for throughput (risk: late columns ignored)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.4.4.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 800 -StreamingChunkSize 6000 -OutputFile C:\Temp\Copilot_deep_fastfreeze.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 800 -StreamingChunkSize 6000 -OutputFile C:\Temp\Copilot_deep_fastfreeze.csv
+.EXAMPLE
+    # Filter to only records with agents present
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -AgentsOnly -OutputFile C:\Temp\Copilot_agents.csv
+.EXAMPLE
+    # Filter to only records WITHOUT agents
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -ExcludeAgents -OutputFile C:\Temp\Copilot_no_agents.csv
+.EXAMPLE
+    # Filter to only prompt messages (Message_isPrompt = True)
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -PromptFilter Prompt -OutputFile C:\Temp\Copilot_prompts.csv
+.EXAMPLE
+    # Filter to only response messages (Message_isPrompt = False)
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -PromptFilter Response -OutputFile C:\Temp\Copilot_responses.csv
+.EXAMPLE
+    # Combine filters: agents + prompts only
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -AgentsOnly -PromptFilter Prompt -OutputFile C:\Temp\Copilot_agent_prompts.csv
 #>
 
 param(
@@ -112,18 +144,81 @@ param(
 
     [Parameter(Mandatory = $false)]
     [ValidateRange(100, 50000)]
-    [int]$StreamingChunkSize = 5000
+    [int]$StreamingChunkSize = 5000,
+
+    [Parameter(Mandatory = $false)]
+    [string[]]$AgentId,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$AgentsOnly,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateSet('Prompt', 'Response', 'Both', 'Null')]
+    [string]$PromptFilter,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$ExcludeAgents,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Help
 )
+
+# Display help if -Help switch is provided
+if ($Help) {
+    Get-Help $PSCommandPath -Full
+    exit 0
+}
 
 # Script version: dynamically read from package.json
 try {
-    $pkgPath = Join-Path $PSScriptRoot '..' | Join-Path -ChildPath 'package.json'
-    if (Test-Path $pkgPath) { $ScriptVersion = ((Get-Content -Raw $pkgPath) | ConvertFrom-Json).version }
-    if (-not $ScriptVersion) { $ScriptVersion = '<unknown>' }
+    $pkgPath = Join-Path $PSScriptRoot 'package.json'
+    if (Test-Path $pkgPath) { 
+        $ScriptVersion = ((Get-Content -Raw $pkgPath) | ConvertFrom-Json).version 
+    }
+    else {
+        # Fallback: try to read from parent directory (when script is in subdirectory)
+        $parentPkgPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'package.json'
+        if (Test-Path $parentPkgPath) {
+            $ScriptVersion = ((Get-Content -Raw $parentPkgPath) | ConvertFrom-Json).version
+        }
+    }
+    if (-not $ScriptVersion) { 
+        Write-Host "WARNING: Could not read version from package.json. Using version from filename." -ForegroundColor Yellow
+        # Extract version from script filename as last resort
+        $scriptName = $MyInvocation.MyCommand.Name
+        if ($scriptName -match 'v(\d+\.\d+\.\d+)') {
+            $ScriptVersion = $matches[1]
+        }
+        else {
+            $ScriptVersion = 'UNKNOWN'
+            Write-Host "ERROR: Could not determine script version. Please ensure package.json exists." -ForegroundColor Red
+        }
+    }
 }
-catch { $ScriptVersion = '<unknown>' }
+catch { 
+    Write-Host "WARNING: Error reading version from package.json: $($_.Exception.Message)" -ForegroundColor Yellow
+    # Extract version from script filename as fallback
+    $scriptName = $MyInvocation.MyCommand.Name
+    if ($scriptName -match 'v(\d+\.\d+\.\d+)') {
+        $ScriptVersion = $matches[1]
+    }
+    else {
+        $ScriptVersion = 'UNKNOWN'
+        Write-Host "ERROR: Could not determine script version. Please ensure package.json exists." -ForegroundColor Red
+    }
+}
 
 # --- Early parameter validation & environment sanity checks ---
+
+# Validate mutual exclusivity of ExcludeAgents with AgentId/AgentsOnly
+if ($ExcludeAgents -and ($AgentId -or $AgentsOnly)) {
+    Write-Host "ERROR: -ExcludeAgents cannot be used with -AgentId or -AgentsOnly switches." -ForegroundColor Red
+    Write-Host "These switches are mutually exclusive:" -ForegroundColor Yellow
+    Write-Host "  -AgentId/-AgentsOnly: Filter to ONLY records with agents" -ForegroundColor Yellow
+    Write-Host "  -ExcludeAgents: Filter to ONLY records without agents" -ForegroundColor Yellow
+    Write-Host "Please use only one filtering approach and re-run." -ForegroundColor Yellow
+    exit 1
+}
 
 # Establish date defaults / validation depending on mode.
 if ($RAWInputCSV) {
@@ -136,40 +231,55 @@ if ($RAWInputCSV) {
         try { $parsedEnd = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null) } catch { Write-Host "ERROR: EndDate must be yyyy-MM-dd if provided." -ForegroundColor Red; exit 1 }
     }
     if ($parsedStart -and $parsedEnd -and $parsedEnd -lt $parsedStart) { Write-Host "ERROR: EndDate ($EndDate) is earlier than StartDate ($StartDate)." -ForegroundColor Red; exit 1 }
-    # If not provided, leave $StartDate/$EndDate unset (blank) so snapshot shows no filter.
-    if (-not $PSBoundParameters.ContainsKey('StartDate')) { $StartDate = '' }
-    if (-not $PSBoundParameters.ContainsKey('EndDate')) { $EndDate = '' }
+    # If not provided, set to asterisk for display purposes
+    if (-not $PSBoundParameters.ContainsKey('StartDate')) { $StartDate = '*' }
+    if (-not $PSBoundParameters.ContainsKey('EndDate')) { $EndDate = '*' }
 }
 else {
-    # Live mode: if neither date provided, default to previous full UTC day window.
+    # Live mode: allow partial date specification
     if (-not $PSBoundParameters.ContainsKey('StartDate') -and -not $PSBoundParameters.ContainsKey('EndDate')) {
+        # Neither date provided: default to previous full UTC day window
         $yesterdayUtc = (Get-Date).ToUniversalTime().Date.AddDays(-1)
         $StartDate = $yesterdayUtc.ToString('yyyy-MM-dd')
         $EndDate = $yesterdayUtc.AddDays(1).ToString('yyyy-MM-dd')
     }
-    elseif (-not $PSBoundParameters.ContainsKey('StartDate') -or -not $PSBoundParameters.ContainsKey('EndDate')) {
-        Write-Host "ERROR: Provide both StartDate and EndDate, or neither (to use automatic previous-day window)." -ForegroundColor Red; exit 1
+    elseif (-not $PSBoundParameters.ContainsKey('StartDate')) {
+        # Only EndDate provided: set StartDate to asterisk (beginning of available data)
+        $StartDate = '*'
+        try {
+            $parsedEnd = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null)
+        } catch { Write-Host "ERROR: EndDate must be yyyy-MM-dd format." -ForegroundColor Red; exit 1 }
     }
-    try {
-        $parsedStart = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null)
-        $parsedEnd = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null)
+    elseif (-not $PSBoundParameters.ContainsKey('EndDate')) {
+        # Only StartDate provided: set EndDate to asterisk (up to current time)
+        $EndDate = '*'
+        try {
+            $parsedStart = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null)
+        } catch { Write-Host "ERROR: StartDate must be yyyy-MM-dd format." -ForegroundColor Red; exit 1 }
     }
-    catch { Write-Host "ERROR: StartDate/EndDate must be in yyyy-MM-dd format." -ForegroundColor Red; exit 1 }
-    if ($parsedEnd -lt $parsedStart) { Write-Host "ERROR: EndDate ($EndDate) is earlier than StartDate ($StartDate)." -ForegroundColor Red; exit 1 }
+    else {
+        # Both dates provided: validate them
+        try {
+            $parsedStart = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null)
+            $parsedEnd = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null)
+        }
+        catch { Write-Host "ERROR: StartDate/EndDate must be in yyyy-MM-dd format." -ForegroundColor Red; exit 1 }
+        if ($parsedEnd -lt $parsedStart) { Write-Host "ERROR: EndDate ($EndDate) is earlier than StartDate ($StartDate)." -ForegroundColor Red; exit 1 }
+    }
 }
 
 if ($BlockHours -le 0) { Write-Host "ERROR: BlockHours must be positive." -ForegroundColor Red; exit 1 }
 
 try { if ($PSVersionTable.PSEdition -eq 'Core' -and ($global:InformationPreference -in @('SilentlyContinue', 'Ignore'))) { $global:InformationPreference = 'Continue' } } catch {}
 
-# Safeguard: When using -RAWInputCSV, only filtering params (StartDate, EndDate, ActivityTypes) are allowed; others are invalid.
+# Safeguard: When using -RAWInputCSV, only filtering params (StartDate, EndDate, ActivityTypes, AgentId, AgentsOnly) are allowed; others are invalid.
 if ($RAWInputCSV) {
     $rawConflictParams = @('BlockHours', 'ResultSize', 'PacingMs', 'Auth', 'ParallelMode', 'MaxParallelGroups', 'MaxConcurrency', 'EnableParallel')
     $specifiedConflicts = @()
     foreach ($cp in $rawConflictParams) { if ($PSBoundParameters.ContainsKey($cp)) { $specifiedConflicts += $cp } }
     if ($specifiedConflicts.Count -gt 0) {
         Write-Host "ERROR: -RAWInputCSV cannot be combined with live query parameter(s): $($specifiedConflicts -join ', ')" -ForegroundColor Red
-        Write-Host "Remove those conflicting parameters and re-run. Allowed with RAWInputCSV: StartDate, EndDate, ActivityTypes, OutputFile, explosion switches." -ForegroundColor Yellow
+        Write-Host "Remove those conflicting parameters and re-run. Allowed with RAWInputCSV: StartDate, EndDate, ActivityTypes, AgentId, AgentsOnly, OutputFile, explosion switches." -ForegroundColor Yellow
         exit 1
     }
 }
@@ -198,6 +308,29 @@ $script:metrics = @{
     EffectiveChunkSize      = 0
     ParallelBatchSizeFinal  = 0
     ParallelThrottleFinal   = 0
+    AgentFilterApplied      = $false
+    AgentFilterPreCount     = 0
+    AgentFilterPostCount    = 0
+    AgentFilterRemovedCount = 0
+    AgentFilterElapsedSec   = 0
+    ExcludeAgentsApplied    = $false
+    ExcludeAgentsPreCount   = 0
+    ExcludeAgentsPostCount  = 0
+    ExcludeAgentsRemoved    = 0
+    ExcludeAgentsElapsedSec = 0
+    PromptFilterApplied     = $false
+    PromptFilterType        = ''
+    PromptFilterPreCount    = 0
+    PromptFilterPostCount   = 0
+    PromptFilterRemovedCount = 0
+    PromptFilterElapsedSec  = 0
+    PromptFilterMsgBefore   = 0
+    PromptFilterMsgAfter    = 0
+    PromptFilterMsgRemoved  = 0
+    PromptFilterRecordsMixed = 0
+    PromptFilterRecordsPromptOnly = 0
+    PromptFilterRecordsResponseOnly = 0
+    PromptFilterRecordsNoMessages = 0
 }
 
 # --- Configuration: depth & limits ---
@@ -287,7 +420,8 @@ function Update-Progress {
         [int]$BatchRangeStart = 0,
         [int]$BatchRangeEnd = 0,
         [int]$BatchStartPercent = 0,
-        [int]$BatchEndPercent = 0
+        [int]$BatchEndPercent = 0,
+        [bool]$BatchTotalIsEstimate = $false
     )
     $w = $script:progressState.Weights; $ps = $script:progressState.Parsing; $qs = $script:progressState.Query; $es = $script:progressState.Explode; $xs = $script:progressState.Export
     $pPct = if ($ps.Total -gt 0 -and $w.ContainsKey('Parsing') -and $w.Parsing -gt 0) { [double]$ps.Current / [double]$ps.Total } else { 0.0 }
@@ -305,19 +439,22 @@ function Update-Progress {
         # Show record range for current batch with batch number and percentage range inline
         if ($BatchStartPercent -ge 0 -and $BatchEndPercent -gt 0) {
             # Use provided percentage range
-            $batchInfo = if ($BatchTotal -ge 1) { " Batch: {0}/{1}({2}%-{3}%)" -f $BatchCurrent, $BatchTotal, $BatchStartPercent, $BatchEndPercent } else { '' }
+            $batchTotalDisplay = if ($BatchTotalIsEstimate) { "~$BatchTotal" } else { "$BatchTotal" }
+            $batchInfo = if ($BatchTotal -ge 1) { " Batch: {0}/{1}({2}%-{3}%)" -f $BatchCurrent, $batchTotalDisplay, $BatchStartPercent, $BatchEndPercent } else { '' }
         }
         else {
             # Fallback to calculating from batch count
             $batchPct = if ($BatchTotal -gt 0 -and $BatchCurrent -gt 0) { [int]([Math]::Round(([double]$BatchCurrent / [double]$BatchTotal) * 100)) } else { 0 }
-            $batchInfo = if ($BatchTotal -ge 1) { " Batch: {0}/{1}({2}%)" -f $BatchCurrent, $BatchTotal, $batchPct } else { '' }
+            $batchTotalDisplay = if ($BatchTotalIsEstimate) { "~$BatchTotal" } else { "$BatchTotal" }
+            $batchInfo = if ($BatchTotal -ge 1) { " Batch: {0}/{1}({2}%)" -f $BatchCurrent, $batchTotalDisplay, $batchPct } else { '' }
         }
         $explosionCounts = "Records {0}-{1}/{2}{3}" -f $BatchRangeStart, $BatchRangeEnd, $es.Total, $batchInfo
     }
     elseif ($BatchTotal -ge 1) {
         # Fallback: show current record with batch info inline (same style as range format)
         $batchPct = if ($BatchTotal -gt 0 -and $BatchCurrent -gt 0) { [int]([Math]::Round(([double]$BatchCurrent / [double]$BatchTotal) * 100)) } else { 0 }
-        $batchInfo = " Batch: {0}/{1}({2}%)" -f $BatchCurrent, $BatchTotal, $batchPct
+        $batchTotalDisplay = if ($BatchTotalIsEstimate) { "~$BatchTotal" } else { "$BatchTotal" }
+        $batchInfo = " Batch: {0}/{1}({2}%)" -f $BatchCurrent, $batchTotalDisplay, $batchPct
         $explosionCounts = if ($es.Total -gt 0) { "Records {0}/{1}{2}" -f $es.Current, $es.Total, $batchInfo } else { "0/0" }
     }
     else {
@@ -336,9 +473,16 @@ function Update-Progress {
     # Batch detail is now always included inline with explosion when BatchTotal is provided
     $batchDetail = ''
     $xDetail = if ($xs.Total -gt 0) { " | Export: {0}/{1}({2}%)" -f $xs.Current, $xs.Total, ([int]([Math]::Round($xPct * 100))) } else { ' | Export: 0/0' }
-    $phasePrefix = switch ($phase) { 'Parsing' { 'Pre-parsing JSON' } 'Query' { 'Query' } 'Explosion' { 'Explosion' } 'Export' { 'Export' } 'Complete' { 'Complete' } default { $phase } }
+    
+    # Build phase prefix with filter indicator
+    $parsingLabel = 'Pre-parsing JSON'
+    if (($AgentId -or $AgentsOnly -or $ExcludeAgents -or $PromptFilter) -and $phase -eq 'Parsing') {
+        $parsingLabel = 'Pre-parsing + Filtering'
+    }
+    $phasePrefix = switch ($phase) { 'Parsing' { $parsingLabel } 'Query' { 'Query' } 'Explosion' { 'Explosion' } 'Export' { 'Export' } 'Complete' { 'Complete' } default { $phase } }
+    
     if ($phase -eq 'Parsing' -and $pDetail) {
-        $composite = "Pre-parsing JSON: $pDetail$eDetail$batchDetail$xDetail"
+        $composite = "${phasePrefix}: $pDetail$eDetail$batchDetail$xDetail"
     }
     elseif ($phase -eq 'Explosion' -and -not $qDetail) {
         $composite = "Explosion: $explosionCounts$batchDetail$xDetail"
@@ -419,6 +563,61 @@ function Write-CsvRows {
     if ($sb.Length -gt 0) { $script:PAX_CsvWriter.Write($sb.ToString()) }
 }
 
+# --- Agent Filtering Function ---
+function Test-AgentFilter {
+    param(
+        [Parameter(Mandatory = $true)]
+        $ParsedAuditData,
+        [string[]]$AgentIdFilter,
+        [bool]$AgentsOnlyFilter
+    )
+    
+    # If no agent filters specified, include the record
+    if (-not $AgentIdFilter -and -not $AgentsOnlyFilter) {
+        return $true
+    }
+    
+    # Extract AgentId from parsed JSON (top-level property)
+    $recordAgentId = $null
+    try {
+        if ($ParsedAuditData.AgentId) {
+            $recordAgentId = [string]$ParsedAuditData.AgentId
+        }
+    }
+    catch {
+        # If parsing fails, skip this record
+        return $false
+    }
+    
+    # If AgentsOnly filter is active, check if AgentId exists
+    if ($AgentsOnlyFilter) {
+        if ([string]::IsNullOrWhiteSpace($recordAgentId)) {
+            return $false
+        }
+        # If only AgentsOnly is specified (no specific AgentId filter), include any record with an AgentId
+        if (-not $AgentIdFilter) {
+            return $true
+        }
+    }
+    
+    # If specific AgentId filter is provided, check if this record matches
+    if ($AgentIdFilter) {
+        if ([string]::IsNullOrWhiteSpace($recordAgentId)) {
+            return $false
+        }
+        # Check if the record's AgentId matches any of the specified AgentIds
+        foreach ($filterId in $AgentIdFilter) {
+            if ($recordAgentId -eq $filterId) {
+                return $true
+            }
+        }
+        return $false
+    }
+    
+    # Default: include the record
+    return $true
+}
+
 $outputDir = Split-Path $OutputFile -Parent; if (-not (Test-Path $outputDir)) { New-Item -Path $outputDir -ItemType Directory -Force | Out-Null }
 $scriptMode = if ($ExplodeDeep) { "Deep Column Explosion" } elseif ($ExplodeArrays -or $ForcedRawInputCsvExplosion) { if ($ForcedRawInputCsvExplosion -and -not $ExplodeArrays.IsPresent -and -not $ExplodeDeep.IsPresent) { "Array Explosion (RAWInput implied)" } else { "Array Explosion" } } else { "Standard (1:1)" }
 @"
@@ -426,7 +625,7 @@ $scriptMode = if ($ExplodeDeep) { "Deep Column Explosion" } elseif ($ExplodeArra
 Script Start Time (UTC): $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')) UTC
 Script Version: v$ScriptVersion
 Mode: $scriptMode
-Date Range: $(if ($RAWInputCSV) { if ([string]::IsNullOrWhiteSpace($StartDate) -and [string]::IsNullOrWhiteSpace($EndDate)) { 'Full CSV (no date filter)' } else { "$StartDate to $EndDate (filters)" } } else { "$StartDate to $EndDate" })
+Date Range: $(if ($RAWInputCSV) { if ([string]::IsNullOrWhiteSpace($StartDate) -and [string]::IsNullOrWhiteSpace($EndDate)) { 'Full CSV (no date filter)' } else { "$StartDate (inclusive) to $EndDate (exclusive) (filters)" } } else { "$StartDate (inclusive) to $EndDate (exclusive)" })
 Output File: $OutputFile
 Log File: $LogFile
 ========================================================
@@ -438,7 +637,7 @@ Write-LogHost ("Script Version: v$ScriptVersion") -ForegroundColor White
 $startTimeStamp = try { $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') } catch { (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') }
 Write-LogHost ("Script execution started at $startTimeStamp UTC") -ForegroundColor White
 Write-LogHost "Mode: $scriptMode" -ForegroundColor White
-${rangeText} = if ($RAWInputCSV) { if ([string]::IsNullOrWhiteSpace($StartDate) -and [string]::IsNullOrWhiteSpace($EndDate)) { 'Full CSV (no date filter)' } else { "$StartDate to $EndDate (filters)" } } else { "$StartDate to $EndDate" }
+${rangeText} = if ($RAWInputCSV) { if ([string]::IsNullOrWhiteSpace($StartDate) -and [string]::IsNullOrWhiteSpace($EndDate)) { 'Full CSV (no date filter)' } else { "$StartDate (inclusive) to $EndDate (exclusive) (filters)" } } else { "$StartDate (inclusive) to $EndDate (exclusive)" }
 Write-LogHost "Date Range: $rangeText" -ForegroundColor White
 Write-LogHost "Output File: $OutputFile" -ForegroundColor White
 Write-LogHost "Log File: $LogFile" -ForegroundColor White
@@ -447,6 +646,55 @@ if (-not $RAWInputCSV) {
     Write-LogHost "Authentication: $Auth" -ForegroundColor White
 }
 Write-LogHost ("Activity Types: " + ($ActivityTypes -join ', ')) -ForegroundColor White
+
+# Show filters if enabled
+if ($AgentId -or $AgentsOnly -or $ExcludeAgents -or $PromptFilter) {
+    Write-LogHost "Filters:" -ForegroundColor Yellow
+    
+    # Agent filters
+    if ($AgentsOnly) {
+        Write-LogHost "  AgentsOnly: Only records with AgentId present" -ForegroundColor Gray
+    }
+    if ($AgentId) {
+        $agentDisplay = if ($AgentId.Count -eq 1) {
+            "Specific AgentId: $($AgentId[0])"
+        }
+        elseif ($AgentId.Count -le 3) {
+            "Specific AgentIds ($($AgentId.Count)): " + ($AgentId -join '; ')
+        }
+        else {
+            "Specific AgentIds ($($AgentId.Count) total):"
+        }
+        Write-LogHost "  $agentDisplay" -ForegroundColor Gray
+        if ($AgentId.Count -gt 3) {
+            # Show first 3 and indicate there are more (with truncation for very long IDs)
+            for ($i = 0; $i -lt [Math]::Min(3, $AgentId.Count); $i++) {
+                $displayId = if ($AgentId[$i].Length -gt 80) { $AgentId[$i].Substring(0, 77) + '...' } else { $AgentId[$i] }
+                Write-LogHost "    [$($i+1)] $displayId" -ForegroundColor DarkGray
+            }
+            if ($AgentId.Count -gt 3) {
+                Write-LogHost "    ... and $($AgentId.Count - 3) more" -ForegroundColor DarkGray
+            }
+        }
+    }
+    
+    # ExcludeAgents filter
+    if ($ExcludeAgents) {
+        Write-LogHost "  ExcludeAgents: Only records without AgentId" -ForegroundColor Gray
+    }
+    
+    # PromptFilter
+    if ($PromptFilter) {
+        $promptLabel = switch ($PromptFilter) {
+            'Prompt'   { 'Only prompts (Message_isPrompt = True)' }
+            'Response' { 'Only responses (Message_isPrompt = False)' }
+            'Both'     { 'Both prompts and responses (Message_isPrompt = True or False)' }
+            'Null'     { 'Only records with no Message_isPrompt values (Null/Empty)' }
+        }
+        Write-LogHost "  PromptFilter: $promptLabel" -ForegroundColor Gray
+    }
+}
+
 Write-LogHost "=============================================" -ForegroundColor Cyan
 Write-LogHost ""
 if ($ExplodeDeep -and $ExplodeArrays) { Write-LogHost "Note: -ExplodeDeep takes precedence over -ExplodeArrays (arrays will still explode, plus deep flatten)." -ForegroundColor DarkYellow }
@@ -458,13 +706,17 @@ if ($RAWInputCSV) {
     $paramSnapshot = [ordered]@{
         Mode                   = $scriptMode
         RAWInputCSV            = $RAWInputCSV
-        StartDate_Filter       = $StartDate
-        EndDate_Filter         = $EndDate
-        ActivityTypes_Filter   = ($ActivityTypes -join ';')
-        ForcedExplosion        = $ForcedRawInputCsvExplosion
+        'StartDate (inclusive)' = $StartDate
+        'EndDate (exclusive)'   = $EndDate
+        ActivityTypes          = ($ActivityTypes -join ';')
+        AgentsOnly              = $AgentsOnly.IsPresent
+        AgentId                = $(if ($AgentId) { ($AgentId -join ';') } else { '' })
+        ExcludeAgents          = $ExcludeAgents.IsPresent
+        PromptFilter           = $(if ($PromptFilter) { $PromptFilter } else { '' })
+        ExplodeArrays          = $ForcedRawInputCsvExplosion
         ExplodeDeep            = $ExplodeDeep.IsPresent
         OutputFile             = $OutputFile
-        ExportProgressInterval = $ExportProgressInterval
+        LogFile                = $LogFile
         PSVersion              = $PSVersionTable.PSVersion.ToString()
         PSEdition              = $PSVersionTable.PSEdition
         HostName               = $Host.Name
@@ -473,23 +725,25 @@ if ($RAWInputCSV) {
 }
 else {
     $paramSnapshot = [ordered]@{
-        StartDate              = $StartDate
-        EndDate                = $EndDate
-        OutputFile             = $OutputFile
-        Auth                   = $Auth
-        BlockHours             = $BlockHours
-        ResultSize             = $ResultSize
-        PacingMs               = $PacingMs
+        'StartDate (inclusive)' = $StartDate
+        'EndDate (exclusive)'   = $EndDate
+        OutputFile              = $OutputFile
+        LogFile                = $LogFile
+        Auth                    = $Auth
+        BlockHours              = $BlockHours
+        ResultSize              = $ResultSize
+        PacingMs                = $PacingMs
         ActivityTypes          = ($ActivityTypes -join ';')
+        AgentsOnly              = $AgentsOnly.IsPresent
+        AgentId                = $(if ($AgentId) { ($AgentId -join ';') } else { '' })
+        ExcludeAgents          = $ExcludeAgents.IsPresent
+        PromptFilter           = $(if ($PromptFilter) { $PromptFilter } else { '' })
         ExplodeArrays          = ($ExplodeArrays.IsPresent -or $ForcedRawInputCsvExplosion -or $ExplodeDeep.IsPresent)
-        ExplodeArrays_Forced   = $ForcedRawInputCsvExplosion
         ExplodeDeep            = $ExplodeDeep.IsPresent
         RAWInputCSV            = $(if ([string]::IsNullOrWhiteSpace($RAWInputCSV)) { '' } else { $RAWInputCSV })
         MaxConcurrency         = $MaxConcurrency
-        EnableParallelLegacy   = $EnableParallel.IsPresent
         ParallelMode           = $ParallelMode
         MaxParallelGroups      = $MaxParallelGroups
-        ExportProgressInterval = $ExportProgressInterval
         PSVersion              = $PSVersionTable.PSVersion.ToString()
         PSEdition              = $PSVersionTable.PSEdition
         HostName               = $Host.Name
@@ -634,13 +888,14 @@ function ConvertTo-FlatColumns {
 
 function Get-SafeProperty { param($obj, [string]$name) try { if ($null -ne $obj -and $obj.PSObject.Properties[$name]) { return $obj.($name) } } catch {}; return $null }
 
-# --- Purview Exploded Schema (29 core columns) ---
+# --- Purview Exploded Schema (35 core columns) ---
 $PurviewExplodedHeader = @(
     'RecordId', 'CreationDate', 'RecordType', 'Operation', 'UserId', 'AssociatedAdminUnits', 'AssociatedAdminUnitsNames',
-    'AgentId', 'AgentName', 'AppIdentity_AppId', 'AppIdentity_DisplayName', 'AppIdentity_PublisherId', 'ApplicationName',
-    'CreationTime', 'ClientRegion', 'Audit_UserId', 'AppHost', 'ThreadId', 'Context_Id', 'Context_Type', 'Message_Id',
+    'AgentId', 'AgentName', 'AppIdentity', 'AppIdentity_DisplayName', 'AppIdentity_PublisherId', 'ApplicationName',
+    'CreationTime', 'ClientRegion', 'ClientIP', 'Audit_UserId', 'AppHost', 'ThreadId', 'Context_Id', 'Context_Type', 'Message_Id',
     'Message_isPrompt', 'AccessedResource_Action', 'AccessedResource_PolicyDetails', 'AccessedResource_SiteUrl',
-    'AISystemPlugin_Id', 'AISystemPlugin_Name', 'ModelTransparencyDetails_ModelName', 'MessageIds'
+    'AISystemPlugin_Id', 'AISystemPlugin_Name', 'ModelTransparencyDetails_ModelName', 'MessageIds',
+    'OrganizationId', 'Version', 'UserType', 'CopilotLogVersion', 'Workload'
 )
 
 # Base schema list used directly when emitting headers (even for empty datasets).
@@ -651,7 +906,8 @@ function Convert-ToPurviewExplodedRecords {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)] $Record,
-        [switch]$Deep
+        [switch]$Deep,
+        [string]$PromptFilterValue
     )
     try {
         # Use pre-parsed AuditData if available for improved processing speed
@@ -667,14 +923,62 @@ function Convert-ToPurviewExplodedRecords {
         
         # Extract array properties from CopilotEventData
         $messages = script:GetArrayFast $ced 'Messages'
+        
+        # Apply message-level PromptFilter during explosion (Stage 2 filtering) - OPTIMIZED
+        # Stage 1 already filtered out records without any matching messages (or kept all for 'Both')
+        # This filters the actual messages to only output matching types
+        if ($PromptFilterValue -and $PromptFilterValue -ne 'Both') {
+            # Fast filtering using List instead of Where-Object pipeline
+            $filteredMessages = New-Object System.Collections.Generic.List[object]
+            
+            if ($PromptFilterValue -eq 'Null') {
+                # Keep messages where isPrompt is null/missing
+                foreach ($msg in $messages) {
+                    if ($null -eq $msg.isPrompt) {
+                        $filteredMessages.Add($msg)
+                    }
+                }
+            }
+            else {
+                # Prompt or Response filtering
+                $targetValue = ($PromptFilterValue -eq 'Prompt')
+                foreach ($msg in $messages) {
+                    try {
+                        if ($msg.isPrompt -eq $targetValue) {
+                            $filteredMessages.Add($msg)
+                        }
+                    } catch {
+                        # Skip messages where isPrompt can't be accessed
+                    }
+                }
+            }
+            
+            $messages = $filteredMessages
+            
+            # If no messages remain after filtering, return empty (no rows for this record)
+            if ($messages.Count -eq 0) {
+                return @()
+            }
+        }
+        # If 'Both', no filtering - keep all messages
+        
         $contexts = script:GetArrayFast $ced 'Contexts'
         $resources = script:GetArrayFast $ced 'AccessedResources'
         $pluginsRaw = script:GetArrayFast $ced 'AISystemPlugin'
         $modelDetRaw = script:GetArrayFast $ced 'ModelTransparencyDetails'
         $messageIds = script:GetArrayFast $ced 'MessageIds'
 
-        # Determine max row count across exploded arrays (avoid multi-arg Math.Max which caused errors)
-        $rowCount = (1, $messages.Count, $contexts.Count, $resources.Count | Measure-Object -Maximum).Maximum
+        # Determine max row count across exploded arrays
+        # When PromptFilter is active (not 'Both'), base rowCount on filtered messages only
+        # to avoid outputting rows with blank Message_isPrompt values for unmatched contexts/resources
+        if ($PromptFilterValue -and $PromptFilterValue -ne 'Both') {
+            # When filtering messages, only output rows for the filtered messages
+            $rowCount = [Math]::Max(1, $messages.Count)
+        }
+        else {
+            # No filter or 'Both' - use max of all arrays
+            $rowCount = (1, $messages.Count, $contexts.Count, $resources.Count | Measure-Object -Maximum).Maximum
+        }
 
         # Choose first plugin / model transparency element if any
         $plugin0 = if ($pluginsRaw.Count -gt 0) { $pluginsRaw[0] } else { $null }
@@ -683,18 +987,45 @@ function Convert-ToPurviewExplodedRecords {
         # Extract record-level values from audit data
         $creationDate = script:Format-DatePurviewFast $Record.CreationDate
         $creationTime = try { script:Format-DatePurviewFast $auditData.CreationTime } catch { '' }
-        $appIdentity = Get-SafeProperty $ced 'AppIdentity'
-        $appId = Get-SafeProperty $appIdentity 'AppId'
-        $appDisp = Get-SafeProperty $appIdentity 'DisplayName'
-        $appPub = Get-SafeProperty $appIdentity 'PublisherId'
+        # AppIdentity can be a string OR an object - check both cases
+        $appIdentityRaw = (Select-FirstNonNull -Values @((Get-SafeProperty $auditData 'AppIdentity'), (Get-SafeProperty $ced 'AppIdentity')))
+        if ($appIdentityRaw -is [string]) {
+            # AppIdentity is a simple string (e.g., "Copilot.Security.SecurityCopilot")
+            $appIdentity = $appIdentityRaw
+            $appId = ''
+            $appDisp = ''
+            $appPub = ''
+        }
+        elseif ($null -ne $appIdentityRaw) {
+            # AppIdentity is an object with properties
+            $appIdentity = ''
+            $appId = Get-SafeProperty $appIdentityRaw 'AppId'
+            $appDisp = Get-SafeProperty $appIdentityRaw 'DisplayName'
+            $appPub = Get-SafeProperty $appIdentityRaw 'PublisherId'
+        }
+        else {
+            # No AppIdentity at all
+            $appIdentity = ''
+            $appId = ''
+            $appDisp = ''
+            $appPub = ''
+        }
         $appHost = (Select-FirstNonNull -Values @((Get-SafeProperty $ced 'AppHost'), (Get-SafeProperty $auditData 'AppHost'), (Get-SafeProperty $auditData 'Workload')))
-        $clientRegion = (Get-SafeProperty $ced 'ClientRegion')
-        $agentId = (Get-SafeProperty $ced 'AgentId')
-        $agentName = (Get-SafeProperty $ced 'AgentName')
-        $appName = (Select-FirstNonNull -Values @((Get-SafeProperty $ced 'ApplicationName'), (Get-SafeProperty $ced 'HostAppName'), (Get-SafeProperty $ced 'ClientAppName')))
+        # ClientRegion is at top-level AuditData
+        $clientRegion = (Get-SafeProperty $auditData 'ClientRegion')
+        $agentId = (Get-SafeProperty $auditData 'AgentId')
+        $agentName = (Get-SafeProperty $auditData 'AgentName')
+        $appName = (Select-FirstNonNull -Values @((Get-SafeProperty $auditData 'ApplicationName'), (Get-SafeProperty $ced 'HostAppName'), (Get-SafeProperty $ced 'ClientAppName')))
         $threadId = (Get-SafeProperty $ced 'ThreadId')
         $auditUserKey = try { $auditData.UserKey } catch { $null }
         $modelName = Get-SafeProperty $model0 'ModelName'
+        # Additional top-level AuditData fields
+        $clientIP = (Get-SafeProperty $auditData 'ClientIP')
+        $organizationId = (Get-SafeProperty $auditData 'OrganizationId')
+        $version = (Get-SafeProperty $auditData 'Version')
+        $userType = (Get-SafeProperty $auditData 'UserType')
+        $copilotLogVersion = (Get-SafeProperty $auditData 'CopilotLogVersion')
+        $workload = (Get-SafeProperty $auditData 'Workload')
 
         $baseSet = New-Object System.Collections.Generic.HashSet[string]
         foreach ($c in $PurviewExplodedHeader) { $null = $baseSet.Add($c) }
@@ -712,12 +1043,13 @@ function Convert-ToPurviewExplodedRecords {
                 AssociatedAdminUnitsNames          = (Get-SafeProperty $auditData 'AssociatedAdminUnitsNames')
                 AgentId                            = $agentId
                 AgentName                          = $agentName
-                AppIdentity_AppId                  = $appId
+                AppIdentity                        = $appIdentity
                 AppIdentity_DisplayName            = $appDisp
                 AppIdentity_PublisherId            = $appPub
                 ApplicationName                    = $appName
                 CreationTime                       = $creationTime
                 ClientRegion                       = $clientRegion
+                ClientIP                           = $clientIP
                 Audit_UserId                       = $auditUserKey
                 AppHost                            = $appHost
                 ThreadId                           = $threadId
@@ -732,9 +1064,15 @@ function Convert-ToPurviewExplodedRecords {
                 AISystemPlugin_Name                = $(if ($plugin0) { try { Get-SafeProperty $plugin0 'Name' } catch { '' } } else { '' })
                 ModelTransparencyDetails_ModelName = $(if ($model0) { $modelName } else { '' })
                 MessageIds                         = $(if ($messageIds.Count -gt 0) { $messageIds -join ';' } else { '' })
+                OrganizationId                     = $organizationId
+                Version                            = $version
+                UserType                           = $userType
+                CopilotLogVersion                  = $copilotLogVersion
+                Workload                           = $workload
             }
 
             if ($Deep -and $ced) {
+                # Deep flatten CopilotEventData
                 $flat = ConvertTo-FlatColumns -Node $ced -Prefix 'CopilotEventData.' -MaxDepth $FlatDepthDeep
                 foreach ($k in $flat.Keys) {
                     if ($baseSet.Contains($k)) { continue }
@@ -742,6 +1080,26 @@ function Convert-ToPurviewExplodedRecords {
                         # Register column ordering globally
                         if (-not $script:DeepExtraColumns.Contains($k)) { [void]$script:DeepExtraColumns.Add($k) }
                         try { Add-Member -InputObject $rowObj -NotePropertyName $k -NotePropertyValue $flat[$k] -Force } catch {}
+                    }
+                }
+            }
+            
+            if ($Deep -and $auditData) {
+                # Deep flatten top-level AuditData (excluding CopilotEventData which is already processed)
+                $auditDataClone = [PSCustomObject]@{}
+                foreach ($prop in $auditData.PSObject.Properties) {
+                    # Skip CopilotEventData as it's already processed above, and skip already-extracted core fields
+                    if ($prop.Name -ne 'CopilotEventData') {
+                        Add-Member -InputObject $auditDataClone -NotePropertyName $prop.Name -NotePropertyValue $prop.Value -Force
+                    }
+                }
+                $flatAudit = ConvertTo-FlatColumns -Node $auditDataClone -Prefix 'AuditData.' -MaxDepth $FlatDepthDeep
+                foreach ($k in $flatAudit.Keys) {
+                    if ($baseSet.Contains($k)) { continue }
+                    if (-not $rowObj.PSObject.Properties[$k]) {
+                        # Register column ordering globally
+                        if (-not $script:DeepExtraColumns.Contains($k)) { [void]$script:DeepExtraColumns.Add($k) }
+                        try { Add-Member -InputObject $rowObj -NotePropertyName $k -NotePropertyValue $flatAudit[$k] -Force } catch {}
                     }
                 }
             }
@@ -999,7 +1357,7 @@ try {
         $endDateObj = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null)
 
         Write-LogHost "Starting enterprise-grade audit log search..." -ForegroundColor Yellow
-        Write-LogHost "Date range: $($startDateObj.ToString('yyyy-MM-dd')) to $($endDateObj.ToString('yyyy-MM-dd'))" -ForegroundColor Gray
+        Write-LogHost "Date range: $($startDateObj.ToString('yyyy-MM-dd')) (inclusive) to $($endDateObj.ToString('yyyy-MM-dd')) (exclusive)" -ForegroundColor Gray
         Write-LogHost "Processing mode: $(if ($ExplodeDeep){'Deep Column Explosion (with Row Explosion)'} elseif ($ExplodeArrays){'Array Explosion'} else {'Standard 1:1'})" -ForegroundColor Gray
         Write-LogHost ""
 
@@ -1029,6 +1387,50 @@ try {
 
     Write-LogHost ""; Write-LogHost "=== Enterprise Processing Summary ===" -ForegroundColor Green
     Write-LogHost "Total audit records retrieved: $($allLogs.Count)" -ForegroundColor Cyan
+    
+    # Show agent filter metrics if filtering was applied
+    if ($script:metrics.AgentFilterApplied) {
+        Write-LogHost ""
+        Write-LogHost "Agent Filtering Metrics:" -ForegroundColor Yellow
+        Write-LogHost "  Records before agent filter: $($script:metrics.AgentFilterPreCount)" -ForegroundColor Cyan
+        Write-LogHost "  Records after agent filter: $($script:metrics.AgentFilterPostCount)" -ForegroundColor Cyan
+        Write-LogHost "  Records filtered out: $($script:metrics.AgentFilterRemovedCount)" -ForegroundColor Gray
+        $retentionPct = if ($script:metrics.AgentFilterPreCount -gt 0) { 
+            [math]::Round(($script:metrics.AgentFilterPostCount / $script:metrics.AgentFilterPreCount) * 100, 2) 
+        } else { 0 }
+        Write-LogHost "  Retention rate: $retentionPct%" -ForegroundColor Cyan
+        Write-LogHost "  Filter processing time: $($script:metrics.AgentFilterElapsedSec) seconds" -ForegroundColor Gray
+    }
+    
+    # Show ExcludeAgents filter metrics if filtering was applied
+    if ($script:metrics.ExcludeAgentsApplied) {
+        Write-LogHost ""
+        Write-LogHost "ExcludeAgents Filtering Metrics:" -ForegroundColor Yellow
+        Write-LogHost "  Records before ExcludeAgents: $($script:metrics.ExcludeAgentsPreCount)" -ForegroundColor Cyan
+        Write-LogHost "  Records after ExcludeAgents: $($script:metrics.ExcludeAgentsPostCount)" -ForegroundColor Cyan
+        Write-LogHost "  Agent records excluded: $($script:metrics.ExcludeAgentsRemoved)" -ForegroundColor Gray
+        $excludeRetentionPct = if ($script:metrics.ExcludeAgentsPreCount -gt 0) { 
+            [math]::Round(($script:metrics.ExcludeAgentsPostCount / $script:metrics.ExcludeAgentsPreCount) * 100, 2) 
+        } else { 0 }
+        Write-LogHost "  Retention rate: $excludeRetentionPct%" -ForegroundColor Cyan
+        Write-LogHost "  Filter processing time: $($script:metrics.ExcludeAgentsElapsedSec) seconds" -ForegroundColor Gray
+    }
+    
+    # Show PromptFilter metrics if filtering was applied
+    if ($script:metrics.PromptFilterApplied) {
+        Write-LogHost ""
+        Write-LogHost "Prompt Filtering Metrics:" -ForegroundColor Yellow
+        $filterTypeLabel = if ($script:metrics.PromptFilterType -eq 'Prompt') { 'Prompts Only (isPrompt=True)' } else { 'Responses Only (isPrompt=False)' }
+        Write-LogHost "  Filter type: $filterTypeLabel" -ForegroundColor Cyan
+        Write-LogHost "  Messages before filter: $($script:metrics.PromptFilterMsgBefore)" -ForegroundColor Cyan
+        Write-LogHost "  Messages after filter: $($script:metrics.PromptFilterMsgAfter)" -ForegroundColor Cyan
+        Write-LogHost "  Messages filtered out: $($script:metrics.PromptFilterMsgRemoved)" -ForegroundColor Gray
+        $msgRetentionPct = if ($script:metrics.PromptFilterMsgBefore -gt 0) { 
+            [math]::Round(($script:metrics.PromptFilterMsgAfter / $script:metrics.PromptFilterMsgBefore) * 100, 2) 
+        } else { 0 }
+        Write-LogHost "  Retention rate: $msgRetentionPct%" -ForegroundColor Cyan
+    }
+    
     if (-not $RAWInputCSV) {
         Write-LogHost "Learned block sizes: $(if ($script:learnedActivityBlockSize.Count -gt 0){ ($script:learnedActivityBlockSize.GetEnumerator()|ForEach-Object{\"$($_.Key)=$($_.Value)h\"}) -join ', ' } else {'Using defaults'})" -ForegroundColor Gray
         Write-LogHost "Global learned size: $($script:globalLearnedBlockSize) hours" -ForegroundColor Gray
@@ -1043,13 +1445,16 @@ try {
         Write-LogHost "- Audit logging is not enabled for the selected activities" -ForegroundColor Yellow
         Write-LogHost "- Insufficient permissions to view audit logs" -ForegroundColor Yellow
         Write-LogHost "- Time blocks may need further subdivision (try shorter date ranges)" -ForegroundColor Yellow
-        try {
-            $endDomain = if ($script:TenantPrimaryDomain) { $script:TenantPrimaryDomain } else { '<unknown>' }
-            $endTenantId = if ($script:TenantId) { $script:TenantId } else { '<unresolved>' }
-            $ind = ''; if ($script:TenantIndicators -and $script:TenantIndicators.Count -gt 0) { $ind = ' | Indicators=' + ($script:TenantIndicators -join ',') }
-            Write-LogHost ("Tenant context: Domain=$endDomain | TenantId=$endTenantId$ind") -ForegroundColor DarkCyan
+        # Only show tenant context for live queries (not replay mode)
+        if (-not $RAWInputCSV) {
+            try {
+                $endDomain = if ($script:TenantPrimaryDomain) { $script:TenantPrimaryDomain } else { '<unknown>' }
+                $endTenantId = if ($script:TenantId) { $script:TenantId } else { '<unresolved>' }
+                $ind = ''; if ($script:TenantIndicators -and $script:TenantIndicators.Count -gt 0) { $ind = ' | Indicators=' + ($script:TenantIndicators -join ',') }
+                Write-LogHost ("Tenant context: Domain=$endDomain | TenantId=$endTenantId$ind") -ForegroundColor DarkCyan
+            }
+            catch {}
         }
-        catch {}
         # Deterministic empty CSV output with header only
         Write-LogHost "Emitting header-only CSV (0 rows) for deterministic downstream processing..." -ForegroundColor Cyan
         $headerColumns = if ($ExplodeDeep -or $ExplodeArrays -or $ForcedRawInputCsvExplosion) { $PurviewExplodedHeader } else { @('RecordType', 'CreationDate', 'UserIds', 'Operations', 'ResultStatus', 'ResultCount', 'Identity', 'IsValid', 'ObjectState', 'Id', 'CreationTime', 'Operation', 'OrganizationId', 'RecordTypeNum', 'ResultStatus_Audit', 'UserKey', 'UserType', 'Version', 'Workload', 'UserId', 'AppId', 'ClientAppId', 'CorrelationId', 'ModelId', 'ModelProvider', 'ModelFamily', 'TokensTotal', 'TokensInput', 'TokensOutput', 'DurationMs', 'OutcomeStatus', 'ConversationId', 'TurnNumber', 'RetryCount', 'ClientVersion', 'ClientPlatform', 'AgentId', 'AgentName', 'AppIdentity', 'ApplicationName', 'OriginalAuditData', 'CopilotEventData') }
@@ -1088,24 +1493,8 @@ try {
     $structuredDataCount = 0
     Write-LogHost "Streaming export mode enabled (schema sample=$StreamingSchemaSample; base chunk size=$StreamingChunkSize)" -ForegroundColor Yellow
     
-    # Enable parallel processing for large replay datasets (PowerShell 7+ required)
-    $replayParallelEligible = $false
-    if ($RAWInputCSV -and ($PSVersionTable.PSVersion.Major -ge 7)) {
-        $eligibilityThreshold = ($StreamingSchemaSample + 5000)
-        Write-LogHost "Parallel eligibility check: RAW=$RAWInputCSV, PS=$($PSVersionTable.PSVersion.Major), Count=$($allLogs.Count), Threshold=$eligibilityThreshold" -ForegroundColor DarkGray
-        if ($allLogs.Count -gt $eligibilityThreshold) { 
-            $replayParallelEligible = $true 
-            Write-LogHost "Replay parallel explosion ELIGIBLE -> will parallelize after schema freeze ($($allLogs.Count) records)" -ForegroundColor Green
-        }
-        else {
-            Write-LogHost "Replay parallel NOT eligible (dataset too small: $($allLogs.Count) <= $eligibilityThreshold)" -ForegroundColor DarkYellow
-        }
-    }
-    else {
-        if (-not $RAWInputCSV) { Write-LogHost "Parallel not eligible: Not in replay mode" -ForegroundColor DarkGray }
-        elseif ($PSVersionTable.PSVersion.Major -lt 7) { Write-LogHost "Parallel not eligible: PowerShell $($PSVersionTable.PSVersion) (need 7+)" -ForegroundColor DarkYellow }
-    }
-    $script:progressState.Explode.Total = [int]$allLogs.Count; $script:progressState.Explode.Current = 0; $te0 = Get-Date
+    # Note: Parallel eligibility will be checked after agent filtering (if applicable) to use correct filtered count
+    $te0 = Get-Date
     $schemaFrozen = $false; $schemaSampleRows = New-Object System.Collections.Generic.List[object]; $postFreezeNewColumns = 0
     # Track distinct late (post-freeze) columns ignored (deep mode / parallel replay)
     $lateIgnoredColumns = New-Object System.Collections.Generic.HashSet[string]
@@ -1119,7 +1508,11 @@ try {
     # Pre-parse JSON data from CSV for improved processing speed
     if ($RAWInputCSV) {
         # Initialize parsing phase progress tracking
-        Set-ProgressPhase -Phase 'Parsing' -Status 'Pre-parsing JSON from CSV'
+        $parsingStatus = 'Pre-parsing JSON from CSV'
+        if ($AgentId -or $AgentsOnly) {
+            $parsingStatus += ' + Agent filter'
+        }
+        Set-ProgressPhase -Phase 'Parsing' -Status $parsingStatus
         $script:progressState.Parsing.Total = [int]$allLogs.Count
         $script:progressState.Parsing.Current = 0
     }
@@ -1147,7 +1540,9 @@ try {
         # Update parsing progress (replay mode only)
         if ($RAWInputCSV) {
             $parseCount++
-            $script:progressState.Parsing.Current = $parseCount
+            # Pre-parsing represents 90% of the parsing+filtering task
+            # Scale current to 90% of actual progress
+            $script:progressState.Parsing.Current = [int]($parseCount * 0.9)
             # Update progress bar every 500 records or at completion
             if ($parseCount % 500 -eq 0 -or $parseCount -eq $allLogs.Count) {
                 Update-Progress
@@ -1158,6 +1553,263 @@ try {
     $parseElapsed = [int]($parseEnd - $parseStart).TotalSeconds
     Write-LogHost "JSON pre-parsing complete in $parseElapsed seconds ($parseErrors parse errors)" -ForegroundColor Green
     
+    # --- Agent Filtering (if specified) ---
+    $preFilterCount = $allLogs.Count
+    if ($AgentId -or $AgentsOnly) {
+        Write-LogHost "Applying Agent filtering..." -ForegroundColor Yellow
+        if ($AgentId) {
+            Write-LogHost "  Filtering for AgentId values: $($AgentId -join ', ')" -ForegroundColor Gray
+        }
+        if ($AgentsOnly) {
+            Write-LogHost "  Filtering for records with any AgentId present" -ForegroundColor Gray
+        }
+        
+        $filterStart = Get-Date
+        $filteredLogs = New-Object System.Collections.Generic.List[object]
+        $filterCount = 0
+        
+        foreach ($log in $allLogs) {
+            if (Test-AgentFilter -ParsedAuditData $log._ParsedAuditData -AgentIdFilter $AgentId -AgentsOnlyFilter $AgentsOnly.IsPresent) {
+                $filteredLogs.Add($log)
+            }
+            $filterCount++
+            
+            # Update parsing progress bar during filtering (replay mode only)
+            if ($RAWInputCSV -and ($filterCount % 500 -eq 0 -or $filterCount -eq $preFilterCount)) {
+                # Agent filtering represents the final 10% (from 90% to 100%)
+                $filterProgress = $filterCount / $preFilterCount
+                $script:progressState.Parsing.Current = [int](($allLogs.Count * 0.9) + ($allLogs.Count * 0.1 * $filterProgress))
+                Update-Progress
+            }
+        }
+        
+        $allLogs = $filteredLogs
+        $postFilterCount = $allLogs.Count
+        $filterEnd = Get-Date
+        $filterElapsed = [int]($filterEnd - $filterStart).TotalSeconds
+        $filteredOutCount = $preFilterCount - $postFilterCount
+        
+        # Store agent filter metrics
+        $script:metrics.AgentFilterApplied = $true
+        $script:metrics.AgentFilterPreCount = $preFilterCount
+        $script:metrics.AgentFilterPostCount = $postFilterCount
+        $script:metrics.AgentFilterRemovedCount = $filteredOutCount
+        $script:metrics.AgentFilterElapsedSec = $filterElapsed
+        
+        Write-LogHost "Agent filtering complete in $filterElapsed seconds" -ForegroundColor Green
+        Write-LogHost "  Records before filtering: $preFilterCount" -ForegroundColor Gray
+        Write-LogHost "  Records after filtering: $postFilterCount" -ForegroundColor Gray
+        Write-LogHost "  Records filtered out: $filteredOutCount" -ForegroundColor Gray
+        
+        if ($postFilterCount -eq 0) {
+            Write-LogHost "WARNING: No records match the Agent filter criteria. Output will contain header only." -ForegroundColor Yellow
+        }
+    }
+    
+    # --- ExcludeAgents Filtering (if specified) ---
+    if ($ExcludeAgents) {
+        Write-LogHost "Applying ExcludeAgents filter..." -ForegroundColor Yellow
+        $preExcludeCount = $allLogs.Count
+        $excludeStart = Get-Date
+        $filteredLogs = New-Object System.Collections.Generic.List[object]
+        $excludeCount = 0
+        
+        foreach ($log in $allLogs) {
+            $agentId = $null
+            try {
+                $agentId = $log._ParsedAuditData.AgentId
+            } catch {}
+            
+            if ([string]::IsNullOrEmpty($agentId)) {
+                $filteredLogs.Add($log)
+            }
+            $excludeCount++
+            
+            # Update parsing progress bar during ExcludeAgents filtering (replay mode only)
+            if ($RAWInputCSV -and ($excludeCount % 500 -eq 0 -or $excludeCount -eq $preExcludeCount)) {
+                # ExcludeAgents filtering represents the final 10% (from 90% to 100%)
+                $excludeProgress = $excludeCount / $preExcludeCount
+                $script:progressState.Parsing.Current = [int](($preExcludeCount * 0.9) + ($preExcludeCount * 0.1 * $excludeProgress))
+                Update-Progress
+            }
+        }
+        
+        $allLogs = $filteredLogs
+        $postExcludeCount = $allLogs.Count
+        $excludeEnd = Get-Date
+        $excludeElapsed = [int]($excludeEnd - $excludeStart).TotalSeconds
+        $excludedCount = $preExcludeCount - $postExcludeCount
+        
+        # Store ExcludeAgents filter metrics
+        $script:metrics.ExcludeAgentsApplied = $true
+        $script:metrics.ExcludeAgentsPreCount = $preExcludeCount
+        $script:metrics.ExcludeAgentsPostCount = $postExcludeCount
+        $script:metrics.ExcludeAgentsRemoved = $excludedCount
+        $script:metrics.ExcludeAgentsElapsedSec = $excludeElapsed
+        
+        Write-LogHost "ExcludeAgents filtering complete in $excludeElapsed seconds" -ForegroundColor Green
+        Write-LogHost "  Records before ExcludeAgents: $preExcludeCount" -ForegroundColor Gray
+        Write-LogHost "  Records after ExcludeAgents: $postExcludeCount" -ForegroundColor Gray
+        Write-LogHost "  Agent records excluded: $excludedCount" -ForegroundColor Gray
+        
+        if ($postExcludeCount -eq 0) {
+            Write-LogHost "WARNING: No non-agent records found. Output will contain header only." -ForegroundColor Yellow
+        }
+    }
+    
+    # --- PromptFilter Filtering (if specified) ---
+    if ($PromptFilter) {
+        Write-LogHost "Applying PromptFilter..." -ForegroundColor Yellow
+        
+        $filterDescription = switch ($PromptFilter) {
+            'Prompt' { "Prompt messages (isPrompt = True)" }
+            'Response' { "Response messages (isPrompt = False)" }
+            'Both' { "Both Prompt AND Response messages" }
+            'Null' { "Messages with null/missing isPrompt values" }
+        }
+        Write-LogHost "  Filtering for: $filterDescription" -ForegroundColor Gray
+        
+        $prePromptCount = $allLogs.Count
+        $promptStart = Get-Date
+        $filteredLogs = New-Object System.Collections.Generic.List[object]
+        $promptCount = 0
+        $totalMsgBefore = 0
+        $totalMsgAfter = 0
+        
+        # Track record type breakdown for summary
+        $recordsMixed = 0
+        $recordsPromptOnly = 0
+        $recordsResponseOnly = 0
+        $recordsNoMessages = 0
+        
+        foreach ($log in $allLogs) {
+            $hasMatchingMessages = $false
+            $hasPrompt = $false
+            $hasResponse = $false
+            $msgCount = 0
+            
+            try {
+                $messages = $log._ParsedAuditData.CopilotEventData.Messages
+                if ($null -eq $messages -or $messages.Count -eq 0) {
+                    $recordsNoMessages++
+                }
+                else {
+                    $msgCount = $messages.Count
+                    $totalMsgBefore += $msgCount
+                    
+                    # Analyze record to determine type (for breakdown stats)
+                    foreach ($msg in $messages) {
+                        if ($msg.isPrompt -eq $true) { $hasPrompt = $true }
+                        elseif ($msg.isPrompt -eq $false) { $hasResponse = $true }
+                    }
+                    
+                    # Categorize record type
+                    if ($hasPrompt -and $hasResponse) { $recordsMixed++ }
+                    elseif ($hasPrompt -and -not $hasResponse) { $recordsPromptOnly++ }
+                    elseif ($hasResponse -and -not $hasPrompt) { $recordsResponseOnly++ }
+                    
+                    # Check based on filter type
+                    if ($PromptFilter -eq 'Both') {
+                        # Keep all records with any messages
+                        $hasMatchingMessages = $true
+                        $totalMsgAfter += $msgCount
+                    }
+                    elseif ($PromptFilter -eq 'Null') {
+                        # Keep records that have at least one message with null isPrompt
+                        foreach ($msg in $messages) {
+                            if ($null -eq $msg.isPrompt) {
+                                $hasMatchingMessages = $true
+                                $totalMsgAfter++
+                            }
+                        }
+                    }
+                    else {
+                        # Prompt or Response filtering
+                        $targetIsPromptValue = ($PromptFilter -eq 'Prompt')
+                        foreach ($msg in $messages) {
+                            if ($msg.isPrompt -eq $targetIsPromptValue) {
+                                $hasMatchingMessages = $true
+                                $totalMsgAfter++
+                            }
+                        }
+                    }
+                }
+            } catch {}
+            
+            if ($hasMatchingMessages) {
+                $filteredLogs.Add($log)
+            }
+            $promptCount++
+            
+            # Update progress bar during PromptFilter filtering (replay mode only)
+            if ($RAWInputCSV -and ($promptCount % 500 -eq 0 -or $promptCount -eq $prePromptCount)) {
+                $promptProgress = $promptCount / $prePromptCount
+                $script:progressState.Parsing.Current = [int](($prePromptCount * 0.9) + ($prePromptCount * 0.1 * $promptProgress))
+                Update-Progress
+            }
+        }
+        
+        $allLogs = $filteredLogs
+        $postPromptCount = $allLogs.Count
+        $promptEnd = Get-Date
+        $promptElapsed = [Math]::Round(($promptEnd - $promptStart).TotalSeconds, 2)
+        $promptFilteredCount = $prePromptCount - $postPromptCount
+        $totalMsgRemoved = $totalMsgBefore - $totalMsgAfter
+        
+        # Store PromptFilter metrics
+        $script:metrics.PromptFilterApplied = $true
+        $script:metrics.PromptFilterType = $PromptFilter
+        $script:metrics.PromptFilterPreCount = $prePromptCount
+        $script:metrics.PromptFilterPostCount = $postPromptCount
+        $script:metrics.PromptFilterRemovedCount = $promptFilteredCount
+        $script:metrics.PromptFilterElapsedSec = $promptElapsed
+        $script:metrics.PromptFilterMsgBefore = $totalMsgBefore
+        $script:metrics.PromptFilterMsgAfter = $totalMsgAfter
+        $script:metrics.PromptFilterMsgRemoved = $totalMsgRemoved
+        $script:metrics.PromptFilterRecordsMixed = $recordsMixed
+        $script:metrics.PromptFilterRecordsPromptOnly = $recordsPromptOnly
+        $script:metrics.PromptFilterRecordsResponseOnly = $recordsResponseOnly
+        $script:metrics.PromptFilterRecordsNoMessages = $recordsNoMessages
+        
+        Write-LogHost "PromptFilter complete in $promptElapsed seconds" -ForegroundColor Green
+        Write-LogHost "  Records before PromptFilter: $prePromptCount" -ForegroundColor Gray
+        Write-LogHost "  Records after PromptFilter: $postPromptCount" -ForegroundColor Gray
+        Write-LogHost "  Records filtered out: $promptFilteredCount" -ForegroundColor Gray
+        Write-LogHost "  Messages before PromptFilter: $totalMsgBefore" -ForegroundColor Gray
+        Write-LogHost "  Matching messages found: $totalMsgAfter" -ForegroundColor Gray
+        
+        if ($postPromptCount -eq 0) {
+            Write-LogHost "WARNING: No records match the PromptFilter criteria. Output will contain header only." -ForegroundColor Yellow
+        }
+        elseif ($PromptFilter -eq 'Null' -and $totalMsgAfter -eq 0) {
+            Write-LogHost "WARNING: PromptFilter=Null found no matching messages." -ForegroundColor Yellow
+            Write-LogHost "  This means all messages in the filtered records have explicit isPrompt values (True or False)." -ForegroundColor Yellow
+            Write-LogHost "  Consider using PromptFilter=Prompt or PromptFilter=Response instead." -ForegroundColor Yellow
+        }
+    }
+    
+    # Set explosion phase total based on final filtered count
+    $script:progressState.Explode.Total = [int]$allLogs.Count
+    $script:progressState.Explode.Current = 0
+    
+    # Check parallel eligibility AFTER agent filtering (uses filtered count)
+    $replayParallelEligible = $false
+    if ($RAWInputCSV -and ($PSVersionTable.PSVersion.Major -ge 7)) {
+        $eligibilityThreshold = ($StreamingSchemaSample + 5000)
+        Write-LogHost "Parallel eligibility check: RAW=$RAWInputCSV, PS=$($PSVersionTable.PSVersion.Major), Count=$($allLogs.Count), Threshold=$eligibilityThreshold" -ForegroundColor DarkGray
+        if ($allLogs.Count -gt $eligibilityThreshold) { 
+            $replayParallelEligible = $true 
+            Write-LogHost "Replay parallel explosion ELIGIBLE -> will parallelize after schema freeze ($($allLogs.Count) records)" -ForegroundColor Green
+        }
+        else {
+            Write-LogHost "Replay parallel NOT eligible (dataset too small: $($allLogs.Count) <= $eligibilityThreshold)" -ForegroundColor DarkYellow
+        }
+    }
+    else {
+        if (-not $RAWInputCSV) { Write-LogHost "Parallel not eligible: Not in replay mode" -ForegroundColor DarkGray }
+        elseif ($PSVersionTable.PSVersion.Major -lt 7) { Write-LogHost "Parallel not eligible: PowerShell $($PSVersionTable.PSVersion) (need 7+)" -ForegroundColor DarkYellow }
+    }
+    
     # Begin record explosion and transformation phase
     Set-ProgressPhase -Phase 'Explosion' -Status 'Analyzing and exploding records'
     
@@ -1167,7 +1819,7 @@ try {
             # Skip remaining logs if parallel processing already handled them
             if ($parallelProcessingComplete) { continue }
             
-            $records = if ($effectiveExplode) { Convert-ToPurviewExplodedRecords -Record $log -Deep:$ExplodeDeep } else { Convert-ToStructuredRecord -Record $log -EnableExplosion:$false }
+            $records = if ($effectiveExplode) { Convert-ToPurviewExplodedRecords -Record $log -Deep:$ExplodeDeep -PromptFilterValue $PromptFilter } else { Convert-ToStructuredRecord -Record $log -EnableExplosion:$false }
             if ($records -and $records.Count -gt 0) {
                 try {
                     $script:metrics.TotalStructuredRows += $records.Count; $structuredDataCount += $records.Count
@@ -1221,12 +1873,16 @@ try {
                                 if ($logsConsumedForSchema -lt $allLogs.Count) { $remainingLogs = $allLogs[$logsConsumedForSchema..($allLogs.Count - 1)] } else { $remainingLogs = @() }
                                 # Configure parallel processing with optimized batch sizes for large datasets
                                 $parallelBatchSize = [int][Math]::Max(10000, [Math]::Min(20000, [int]($remainingLogs.Count / 20)))
+                                $parallelBatchSizeOriginal = $parallelBatchSize  # Preserve original for batch total calculation
                                 $throttle = [int][Math]::Min([Environment]::ProcessorCount, 8)
                                 $targetMinMs = 3000; $targetMaxMs = 12000
                                 $remainingCount = $remainingLogs.Count
                                 $processedRemaining = 0
-                                Write-LogHost "Parallel batch config: batchSize=$parallelBatchSize, throttle=$throttle, batches=$([Math]::Ceiling($remainingCount / $parallelBatchSize))" -ForegroundColor DarkCyan
-                                Write-LogHost "NOTE: Progress bar updates between batches - progress may appear paused during intensive parallel processing." -ForegroundColor Yellow
+                                # Calculate total batches ONCE at the start using ORIGINAL batch size (don't recalculate if batchSize changes mid-stream)
+                                $totalBatchesInitial = [Math]::Ceiling($remainingCount / $parallelBatchSizeOriginal)
+                                Write-LogHost "Parallel batch config: batchSize=$parallelBatchSize, throttle=$throttle, batches=$totalBatchesInitial" -ForegroundColor DarkCyan
+                                # Show progress note in terminal only (not in log file)
+                                Write-Host "NOTE: Progress bar updates between batches - progress may appear paused during intensive parallel processing." -ForegroundColor Yellow
                                 
                                 # Get function definitions to pass into parallel runspace
                                 $convertExplodedDef = ${function:Convert-ToPurviewExplodedRecords}.ToString()
@@ -1244,23 +1900,65 @@ try {
                                 $regexNo0 = $script:RegexNo0
                                 
                                 # Show initial batch progress before starting
-                                # Show batch 1 info since it's about to start
-                                $totalBatches = [Math]::Ceiling($remainingCount / $parallelBatchSize)
+                                # Calculate initial batch display with dynamic total
                                 $firstBatchSize = [Math]::Min($parallelBatchSize, $remainingCount)
                                 $firstRangeStart = 1
                                 $firstRangeEnd = $logsConsumedForSchema + $firstBatchSize
+                                $remainingAfterFirstBatch = $remainingCount - $firstBatchSize
+                                if ($remainingAfterFirstBatch -le 0) {
+                                    # No records left - only one batch
+                                    $firstBatchTotal = 1
+                                    $firstBatchIsEstimate = $false
+                                } else {
+                                    # Smart batch estimation: Account for the fact that the final batch will
+                                    # process ALL remaining records in one go (no splitting of the last batch)
+                                    $estimatedRemainingBatches = [Math]::Ceiling($remainingAfterFirstBatch / $parallelBatchSize)
+                                    # If Math.Ceiling says 2+ batches, but the "excess" in the last batch is small,
+                                    # reduce the estimate by 1 (assuming adaptive sizing or final batch consolidation)
+                                    if ($estimatedRemainingBatches -ge 2) {
+                                        $excessInLastBatch = $remainingAfterFirstBatch - (($estimatedRemainingBatches - 1) * $parallelBatchSize)
+                                        # If the "last batch" would be tiny (< 20% of batch size), assume it gets absorbed
+                                        if ($excessInLastBatch -le ($parallelBatchSize * 0.2)) {
+                                            $estimatedRemainingBatches--
+                                        }
+                                    }
+                                    $firstBatchTotal = 1 + $estimatedRemainingBatches
+                                    $firstBatchIsEstimate = $true
+                                }
                                 # Calculate percentage range for this batch
                                 $firstBatchStartPct = 0
                                 $firstBatchEndPct = [int]([Math]::Round(([double]$firstRangeEnd / [double]$script:progressState.Explode.Total) * 100))
-                                Update-Progress -BatchCurrent 1 -BatchTotal $totalBatches -BatchRangeStart $firstRangeStart -BatchRangeEnd $firstRangeEnd -BatchStartPercent $firstBatchStartPct -BatchEndPercent $firstBatchEndPct
+                                Update-Progress -BatchCurrent 1 -BatchTotal $firstBatchTotal -BatchRangeStart $firstRangeStart -BatchRangeEnd $firstRangeEnd -BatchStartPercent $firstBatchStartPct -BatchEndPercent $firstBatchEndPct -BatchTotalIsEstimate $firstBatchIsEstimate
                                 
+                                # Track actual batch iteration count (not calculated from position)
+                                $actualBatchIteration = 1
                                 while ($processedRemaining -lt $remainingCount) {
                                     $batchSize = [Math]::Min($parallelBatchSize, $remainingCount - $processedRemaining)
                                     $batch = $remainingLogs[$processedRemaining..($processedRemaining + $batchSize - 1)]
                                     
                                     # Calculate batch info for progress display
-                                    $currentBatch = [Math]::Floor($processedRemaining / $parallelBatchSize) + 1
-                                    $totalBatches = [Math]::Ceiling($remainingCount / $parallelBatchSize)
+                                    # Use actual iteration count (accounts for adaptive batch sizing)
+                                    $currentBatch = $actualBatchIteration
+                                    # Calculate total batches dynamically based on current position and remaining records
+                                    # This accounts for adaptive batch sizing that may have changed the actual number of batches
+                                    $remainingAfterThisBatch = $remainingCount - ($processedRemaining + $batchSize)
+                                    if ($remainingAfterThisBatch -le 0) {
+                                        # This is the last batch - show exact total
+                                        $totalBatches = $currentBatch
+                                        $batchTotalIsEstimate = $false
+                                    } else {
+                                        # Smart batch estimation
+                                        $estimatedRemainingBatches = [Math]::Ceiling($remainingAfterThisBatch / $parallelBatchSize)
+                                        # If the final batch would be tiny, assume it gets absorbed into the previous batch
+                                        if ($estimatedRemainingBatches -ge 2) {
+                                            $excessInLastBatch = $remainingAfterThisBatch - (($estimatedRemainingBatches - 1) * $parallelBatchSize)
+                                            if ($excessInLastBatch -le ($parallelBatchSize * 0.2)) {
+                                                $estimatedRemainingBatches--
+                                            }
+                                        }
+                                        $totalBatches = $currentBatch + $estimatedRemainingBatches
+                                        $batchTotalIsEstimate = $true
+                                    }
                                     
                                     # Calculate the record range for THIS batch being processed (1-indexed display)
                                     $rangeStart = $logsConsumedForSchema + $processedRemaining + 1
@@ -1272,7 +1970,7 @@ try {
                                     
                                     # Update progress BEFORE starting batch to show what's being processed
                                     $script:progressState.Explode.Current = $logsConsumedForSchema + $processedRemaining
-                                    Update-Progress -BatchCurrent $currentBatch -BatchTotal $totalBatches -BatchRangeStart $rangeStart -BatchRangeEnd $rangeEnd -BatchStartPercent $batchStartPct -BatchEndPercent $batchEndPct
+                                    Update-Progress -BatchCurrent $currentBatch -BatchTotal $totalBatches -BatchRangeStart $rangeStart -BatchRangeEnd $rangeEnd -BatchStartPercent $batchStartPct -BatchEndPercent $batchEndPct -BatchTotalIsEstimate $batchTotalIsEstimate
                                     
                                     $batchStart = Get-Date
                                     try {
@@ -1300,17 +1998,20 @@ try {
                                             # Access variables from outer scope using $using:
                                             $effectiveExplode = $using:effectiveExplode
                                             $explodeDeep = $using:ExplodeDeep
+                                            $promptFilterVal = $using:PromptFilter
                                             
-                                            $rows = if ($effectiveExplode) { Convert-ToPurviewExplodedRecords -Record $_ -Deep:$explodeDeep } else { Convert-ToStructuredRecord -Record $_ -EnableExplosion:$false }
+                                            $rows = if ($effectiveExplode) { Convert-ToPurviewExplodedRecords -Record $_ -Deep:$explodeDeep -PromptFilterValue $promptFilterVal } else { Convert-ToStructuredRecord -Record $_ -EnableExplosion:$false }
                                             $rc = 0; if ($null -ne $rows) { if ($rows -is [System.Array]) { $rc = $rows.Count } else { $rc = 1 } }
                                             [pscustomobject]@{ Rows = $rows; RowCount = $rc; ExplosionRows = if ($rc -gt 1) { $rc - 1 } else { 0 }; MaxRows = $rc }
                                         } -ThrottleLimit $throttle
                                     }
                                     catch {
                                         if ($_.Exception -is [System.OutOfMemoryException]) {
-                                            Write-LogHost "OutOfMemory during parallel batch -> reducing batchSize & throttle" -ForegroundColor Red
+                                            $oldBatchSize = $parallelBatchSize
+                                            $oldThrottle = $throttle
                                             $parallelBatchSize = [int][Math]::Max(200, [int]($parallelBatchSize / 2))
                                             $throttle = [int][Math]::Max(1, [int]($throttle / 2))
+                                            Write-LogHost "OutOfMemory during parallel batch -> reducing batch size from $oldBatchSize to $parallelBatchSize, throttle from $oldThrottle to $throttle (batch totals remain fixed at $totalBatchesInitial)" -ForegroundColor Red
                                             continue
                                         }
                                         else { throw }
@@ -1356,6 +2057,7 @@ try {
                                         }
                                     }
                                     $processedRemaining += $batchSize
+                                    $actualBatchIteration++  # Increment for next iteration
                                     $batchElapsed = (Get-Date) - $batchStart
                                     $elapsedMs = [int]$batchElapsed.TotalMilliseconds
                                     
@@ -1462,44 +2164,130 @@ try {
     Write-LogHost "Output file: $OutputFile" -ForegroundColor White
     Write-LogHost "Log file: $LogFile" -ForegroundColor White
     Write-LogHost "File size: $([math]::Round((Get-Item $OutputFile).Length / 1KB,2)) KB" -ForegroundColor White
-    try { $endDomain = if ($script:TenantPrimaryDomain) { $script:TenantPrimaryDomain } else { $primaryDomain }; $endTenantId = if ($script:TenantId) { $script:TenantId } else { $tenantId }; $endFallback = if ($script:TenantIndicators -and $script:TenantIndicators.Count -gt 0) { $script:TenantIndicators } else { $fallbackIndicators }; if (-not $endDomain) { $endDomain = '<unknown>' }; if (-not $endTenantId) { $endTenantId = '<unresolved>' }; $endParts = @("Domain=$endDomain", "TenantId=$endTenantId"); if ($endFallback -and $endFallback.Count -gt 0) { $endParts += ("Indicators=" + ($endFallback -join ',')) }; Write-LogHost ("Tenant context: " + ($endParts -join ' | ')) -ForegroundColor DarkCyan } catch {}
-
-    Write-LogHost ""; Write-LogHost "=== Performance Optimization Summary ===" -ForegroundColor Cyan
-    Write-LogHost "Adaptive sizing results:" -ForegroundColor White
-    if ($script:learnedActivityBlockSize.Count -gt 0) { foreach ($kvp in $script:learnedActivityBlockSize.GetEnumerator()) { Write-LogHost ("  {0}: {1} hours (learned)" -f $($kvp.Key), $($kvp.Value)) -ForegroundColor Gray } } else { Write-LogHost "  No adaptive learning occurred (used defaults)" -ForegroundColor Gray }
-    Write-LogHost "Global learned size: $($script:globalLearnedBlockSize) hours" -ForegroundColor Gray
-    if ($script:Hit10KLimit) { Write-LogHost ""; Write-LogHost "  DATA COMPLETENESS WARNING " -ForegroundColor Red; Write-LogHost "Exchange Online 10K server limit was reached!" -ForegroundColor Red; Write-LogHost "Affected time window: $($script:LimitTimeWindow)" -ForegroundColor Yellow; Write-LogHost "RECOMMENDATION: Re-run with smaller time windows (30min blocks)" -ForegroundColor Cyan; Write-LogHost "This ensures complete data retrieval for high-volume periods" -ForegroundColor Yellow } else { Write-LogHost ""; Write-LogHost " Data retrieval completed without hitting limits" -ForegroundColor Green }
-
-    Write-LogHost ""; Write-LogHost "=== Explosion & Progress Metrics ===" -ForegroundColor Cyan
-    Write-LogHost ("Query time: {0} ms | Explosion time: {1} ms | Export time: {2} ms" -f $script:metrics.QueryMs, $script:metrics.ExplosionMs, $script:metrics.ExportMs) -ForegroundColor Gray
-    Write-LogHost ("Pages fetched: {0}" -f $script:metrics.PagesFetched) -ForegroundColor Gray
-    Write-LogHost ("Records fetched: {0} | Structured rows: {1}" -f $script:metrics.TotalRecordsFetched, $script:metrics.TotalStructuredRows) -ForegroundColor Gray
-    if ($script:metrics.ExplosionEvents -gt 0) { $avg = [math]::Round(($script:metrics.ExplosionRowsFromEvents + $script:metrics.ExplosionEvents) / $script:metrics.ExplosionEvents, 2); Write-LogHost ("Explosion events: {0} | Avg rows/record (exploded): {1} | Max rows in a single record: {2}" -f $script:metrics.ExplosionEvents, $avg, $script:metrics.ExplosionMaxPerRecord) -ForegroundColor Gray } else { Write-LogHost "Explosion events: 0 (no multi-row expansions)" -ForegroundColor Gray }
-    if ($script:metrics.ExplosionTruncated) { Write-LogHost "WARNING: One or more exploded records exceeded row cap (1000) and were truncated." -ForegroundColor Yellow }
-    if ($script:metrics.EffectiveChunkSize -gt 0) { Write-LogHost ("Effective chunk size: {0}" -f $script:metrics.EffectiveChunkSize) -ForegroundColor Gray }
-    if ($script:metrics.ParallelBatchSizeFinal -gt 0) { Write-LogHost ("Final parallel batch size: {0}" -f $script:metrics.ParallelBatchSizeFinal) -ForegroundColor Gray }
-    if ($script:metrics.ParallelThrottleFinal -gt 0) { Write-LogHost ("Final parallel throttle: {0}" -f $script:metrics.ParallelThrottleFinal) -ForegroundColor Gray }
-    if ($script:metrics.Activities.Count -gt 0) { Write-LogHost "Per-activity counts:" -ForegroundColor Gray; foreach ($k in $script:metrics.Activities.Keys) { $a = $script:metrics.Activities[$k]; Write-LogHost ([string]::Format('  {0} - retrieved={1} structured={2}', $k, $a.Retrieved, $a.Structured)) -ForegroundColor Gray } }
-    Write-LogHost "" -ForegroundColor Gray
-    Write-LogHost "=== Parallel Execution Summary ===" -ForegroundColor Cyan
-    Write-LogHost ("Total query groups: {0}" -f $queryPlan.Count) -ForegroundColor Gray
-    Write-LogHost ("Groups executed in parallel: {0}" -f $parallelGroupsUsed) -ForegroundColor Gray
-    Write-LogHost ("Groups executed sequentially: {0}" -f ($sequentialGroups + ($queryPlan.Count - $parallelGroupsUsed - $sequentialGroups))) -ForegroundColor Gray
-    Write-LogHost ("MaxConcurrency: {0} | MaxParallelGroups: {1} | ParallelMode: {2}" -f $MaxConcurrency, $MaxParallelGroups, $ParallelMode) -ForegroundColor Gray
-    if ($ParallelMode -eq 'Auto') { $highGroups = ($queryPlan | Where-Object { $_.Group -eq 'High' }).Count; $mediumGroups = ($queryPlan | Where-Object { $_.Group -eq 'Medium' }).Count; $lowGroups = ($queryPlan | Where-Object { $_.Group -eq 'Low' }).Count; $activitiesTotal = ($queryPlan | ForEach-Object { $_.Activities.Count } | Measure-Object -Sum).Sum; $groupsTotal = $queryPlan.Count; $autoStatus = if ($parallelOverallEnabled) { 'met' } else { 'not met' }; Write-LogHost ("Auto criteria (PS7+, MPG>0, MC>1, <=1 High, >=1 Med/Low, activities<=15, groups>1): {0}; High={1} Medium={2} Low={3} Activities={4} Groups={5}" -f $autoStatus, $highGroups, $mediumGroups, $lowGroups, $activitiesTotal, $groupsTotal) -ForegroundColor Gray }
     
-    # Always show timing summary (inline console output)
-    $totalMs = [Math]::Max(1, ($script:metrics.QueryMs + $script:metrics.ExplosionMs + $script:metrics.ExportMs)); $qPct = if ($totalMs -gt 0) { [Math]::Round(($script:metrics.QueryMs / $totalMs) * 100, 1) } else { 0 }; $xPct = if ($totalMs -gt 0 -and $script:metrics.ExplosionMs -gt 0) { [Math]::Round(($script:metrics.ExplosionMs / $totalMs) * 100, 1) } else { 0 }; $ePct = if ($totalMs -gt 0) { [Math]::Round(($script:metrics.ExportMs / $totalMs) * 100, 1) } else { 0 }; $startStamp = try { $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') } catch { '' }; if ($startStamp) { Write-Host ("Execution start time (UTC): {0} UTC" -f $startStamp) }; Write-Host ("Final durations -> query={0}ms ({1}%)  explosion={2}ms ({3}%)  export={4}ms ({5}%)" -f $script:metrics.QueryMs, $qPct, $script:metrics.ExplosionMs, $xPct, $script:metrics.ExportMs, $ePct)
+    # Only show tenant context for live queries (not replay mode)
+    if (-not $RAWInputCSV) {
+        try { $endDomain = if ($script:TenantPrimaryDomain) { $script:TenantPrimaryDomain } else { $primaryDomain }; $endTenantId = if ($script:TenantId) { $script:TenantId } else { $tenantId }; $endFallback = if ($script:TenantIndicators -and $script:TenantIndicators.Count -gt 0) { $script:TenantIndicators } else { $fallbackIndicators }; if (-not $endDomain) { $endDomain = '<unknown>' }; if (-not $endTenantId) { $endTenantId = '<unresolved>' }; $endParts = @("Domain=$endDomain", "TenantId=$endTenantId"); if ($endFallback -and $endFallback.Count -gt 0) { $endParts += ("Indicators=" + ($endFallback -join ',')) }; Write-LogHost ("Tenant context: " + ($endParts -join ' | ')) -ForegroundColor DarkCyan } catch {}
+    }
 
+    # Show agent filtering metrics if filter was applied
+    if ($script:metrics.AgentFilterApplied) {
+        Write-LogHost ""; Write-LogHost "=== Agent Filtering Summary ===" -ForegroundColor Cyan
+        Write-LogHost ("Records before agent filter: {0}" -f $script:metrics.AgentFilterPreCount) -ForegroundColor White
+        Write-LogHost ("Records after agent filter: {0}" -f $script:metrics.AgentFilterPostCount) -ForegroundColor White
+        Write-LogHost ("Records filtered out: {0}" -f $script:metrics.AgentFilterRemovedCount) -ForegroundColor Gray
+        $retentionRate = if ($script:metrics.AgentFilterPreCount -gt 0) { [Math]::Round(($script:metrics.AgentFilterPostCount / $script:metrics.AgentFilterPreCount) * 100, 2) } else { 0 }
+        Write-LogHost ("Retention rate: {0}%" -f $retentionRate) -ForegroundColor White
+        Write-LogHost ("Agent filter time: {0:F2} seconds" -f $script:metrics.AgentFilterElapsedSec) -ForegroundColor Gray
+    }
+    
+    # Show ExcludeAgents filtering metrics if filter was applied
+    if ($script:metrics.ExcludeAgentsApplied) {
+        Write-LogHost ""; Write-LogHost "=== ExcludeAgents Filtering Summary ===" -ForegroundColor Cyan
+        Write-LogHost ("Records before ExcludeAgents filter: {0}" -f $script:metrics.ExcludeAgentsPreCount) -ForegroundColor White
+        Write-LogHost ("Records after ExcludeAgents filter: {0}" -f $script:metrics.ExcludeAgentsPostCount) -ForegroundColor White
+        Write-LogHost ("Agent records excluded: {0}" -f $script:metrics.ExcludeAgentsRemoved) -ForegroundColor Gray
+        $excludeRetentionRate = if ($script:metrics.ExcludeAgentsPreCount -gt 0) { [Math]::Round(($script:metrics.ExcludeAgentsPostCount / $script:metrics.ExcludeAgentsPreCount) * 100, 2) } else { 0 }
+        Write-LogHost ("Retention rate: {0}%" -f $excludeRetentionRate) -ForegroundColor White
+        Write-LogHost ("ExcludeAgents filter time: {0:F2} seconds" -f $script:metrics.ExcludeAgentsElapsedSec) -ForegroundColor Gray
+    }
+    
+    # Show PromptFilter metrics if filter was applied
+    if ($script:metrics.PromptFilterApplied) {
+        Write-LogHost ""; Write-LogHost "=== Prompt Filtering Summary ===" -ForegroundColor Cyan
+        
+        # Display filter type
+        $filterTypeDisplay = switch ($script:metrics.PromptFilterType) {
+            'Prompt' { 'Prompts Only (isPrompt=True)' }
+            'Response' { 'Responses Only (isPrompt=False)' }
+            'Both' { 'Both Prompts AND Responses' }
+            'Null' { 'Null/Missing isPrompt values' }
+        }
+        Write-LogHost ("Filter type: {0}" -f $filterTypeDisplay) -ForegroundColor White
+        
+        # Record-level statistics
+        Write-LogHost ""
+        Write-LogHost "Record-level statistics:" -ForegroundColor Yellow
+        Write-LogHost ("  Records before filter: {0}" -f $script:metrics.PromptFilterPreCount) -ForegroundColor White
+        Write-LogHost ("  Records after filter: {0}" -f $script:metrics.PromptFilterPostCount) -ForegroundColor White
+        Write-LogHost ("  Records filtered out: {0}" -f $script:metrics.PromptFilterRemovedCount) -ForegroundColor Gray
+        $recordRetentionRate = if ($script:metrics.PromptFilterPreCount -gt 0) { [Math]::Round(($script:metrics.PromptFilterPostCount / $script:metrics.PromptFilterPreCount) * 100, 2) } else { 0 }
+        Write-LogHost ("  Retention rate: {0}%" -f $recordRetentionRate) -ForegroundColor White
+        
+        # Record type breakdown
+        Write-LogHost ""
+        Write-LogHost "Record type breakdown (from input):" -ForegroundColor Yellow
+        $totalWithMessages = $script:metrics.PromptFilterRecordsMixed + $script:metrics.PromptFilterRecordsPromptOnly + $script:metrics.PromptFilterRecordsResponseOnly
+        $mixedPct = if ($totalWithMessages -gt 0) { [Math]::Round(($script:metrics.PromptFilterRecordsMixed / $totalWithMessages) * 100, 1) } else { 0 }
+        $promptOnlyPct = if ($totalWithMessages -gt 0) { [Math]::Round(($script:metrics.PromptFilterRecordsPromptOnly / $totalWithMessages) * 100, 1) } else { 0 }
+        $responseOnlyPct = if ($totalWithMessages -gt 0) { [Math]::Round(($script:metrics.PromptFilterRecordsResponseOnly / $totalWithMessages) * 100, 1) } else { 0 }
+        
+        Write-LogHost ("  Mixed (both prompts & responses): {0} ({1}%)" -f $script:metrics.PromptFilterRecordsMixed, $mixedPct) -ForegroundColor Cyan
+        Write-LogHost ("  Prompt-only records: {0} ({1}%)" -f $script:metrics.PromptFilterRecordsPromptOnly, $promptOnlyPct) -ForegroundColor Cyan
+        Write-LogHost ("  Response-only records: {0} ({1}%)" -f $script:metrics.PromptFilterRecordsResponseOnly, $responseOnlyPct) -ForegroundColor Cyan
+        if ($script:metrics.PromptFilterRecordsNoMessages -gt 0) {
+            Write-LogHost ("  Records with no messages: {0}" -f $script:metrics.PromptFilterRecordsNoMessages) -ForegroundColor DarkYellow
+        }
+        
+        # Message-level statistics
+        Write-LogHost ""
+        Write-LogHost "Message-level statistics:" -ForegroundColor Yellow
+        Write-LogHost ("  Messages before filter: {0}" -f $script:metrics.PromptFilterMsgBefore) -ForegroundColor White
+        Write-LogHost ("  Messages after filter: {0}" -f $script:metrics.PromptFilterMsgAfter) -ForegroundColor White
+        Write-LogHost ("  Messages filtered out: {0}" -f $script:metrics.PromptFilterMsgRemoved) -ForegroundColor Gray
+        $msgRetentionRate = if ($script:metrics.PromptFilterMsgBefore -gt 0) { [Math]::Round(($script:metrics.PromptFilterMsgAfter / $script:metrics.PromptFilterMsgBefore) * 100, 2) } else { 0 }
+        Write-LogHost ("  Retention rate: {0}%" -f $msgRetentionRate) -ForegroundColor White
+        
+        # Add explanation if PromptFilter=Null produced no output
+        if ($script:metrics.PromptFilterType -eq 'Null' -and $script:metrics.PromptFilterMsgAfter -eq 0) {
+            Write-LogHost ""
+            Write-LogHost "Explanation of PromptFilter=Null results:" -ForegroundColor Yellow
+            Write-LogHost "  No messages with null/undefined isPrompt values were found." -ForegroundColor White
+            Write-LogHost ("  All {0} messages in the {1} analyzed records had explicit isPrompt values (True or False)." -f $script:metrics.PromptFilterMsgBefore, $script:metrics.PromptFilterPreCount) -ForegroundColor White
+            if ($script:metrics.PromptFilterRecordsNoMessages -gt 0) {
+                Write-LogHost ("  Note: {0} record(s) had no Messages array and were excluded." -f $script:metrics.PromptFilterRecordsNoMessages) -ForegroundColor Gray
+            }
+            Write-LogHost "  To export data, use PromptFilter=Prompt, PromptFilter=Response, or PromptFilter=Both." -ForegroundColor Cyan
+        }
+        
+        Write-LogHost ""
+        Write-LogHost ("PromptFilter processing time: {0:F2} seconds" -f $script:metrics.PromptFilterElapsedSec) -ForegroundColor Gray
+    }
 
-    Write-LogHost ""; Write-LogHost "The CSV file contains the following columns (plus many more if -ExplodeDeep is used):" -ForegroundColor Cyan
-    Write-LogHost "- RecordType, CreationDate, UserIds, Operations" -ForegroundColor Gray
-    Write-LogHost "- Id, Operation, OrganizationId, UserId" -ForegroundColor Gray
-    Write-LogHost "- Usage/ROI fields (AgentId, AgentName, AppIdentity, ApplicationName, Tokens*, Model*, OutcomeStatus, DurationMs, ConversationId, TurnNumber, ClientVersion, ClientPlatform, RetryCount)" -ForegroundColor Gray
-    Write-LogHost "- Suggestions.*, Actions.*, References.*, Participants.* aggregates" -ForegroundColor Gray
-    Write-LogHost "- CopilotEventData $(if ($ExplodeDeep -or $ExplodeArrays){ '(exploded/flattened elements)' } else { '(JSON string with complete arrays)' })" -ForegroundColor Gray
-    Write-LogHost "- OriginalAuditData (Complete raw audit data)" -ForegroundColor Gray
-    if ($ExplodeArrays) { Write-LogHost "- ArrayIndex_* (Explosion metadata fields)" -ForegroundColor Gray }
+    # Only show Performance Optimization Summary if adaptive sizing was used (live query mode)
+    if (-not $RAWInputCSV) {
+        Write-LogHost ""; Write-LogHost "=== Performance Optimization Summary ===" -ForegroundColor Cyan
+        Write-LogHost "Adaptive sizing results:" -ForegroundColor White
+        if ($script:learnedActivityBlockSize.Count -gt 0) { foreach ($kvp in $script:learnedActivityBlockSize.GetEnumerator()) { Write-LogHost ("  {0}: {1} hours (learned)" -f $($kvp.Key), $($kvp.Value)) -ForegroundColor Gray } } else { Write-LogHost "  No adaptive learning occurred (used defaults)" -ForegroundColor Gray }
+        Write-LogHost "Global learned size: $($script:globalLearnedBlockSize) hours" -ForegroundColor Gray
+        if ($script:Hit10KLimit) { Write-LogHost ""; Write-LogHost "  DATA COMPLETENESS WARNING " -ForegroundColor Red; Write-LogHost "Exchange Online 10K server limit was reached!" -ForegroundColor Red; Write-LogHost "Affected time window: $($script:LimitTimeWindow)" -ForegroundColor Yellow; Write-LogHost "RECOMMENDATION: Re-run with smaller time windows (30min blocks)" -ForegroundColor Cyan; Write-LogHost "This ensures complete data retrieval for high-volume periods" -ForegroundColor Yellow } else { Write-LogHost ""; Write-LogHost " Data retrieval completed without hitting limits" -ForegroundColor Green }
+    }
+
+    # Only show Explosion & Progress Metrics if explosion mode was used
+    if ($effectiveExplode) {
+        Write-LogHost ""; Write-LogHost "=== Explosion & Progress Metrics ===" -ForegroundColor Cyan
+        Write-LogHost ("Query time: {0} ms | Explosion time: {1} ms | Export time: {2} ms" -f $script:metrics.QueryMs, $script:metrics.ExplosionMs, $script:metrics.ExportMs) -ForegroundColor Gray
+        Write-LogHost ("Pages fetched: {0}" -f $script:metrics.PagesFetched) -ForegroundColor Gray
+        Write-LogHost ("Records fetched: {0} | Structured rows: {1}" -f $script:metrics.TotalRecordsFetched, $script:metrics.TotalStructuredRows) -ForegroundColor Gray
+        if ($script:metrics.ExplosionEvents -gt 0) { $avg = [math]::Round(($script:metrics.ExplosionRowsFromEvents + $script:metrics.ExplosionEvents) / $script:metrics.ExplosionEvents, 2); Write-LogHost ("Explosion events: {0} | Avg rows/record (exploded): {1} | Max rows in a single record: {2}" -f $script:metrics.ExplosionEvents, $avg, $script:metrics.ExplosionMaxPerRecord) -ForegroundColor Gray } else { Write-LogHost "Explosion events: 0 (no multi-row expansions)" -ForegroundColor Gray }
+        if ($script:metrics.ExplosionTruncated) { Write-LogHost "WARNING: One or more exploded records exceeded row cap (1000) and were truncated." -ForegroundColor Yellow }
+        if ($script:metrics.EffectiveChunkSize -gt 0) { Write-LogHost ("Effective chunk size: {0}" -f $script:metrics.EffectiveChunkSize) -ForegroundColor Gray }
+        if ($script:metrics.ParallelBatchSizeFinal -gt 0) { Write-LogHost ("Final parallel batch size: {0}" -f $script:metrics.ParallelBatchSizeFinal) -ForegroundColor Gray }
+        if ($script:metrics.ParallelThrottleFinal -gt 0) { Write-LogHost ("Final parallel throttle: {0}" -f $script:metrics.ParallelThrottleFinal) -ForegroundColor Gray }
+        if ($script:metrics.Activities.Count -gt 0) { Write-LogHost "Per-activity counts:" -ForegroundColor Gray; foreach ($k in $script:metrics.Activities.Keys) { $a = $script:metrics.Activities[$k]; Write-LogHost ([string]::Format('  {0} - retrieved={1} structured={2}', $k, $a.Retrieved, $a.Structured)) -ForegroundColor Gray } }
+        Write-LogHost "" -ForegroundColor Gray
+    }
+    
+    # Only show Parallel Execution Summary if parallel mode was actually used
+    if (-not $RAWInputCSV -and $parallelGroupsUsed -gt 0) {
+        Write-LogHost "=== Parallel Execution Summary ===" -ForegroundColor Cyan
+        Write-LogHost ("Total query groups: {0}" -f $queryPlan.Count) -ForegroundColor Gray
+        Write-LogHost ("Groups executed in parallel: {0}" -f $parallelGroupsUsed) -ForegroundColor Gray
+        Write-LogHost ("Groups executed sequentially: {0}" -f ($sequentialGroups + ($queryPlan.Count - $parallelGroupsUsed - $sequentialGroups))) -ForegroundColor Gray
+        Write-LogHost ("MaxConcurrency: {0} | MaxParallelGroups: {1} | ParallelMode: {2}" -f $MaxConcurrency, $MaxParallelGroups, $ParallelMode) -ForegroundColor Gray
+        if ($ParallelMode -eq 'Auto') { $highGroups = ($queryPlan | Where-Object { $_.Group -eq 'High' }).Count; $mediumGroups = ($queryPlan | Where-Object { $_.Group -eq 'Medium' }).Count; $lowGroups = ($queryPlan | Where-Object { $_.Group -eq 'Low' }).Count; $activitiesTotal = ($queryPlan | ForEach-Object { $_.Activities.Count } | Measure-Object -Sum).Sum; $groupsTotal = $queryPlan.Count; $autoStatus = if ($parallelOverallEnabled) { 'met' } else { 'not met' }; Write-LogHost ("Auto criteria (PS7+, MPG>0, MC>1, <=1 High, >=1 Med/Low, activities<=15, groups>1): {0}; High={1} Medium={2} Low={3} Activities={4} Groups={5}" -f $autoStatus, $highGroups, $mediumGroups, $lowGroups, $activitiesTotal, $groupsTotal) -ForegroundColor Gray }
+        Write-LogHost "" -ForegroundColor Gray
+    }
 }
 catch { Write-LogHost "Script failed: $($_.Exception.Message)" -ForegroundColor Red; Write-LogHost $_.ScriptStackTrace -ForegroundColor Red }
 finally { $endUtc = (Get-Date).ToUniversalTime(); try { if ($script:metrics -and $script:metrics.StartTime) { $startTail = $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss'); Write-Log ("Script execution started at $startTail UTC") } } catch {}; Write-Log "Script execution completed at $($endUtc.ToString('yyyy-MM-dd HH:mm:ss')) UTC"; Write-Log "Script version: v$ScriptVersion"; try { if ($script:metrics -and $script:metrics.StartTime) { $elapsed = $endUtc - $script:metrics.StartTime; $totalHours = [math]::Floor($elapsed.TotalHours); $remainder = $elapsed - [TimeSpan]::FromHours($totalHours); $elapsedFormatted = ("{0}:{1:00}:{2:00}.{3:000}" -f $totalHours, $remainder.Minutes, $remainder.Seconds, $remainder.Milliseconds); Write-Log ("Total elapsed time: {0} (hours:minutes:seconds.milliseconds)" -f $elapsedFormatted) } } catch {}; if ($script:Connected) { try { Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue | Out-Null; Write-LogHost "Disconnected from Exchange Online" -ForegroundColor Gray } catch {} } }
