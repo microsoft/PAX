@@ -25,7 +25,7 @@
 7. [Authentication Methods](#authentication-methods)
 8. [Usage Examples](#usage-examples)
 9. [Agent Filtering](#agent-filtering)
-10. [Message Filtering (PromptFilter)](#message-filtering-promptfilter)
+10. [Prompt and Response Filtering (PromptFilter)](#prompt-and-response-filtering-promptfilter)
 11. [Output Files & Schema](#output-files--schema)
 12. [Activity Types Reference](#activity-types-reference)
 13. [Advanced Features](#advanced-features)
@@ -59,7 +59,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 3. **Deep Flatten Mode** (`-ExplodeDeep`) - 35-column base schema + fully flattened `CopilotEventData.*` columns
 4. **Offline Replay Mode** (`-RAWInputCSV`) - Re-process previously exported raw audit CSV files without querying the service
 5. **Agent Filtering Mode** (`-AgentsOnly` or `-AgentId` or `-ExcludeAgents`) - Filter for records based on Copilot agent presence (works with live queries and replay mode)
-6. **Message Filtering Mode** (`-PromptFilter`) - Filter messages by isPrompt property to isolate prompts, responses, or both
+6. **Prompt and Response Filtering Mode** (`-PromptFilter`) - Filter messages by isPrompt property to isolate prompts, responses, or both
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
@@ -404,7 +404,7 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.6.
 #### `-PromptFilter` (string)
 
 **Purpose:** Filter messages by `Message_isPrompt` property to isolate specific message types  
-**Default:** Not set (no message filtering)  
+**Default:** Not set (no prompt/response filtering)  
 **Valid Values:** `Prompt`, `Response`, `Both`, `Null`  
 **Use When:**
 
@@ -834,11 +834,11 @@ The `AgentId` field appears in Copilot audit records and identifies the specific
 
 ---
 
-## Message Filtering (PromptFilter)
+## Prompt and Response Filtering (PromptFilter)
 
 ### Overview
 
-Message Filtering (`-PromptFilter`) enables targeted extraction of specific message types from Copilot audit logs based on the `Message_isPrompt` property. This feature is essential for analyzing prompt engineering, response quality, conversation patterns, and user interaction behaviors.
+Prompt and Response Filtering (`-PromptFilter`) enables targeted extraction of specific message types from Copilot audit logs based on the `Message_isPrompt` property. This feature is essential for analyzing prompt engineering, response quality, conversation patterns, and user interaction behaviors.
 
 **Why Use PromptFilter?**
 
@@ -902,7 +902,7 @@ Message Filtering (`-PromptFilter`) enables targeted extraction of specific mess
    - Filters out records without matching messages (saves explosion work)
    - Typical reduction: 10-15% of records filtered before explosion
 
-2. **Stage 2 (Message-Level)**: Message filtering DURING explosion
+2. **Stage 2 (Message-Level)**: Prompt/response filtering DURING explosion
    - Filters individual messages within each record
    - Only outputs rows for messages matching the filter
    - Prevents blank `Message_isPrompt` values in output
