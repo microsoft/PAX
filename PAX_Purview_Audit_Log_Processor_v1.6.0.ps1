@@ -274,6 +274,10 @@ $script:metrics = @{
     ExcludeAgentsElapsedSec = 0
     PromptFilterApplied     = $false
     PromptFilterType        = ''
+    PromptFilterPreCount    = 0
+    PromptFilterPostCount   = 0
+    PromptFilterRemovedCount = 0
+    PromptFilterElapsedSec  = 0
     PromptFilterMsgBefore   = 0
     PromptFilterMsgAfter    = 0
     PromptFilterMsgRemoved  = 0
@@ -849,8 +853,7 @@ function Convert-ToPurviewExplodedRecords {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)] $Record,
-        [switch]$Deep,
-        [string]$PromptFilterValue
+        [switch]$Deep
     )
     try {
         # Use pre-parsed AuditData if available for improved processing speed
@@ -866,39 +869,6 @@ function Convert-ToPurviewExplodedRecords {
         
         # Extract array properties from CopilotEventData
         $messages = script:GetArrayFast $ced 'Messages'
-        
-        # Apply PromptFilter if specified (message-level filtering)
-        if ($PromptFilterValue) {
-            $msgBefore = $messages.Count
-            # Map Prompt→True, Response→False
-            $targetValue = ($PromptFilterValue -eq 'Prompt')
-            $messages = $messages | Where-Object { 
-                try { 
-                    $_.isPrompt -eq $targetValue 
-                } catch { 
-                    $false 
-                }
-            }
-            $msgAfter = $messages.Count
-            $msgRemoved = $msgBefore - $msgAfter
-            
-            # Track prompt filter metrics (only when script:metrics exists - not in parallel workers)
-            # In parallel context, metrics will be tracked by the caller
-            if ($null -ne $script:metrics) {
-                if (-not $script:metrics.PromptFilterApplied) {
-                    $script:metrics.PromptFilterApplied = $true
-                    $script:metrics.PromptFilterType = $PromptFilterValue
-                }
-                [System.Threading.Interlocked]::Add([ref]$script:metrics.PromptFilterMsgBefore, $msgBefore) | Out-Null
-                [System.Threading.Interlocked]::Add([ref]$script:metrics.PromptFilterMsgAfter, $msgAfter) | Out-Null
-                [System.Threading.Interlocked]::Add([ref]$script:metrics.PromptFilterMsgRemoved, $msgRemoved) | Out-Null
-            }
-            
-            # If no messages remain after filtering, skip this record entirely
-            if ($messages.Count -eq 0) {
-                return $null
-            }
-        }
         
         $contexts = script:GetArrayFast $ced 'Contexts'
         $resources = script:GetArrayFast $ced 'AccessedResources'
@@ -1586,6 +1556,78 @@ try {
         }
     }
     
+    # --- PromptFilter Filtering (if specified) ---
+    if ($PromptFilter) {
+        Write-LogHost "Applying PromptFilter..." -ForegroundColor Yellow
+        Write-LogHost "  Filtering for: $PromptFilter messages (isPrompt = $($PromptFilter -eq 'Prompt'))" -ForegroundColor Gray
+        
+        $prePromptCount = $allLogs.Count
+        $promptStart = Get-Date
+        $filteredLogs = New-Object System.Collections.Generic.List[object]
+        $promptCount = 0
+        $totalMsgBefore = 0
+        $totalMsgAfter = 0
+        
+        $targetIsPromptValue = ($PromptFilter -eq 'Prompt')
+        
+        foreach ($log in $allLogs) {
+            $hasMatchingMessages = $false
+            try {
+                $messages = $log._ParsedAuditData.CopilotEventData.Messages
+                if ($null -ne $messages) {
+                    $totalMsgBefore += $messages.Count
+                    foreach ($msg in $messages) {
+                        if ($msg.isPrompt -eq $targetIsPromptValue) {
+                            $hasMatchingMessages = $true
+                            $totalMsgAfter++
+                        }
+                    }
+                }
+            } catch {}
+            
+            if ($hasMatchingMessages) {
+                $filteredLogs.Add($log)
+            }
+            $promptCount++
+            
+            # Update progress bar during PromptFilter filtering (replay mode only)
+            if ($RAWInputCSV -and ($promptCount % 500 -eq 0 -or $promptCount -eq $prePromptCount)) {
+                $promptProgress = $promptCount / $prePromptCount
+                $script:progressState.Parsing.Current = [int](($prePromptCount * 0.9) + ($prePromptCount * 0.1 * $promptProgress))
+                Update-Progress
+            }
+        }
+        
+        $allLogs = $filteredLogs
+        $postPromptCount = $allLogs.Count
+        $promptEnd = Get-Date
+        $promptElapsed = [int]($promptEnd - $promptStart).TotalSeconds
+        $promptFilteredCount = $prePromptCount - $postPromptCount
+        $totalMsgRemoved = $totalMsgBefore - $totalMsgAfter
+        
+        # Store PromptFilter metrics
+        $script:metrics.PromptFilterApplied = $true
+        $script:metrics.PromptFilterType = $PromptFilter
+        $script:metrics.PromptFilterPreCount = $prePromptCount
+        $script:metrics.PromptFilterPostCount = $postPromptCount
+        $script:metrics.PromptFilterRemovedCount = $promptFilteredCount
+        $script:metrics.PromptFilterElapsedSec = $promptElapsed
+        $script:metrics.PromptFilterMsgBefore = $totalMsgBefore
+        $script:metrics.PromptFilterMsgAfter = $totalMsgAfter
+        $script:metrics.PromptFilterMsgRemoved = $totalMsgRemoved
+        
+        Write-LogHost "PromptFilter complete in $promptElapsed seconds" -ForegroundColor Green
+        Write-LogHost "  Records before PromptFilter: $prePromptCount" -ForegroundColor Gray
+        Write-LogHost "  Records after PromptFilter: $postPromptCount" -ForegroundColor Gray
+        Write-LogHost "  Records filtered out: $promptFilteredCount" -ForegroundColor Gray
+        Write-LogHost "  Messages before PromptFilter: $totalMsgBefore" -ForegroundColor Gray
+        Write-LogHost "  Matching messages found: $totalMsgAfter" -ForegroundColor Gray
+        
+        if ($postPromptCount -eq 0) {
+            Write-LogHost "WARNING: No records match the PromptFilter criteria. Output will contain header only." -ForegroundColor Yellow
+        }
+    }
+    
     # Set explosion phase total based on final filtered count
     $script:progressState.Explode.Total = [int]$allLogs.Count
     $script:progressState.Explode.Current = 0
@@ -1617,7 +1659,7 @@ try {
             # Skip remaining logs if parallel processing already handled them
             if ($parallelProcessingComplete) { continue }
             
-            $records = if ($effectiveExplode) { Convert-ToPurviewExplodedRecords -Record $log -Deep:$ExplodeDeep -PromptFilterValue $PromptFilter } else { Convert-ToStructuredRecord -Record $log -EnableExplosion:$false }
+            $records = if ($effectiveExplode) { Convert-ToPurviewExplodedRecords -Record $log -Deep:$ExplodeDeep } else { Convert-ToStructuredRecord -Record $log -EnableExplosion:$false }
             if ($records -and $records.Count -gt 0) {
                 try {
                     $script:metrics.TotalStructuredRows += $records.Count; $structuredDataCount += $records.Count
@@ -1796,9 +1838,8 @@ try {
                                             # Access variables from outer scope using $using:
                                             $effectiveExplode = $using:effectiveExplode
                                             $explodeDeep = $using:ExplodeDeep
-                                            $promptFilterVal = $using:PromptFilter
                                             
-                                            $rows = if ($effectiveExplode) { Convert-ToPurviewExplodedRecords -Record $_ -Deep:$explodeDeep -PromptFilterValue $promptFilterVal } else { Convert-ToStructuredRecord -Record $_ -EnableExplosion:$false }
+                                            $rows = if ($effectiveExplode) { Convert-ToPurviewExplodedRecords -Record $_ -Deep:$explodeDeep } else { Convert-ToStructuredRecord -Record $_ -EnableExplosion:$false }
                                             $rc = 0; if ($null -ne $rows) { if ($rows -is [System.Array]) { $rc = $rows.Count } else { $rc = 1 } }
                                             [pscustomobject]@{ Rows = $rows; RowCount = $rc; ExplosionRows = if ($rc -gt 1) { $rc - 1 } else { 0 }; MaxRows = $rc }
                                         } -ThrottleLimit $throttle
