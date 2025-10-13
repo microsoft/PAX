@@ -918,12 +918,21 @@ Prompt and Response Filtering (`-PromptFilter`) enables targeted extraction of s
 - **Both**: Stage 1 keeps all records with messages; Stage 2 (if explosion enabled) outputs messages with defined isPrompt values
 - **Null**: Stage 1 keeps records with null isPrompt messages; Stage 2 (if explosion enabled) outputs only messages with null isPrompt
 
-### PromptFilter + ExcludeAgents Combination
+### PromptFilter + Agent Filtering Combination
 
 PromptFilter works independently with all agent switches:
 
 ```powershell
-# Non-agent interactions, prompts only
+# Agent interactions only, prompts only
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -ExplodeArrays `
+    -AgentsOnly `
+    -PromptFilter Prompt `
+    -OutputFile "C:\Exports\AgentPrompts.csv"
+
+# Non-agent interactions only, prompts only
 .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
     -StartDate 2025-10-01 `
     -EndDate 2025-10-02 `
