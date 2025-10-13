@@ -897,22 +897,26 @@ Prompt and Response Filtering (`-PromptFilter`) enables targeted extraction of s
 **Two-Stage Filtering for Optimal Performance:**
 
 1. **Stage 1 (Pre-Filter)**: Record-level filtering BEFORE explosion
+   - **Always applies** when PromptFilter is used
    - Analyzes each record's Messages array
    - Categorizes records: Mixed (prompts+responses), Prompt-only, Response-only, No messages
-   - Filters out records without matching messages (saves explosion work)
+   - Filters out records without matching messages
    - Typical reduction: 10-15% of records filtered before explosion
+   - In non-explosion mode (live query without explosion switches), this is the only filtering stage
 
 2. **Stage 2 (Message-Level)**: Prompt/response filtering DURING explosion
+   - **Only applies during explosion** (when using `-ExplodeArrays`, `-ExplodeDeep`, or `-RAWInputCSV` replay mode)
    - Filters individual messages within each record
    - Only outputs rows for messages matching the filter
    - Prevents blank `Message_isPrompt` values in output
+   - Not used in standard 1:1 mode (live query without explosion switches)
 
 **PromptFilter Behavior by Option:**
 
-- **Prompt**: Stage 1 keeps records with at least one prompt; Stage 2 outputs only prompt messages
-- **Response**: Stage 1 keeps records with at least one response; Stage 2 outputs only response messages
-- **Both**: Stage 1 keeps all records with messages; Stage 2 outputs messages with defined isPrompt values
-- **Null**: Stage 1 keeps records with null isPrompt messages; Stage 2 outputs only messages with null isPrompt
+- **Prompt**: Stage 1 keeps records with at least one prompt; Stage 2 (if explosion enabled) outputs only prompt messages
+- **Response**: Stage 1 keeps records with at least one response; Stage 2 (if explosion enabled) outputs only response messages
+- **Both**: Stage 1 keeps all records with messages; Stage 2 (if explosion enabled) outputs messages with defined isPrompt values
+- **Null**: Stage 1 keeps records with null isPrompt messages; Stage 2 (if explosion enabled) outputs only messages with null isPrompt
 
 ### PromptFilter + ExcludeAgents Combination
 
