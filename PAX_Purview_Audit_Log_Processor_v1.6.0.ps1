@@ -657,6 +657,7 @@ if ($RAWInputCSV) {
         ExplodeArrays          = $ForcedRawInputCsvExplosion
         ExplodeDeep            = $ExplodeDeep.IsPresent
         OutputFile             = $OutputFile
+        LogFile                = $LogFile
         PSVersion              = $PSVersionTable.PSVersion.ToString()
         PSEdition              = $PSVersionTable.PSEdition
         HostName               = $Host.Name
@@ -668,6 +669,7 @@ else {
         'StartDate (inclusive)' = $StartDate
         'EndDate (exclusive)'   = $EndDate
         OutputFile              = $OutputFile
+        LogFile                = $LogFile
         Auth                    = $Auth
         BlockHours              = $BlockHours
         ResultSize              = $ResultSize
