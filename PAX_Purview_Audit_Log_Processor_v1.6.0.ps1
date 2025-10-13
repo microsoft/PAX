@@ -654,7 +654,12 @@ if ($AgentId -or $AgentOnly -or $ExcludeAgents -or $PromptFilter) {
     
     # PromptFilter
     if ($PromptFilter) {
-        $promptLabel = if ($PromptFilter -eq 'Prompt') { 'Only prompts (Message_isPrompt = True)' } else { 'Only responses (Message_isPrompt = False)' }
+        $promptLabel = switch ($PromptFilter) {
+            'Prompt'   { 'Only prompts (Message_isPrompt = True)' }
+            'Response' { 'Only responses (Message_isPrompt = False)' }
+            'Both'     { 'Both prompts and responses (Message_isPrompt = True or False)' }
+            'Null'     { 'Only records with no Message_isPrompt values (Null/Empty)' }
+        }
         Write-LogHost "  PromptFilter: $promptLabel" -ForegroundColor Gray
     }
 }
@@ -2226,10 +2231,6 @@ try {
         if ($ParallelMode -eq 'Auto') { $highGroups = ($queryPlan | Where-Object { $_.Group -eq 'High' }).Count; $mediumGroups = ($queryPlan | Where-Object { $_.Group -eq 'Medium' }).Count; $lowGroups = ($queryPlan | Where-Object { $_.Group -eq 'Low' }).Count; $activitiesTotal = ($queryPlan | ForEach-Object { $_.Activities.Count } | Measure-Object -Sum).Sum; $groupsTotal = $queryPlan.Count; $autoStatus = if ($parallelOverallEnabled) { 'met' } else { 'not met' }; Write-LogHost ("Auto criteria (PS7+, MPG>0, MC>1, <=1 High, >=1 Med/Low, activities<=15, groups>1): {0}; High={1} Medium={2} Low={3} Activities={4} Groups={5}" -f $autoStatus, $highGroups, $mediumGroups, $lowGroups, $activitiesTotal, $groupsTotal) -ForegroundColor Gray }
         Write-LogHost "" -ForegroundColor Gray
     }
-    
-    # Log timing summary (for log file only, not console)
-    $totalMs = [Math]::Max(1, ($script:metrics.QueryMs + $script:metrics.ExplosionMs + $script:metrics.ExportMs)); $qPct = if ($totalMs -gt 0) { [Math]::Round(($script:metrics.QueryMs / $totalMs) * 100, 1) } else { 0 }; $xPct = if ($totalMs -gt 0 -and $script:metrics.ExplosionMs -gt 0) { [Math]::Round(($script:metrics.ExplosionMs / $totalMs) * 100, 1) } else { 0 }; $ePct = if ($totalMs -gt 0) { [Math]::Round(($script:metrics.ExportMs / $totalMs) * 100, 1) } else { 0 }; $startStamp = try { $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') } catch { '' }; if ($startStamp) { Write-Log ("Execution start time (UTC): {0} UTC" -f $startStamp) }; Write-Log ("Final durations -> query={0}ms ({1}%)  explosion={2}ms ({3}%)  export={4}ms ({5}%)" -f $script:metrics.QueryMs, $qPct, $script:metrics.ExplosionMs, $xPct, $script:metrics.ExportMs, $ePct)
-    if ($ExplodeArrays) { Write-Log "- ArrayIndex_* (Explosion metadata fields)" }
 }
 catch { Write-LogHost "Script failed: $($_.Exception.Message)" -ForegroundColor Red; Write-LogHost $_.ScriptStackTrace -ForegroundColor Red }
 finally { $endUtc = (Get-Date).ToUniversalTime(); try { if ($script:metrics -and $script:metrics.StartTime) { $startTail = $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss'); Write-Log ("Script execution started at $startTail UTC") } } catch {}; Write-Log "Script execution completed at $($endUtc.ToString('yyyy-MM-dd HH:mm:ss')) UTC"; Write-Log "Script version: v$ScriptVersion"; try { if ($script:metrics -and $script:metrics.StartTime) { $elapsed = $endUtc - $script:metrics.StartTime; $totalHours = [math]::Floor($elapsed.TotalHours); $remainder = $elapsed - [TimeSpan]::FromHours($totalHours); $elapsedFormatted = ("{0}:{1:00}:{2:00}.{3:000}" -f $totalHours, $remainder.Minutes, $remainder.Seconds, $remainder.Milliseconds); Write-Log ("Total elapsed time: {0} (hours:minutes:seconds.milliseconds)" -f $elapsedFormatted) } } catch {}; if ($script:Connected) { try { Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue | Out-Null; Write-LogHost "Disconnected from Exchange Online" -ForegroundColor Gray } catch {} } }
