@@ -652,6 +652,8 @@ if ($RAWInputCSV) {
         ActivityTypes_Filter   = ($ActivityTypes -join ';')
         AgentOnly              = $AgentOnly.IsPresent
         AgentId                = $(if ($AgentId) { ($AgentId -join ';') } else { '' })
+        ExcludeAgents          = $ExcludeAgents.IsPresent
+        PromptFilter           = $(if ($PromptFilter) { $PromptFilter } else { '' })
         ForcedExplosion        = $ForcedRawInputCsvExplosion
         ExplodeDeep            = $ExplodeDeep.IsPresent
         OutputFile             = $OutputFile
@@ -674,6 +676,8 @@ else {
         ActivityTypes          = ($ActivityTypes -join ';')
         AgentOnly              = $AgentOnly.IsPresent
         AgentId                = $(if ($AgentId) { ($AgentId -join ';') } else { '' })
+        ExcludeAgents          = $ExcludeAgents.IsPresent
+        PromptFilter           = $(if ($PromptFilter) { $PromptFilter } else { '' })
         ExplodeArrays          = ($ExplodeArrays.IsPresent -or $ForcedRawInputCsvExplosion -or $ExplodeDeep.IsPresent)
         ExplodeArrays_Forced   = $ForcedRawInputCsvExplosion
         ExplodeDeep            = $ExplodeDeep.IsPresent
