@@ -135,9 +135,9 @@ if ($Help) {
 try {
     $pkgPath = Join-Path $PSScriptRoot 'package.json'
     if (Test-Path $pkgPath) { $ScriptVersion = ((Get-Content -Raw $pkgPath) | ConvertFrom-Json).version }
-    if (-not $ScriptVersion) { $ScriptVersion = '1.5.9' }
+    if (-not $ScriptVersion) { $ScriptVersion = '1.6.0' }
 }
-catch { $ScriptVersion = '1.5.9' }
+catch { $ScriptVersion = '1.6.0' }
 
 # --- Early parameter validation & environment sanity checks ---
 
