@@ -134,10 +134,41 @@ if ($Help) {
 # Script version: dynamically read from package.json
 try {
     $pkgPath = Join-Path $PSScriptRoot 'package.json'
-    if (Test-Path $pkgPath) { $ScriptVersion = ((Get-Content -Raw $pkgPath) | ConvertFrom-Json).version }
-    if (-not $ScriptVersion) { $ScriptVersion = '1.6.0' }
+    if (Test-Path $pkgPath) { 
+        $ScriptVersion = ((Get-Content -Raw $pkgPath) | ConvertFrom-Json).version 
+    }
+    else {
+        # Fallback: try to read from parent directory (when script is in subdirectory)
+        $parentPkgPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'package.json'
+        if (Test-Path $parentPkgPath) {
+            $ScriptVersion = ((Get-Content -Raw $parentPkgPath) | ConvertFrom-Json).version
+        }
+    }
+    if (-not $ScriptVersion) { 
+        Write-Host "WARNING: Could not read version from package.json. Using version from filename." -ForegroundColor Yellow
+        # Extract version from script filename as last resort
+        $scriptName = $MyInvocation.MyCommand.Name
+        if ($scriptName -match 'v(\d+\.\d+\.\d+)') {
+            $ScriptVersion = $matches[1]
+        }
+        else {
+            $ScriptVersion = 'UNKNOWN'
+            Write-Host "ERROR: Could not determine script version. Please ensure package.json exists." -ForegroundColor Red
+        }
+    }
 }
-catch { $ScriptVersion = '1.6.0' }
+catch { 
+    Write-Host "WARNING: Error reading version from package.json: $($_.Exception.Message)" -ForegroundColor Yellow
+    # Extract version from script filename as fallback
+    $scriptName = $MyInvocation.MyCommand.Name
+    if ($scriptName -match 'v(\d+\.\d+\.\d+)') {
+        $ScriptVersion = $matches[1]
+    }
+    else {
+        $ScriptVersion = 'UNKNOWN'
+        Write-Host "ERROR: Could not determine script version. Please ensure package.json exists." -ForegroundColor Red
+    }
+}
 
 # --- Early parameter validation & environment sanity checks ---
 
