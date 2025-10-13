@@ -409,7 +409,7 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.6.
 **Use When:**
 
 - **Prompt**: Analyzing user input patterns, query types, intent analysis
-- **Response**: Evaluating Copilot response quality, latency, acceptance rates
+- **Response**: Extracting response content for analysis, measuring latency, tracking acceptance rates (combine with Prompt data via ThreadId for quality evaluation)
 - **Both**: Full conversation analysis with defined isPrompt values
 - **Null**: Debugging records with malformed or missing isPrompt properties
 
@@ -838,12 +838,12 @@ The `AgentId` field appears in Copilot audit records and identifies the specific
 
 ### Overview
 
-Prompt and Response Filtering (`-PromptFilter`) enables targeted extraction of specific message types from Copilot audit logs based on the `Message_isPrompt` property. This feature is essential for analyzing prompt engineering, response quality, conversation patterns, and user interaction behaviors.
+Prompt and Response Filtering (`-PromptFilter`) enables targeted extraction of specific message types from Copilot audit logs based on the `Message_isPrompt` property. This feature is essential for analyzing prompt engineering, conversation patterns, and user interaction behaviors.
 
 **Why Use PromptFilter?**
 
 - **Prompt Analysis**: Isolate user prompts to analyze query patterns, intent, and demand
-- **Response Analysis**: Extract only Copilot responses for quality assessment and evaluation
+- **Response Analysis**: Extract Copilot responses for content analysis, latency measurement, and tracking acceptance rates (combine with prompts via ThreadId for full conversation context)
 - **Conversation Segmentation**: Separate prompts from responses for training data or analysis pipelines
 - **Data Reduction**: Reduce output size by 50%+ when only prompts or responses are needed
 - **Performance**: Two-stage filtering optimizes processing (pre-filter records + message-level filtering)
@@ -853,7 +853,7 @@ Prompt and Response Filtering (`-PromptFilter`) enables targeted extraction of s
 | Option | Description | Message_isPrompt Value | Use Case |
 |--------|-------------|------------------------|----------|
 | `Prompt` | Only prompts (user inputs) | `True` | Analyze what users are asking |
-| `Response` | Only responses (Copilot outputs) | `False` | Evaluate response quality |
+| `Response` | Only responses (Copilot outputs) | `False` | Extract response content (combine with prompts via ThreadId for quality evaluation) |
 | `Both` | Both prompts and responses | `True` or `False` | Full conversation analysis |
 | `Null` | Messages with no isPrompt value | `null` or empty | Debug malformed data |
 
