@@ -122,7 +122,7 @@ param(
     [switch]$AgentOnly,
 
     [Parameter(Mandatory = $false)]
-    [ValidateSet('Prompt', 'Response', 'Both')]
+    [ValidateSet('Prompt', 'Response')]
     [string]$PromptFilter,
 
     [Parameter(Mandatory = $false)]
@@ -870,21 +870,15 @@ function Convert-ToPurviewExplodedRecords {
         # Apply PromptFilter if specified (message-level filtering)
         if ($PromptFilterValue) {
             $msgBefore = $messages.Count
-            
-            # Filter based on PromptFilter value
-            if ($PromptFilterValue -ne 'Both') {
-                # Map Prompt→True, Response→False
-                $targetValue = ($PromptFilterValue -eq 'Prompt')
-                $messages = $messages | Where-Object { 
-                    try { 
-                        $_.isPrompt -eq $targetValue 
-                    } catch { 
-                        $false 
-                    }
+            # Map Prompt→True, Response→False
+            $targetValue = ($PromptFilterValue -eq 'Prompt')
+            $messages = $messages | Where-Object { 
+                try { 
+                    $_.isPrompt -eq $targetValue 
+                } catch { 
+                    $false 
                 }
             }
-            # If 'Both', no filtering - keep all messages
-            
             $msgAfter = $messages.Count
             $msgRemoved = $msgBefore - $msgAfter
             
@@ -898,6 +892,11 @@ function Convert-ToPurviewExplodedRecords {
                 [System.Threading.Interlocked]::Add([ref]$script:metrics.PromptFilterMsgBefore, $msgBefore) | Out-Null
                 [System.Threading.Interlocked]::Add([ref]$script:metrics.PromptFilterMsgAfter, $msgAfter) | Out-Null
                 [System.Threading.Interlocked]::Add([ref]$script:metrics.PromptFilterMsgRemoved, $msgRemoved) | Out-Null
+            }
+            
+            # If no messages remain after filtering, skip this record entirely
+            if ($messages.Count -eq 0) {
+                return $null
             }
         }
         
