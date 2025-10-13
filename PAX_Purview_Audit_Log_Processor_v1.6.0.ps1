@@ -122,6 +122,13 @@ param(
     [switch]$AgentOnly,
 
     [Parameter(Mandatory = $false)]
+    [ValidateSet('True', 'False')]
+    [string]$PromptFilter,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$ExcludeAgents,
+
+    [Parameter(Mandatory = $false)]
     [switch]$Help
 )
 
@@ -171,6 +178,16 @@ catch {
 }
 
 # --- Early parameter validation & environment sanity checks ---
+
+# Validate mutual exclusivity of ExcludeAgents with AgentId/AgentOnly
+if ($ExcludeAgents -and ($AgentId -or $AgentOnly)) {
+    Write-Host "ERROR: -ExcludeAgents cannot be used with -AgentId or -AgentOnly switches." -ForegroundColor Red
+    Write-Host "These switches are mutually exclusive:" -ForegroundColor Yellow
+    Write-Host "  -AgentId/-AgentOnly: Filter to ONLY records with agents" -ForegroundColor Yellow
+    Write-Host "  -ExcludeAgents: Filter to ONLY records without agents" -ForegroundColor Yellow
+    Write-Host "Please use only one filtering approach and re-run." -ForegroundColor Yellow
+    exit 1
+}
 
 # Establish date defaults / validation depending on mode.
 if ($RAWInputCSV) {
@@ -388,10 +405,10 @@ function Update-Progress {
     $batchDetail = ''
     $xDetail = if ($xs.Total -gt 0) { " | Export: {0}/{1}({2}%)" -f $xs.Current, $xs.Total, ([int]([Math]::Round($xPct * 100))) } else { ' | Export: 0/0' }
     
-    # Build phase prefix with agent filter indicator
+    # Build phase prefix with filter indicator
     $parsingLabel = 'Pre-parsing JSON'
-    if (($AgentId -or $AgentOnly) -and $phase -eq 'Parsing') {
-        $parsingLabel = 'Pre-parse+AgentFilter'
+    if (($AgentId -or $AgentOnly -or $ExcludeAgents -or $PromptFilter) -and $phase -eq 'Parsing') {
+        $parsingLabel = 'Pre-parsing + Filtering'
     }
     $phasePrefix = switch ($phase) { 'Parsing' { $parsingLabel } 'Query' { 'Query' } 'Explosion' { 'Explosion' } 'Export' { 'Export' } 'Complete' { 'Complete' } default { $phase } }
     
@@ -561,10 +578,13 @@ if (-not $RAWInputCSV) {
 }
 Write-LogHost ("Activity Types: " + ($ActivityTypes -join ', ')) -ForegroundColor White
 
-# Show agent filtering if enabled
-if ($AgentId -or $AgentOnly) {
+# Show filters if enabled
+if ($AgentId -or $AgentOnly -or $ExcludeAgents -or $PromptFilter) {
+    Write-LogHost "Filters:" -ForegroundColor Yellow
+    
+    # Agent filters
     if ($AgentOnly) {
-        Write-LogHost "Agent Filter: AgentOnly (any records with AgentId present)" -ForegroundColor Yellow
+        Write-LogHost "  AgentOnly: Only records with AgentId present" -ForegroundColor Gray
     }
     if ($AgentId) {
         $agentDisplay = if ($AgentId.Count -eq 1) {
@@ -576,17 +596,28 @@ if ($AgentId -or $AgentOnly) {
         else {
             "Specific AgentIds ($($AgentId.Count) total):"
         }
-        Write-LogHost "Agent Filter: $agentDisplay" -ForegroundColor Yellow
+        Write-LogHost "  $agentDisplay" -ForegroundColor Gray
         if ($AgentId.Count -gt 3) {
             # Show first 3 and indicate there are more (with truncation for very long IDs)
             for ($i = 0; $i -lt [Math]::Min(3, $AgentId.Count); $i++) {
                 $displayId = if ($AgentId[$i].Length -gt 80) { $AgentId[$i].Substring(0, 77) + '...' } else { $AgentId[$i] }
-                Write-LogHost "  [$($i+1)] $displayId" -ForegroundColor Gray
+                Write-LogHost "    [$($i+1)] $displayId" -ForegroundColor DarkGray
             }
             if ($AgentId.Count -gt 3) {
-                Write-LogHost "  ... and $($AgentId.Count - 3) more" -ForegroundColor Gray
+                Write-LogHost "    ... and $($AgentId.Count - 3) more" -ForegroundColor DarkGray
             }
         }
+    }
+    
+    # ExcludeAgents filter
+    if ($ExcludeAgents) {
+        Write-LogHost "  ExcludeAgents: Only records without AgentId" -ForegroundColor Gray
+    }
+    
+    # PromptFilter
+    if ($PromptFilter) {
+        $promptLabel = if ($PromptFilter -eq 'True') { 'Only prompts (Message_isPrompt = True)' } else { 'Only responses (Message_isPrompt = False)' }
+        Write-LogHost "  PromptFilter: $promptLabel" -ForegroundColor Gray
     }
 }
 
@@ -815,6 +846,19 @@ function Convert-ToPurviewExplodedRecords {
         
         # Extract array properties from CopilotEventData
         $messages = script:GetArrayFast $ced 'Messages'
+        
+        # Apply PromptFilter if specified (message-level filtering)
+        if ($PromptFilter) {
+            $targetValue = [bool]::Parse($PromptFilter)
+            $messages = $messages | Where-Object { 
+                try { 
+                    $_.isPrompt -eq $targetValue 
+                } catch { 
+                    $false 
+                }
+            }
+        }
+        
         $contexts = script:GetArrayFast $ced 'Contexts'
         $resources = script:GetArrayFast $ced 'AccessedResources'
         $pluginsRaw = script:GetArrayFast $ced 'AISystemPlugin'
@@ -1415,6 +1459,50 @@ try {
         
         if ($postFilterCount -eq 0) {
             Write-LogHost "WARNING: No records match the Agent filter criteria. Output will contain header only." -ForegroundColor Yellow
+        }
+    }
+    
+    # --- ExcludeAgents Filtering (if specified) ---
+    if ($ExcludeAgents) {
+        Write-LogHost "Applying ExcludeAgents filter..." -ForegroundColor Yellow
+        $preExcludeCount = $allLogs.Count
+        $excludeStart = Get-Date
+        $filteredLogs = New-Object System.Collections.Generic.List[object]
+        $excludeCount = 0
+        
+        foreach ($log in $allLogs) {
+            $agentId = $null
+            try {
+                $agentId = $log._ParsedAuditData.AgentId
+            } catch {}
+            
+            if ([string]::IsNullOrEmpty($agentId)) {
+                $filteredLogs.Add($log)
+            }
+            $excludeCount++
+            
+            # Update parsing progress bar during ExcludeAgents filtering (replay mode only)
+            if ($RAWInputCSV -and ($excludeCount % 500 -eq 0 -or $excludeCount -eq $preExcludeCount)) {
+                # ExcludeAgents filtering represents the final 10% (from 90% to 100%)
+                $excludeProgress = $excludeCount / $preExcludeCount
+                $script:progressState.Parsing.Current = [int](($preExcludeCount * 0.9) + ($preExcludeCount * 0.1 * $excludeProgress))
+                Update-Progress
+            }
+        }
+        
+        $allLogs = $filteredLogs
+        $postExcludeCount = $allLogs.Count
+        $excludeEnd = Get-Date
+        $excludeElapsed = [int]($excludeEnd - $excludeStart).TotalSeconds
+        $excludedCount = $preExcludeCount - $postExcludeCount
+        
+        Write-LogHost "ExcludeAgents filtering complete in $excludeElapsed seconds" -ForegroundColor Green
+        Write-LogHost "  Records before ExcludeAgents: $preExcludeCount" -ForegroundColor Gray
+        Write-LogHost "  Records after ExcludeAgents: $postExcludeCount" -ForegroundColor Gray
+        Write-LogHost "  Agent records excluded: $excludedCount" -ForegroundColor Gray
+        
+        if ($postExcludeCount -eq 0) {
+            Write-LogHost "WARNING: No non-agent records found. Output will contain header only." -ForegroundColor Yellow
         }
     }
     
