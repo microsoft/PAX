@@ -654,10 +654,9 @@ if ($RAWInputCSV) {
         AgentId                = $(if ($AgentId) { ($AgentId -join ';') } else { '' })
         ExcludeAgents          = $ExcludeAgents.IsPresent
         PromptFilter           = $(if ($PromptFilter) { $PromptFilter } else { '' })
-        ForcedExplosion        = $ForcedRawInputCsvExplosion
+        ExplodeArrays          = $ForcedRawInputCsvExplosion
         ExplodeDeep            = $ExplodeDeep.IsPresent
         OutputFile             = $OutputFile
-        ExportProgressInterval = $ExportProgressInterval
         PSVersion              = $PSVersionTable.PSVersion.ToString()
         PSEdition              = $PSVersionTable.PSEdition
         HostName               = $Host.Name
@@ -679,14 +678,11 @@ else {
         ExcludeAgents          = $ExcludeAgents.IsPresent
         PromptFilter           = $(if ($PromptFilter) { $PromptFilter } else { '' })
         ExplodeArrays          = ($ExplodeArrays.IsPresent -or $ForcedRawInputCsvExplosion -or $ExplodeDeep.IsPresent)
-        ExplodeArrays_Forced   = $ForcedRawInputCsvExplosion
         ExplodeDeep            = $ExplodeDeep.IsPresent
         RAWInputCSV            = $(if ([string]::IsNullOrWhiteSpace($RAWInputCSV)) { '' } else { $RAWInputCSV })
         MaxConcurrency         = $MaxConcurrency
-        EnableParallelLegacy   = $EnableParallel.IsPresent
         ParallelMode           = $ParallelMode
         MaxParallelGroups      = $MaxParallelGroups
-        ExportProgressInterval = $ExportProgressInterval
         PSVersion              = $PSVersionTable.PSVersion.ToString()
         PSEdition              = $PSVersionTable.PSEdition
         HostName               = $Host.Name
