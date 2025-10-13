@@ -649,7 +649,7 @@ if ($RAWInputCSV) {
         RAWInputCSV            = $RAWInputCSV
         'StartDate (inclusive)' = $StartDate
         'EndDate (exclusive)'   = $EndDate
-        ActivityTypes_Filter   = ($ActivityTypes -join ';')
+        ActivityTypes          = ($ActivityTypes -join ';')
         AgentOnly              = $AgentOnly.IsPresent
         AgentId                = $(if ($AgentId) { ($AgentId -join ';') } else { '' })
         ExcludeAgents          = $ExcludeAgents.IsPresent
