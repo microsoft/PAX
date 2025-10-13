@@ -895,14 +895,17 @@ function Convert-ToPurviewExplodedRecords {
             $msgAfter = $messages.Count
             $msgRemoved = $msgBefore - $msgAfter
             
-            # Track prompt filter metrics (thread-safe increment for parallel processing)
-            if (-not $script:metrics.PromptFilterApplied) {
-                $script:metrics.PromptFilterApplied = $true
-                $script:metrics.PromptFilterType = $PromptFilterValue
+            # Track prompt filter metrics (only when script:metrics exists - not in parallel workers)
+            # In parallel context, metrics will be tracked by the caller
+            if ($null -ne $script:metrics) {
+                if (-not $script:metrics.PromptFilterApplied) {
+                    $script:metrics.PromptFilterApplied = $true
+                    $script:metrics.PromptFilterType = $PromptFilterValue
+                }
+                [System.Threading.Interlocked]::Add([ref]$script:metrics.PromptFilterMsgBefore, $msgBefore) | Out-Null
+                [System.Threading.Interlocked]::Add([ref]$script:metrics.PromptFilterMsgAfter, $msgAfter) | Out-Null
+                [System.Threading.Interlocked]::Add([ref]$script:metrics.PromptFilterMsgRemoved, $msgRemoved) | Out-Null
             }
-            [System.Threading.Interlocked]::Add([ref]$script:metrics.PromptFilterMsgBefore, $msgBefore) | Out-Null
-            [System.Threading.Interlocked]::Add([ref]$script:metrics.PromptFilterMsgAfter, $msgAfter) | Out-Null
-            [System.Threading.Interlocked]::Add([ref]$script:metrics.PromptFilterMsgRemoved, $msgRemoved) | Out-Null
         }
         
         $contexts = script:GetArrayFast $ced 'Contexts'
