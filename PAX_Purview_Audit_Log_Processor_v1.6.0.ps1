@@ -122,7 +122,7 @@ param(
     [switch]$AgentOnly,
 
     [Parameter(Mandatory = $false)]
-    [ValidateSet('True', 'False')]
+    [ValidateSet('Prompt', 'Response')]
     [string]$PromptFilter,
 
     [Parameter(Mandatory = $false)]
@@ -262,6 +262,21 @@ $script:metrics = @{
     EffectiveChunkSize      = 0
     ParallelBatchSizeFinal  = 0
     ParallelThrottleFinal   = 0
+    AgentFilterApplied      = $false
+    AgentFilterPreCount     = 0
+    AgentFilterPostCount    = 0
+    AgentFilterRemovedCount = 0
+    AgentFilterElapsedSec   = 0
+    ExcludeAgentsApplied    = $false
+    ExcludeAgentsPreCount   = 0
+    ExcludeAgentsPostCount  = 0
+    ExcludeAgentsRemoved    = 0
+    ExcludeAgentsElapsedSec = 0
+    PromptFilterApplied     = $false
+    PromptFilterType        = ''
+    PromptFilterMsgBefore   = 0
+    PromptFilterMsgAfter    = 0
+    PromptFilterMsgRemoved  = 0
 }
 
 # --- Configuration: depth & limits ---
@@ -616,7 +631,7 @@ if ($AgentId -or $AgentOnly -or $ExcludeAgents -or $PromptFilter) {
     
     # PromptFilter
     if ($PromptFilter) {
-        $promptLabel = if ($PromptFilter -eq 'True') { 'Only prompts (Message_isPrompt = True)' } else { 'Only responses (Message_isPrompt = False)' }
+        $promptLabel = if ($PromptFilter -eq 'Prompt') { 'Only prompts (Message_isPrompt = True)' } else { 'Only responses (Message_isPrompt = False)' }
         Write-LogHost "  PromptFilter: $promptLabel" -ForegroundColor Gray
     }
 }
@@ -849,7 +864,9 @@ function Convert-ToPurviewExplodedRecords {
         
         # Apply PromptFilter if specified (message-level filtering)
         if ($PromptFilter) {
-            $targetValue = [bool]::Parse($PromptFilter)
+            $msgBefore = $messages.Count
+            # Map Prompt→True, Response→False
+            $targetValue = ($PromptFilter -eq 'Prompt')
             $messages = $messages | Where-Object { 
                 try { 
                     $_.isPrompt -eq $targetValue 
@@ -857,6 +874,17 @@ function Convert-ToPurviewExplodedRecords {
                     $false 
                 }
             }
+            $msgAfter = $messages.Count
+            $msgRemoved = $msgBefore - $msgAfter
+            
+            # Track prompt filter metrics (thread-safe increment for parallel processing)
+            if (-not $script:metrics.PromptFilterApplied) {
+                $script:metrics.PromptFilterApplied = $true
+                $script:metrics.PromptFilterType = $PromptFilter
+            }
+            [System.Threading.Interlocked]::Add([ref]$script:metrics.PromptFilterMsgBefore, $msgBefore) | Out-Null
+            [System.Threading.Interlocked]::Add([ref]$script:metrics.PromptFilterMsgAfter, $msgAfter) | Out-Null
+            [System.Threading.Interlocked]::Add([ref]$script:metrics.PromptFilterMsgRemoved, $msgRemoved) | Out-Null
         }
         
         $contexts = script:GetArrayFast $ced 'Contexts'
@@ -1290,6 +1318,35 @@ try {
         Write-LogHost "  Filter processing time: $($script:metrics.AgentFilterElapsedSec) seconds" -ForegroundColor Gray
     }
     
+    # Show ExcludeAgents filter metrics if filtering was applied
+    if ($script:metrics.ExcludeAgentsApplied) {
+        Write-LogHost ""
+        Write-LogHost "ExcludeAgents Filtering Metrics:" -ForegroundColor Yellow
+        Write-LogHost "  Records before ExcludeAgents: $($script:metrics.ExcludeAgentsPreCount)" -ForegroundColor Cyan
+        Write-LogHost "  Records after ExcludeAgents: $($script:metrics.ExcludeAgentsPostCount)" -ForegroundColor Cyan
+        Write-LogHost "  Agent records excluded: $($script:metrics.ExcludeAgentsRemoved)" -ForegroundColor Gray
+        $excludeRetentionPct = if ($script:metrics.ExcludeAgentsPreCount -gt 0) { 
+            [math]::Round(($script:metrics.ExcludeAgentsPostCount / $script:metrics.ExcludeAgentsPreCount) * 100, 2) 
+        } else { 0 }
+        Write-LogHost "  Retention rate: $excludeRetentionPct%" -ForegroundColor Cyan
+        Write-LogHost "  Filter processing time: $($script:metrics.ExcludeAgentsElapsedSec) seconds" -ForegroundColor Gray
+    }
+    
+    # Show PromptFilter metrics if filtering was applied
+    if ($script:metrics.PromptFilterApplied) {
+        Write-LogHost ""
+        Write-LogHost "Prompt Filtering Metrics:" -ForegroundColor Yellow
+        $filterTypeLabel = if ($script:metrics.PromptFilterType -eq 'Prompt') { 'Prompts Only (isPrompt=True)' } else { 'Responses Only (isPrompt=False)' }
+        Write-LogHost "  Filter type: $filterTypeLabel" -ForegroundColor Cyan
+        Write-LogHost "  Messages before filter: $($script:metrics.PromptFilterMsgBefore)" -ForegroundColor Cyan
+        Write-LogHost "  Messages after filter: $($script:metrics.PromptFilterMsgAfter)" -ForegroundColor Cyan
+        Write-LogHost "  Messages filtered out: $($script:metrics.PromptFilterMsgRemoved)" -ForegroundColor Gray
+        $msgRetentionPct = if ($script:metrics.PromptFilterMsgBefore -gt 0) { 
+            [math]::Round(($script:metrics.PromptFilterMsgAfter / $script:metrics.PromptFilterMsgBefore) * 100, 2) 
+        } else { 0 }
+        Write-LogHost "  Retention rate: $msgRetentionPct%" -ForegroundColor Cyan
+    }
+    
     if (-not $RAWInputCSV) {
         Write-LogHost "Learned block sizes: $(if ($script:learnedActivityBlockSize.Count -gt 0){ ($script:learnedActivityBlockSize.GetEnumerator()|ForEach-Object{\"$($_.Key)=$($_.Value)h\"}) -join ', ' } else {'Using defaults'})" -ForegroundColor Gray
         Write-LogHost "Global learned size: $($script:globalLearnedBlockSize) hours" -ForegroundColor Gray
@@ -1304,13 +1361,16 @@ try {
         Write-LogHost "- Audit logging is not enabled for the selected activities" -ForegroundColor Yellow
         Write-LogHost "- Insufficient permissions to view audit logs" -ForegroundColor Yellow
         Write-LogHost "- Time blocks may need further subdivision (try shorter date ranges)" -ForegroundColor Yellow
-        try {
-            $endDomain = if ($script:TenantPrimaryDomain) { $script:TenantPrimaryDomain } else { '<unknown>' }
-            $endTenantId = if ($script:TenantId) { $script:TenantId } else { '<unresolved>' }
-            $ind = ''; if ($script:TenantIndicators -and $script:TenantIndicators.Count -gt 0) { $ind = ' | Indicators=' + ($script:TenantIndicators -join ',') }
-            Write-LogHost ("Tenant context: Domain=$endDomain | TenantId=$endTenantId$ind") -ForegroundColor DarkCyan
+        # Only show tenant context for live queries (not replay mode)
+        if (-not $RAWInputCSV) {
+            try {
+                $endDomain = if ($script:TenantPrimaryDomain) { $script:TenantPrimaryDomain } else { '<unknown>' }
+                $endTenantId = if ($script:TenantId) { $script:TenantId } else { '<unresolved>' }
+                $ind = ''; if ($script:TenantIndicators -and $script:TenantIndicators.Count -gt 0) { $ind = ' | Indicators=' + ($script:TenantIndicators -join ',') }
+                Write-LogHost ("Tenant context: Domain=$endDomain | TenantId=$endTenantId$ind") -ForegroundColor DarkCyan
+            }
+            catch {}
         }
-        catch {}
         # Deterministic empty CSV output with header only
         Write-LogHost "Emitting header-only CSV (0 rows) for deterministic downstream processing..." -ForegroundColor Cyan
         $headerColumns = if ($ExplodeDeep -or $ExplodeArrays -or $ForcedRawInputCsvExplosion) { $PurviewExplodedHeader } else { @('RecordType', 'CreationDate', 'UserIds', 'Operations', 'ResultStatus', 'ResultCount', 'Identity', 'IsValid', 'ObjectState', 'Id', 'CreationTime', 'Operation', 'OrganizationId', 'RecordTypeNum', 'ResultStatus_Audit', 'UserKey', 'UserType', 'Version', 'Workload', 'UserId', 'AppId', 'ClientAppId', 'CorrelationId', 'ModelId', 'ModelProvider', 'ModelFamily', 'TokensTotal', 'TokensInput', 'TokensOutput', 'DurationMs', 'OutcomeStatus', 'ConversationId', 'TurnNumber', 'RetryCount', 'ClientVersion', 'ClientPlatform', 'AgentId', 'AgentName', 'AppIdentity', 'ApplicationName', 'OriginalAuditData', 'CopilotEventData') }
@@ -1495,6 +1555,13 @@ try {
         $excludeEnd = Get-Date
         $excludeElapsed = [int]($excludeEnd - $excludeStart).TotalSeconds
         $excludedCount = $preExcludeCount - $postExcludeCount
+        
+        # Store ExcludeAgents filter metrics
+        $script:metrics.ExcludeAgentsApplied = $true
+        $script:metrics.ExcludeAgentsPreCount = $preExcludeCount
+        $script:metrics.ExcludeAgentsPostCount = $postExcludeCount
+        $script:metrics.ExcludeAgentsRemoved = $excludedCount
+        $script:metrics.ExcludeAgentsElapsedSec = $excludeElapsed
         
         Write-LogHost "ExcludeAgents filtering complete in $excludeElapsed seconds" -ForegroundColor Green
         Write-LogHost "  Records before ExcludeAgents: $preExcludeCount" -ForegroundColor Gray
@@ -1881,7 +1948,11 @@ try {
     Write-LogHost "Output file: $OutputFile" -ForegroundColor White
     Write-LogHost "Log file: $LogFile" -ForegroundColor White
     Write-LogHost "File size: $([math]::Round((Get-Item $OutputFile).Length / 1KB,2)) KB" -ForegroundColor White
-    try { $endDomain = if ($script:TenantPrimaryDomain) { $script:TenantPrimaryDomain } else { $primaryDomain }; $endTenantId = if ($script:TenantId) { $script:TenantId } else { $tenantId }; $endFallback = if ($script:TenantIndicators -and $script:TenantIndicators.Count -gt 0) { $script:TenantIndicators } else { $fallbackIndicators }; if (-not $endDomain) { $endDomain = '<unknown>' }; if (-not $endTenantId) { $endTenantId = '<unresolved>' }; $endParts = @("Domain=$endDomain", "TenantId=$endTenantId"); if ($endFallback -and $endFallback.Count -gt 0) { $endParts += ("Indicators=" + ($endFallback -join ',')) }; Write-LogHost ("Tenant context: " + ($endParts -join ' | ')) -ForegroundColor DarkCyan } catch {}
+    
+    # Only show tenant context for live queries (not replay mode)
+    if (-not $RAWInputCSV) {
+        try { $endDomain = if ($script:TenantPrimaryDomain) { $script:TenantPrimaryDomain } else { $primaryDomain }; $endTenantId = if ($script:TenantId) { $script:TenantId } else { $tenantId }; $endFallback = if ($script:TenantIndicators -and $script:TenantIndicators.Count -gt 0) { $script:TenantIndicators } else { $fallbackIndicators }; if (-not $endDomain) { $endDomain = '<unknown>' }; if (-not $endTenantId) { $endTenantId = '<unresolved>' }; $endParts = @("Domain=$endDomain", "TenantId=$endTenantId"); if ($endFallback -and $endFallback.Count -gt 0) { $endParts += ("Indicators=" + ($endFallback -join ',')) }; Write-LogHost ("Tenant context: " + ($endParts -join ' | ')) -ForegroundColor DarkCyan } catch {}
+    }
 
     # Show agent filtering metrics if filter was applied
     if ($script:metrics.AgentFilterApplied) {
@@ -1892,6 +1963,29 @@ try {
         $retentionRate = if ($script:metrics.AgentFilterPreCount -gt 0) { [Math]::Round(($script:metrics.AgentFilterPostCount / $script:metrics.AgentFilterPreCount) * 100, 2) } else { 0 }
         Write-LogHost ("Retention rate: {0}%" -f $retentionRate) -ForegroundColor White
         Write-LogHost ("Agent filter time: {0:F2} seconds" -f $script:metrics.AgentFilterElapsedSec) -ForegroundColor Gray
+    }
+    
+    # Show ExcludeAgents filtering metrics if filter was applied
+    if ($script:metrics.ExcludeAgentsApplied) {
+        Write-LogHost ""; Write-LogHost "=== ExcludeAgents Filtering Summary ===" -ForegroundColor Cyan
+        Write-LogHost ("Records before ExcludeAgents filter: {0}" -f $script:metrics.ExcludeAgentsPreCount) -ForegroundColor White
+        Write-LogHost ("Records after ExcludeAgents filter: {0}" -f $script:metrics.ExcludeAgentsPostCount) -ForegroundColor White
+        Write-LogHost ("Agent records excluded: {0}" -f $script:metrics.ExcludeAgentsRemoved) -ForegroundColor Gray
+        $excludeRetentionRate = if ($script:metrics.ExcludeAgentsPreCount -gt 0) { [Math]::Round(($script:metrics.ExcludeAgentsPostCount / $script:metrics.ExcludeAgentsPreCount) * 100, 2) } else { 0 }
+        Write-LogHost ("Retention rate: {0}%" -f $excludeRetentionRate) -ForegroundColor White
+        Write-LogHost ("ExcludeAgents filter time: {0:F2} seconds" -f $script:metrics.ExcludeAgentsElapsedSec) -ForegroundColor Gray
+    }
+    
+    # Show PromptFilter metrics if filter was applied
+    if ($script:metrics.PromptFilterApplied) {
+        Write-LogHost ""; Write-LogHost "=== Prompt Filtering Summary ===" -ForegroundColor Cyan
+        $filterTypeDisplay = if ($script:metrics.PromptFilterType -eq 'Prompt') { 'Prompts Only (isPrompt=True)' } else { 'Responses Only (isPrompt=False)' }
+        Write-LogHost ("Filter type: {0}" -f $filterTypeDisplay) -ForegroundColor White
+        Write-LogHost ("Messages before filter: {0}" -f $script:metrics.PromptFilterMsgBefore) -ForegroundColor White
+        Write-LogHost ("Messages after filter: {0}" -f $script:metrics.PromptFilterMsgAfter) -ForegroundColor White
+        Write-LogHost ("Messages filtered out: {0}" -f $script:metrics.PromptFilterMsgRemoved) -ForegroundColor Gray
+        $promptRetentionRate = if ($script:metrics.PromptFilterMsgBefore -gt 0) { [Math]::Round(($script:metrics.PromptFilterMsgAfter / $script:metrics.PromptFilterMsgBefore) * 100, 2) } else { 0 }
+        Write-LogHost ("Retention rate: {0}%" -f $promptRetentionRate) -ForegroundColor White
     }
 
     # Only show Performance Optimization Summary if adaptive sizing was used (live query mode)
