@@ -3,6 +3,8 @@
 > **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.6.0.ps1`](PAX_Purview_Audit_Log_Processor_v1.6.0.ps1)
 >
 > **📋 Release Notes:** See what's new → [`release_notes/`](release_notes/)
+>
+> **📚 Documentation Archive:** Version-specific docs → [`release_documentation/`](release_documentation/)
 
 
 **Script:** `PAX_Purview_Audit_Log_Processor_v1.6.0.ps1`  
