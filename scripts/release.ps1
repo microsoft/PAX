@@ -521,11 +521,10 @@ function Sync-ReleaseBranch {
     
     Write-Status "Generating PAX_Documentation_v${NewVersion}.pdf from README.md..."
     
-    # Generate PDF from README.md using Grip + wkhtmltopdf
+    # Generate PDF from README.md using VS Code Markdown PDF extension
     $readmePath = Join-Path (Get-Location) "README.md"
     $pdfFilename = "PAX_Documentation_v${NewVersion}.pdf"
     $pdfPath = Join-Path (Get-Location) $pdfFilename
-    $tempHtmlPath = Join-Path (Get-Location) "temp_readme.html"
     
     if (Test-Path $readmePath) {
         try {
@@ -542,59 +541,63 @@ function Sync-ReleaseBranch {
                 Write-Status "Removed legacy README.pdf"
             }
             
-            Write-Status "Converting README.md to GitHub-style HTML with Grip..."
+            Write-Status "Attempting to generate PDF using VS Code Markdown PDF extension..."
             
-            # Use Grip to render GitHub-style HTML
-            $gripArgs = @(
-                $readmePath,
-                '--export', $tempHtmlPath,
-                '--quiet'
-            )
+            # Open README.md in VS Code and wait for user to export
+            Write-Host ""
+            Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
+            Write-Host "║  PDF GENERATION REQUIRED                                       ║" -ForegroundColor Yellow
+            Write-Host "╠════════════════════════════════════════════════════════════════╣" -ForegroundColor Yellow
+            Write-Host "║  Opening README.md in VS Code...                               ║" -ForegroundColor Yellow
+            Write-Host "║                                                                ║" -ForegroundColor Yellow
+            Write-Host "║  Please export to PDF:                                         ║" -ForegroundColor Cyan
+            Write-Host "║  1. Right-click in the editor                                  ║" -ForegroundColor White
+            Write-Host "║  2. Select 'Markdown PDF: Export (pdf)'                        ║" -ForegroundColor White
+            Write-Host "║  3. Wait for 'successfully converted!' message                 ║" -ForegroundColor White
+            Write-Host "║                                                                ║" -ForegroundColor Yellow
+            Write-Host "║  OR use Command Palette (Ctrl+Shift+P):                        ║" -ForegroundColor Cyan
+            Write-Host "║  - Type 'Markdown PDF: Export (pdf)'                           ║" -ForegroundColor White
+            Write-Host "║                                                                ║" -ForegroundColor Yellow
+            Write-Host "║  Press any key here when PDF export is complete...             ║" -ForegroundColor Green
+            Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
+            Write-Host ""
             
-            $gripProcess = Start-Process -FilePath "grip" -ArgumentList $gripArgs -NoNewWindow -Wait -PassThru
+            # Open README.md in VS Code (don't wait for editor to close)
+            Start-Process "code" -ArgumentList $readmePath -NoNewWindow
             
-            if ($gripProcess.ExitCode -ne 0) {
-                throw "Grip HTML generation failed with exit code $($gripProcess.ExitCode)"
-            }
+            # Wait for user confirmation
+            $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
             
-            if (-not (Test-Path $tempHtmlPath)) {
-                throw "Grip did not create the HTML file at $tempHtmlPath"
-            }
+            # Check if PDF was created
+            Start-Sleep -Milliseconds 500  # Brief pause for file system
             
-            Write-Success "✓ GitHub-style HTML generated successfully"
-            Write-Status "Converting HTML to PDF with wkhtmltopdf..."
-            
-            # Convert HTML to PDF with wkhtmltopdf
-            $wkhtmltopdfArgs = @(
-                '--enable-internal-links',
-                '--enable-external-links',
-                '--footer-center', '[page]/[toPage]',
-                '--footer-font-size', '9',
-                '--margin-top', '20mm',
-                '--margin-bottom', '20mm',
-                '--margin-left', '15mm',
-                '--margin-right', '15mm',
-                $tempHtmlPath,
-                $pdfPath
-            )
-            
-            $wkhtmlProcess = Start-Process -FilePath "wkhtmltopdf" -ArgumentList $wkhtmltopdfArgs -NoNewWindow -Wait -PassThru
-            
-            if ($wkhtmlProcess.ExitCode -ne 0) {
-                throw "wkhtmltopdf conversion failed with exit code $($wkhtmlProcess.ExitCode)"
-            }
-            
-            # Clean up temporary HTML file
-            if (Test-Path $tempHtmlPath) {
-                Remove-Item $tempHtmlPath -Force
-                Write-Status "Cleaned up temporary HTML file"
-            }
-            
-            if (Test-Path $pdfPath) {
+            # First check for the default README.pdf that Markdown PDF creates
+            $defaultPdfPath = Join-Path (Get-Location) "README.pdf"
+            if (Test-Path $defaultPdfPath) {
+                # Rename it to the versioned name
+                Move-Item $defaultPdfPath $pdfPath -Force
+                $pdfSize = (Get-Item $pdfPath).Length / 1KB
+                Write-Success "✓ $pdfFilename generated successfully ($([math]::Round($pdfSize, 2)) KB)"
+            } elseif (Test-Path $pdfPath) {
+                # Already has correct name
                 $pdfSize = (Get-Item $pdfPath).Length / 1KB
                 Write-Success "✓ $pdfFilename generated successfully ($([math]::Round($pdfSize, 2)) KB)"
             } else {
-                throw "$pdfFilename was not generated"
+                Write-Warning "$pdfFilename was not found. Checking common locations..."
+                
+                # Check if user saved it elsewhere
+                $altPdfPath = Join-Path (Split-Path $readmePath) "README.pdf"
+                if (Test-Path $altPdfPath) {
+                    Move-Item $altPdfPath $pdfPath -Force
+                    Write-Success "✓ Found and renamed to $pdfFilename"
+                } else {
+                    Write-Error "$pdfFilename was not generated. Please generate it manually and re-run the script."
+                    Write-Host "To generate PDF manually:" -ForegroundColor Yellow
+                    Write-Host "  1. Open README.md in VS Code" -ForegroundColor White
+                    Write-Host "  2. Right-click → 'Markdown PDF: Export (pdf)'" -ForegroundColor White
+                    Write-Host "  3. It will create README.pdf (script will rename it automatically)" -ForegroundColor White
+                    throw "PDF generation incomplete"
+                }
             }
             
             # Copy PDF to release_documentation folder for historical archive
