@@ -720,6 +720,21 @@ function Sync-ReleaseBranch {
             }
         }
         
+        # Sync release_notes folder (entire directory with all release notes)
+        Write-Status "Syncing release_notes folder..."
+        $sourceNotesFolder = Join-Path (Get-Location) "release_notes"
+        $destNotesFolder = Join-Path $releaseWorktreePath "release_notes"
+        if (Test-Path $sourceNotesFolder) {
+            if (-not (Test-Path $destNotesFolder)) {
+                New-Item -ItemType Directory -Path $destNotesFolder -Force | Out-Null
+            }
+            # Copy all files from source to destination
+            Get-ChildItem -Path $sourceNotesFolder -File | ForEach-Object {
+                Copy-Item -Path $_.FullName -Destination $destNotesFolder -Force
+                Write-Success "✓ Synced release_notes/$($_.Name)"
+            }
+        }
+        
         # Clean up old versioned scripts in release worktree root (keep only current version)
         $releaseRootPath = $releaseWorktreePath
         if (Test-Path $releaseRootPath) {
