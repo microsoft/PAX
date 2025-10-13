@@ -370,7 +370,21 @@ function New-ReleaseNotesFile {
     
     # Get GitHub username from git config
     $gitUsername = git config user.name
-    $gitEmail = git config user.email
+    $gitHubHandle = git config user.github
+    if (-not $gitHubHandle) {
+        # Try to get GitHub username from remote URL
+        $remoteUrl = git config --get remote.origin.url
+        if ($remoteUrl -match "github\.com[:/]([^/]+)") {
+            $gitHubHandle = "@" + $matches[1]
+        }
+        else {
+            $gitHubHandle = "Unknown"
+        }
+    }
+    else {
+        $gitHubHandle = "@" + $gitHubHandle
+    }
+    
     if (-not $gitUsername) {
         $gitUsername = "Unknown"
     }
@@ -418,7 +432,7 @@ function New-ReleaseNotesFile {
 ## Release Information
 - **Version:** $NewVersion
 - **Release Date:** $timestamp
-- **Released By:** $gitUsername ($gitEmail)
+- **Released By:** $gitUsername ($gitHubHandle)
 - **Previous Version:** $lastTag
 
 ---
@@ -505,6 +519,82 @@ function Sync-ReleaseBranch {
         [string]$NewVersion
     )
     
+    Write-Status "Generating README.pdf from README.md..."
+    
+    # Generate PDF from README.md using VS Code Markdown PDF extension
+    $readmePath = Join-Path (Get-Location) "README.md"
+    $pdfPath = Join-Path (Get-Location) "README.pdf"
+    
+    if (Test-Path $readmePath) {
+        try {
+            # Remove old PDF if it exists
+            if (Test-Path $pdfPath) {
+                Remove-Item $pdfPath -Force
+                Write-Status "Removed existing README.pdf"
+            }
+            
+            Write-Status "Attempting to generate PDF using VS Code Markdown PDF extension..."
+            
+            # Open README.md in VS Code and wait for user to export
+            Write-Host ""
+            Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
+            Write-Host "║  PDF GENERATION REQUIRED                                       ║" -ForegroundColor Yellow
+            Write-Host "╠════════════════════════════════════════════════════════════════╣" -ForegroundColor Yellow
+            Write-Host "║  Opening README.md in VS Code...                               ║" -ForegroundColor Yellow
+            Write-Host "║                                                                ║" -ForegroundColor Yellow
+            Write-Host "║  Please export to PDF:                                         ║" -ForegroundColor Cyan
+            Write-Host "║  1. Right-click in the editor                                  ║" -ForegroundColor White
+            Write-Host "║  2. Select 'Markdown PDF: Export (pdf)'                        ║" -ForegroundColor White
+            Write-Host "║  3. Wait for 'successfully converted!' message                 ║" -ForegroundColor White
+            Write-Host "║                                                                ║" -ForegroundColor Yellow
+            Write-Host "║  OR use Command Palette (Ctrl+Shift+P):                        ║" -ForegroundColor Cyan
+            Write-Host "║  - Type 'Markdown PDF: Export (pdf)'                           ║" -ForegroundColor White
+            Write-Host "║                                                                ║" -ForegroundColor Yellow
+            Write-Host "║  Press any key here when PDF export is complete...             ║" -ForegroundColor Green
+            Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
+            Write-Host ""
+            
+            # Open README.md in VS Code (don't wait for editor to close)
+            Start-Process "code" -ArgumentList $readmePath -NoNewWindow
+            
+            # Wait for user confirmation
+            $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+            
+            # Check if PDF was created
+            Start-Sleep -Milliseconds 500  # Brief pause for file system
+            
+            if (Test-Path $pdfPath) {
+                $pdfSize = (Get-Item $pdfPath).Length / 1KB
+                Write-Success "✓ README.pdf generated successfully ($([math]::Round($pdfSize, 2)) KB)"
+            } else {
+                Write-Warning "README.pdf was not found. Checking common locations..."
+                
+                # Check if user saved it elsewhere
+                $altPdfPath = Join-Path (Split-Path $readmePath) "README.pdf"
+                if (Test-Path $altPdfPath) {
+                    Move-Item $altPdfPath $pdfPath -Force
+                    Write-Success "✓ Found and moved README.pdf to root directory"
+                } else {
+                    Write-Error "README.pdf was not generated. Please generate it manually and re-run the script."
+                    Write-Host "To generate PDF manually:" -ForegroundColor Yellow
+                    Write-Host "  1. Open README.md in VS Code" -ForegroundColor White
+                    Write-Host "  2. Right-click → 'Markdown PDF: Export (pdf)'" -ForegroundColor White
+                    Write-Host "  3. Save as README.pdf in the repository root" -ForegroundColor White
+                    throw "PDF generation incomplete"
+                }
+            }
+        }
+        catch {
+            Write-Error "PDF generation failed: $($_.Exception.Message)"
+            Write-Host "Please generate README.pdf manually before continuing." -ForegroundColor Yellow
+            throw
+        }
+    }
+    else {
+        Write-Error "README.md not found - cannot generate PDF"
+        throw "README.md missing"
+    }
+    
     Write-Status "Syncing release branch with customer-facing files..."
     
     # Check if we're using worktrees
@@ -549,8 +639,8 @@ function Sync-ReleaseBranch {
             "CODE_OF_CONDUCT.md" = "CODE_OF_CONDUCT.md"
             "CONTRIBUTORS.md" = "CONTRIBUTORS.md"
             "LICENSE" = "LICENSE"
-            "PAX_Overview.pdf" = "PAX_Overview.pdf"
             "README.md" = "README.md"
+            "README.pdf" = "README.pdf"
             "SECURITY.md" = "SECURITY.md"
             $scriptFilename = $scriptFilename
         }
@@ -705,8 +795,8 @@ function Sync-ReleaseBranch {
             git checkout $currentBranch -- "CODE_OF_CONDUCT.md" 2>$null
             git checkout $currentBranch -- "CONTRIBUTORS.md" 2>$null
             git checkout $currentBranch -- "LICENSE" 2>$null
-            git checkout $currentBranch -- "PAX_Overview.pdf" 2>$null
             git checkout $currentBranch -- "README.md" 2>$null
+            git checkout $currentBranch -- "README.pdf" 2>$null
             git checkout $currentBranch -- "SECURITY.md" 2>$null
             git checkout $currentBranch -- "$scriptFilename" 2>$null
             
