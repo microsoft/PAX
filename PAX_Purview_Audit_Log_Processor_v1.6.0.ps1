@@ -122,7 +122,7 @@ param(
     [switch]$AgentOnly,
 
     [Parameter(Mandatory = $false)]
-    [ValidateSet('Prompt', 'Response')]
+    [ValidateSet('Prompt', 'Response', 'Both')]
     [string]$PromptFilter,
 
     [Parameter(Mandatory = $false)]
@@ -870,15 +870,21 @@ function Convert-ToPurviewExplodedRecords {
         # Apply PromptFilter if specified (message-level filtering)
         if ($PromptFilterValue) {
             $msgBefore = $messages.Count
-            # Map Prompt→True, Response→False
-            $targetValue = ($PromptFilterValue -eq 'Prompt')
-            $messages = $messages | Where-Object { 
-                try { 
-                    $_.isPrompt -eq $targetValue 
-                } catch { 
-                    $false 
+            
+            # Filter based on PromptFilter value
+            if ($PromptFilterValue -ne 'Both') {
+                # Map Prompt→True, Response→False
+                $targetValue = ($PromptFilterValue -eq 'Prompt')
+                $messages = $messages | Where-Object { 
+                    try { 
+                        $_.isPrompt -eq $targetValue 
+                    } catch { 
+                        $false 
+                    }
                 }
             }
+            # If 'Both', no filtering - keep all messages
+            
             $msgAfter = $messages.Count
             $msgRemoved = $msgBefore - $msgAfter
             
