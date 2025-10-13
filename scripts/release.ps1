@@ -425,6 +425,36 @@ function New-ReleaseNotesFile {
         $fileStats = "No file statistics available"
     }
     
+    # Generate enhanced overview from git changes
+    $enhancedOverview = ""
+    if ($modifiedFiles) {
+        $categories = @{
+            "PowerShell Scripts" = @($modifiedFiles | Where-Object { $_ -match "\.ps1$" })
+            "Documentation" = @($modifiedFiles | Where-Object { $_ -match "\.(md|pdf)$" })
+            "Configuration Files" = @($modifiedFiles | Where-Object { $_ -match "\.(json|toml|yml|yaml)$" })
+            "Source Code" = @($modifiedFiles | Where-Object { $_ -match "src/|src-tauri/" -and $_ -notmatch "\.(md|json|toml)$" })
+            "GitHub Workflows" = @($modifiedFiles | Where-Object { $_ -match "\.github/" })
+        }
+        
+        $changesSummary = @()
+        foreach ($category in $categories.Keys) {
+            $files = $categories[$category]
+            if ($files.Count -gt 0) {
+                $changesSummary += "- **$category**: $($files.Count) file(s) modified"
+            }
+        }
+        
+        if ($changesSummary.Count -gt 0) {
+            $enhancedOverview = @"
+
+### What Changed
+$($changesSummary -join "`n")
+
+### User-Provided Description
+"@
+        }
+    }
+    
     # Build release notes content
     $releaseNotesContent = @"
 # Release Notes: v$NewVersion
@@ -437,7 +467,7 @@ function New-ReleaseNotesFile {
 
 ---
 
-## Overview
+## Overview$enhancedOverview
 $ReleaseDescription
 
 ---
@@ -462,9 +492,7 @@ $($commits -join "`n")
 ---
 
 ## Installation
-Download the latest release from:
-- **Microsoft Repository:** https://github.com/microsoft/PAX/releases/tag/v$NewVersion
-- **Private Repository:** https://github.com/Rance9/PAX/releases/tag/v$NewVersion
+Download the latest release from the [Microsoft PAX Repository](https://github.com/microsoft/PAX/releases/tag/v$NewVersion).
 
 ---
 
