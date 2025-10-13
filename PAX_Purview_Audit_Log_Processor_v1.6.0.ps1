@@ -200,26 +200,41 @@ if ($RAWInputCSV) {
         try { $parsedEnd = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null) } catch { Write-Host "ERROR: EndDate must be yyyy-MM-dd if provided." -ForegroundColor Red; exit 1 }
     }
     if ($parsedStart -and $parsedEnd -and $parsedEnd -lt $parsedStart) { Write-Host "ERROR: EndDate ($EndDate) is earlier than StartDate ($StartDate)." -ForegroundColor Red; exit 1 }
-    # If not provided, leave $StartDate/$EndDate unset (blank) so snapshot shows no filter.
-    if (-not $PSBoundParameters.ContainsKey('StartDate')) { $StartDate = '' }
-    if (-not $PSBoundParameters.ContainsKey('EndDate')) { $EndDate = '' }
+    # If not provided, set to asterisk for display purposes
+    if (-not $PSBoundParameters.ContainsKey('StartDate')) { $StartDate = '*' }
+    if (-not $PSBoundParameters.ContainsKey('EndDate')) { $EndDate = '*' }
 }
 else {
-    # Live mode: if neither date provided, default to previous full UTC day window.
+    # Live mode: allow partial date specification
     if (-not $PSBoundParameters.ContainsKey('StartDate') -and -not $PSBoundParameters.ContainsKey('EndDate')) {
+        # Neither date provided: default to previous full UTC day window
         $yesterdayUtc = (Get-Date).ToUniversalTime().Date.AddDays(-1)
         $StartDate = $yesterdayUtc.ToString('yyyy-MM-dd')
         $EndDate = $yesterdayUtc.AddDays(1).ToString('yyyy-MM-dd')
     }
-    elseif (-not $PSBoundParameters.ContainsKey('StartDate') -or -not $PSBoundParameters.ContainsKey('EndDate')) {
-        Write-Host "ERROR: Provide both StartDate and EndDate, or neither (to use automatic previous-day window)." -ForegroundColor Red; exit 1
+    elseif (-not $PSBoundParameters.ContainsKey('StartDate')) {
+        # Only EndDate provided: set StartDate to asterisk (beginning of available data)
+        $StartDate = '*'
+        try {
+            $parsedEnd = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null)
+        } catch { Write-Host "ERROR: EndDate must be yyyy-MM-dd format." -ForegroundColor Red; exit 1 }
     }
-    try {
-        $parsedStart = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null)
-        $parsedEnd = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null)
+    elseif (-not $PSBoundParameters.ContainsKey('EndDate')) {
+        # Only StartDate provided: set EndDate to asterisk (up to current time)
+        $EndDate = '*'
+        try {
+            $parsedStart = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null)
+        } catch { Write-Host "ERROR: StartDate must be yyyy-MM-dd format." -ForegroundColor Red; exit 1 }
     }
-    catch { Write-Host "ERROR: StartDate/EndDate must be in yyyy-MM-dd format." -ForegroundColor Red; exit 1 }
-    if ($parsedEnd -lt $parsedStart) { Write-Host "ERROR: EndDate ($EndDate) is earlier than StartDate ($StartDate)." -ForegroundColor Red; exit 1 }
+    else {
+        # Both dates provided: validate them
+        try {
+            $parsedStart = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null)
+            $parsedEnd = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null)
+        }
+        catch { Write-Host "ERROR: StartDate/EndDate must be in yyyy-MM-dd format." -ForegroundColor Red; exit 1 }
+        if ($parsedEnd -lt $parsedStart) { Write-Host "ERROR: EndDate ($EndDate) is earlier than StartDate ($StartDate)." -ForegroundColor Red; exit 1 }
+    }
 }
 
 if ($BlockHours -le 0) { Write-Host "ERROR: BlockHours must be positive." -ForegroundColor Red; exit 1 }
