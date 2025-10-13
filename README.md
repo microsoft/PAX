@@ -1,4 +1,4 @@
-# Portable Audit eXporter (PAX) - Purview Audit Log Exporter
+# Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
 > **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.6.0.ps1`](PAX_Purview_Audit_Log_Processor_v1.6.0.ps1)
 >
@@ -57,7 +57,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 4. **Offline Replay Mode** (`-RAWInputCSV`) - Re-process previously exported raw audit CSV files without querying the service
 5. **Agent Filtering Mode** (`-AgentOnly` or `-AgentId`) - Filter for records containing Copilot agent activity (works with live queries and replay mode)
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
@@ -94,7 +94,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - **Automated Setup:** Detects, installs, and connects ExchangeOnlineManagement module automatically
 - **Offline Replay:** Transform previously exported raw CSVs without Exchange Online connection
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
@@ -136,7 +136,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - Validate data pipelines without querying production audit logs
 - Develop downstream analytics without live tenant access
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
@@ -173,7 +173,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 
 **Download PowerShell 7:** https://aka.ms/powershell
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
@@ -201,7 +201,7 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.6.
 4. Exports to `C:\Temp\CopilotInteraction_<timestamp>.csv` (default path)
 5. Creates matching `.log` file with detailed execution metrics
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
@@ -509,7 +509,7 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.6.
 **Example:** `.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -Help`  
 **Use When:** Quick reference without opening documentation
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
@@ -549,7 +549,7 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -Auth Silent -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
@@ -652,7 +652,7 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -Auth Silent -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
@@ -779,7 +779,7 @@ The `AgentId` field appears in Copilot audit records and identifies the specific
 - `AppIdentity` - Application context for the agent
 - Plus all standard Copilot usage fields
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
@@ -909,7 +909,7 @@ For a complete list of available Purview audit activities and operations, refer 
 
 This comprehensive reference includes all available operations across Microsoft 365 services, including SharePoint, Exchange, Teams, Copilot, and more.
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
@@ -962,7 +962,7 @@ Status: Query: 45/100(45%) | Explosion: 12000/25000(48%) | Export: 0/1(0%) :: 42
 - **Batch info:** Current batch number, estimated total, percentage range
 - **Record range:** Shows which records currently processing (in batches)
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
@@ -1062,7 +1062,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
   -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
 ```
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
@@ -1195,7 +1195,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
 
 **A:** `-ExplodeArrays` creates 35 columns with array elements as separate rows. `-ExplodeDeep` adds all nested `CopilotEventData.*` fields as additional columns (wide schema).
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
@@ -1243,7 +1243,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
 - Dynamic throttle + batch resizing (targets ~0.8s–2.5s batches)
 - Metrics emitted at completion
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
@@ -1289,7 +1289,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
 5. **Output Protection:** Store CSV files in encrypted volumes or secure file shares
 6. **Access Logging:** Enable filesystem auditing for output directories
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
@@ -1301,7 +1301,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
 
 **Disclaimer:** This script is provided "AS IS" without warranties or official support. Validate fit for purpose before production use. Not endorsed or officially supported by Microsoft Product Groups. Community-driven maintenance model.
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
@@ -1320,7 +1320,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
 - **[Azure Synapse Analytics](https://azure.microsoft.com/en-us/products/synapse-analytics/)** - Data warehousing for large audit datasets
 - **[Microsoft Sentinel](https://azure.microsoft.com/en-us/products/microsoft-sentinel/)** - SIEM integration for audit logs
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
