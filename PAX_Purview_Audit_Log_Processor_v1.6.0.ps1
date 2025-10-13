@@ -122,7 +122,7 @@ param(
     [switch]$AgentOnly,
 
     [Parameter(Mandatory = $false)]
-    [ValidateSet('Prompt', 'Response')]
+    [ValidateSet('Prompt', 'Response', 'Both', 'Null')]
     [string]$PromptFilter,
 
     [Parameter(Mandatory = $false)]
@@ -296,6 +296,10 @@ $script:metrics = @{
     PromptFilterMsgBefore   = 0
     PromptFilterMsgAfter    = 0
     PromptFilterMsgRemoved  = 0
+    PromptFilterRecordsMixed = 0
+    PromptFilterRecordsPromptOnly = 0
+    PromptFilterRecordsResponseOnly = 0
+    PromptFilterRecordsNoMessages = 0
 }
 
 # --- Configuration: depth & limits ---
@@ -884,23 +888,43 @@ function Convert-ToPurviewExplodedRecords {
         # Extract array properties from CopilotEventData
         $messages = script:GetArrayFast $ced 'Messages'
         
-        # Apply message-level PromptFilter during explosion (Stage 2 filtering)
-        # Stage 1 already filtered out records without any matching messages
+        # Apply message-level PromptFilter during explosion (Stage 2 filtering) - OPTIMIZED
+        # Stage 1 already filtered out records without any matching messages (or kept all for 'Both')
         # This filters the actual messages to only output matching types
-        if ($PromptFilterValue) {
-            $targetValue = ($PromptFilterValue -eq 'Prompt')
-            $messages = $messages | Where-Object { 
-                try { 
-                    $_.isPrompt -eq $targetValue 
-                } catch { 
-                    $false 
+        if ($PromptFilterValue -and $PromptFilterValue -ne 'Both') {
+            # Fast filtering using List instead of Where-Object pipeline
+            $filteredMessages = New-Object System.Collections.Generic.List[object]
+            
+            if ($PromptFilterValue -eq 'Null') {
+                # Keep messages where isPrompt is null/missing
+                foreach ($msg in $messages) {
+                    if ($null -eq $msg.isPrompt) {
+                        $filteredMessages.Add($msg)
+                    }
                 }
             }
+            else {
+                # Prompt or Response filtering
+                $targetValue = ($PromptFilterValue -eq 'Prompt')
+                foreach ($msg in $messages) {
+                    try {
+                        if ($msg.isPrompt -eq $targetValue) {
+                            $filteredMessages.Add($msg)
+                        }
+                    } catch {
+                        # Skip messages where isPrompt can't be accessed
+                    }
+                }
+            }
+            
+            $messages = $filteredMessages
+            
             # If no messages remain after filtering, return empty (no rows for this record)
             if ($messages.Count -eq 0) {
                 return @()
             }
         }
+        # If 'Both', no filtering - keep all messages
         
         $contexts = script:GetArrayFast $ced 'Contexts'
         $resources = script:GetArrayFast $ced 'AccessedResources'
@@ -1591,7 +1615,14 @@ try {
     # --- PromptFilter Filtering (if specified) ---
     if ($PromptFilter) {
         Write-LogHost "Applying PromptFilter..." -ForegroundColor Yellow
-        Write-LogHost "  Filtering for: $PromptFilter messages (isPrompt = $($PromptFilter -eq 'Prompt'))" -ForegroundColor Gray
+        
+        $filterDescription = switch ($PromptFilter) {
+            'Prompt' { "Prompt messages (isPrompt = True)" }
+            'Response' { "Response messages (isPrompt = False)" }
+            'Both' { "Both Prompt AND Response messages" }
+            'Null' { "Messages with null/missing isPrompt values" }
+        }
+        Write-LogHost "  Filtering for: $filterDescription" -ForegroundColor Gray
         
         $prePromptCount = $allLogs.Count
         $promptStart = Get-Date
@@ -1600,18 +1631,61 @@ try {
         $totalMsgBefore = 0
         $totalMsgAfter = 0
         
-        $targetIsPromptValue = ($PromptFilter -eq 'Prompt')
+        # Track record type breakdown for summary
+        $recordsMixed = 0
+        $recordsPromptOnly = 0
+        $recordsResponseOnly = 0
+        $recordsNoMessages = 0
         
         foreach ($log in $allLogs) {
             $hasMatchingMessages = $false
+            $hasPrompt = $false
+            $hasResponse = $false
+            $msgCount = 0
+            
             try {
                 $messages = $log._ParsedAuditData.CopilotEventData.Messages
-                if ($null -ne $messages) {
-                    $totalMsgBefore += $messages.Count
+                if ($null -eq $messages -or $messages.Count -eq 0) {
+                    $recordsNoMessages++
+                }
+                else {
+                    $msgCount = $messages.Count
+                    $totalMsgBefore += $msgCount
+                    
+                    # Analyze record to determine type (for breakdown stats)
                     foreach ($msg in $messages) {
-                        if ($msg.isPrompt -eq $targetIsPromptValue) {
-                            $hasMatchingMessages = $true
-                            $totalMsgAfter++
+                        if ($msg.isPrompt -eq $true) { $hasPrompt = $true }
+                        elseif ($msg.isPrompt -eq $false) { $hasResponse = $true }
+                    }
+                    
+                    # Categorize record type
+                    if ($hasPrompt -and $hasResponse) { $recordsMixed++ }
+                    elseif ($hasPrompt -and -not $hasResponse) { $recordsPromptOnly++ }
+                    elseif ($hasResponse -and -not $hasPrompt) { $recordsResponseOnly++ }
+                    
+                    # Check based on filter type
+                    if ($PromptFilter -eq 'Both') {
+                        # Keep all records with any messages
+                        $hasMatchingMessages = $true
+                        $totalMsgAfter += $msgCount
+                    }
+                    elseif ($PromptFilter -eq 'Null') {
+                        # Keep records that have at least one message with null isPrompt
+                        foreach ($msg in $messages) {
+                            if ($null -eq $msg.isPrompt) {
+                                $hasMatchingMessages = $true
+                                $totalMsgAfter++
+                            }
+                        }
+                    }
+                    else {
+                        # Prompt or Response filtering
+                        $targetIsPromptValue = ($PromptFilter -eq 'Prompt')
+                        foreach ($msg in $messages) {
+                            if ($msg.isPrompt -eq $targetIsPromptValue) {
+                                $hasMatchingMessages = $true
+                                $totalMsgAfter++
+                            }
                         }
                     }
                 }
@@ -1647,6 +1721,10 @@ try {
         $script:metrics.PromptFilterMsgBefore = $totalMsgBefore
         $script:metrics.PromptFilterMsgAfter = $totalMsgAfter
         $script:metrics.PromptFilterMsgRemoved = $totalMsgRemoved
+        $script:metrics.PromptFilterRecordsMixed = $recordsMixed
+        $script:metrics.PromptFilterRecordsPromptOnly = $recordsPromptOnly
+        $script:metrics.PromptFilterRecordsResponseOnly = $recordsResponseOnly
+        $script:metrics.PromptFilterRecordsNoMessages = $recordsNoMessages
         
         Write-LogHost "PromptFilter complete in $promptElapsed seconds" -ForegroundColor Green
         Write-LogHost "  Records before PromptFilter: $prePromptCount" -ForegroundColor Gray
@@ -2067,13 +2145,51 @@ try {
     # Show PromptFilter metrics if filter was applied
     if ($script:metrics.PromptFilterApplied) {
         Write-LogHost ""; Write-LogHost "=== Prompt Filtering Summary ===" -ForegroundColor Cyan
-        $filterTypeDisplay = if ($script:metrics.PromptFilterType -eq 'Prompt') { 'Prompts Only (isPrompt=True)' } else { 'Responses Only (isPrompt=False)' }
+        
+        # Display filter type
+        $filterTypeDisplay = switch ($script:metrics.PromptFilterType) {
+            'Prompt' { 'Prompts Only (isPrompt=True)' }
+            'Response' { 'Responses Only (isPrompt=False)' }
+            'Both' { 'Both Prompts AND Responses' }
+            'Null' { 'Null/Missing isPrompt values' }
+        }
         Write-LogHost ("Filter type: {0}" -f $filterTypeDisplay) -ForegroundColor White
-        Write-LogHost ("Messages before filter: {0}" -f $script:metrics.PromptFilterMsgBefore) -ForegroundColor White
-        Write-LogHost ("Messages after filter: {0}" -f $script:metrics.PromptFilterMsgAfter) -ForegroundColor White
-        Write-LogHost ("Messages filtered out: {0}" -f $script:metrics.PromptFilterMsgRemoved) -ForegroundColor Gray
-        $promptRetentionRate = if ($script:metrics.PromptFilterMsgBefore -gt 0) { [Math]::Round(($script:metrics.PromptFilterMsgAfter / $script:metrics.PromptFilterMsgBefore) * 100, 2) } else { 0 }
-        Write-LogHost ("Retention rate: {0}%" -f $promptRetentionRate) -ForegroundColor White
+        
+        # Record-level statistics
+        Write-LogHost ""
+        Write-LogHost "Record-level statistics:" -ForegroundColor Yellow
+        Write-LogHost ("  Records before filter: {0}" -f $script:metrics.PromptFilterPreCount) -ForegroundColor White
+        Write-LogHost ("  Records after filter: {0}" -f $script:metrics.PromptFilterPostCount) -ForegroundColor White
+        Write-LogHost ("  Records filtered out: {0}" -f $script:metrics.PromptFilterRemovedCount) -ForegroundColor Gray
+        $recordRetentionRate = if ($script:metrics.PromptFilterPreCount -gt 0) { [Math]::Round(($script:metrics.PromptFilterPostCount / $script:metrics.PromptFilterPreCount) * 100, 2) } else { 0 }
+        Write-LogHost ("  Retention rate: {0}%" -f $recordRetentionRate) -ForegroundColor White
+        
+        # Record type breakdown
+        Write-LogHost ""
+        Write-LogHost "Record type breakdown (from input):" -ForegroundColor Yellow
+        $totalWithMessages = $script:metrics.PromptFilterRecordsMixed + $script:metrics.PromptFilterRecordsPromptOnly + $script:metrics.PromptFilterRecordsResponseOnly
+        $mixedPct = if ($totalWithMessages -gt 0) { [Math]::Round(($script:metrics.PromptFilterRecordsMixed / $totalWithMessages) * 100, 1) } else { 0 }
+        $promptOnlyPct = if ($totalWithMessages -gt 0) { [Math]::Round(($script:metrics.PromptFilterRecordsPromptOnly / $totalWithMessages) * 100, 1) } else { 0 }
+        $responseOnlyPct = if ($totalWithMessages -gt 0) { [Math]::Round(($script:metrics.PromptFilterRecordsResponseOnly / $totalWithMessages) * 100, 1) } else { 0 }
+        
+        Write-LogHost ("  Mixed (both prompts & responses): {0} ({1}%)" -f $script:metrics.PromptFilterRecordsMixed, $mixedPct) -ForegroundColor Cyan
+        Write-LogHost ("  Prompt-only records: {0} ({1}%)" -f $script:metrics.PromptFilterRecordsPromptOnly, $promptOnlyPct) -ForegroundColor Cyan
+        Write-LogHost ("  Response-only records: {0} ({1}%)" -f $script:metrics.PromptFilterRecordsResponseOnly, $responseOnlyPct) -ForegroundColor Cyan
+        if ($script:metrics.PromptFilterRecordsNoMessages -gt 0) {
+            Write-LogHost ("  Records with no messages: {0}" -f $script:metrics.PromptFilterRecordsNoMessages) -ForegroundColor DarkYellow
+        }
+        
+        # Message-level statistics
+        Write-LogHost ""
+        Write-LogHost "Message-level statistics:" -ForegroundColor Yellow
+        Write-LogHost ("  Messages before filter: {0}" -f $script:metrics.PromptFilterMsgBefore) -ForegroundColor White
+        Write-LogHost ("  Messages after filter: {0}" -f $script:metrics.PromptFilterMsgAfter) -ForegroundColor White
+        Write-LogHost ("  Messages filtered out: {0}" -f $script:metrics.PromptFilterMsgRemoved) -ForegroundColor Gray
+        $msgRetentionRate = if ($script:metrics.PromptFilterMsgBefore -gt 0) { [Math]::Round(($script:metrics.PromptFilterMsgAfter / $script:metrics.PromptFilterMsgBefore) * 100, 2) } else { 0 }
+        Write-LogHost ("  Retention rate: {0}%" -f $msgRetentionRate) -ForegroundColor White
+        
+        Write-LogHost ""
+        Write-LogHost ("PromptFilter processing time: {0:F2} seconds" -f $script:metrics.PromptFilterElapsedSec) -ForegroundColor Gray
     }
 
     # Only show Performance Optimization Summary if adaptive sizing was used (live query mode)
