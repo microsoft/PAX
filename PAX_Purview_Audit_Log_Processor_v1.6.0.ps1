@@ -937,8 +937,17 @@ function Convert-ToPurviewExplodedRecords {
         $modelDetRaw = script:GetArrayFast $ced 'ModelTransparencyDetails'
         $messageIds = script:GetArrayFast $ced 'MessageIds'
 
-        # Determine max row count across exploded arrays (avoid multi-arg Math.Max which caused errors)
-        $rowCount = (1, $messages.Count, $contexts.Count, $resources.Count | Measure-Object -Maximum).Maximum
+        # Determine max row count across exploded arrays
+        # When PromptFilter is active (not 'Both'), base rowCount on filtered messages only
+        # to avoid outputting rows with blank Message_isPrompt values for unmatched contexts/resources
+        if ($PromptFilterValue -and $PromptFilterValue -ne 'Both') {
+            # When filtering messages, only output rows for the filtered messages
+            $rowCount = [Math]::Max(1, $messages.Count)
+        }
+        else {
+            # No filter or 'Both' - use max of all arrays
+            $rowCount = (1, $messages.Count, $contexts.Count, $resources.Count | Measure-Object -Maximum).Maximum
+        }
 
         # Choose first plugin / model transparency element if any
         $plugin0 = if ($pluginsRaw.Count -gt 0) { $pluginsRaw[0] } else { $null }
