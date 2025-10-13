@@ -654,7 +654,12 @@ if ($AgentId -or $AgentOnly -or $ExcludeAgents -or $PromptFilter) {
     
     # PromptFilter
     if ($PromptFilter) {
-        $promptLabel = if ($PromptFilter -eq 'Prompt') { 'Only prompts (Message_isPrompt = True)' } else { 'Only responses (Message_isPrompt = False)' }
+        $promptLabel = switch ($PromptFilter) {
+            'Prompt'   { 'Only prompts (Message_isPrompt = True)' }
+            'Response' { 'Only responses (Message_isPrompt = False)' }
+            'Both'     { 'Both prompts and responses (Message_isPrompt = True or False)' }
+            'Null'     { 'Only records with no Message_isPrompt values (Null/Empty)' }
+        }
         Write-LogHost "  PromptFilter: $promptLabel" -ForegroundColor Gray
     }
 }
