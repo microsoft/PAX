@@ -1,9 +1,9 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Exporter
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.5.9.ps1`](PAX_Purview_Audit_Log_Processor_v1.5.9.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.6.0.ps1`](PAX_Purview_Audit_Log_Processor_v1.6.0.ps1)
 
-**Script:** `PAX_Purview_Audit_Log_Processor_v1.5.9.ps1`  
-**Version:** 1.5.9  
+**Script:** `PAX_Purview_Audit_Log_Processor_v1.6.0.ps1`  
+**Version:** 1.6.0  
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 5.1 (compatible) / PowerShell 7+ (recommended)  
 **License:** MIT
@@ -20,13 +20,14 @@
 6. [Parameters Reference](#parameters-reference)
 7. [Authentication Methods](#authentication-methods)
 8. [Usage Examples](#usage-examples)
-9. [Output Files & Schema](#output-files--schema)
-10. [Activity Types Reference](#activity-types-reference)
-11. [Advanced Features](#advanced-features)
-12. [Performance Tuning](#performance-tuning)
-13. [Troubleshooting & FAQ](#troubleshooting--faq)
-14. [Known Limitations](#known-limitations)
-15. [Security & Compliance](#security--compliance)
+9. [Agent Filtering](#agent-filtering)
+10. [Output Files & Schema](#output-files--schema)
+11. [Activity Types Reference](#activity-types-reference)
+12. [Advanced Features](#advanced-features)
+13. [Performance Tuning](#performance-tuning)
+14. [Troubleshooting & FAQ](#troubleshooting--faq)
+15. [Known Limitations](#known-limitations)
+16. [Security & Compliance](#security--compliance)
 
 ---
 
@@ -52,8 +53,9 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 2. **Array Explosion Mode** (`-ExplodeArrays`) - Canonical Purview 35-column schema with array elements expanded
 3. **Deep Flatten Mode** (`-ExplodeDeep`) - 35-column base schema + fully flattened `CopilotEventData.*` columns
 4. **Offline Replay Mode** (`-RAWInputCSV`) - Re-process previously exported raw audit CSV files without querying the service
+5. **Agent Filtering Mode** (`-AgentOnly` or `-AgentId`) - Filter for records containing Copilot agent activity (works with live queries and replay mode)
 
-[⬆ Back to Top](#)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
 
 ---
 
@@ -71,6 +73,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 
 - **Purview Schema Compliance:** Matches Microsoft Purview's canonical exploded schema structure
 - **Deep JSON Flattening:** Optional recursive flattening of nested `CopilotEventData` structures
+- **Agent Filtering:** Filter records by specific AgentId values or any agent-related activity
 - **Streaming Export:** Memory-efficient chunked CSV writing for large datasets
 - **UTF-8 Encoding:** Consistent UTF-8 (no BOM) output for cross-platform compatibility
 - **Header Stability:** Always writes CSV header even when zero records match (ensures schema consistency)
@@ -89,7 +92,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - **Automated Setup:** Detects, installs, and connects ExchangeOnlineManagement module automatically
 - **Offline Replay:** Transform previously exported raw CSVs without Exchange Online connection
 
-[⬆ Back to Top](#)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
 
 ---
 
@@ -108,6 +111,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - Monitor data access patterns and sensitivity indicators
 - Track plugin usage and custom GPT deployment
 - Generate audit trails for security reviews
+- Filter and analyze specific Copilot Studio declarative agent activity
 
 ### Performance & Capacity Planning
 
@@ -130,7 +134,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - Validate data pipelines without querying production audit logs
 - Develop downstream analytics without live tenant access
 
-[⬆ Back to Top](#)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
 
 ---
 
@@ -167,7 +171,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 
 **Download PowerShell 7:** https://aka.ms/powershell
 
-[⬆ Back to Top](#)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
 
 ---
 
@@ -175,16 +179,16 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 
 ### Download the Script
 
-Download [`PAX_Purview_Audit_Log_Processor_v1.5.9.ps1`](PAX_Purview_Audit_Log_Processor_v1.5.9.ps1) and save to a working directory (e.g., `C:\Scripts\PAX\`).
+Download [`PAX_Purview_Audit_Log_Processor_v1.6.0.ps1`](PAX_Purview_Audit_Log_Processor_v1.6.0.ps1) and save to a working directory (e.g., `C:\Scripts\PAX\`).
 
 ### First Run (Quick Start)
 
 ```powershell
 # PowerShell 7+ (recommended)
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
 
 # Windows PowerShell 5.1
-powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
 **What Happens:**
@@ -195,7 +199,7 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.
 4. Exports to `C:\Temp\CopilotInteraction_<timestamp>.csv` (default path)
 5. Creates matching `.log` file with detailed execution metrics
 
-[⬆ Back to Top](#)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
 
 ---
 
@@ -331,6 +335,47 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.
 
 ---
 
+#### `-AgentId` (string[])
+
+**Purpose:** Filter audit records to include only those with specific AgentId value(s)  
+**Default:** Not set (no agent filtering)  
+**Use When:**
+
+- Analyzing specific Copilot Studio declarative agents
+- Tracking usage of particular agent implementations
+- Filtering for known AgentId patterns
+
+**Examples:**
+
+- Single: `-AgentId "CopilotStudio.Declarative.T_4e671777-fa6c-601a-b416-df08b6ae4c14.03dc0b8b-a75a-4b77-86d7-98185a176d1b"`
+- Multiple: `-AgentId "SYSTEM_CreateGPT.declarativeCopilot","CopilotStudio.Declarative.T_..."`
+
+**Notes:** 
+- Works in both live query and replay modes
+- AgentId is a top-level field in AuditData JSON
+- Takes precedence if both `-AgentId` and `-AgentOnly` are specified
+
+---
+
+#### `-AgentOnly` (switch)
+
+**Purpose:** Filter audit records to include only those with any AgentId present  
+**Default:** Off (no agent filtering)  
+**Use When:**
+
+- Analyzing all agent-related activity regardless of specific agent
+- Identifying records that involve Copilot Studio agents
+- Filtering out non-agent Copilot interactions
+
+**Example:** `-AgentOnly`
+
+**Notes:**
+- Works in both live query and replay modes
+- More inclusive than `-AgentId` (includes any record with AgentId field populated)
+- Combined with `-ActivityTypes` for refined filtering
+
+---
+
 ### Data Processing Parameters
 
 #### `-ExplodeArrays` (switch)
@@ -377,7 +422,7 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.
 
 **Restrictions:** Cannot combine with live query parameters (`-Auth`, `-BlockHours`, `-ResultSize`, `-PacingMs`, `-ParallelMode`, `-MaxConcurrency`, `-MaxParallelGroups`)
 
-**Allowed with RAWInputCSV:** `-StartDate`, `-EndDate`, `-ActivityTypes`, `-OutputFile`, `-ExplodeDeep`, `-ExportProgressInterval`, `-StreamingSchemaSample`, `-StreamingChunkSize`
+**Allowed with RAWInputCSV:** `-StartDate`, `-EndDate`, `-ActivityTypes`, `-AgentId`, `-AgentOnly`, `-OutputFile`, `-ExplodeDeep`, `-ExportProgressInterval`, `-StreamingSchemaSample`, `-StreamingChunkSize`
 
 ---
 
@@ -459,10 +504,10 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.5.
 #### `-Help` (switch)
 
 **Purpose:** Display built-in help documentation  
-**Example:** `.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -Help`  
+**Example:** `.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -Help`  
 **Use When:** Quick reference without opening documentation
 
-[⬆ Back to Top](#)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
 
 ---
 
@@ -475,7 +520,7 @@ The script supports four authentication methods for Exchange Online:
 Interactive browser-based authentication. Best for ad-hoc queries and interactive sessions.
 
 ```powershell
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -Auth WebLogin -StartDate 2025-10-01 -EndDate 2025-10-02
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -Auth WebLogin -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
 ### 2. DeviceCode
@@ -483,7 +528,7 @@ Interactive browser-based authentication. Best for ad-hoc queries and interactiv
 Device code flow for headless/remote sessions or terminals without browser access.
 
 ```powershell
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -Auth DeviceCode -StartDate 2025-10-01 -EndDate 2025-10-02
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -Auth DeviceCode -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
 ### 3. Credential
@@ -491,7 +536,7 @@ Device code flow for headless/remote sessions or terminals without browser acces
 Username/password prompt. Credentials stored in memory only during script execution.
 
 ```powershell
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -Auth Credential -StartDate 2025-10-01 -EndDate 2025-10-02
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -Auth Credential -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
 ### 4. Silent
@@ -499,10 +544,10 @@ Username/password prompt. Credentials stored in memory only during script execut
 Attempts to use cached authentication token. Falls back to WebLogin if no valid token exists.
 
 ```powershell
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -Auth Silent -StartDate 2025-10-01 -EndDate 2025-10-02
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -Auth Silent -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
-[⬆ Back to Top](#)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
 
 ---
 
@@ -512,78 +557,227 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 
 ```powershell
 # Standard mode - previous day (auto-default)
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1
 
 # Specific date range
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
 
 # Custom output path
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile "C:\AuditData\Copilot.csv"
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile "C:\AuditData\Copilot.csv"
 
 # Multiple activity types
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
 ```
 
 ### Exploded Schema Queries
 
 ```powershell
 # Array explosion (35-column Purview schema)
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02
 
 # Deep flatten (maximum column extraction)
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
 ### Performance Tuning
 
 ```powershell
 # Reduce block size for dense data (hitting 10K limit)
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -BlockHours 0.25 -StartDate 2025-10-01 -EndDate 2025-10-01
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -BlockHours 0.25 -StartDate 2025-10-01 -EndDate 2025-10-01
 
 # Increase block size for sparse historical data
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -BlockHours 4.0 -StartDate 2025-09-01 -EndDate 2025-09-07
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -BlockHours 4.0 -StartDate 2025-09-01 -EndDate 2025-09-07
 
 # Add pacing to reduce throttling
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -PacingMs 250 -StartDate 2025-10-01 -EndDate 2025-10-02
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -PacingMs 250 -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
 ### Parallel Execution (PowerShell 7+ only)
 
 ```powershell
 # Auto-detect parallel benefit
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ParallelMode Auto -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ParallelMode Auto -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
 
 # Force parallel with custom concurrency
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ParallelMode On -MaxConcurrency 4 -MaxParallelGroups 2 -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ParallelMode On -MaxConcurrency 4 -MaxParallelGroups 2 -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
 ```
 
 ### Offline Replay
 
 ```powershell
 # Basic replay (forced explosion)
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -RAWInputCSV "C:\PreviousExports\Copilot_RAW.csv" -OutputFile "C:\AuditData\Copilot_Exploded.csv"
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -RAWInputCSV "C:\PreviousExports\Copilot_RAW.csv" -OutputFile "C:\AuditData\Copilot_Exploded.csv"
 
 # Replay with deep flatten and date filtering
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -RAWInputCSV "C:\PreviousExports\Copilot_RAW.csv" -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile "C:\AuditData\Copilot_Deep.csv"
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -RAWInputCSV "C:\PreviousExports\Copilot_RAW.csv" -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile "C:\AuditData\Copilot_Deep.csv"
 
 # Replay with activity filtering
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -RAWInputCSV "C:\PreviousExports\Multi_Activity_RAW.csv" -ActivityTypes CopilotInteraction -OutputFile "C:\AuditData\Copilot_Only.csv"
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -RAWInputCSV "C:\PreviousExports\Multi_Activity_RAW.csv" -ActivityTypes CopilotInteraction -OutputFile "C:\AuditData\Copilot_Only.csv"
+
+# Replay with agent filtering (any agent)
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -RAWInputCSV "C:\PreviousExports\Copilot_RAW.csv" -AgentOnly -OutputFile "C:\AuditData\Agent_Records.csv"
+
+# Replay with specific agent ID
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -RAWInputCSV "C:\PreviousExports\Copilot_RAW.csv" -AgentId "CopilotStudio.Declarative.T_4e671777-fa6c-601a-b416-df08b6ae4c14.03dc0b8b-a75a-4b77-86d7-98185a176d1b" -OutputFile "C:\AuditData\Specific_Agent.csv"
+```
+
+### Agent Filtering (Live & Replay)
+
+```powershell
+# Filter for any agent-related records (live query)
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -AgentOnly -StartDate 2025-10-01 -EndDate 2025-10-02
+
+# Filter for specific agent ID(s)
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -AgentId "SYSTEM_CreateGPT.declarativeCopilot" -StartDate 2025-10-01 -EndDate 2025-10-02
+
+# Multiple agent IDs with deep flatten
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ExplodeDeep -AgentId "SYSTEM_CreateGPT.declarativeCopilot","CopilotStudio.Declarative.T_..." -StartDate 2025-10-01 -EndDate 2025-10-02
+
+# Agent filtering in replay mode
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -RAWInputCSV "C:\PreviousExports\Copilot_RAW.csv" -AgentOnly -OutputFile "C:\AuditData\All_Agents.csv"
 ```
 
 ### Authentication Variations
 
 ```powershell
 # Device code for headless session
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -Auth DeviceCode -StartDate 2025-10-01 -EndDate 2025-10-02
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -Auth DeviceCode -StartDate 2025-10-01 -EndDate 2025-10-02
 
 # Credential prompt
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -Auth Credential -StartDate 2025-10-01 -EndDate 2025-10-02
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -Auth Credential -StartDate 2025-10-01 -EndDate 2025-10-02
 
 # Silent (cached token)
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -Auth Silent -StartDate 2025-10-01 -EndDate 2025-10-02
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -Auth Silent -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
-[⬆ Back to Top](#)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
+
+---
+
+## Agent Filtering
+
+### Overview
+
+Agent Filtering enables targeted extraction of Copilot agent-specific audit records from your audit logs. This feature is essential for enterprises analyzing AI agent usage, ROI metrics, and compliance requirements specific to Copilot agents and declarative agents.
+
+**Why Use Agent Filtering?**
+
+- **Performance**: Process only relevant records when you need agent-specific analysis (typical reduction: 99%+ of non-agent records filtered out)
+- **Cost Efficiency**: Reduce data egress, storage, and processing costs by exporting only agent-related activities
+- **Focused Analysis**: Streamline BI pipelines, Power BI dashboards, and ML models to analyze agent adoption, usage patterns, and ROI
+- **Compliance**: Isolate agent interactions for regulatory audits, data governance, and security investigations
+- **Multi-Agent Tracking**: Monitor specific declarative agents, custom agents, or Copilot Studio agents across your tenant
+
+### When to Use Agent Filtering
+
+**Use `-AgentOnly`** when:
+- You want all records that contain any AgentId (any Copilot agent activity)
+- Building comprehensive agent usage dashboards
+- Analyzing overall agent adoption across the organization
+- Tracking all AI agent interactions for compliance
+
+**Use `-AgentId`** when:
+- You need records for specific agent(s) only (e.g., "CopilotStudio.Declarative.12345")
+- Troubleshooting a particular custom or declarative agent
+- Analyzing ROI/performance of specific agent deployments
+- Auditing a specific agent's interactions for security review
+
+### Agent Filtering Examples
+
+```powershell
+# Export ALL agent-related records from live query
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -AgentOnly `
+    -OutputFile "C:\Exports\AgentActivity.csv"
+
+# Filter for specific AgentId (single)
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -AgentId "CopilotStudio.Declarative.a1b2c3d4" `
+    -OutputFile "C:\Exports\SpecificAgent.csv"
+
+# Filter for multiple specific AgentIds
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -AgentId "CopilotStudio.Declarative.agent1","CopilotStudio.Declarative.agent2","CustomAgent.xyz" `
+    -OutputFile "C:\Exports\MultipleAgents.csv"
+
+# Replay mode: Filter agents from previously exported data
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
+    -RAWInputCSV "C:\Exports\RawAuditLogs.csv" `
+    -AgentOnly `
+    -ExplodeDeep `
+    -OutputFile "C:\Exports\AgentActivity_Exploded.csv"
+
+# Replay mode: Filter specific AgentId from previously exported data
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
+    -RAWInputCSV "C:\Exports\RawAuditLogs.csv" `
+    -AgentId "CopilotStudio.Declarative.a1b2c3d4" `
+    -OutputFile "C:\Exports\SpecificAgent_Replay.csv"
+
+# Combine with deep explosion for maximum analysis detail
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -AgentOnly `
+    -ExplodeDeep `
+    -OutputFile "C:\Exports\AgentActivity_DeepAnalysis.csv"
+```
+
+### How Agent Filtering Works
+
+1. **Pre-Parsing Phase**:
+   - In replay mode, JSON audit data is pre-parsed for all records
+   - Enables fast filtering without repeated JSON parsing
+
+2. **Agent Filtering Phase**:
+   - Each record's `ParsedAuditData.AgentId` field is evaluated
+   - `-AgentOnly`: Includes any record where `AgentId` is present and non-empty
+   - `-AgentId`: Includes records where `AgentId` matches one of the specified values (case-insensitive)
+   - Non-matching records are excluded from output
+
+3. **Output Generation**:
+   - Only filtered records proceed to explosion/flattening
+   - Summary includes pre/post filter counts and retention rate
+   - Log file documents exact filter criteria applied
+
+### Agent Filtering Performance
+
+**Live Query Mode:**
+- Agent filtering occurs server-side via activity type selection
+- Use standard Copilot activity types (CopilotInteraction, etc.)
+- Agent switches apply additional post-retrieval filtering
+
+**Replay Mode:**
+- Processes up to ~5,000 records/second during filtering
+- Progress bar shows pre-parsing and filtering phases separately
+- Example: 367,796 records → 20,240 agent records in ~80 seconds total
+
+**Memory Usage:**
+- Low overhead: only filtered records remain in memory
+- Safe for processing multi-million record datasets
+- Ideal for post-processing large audit exports
+
+### Agent Field Reference
+
+The `AgentId` field appears in Copilot audit records and identifies the specific agent involved in the interaction:
+
+**Common Agent Patterns:**
+- `CopilotStudio.Declarative.<GUID>` - Declarative agents created in Copilot Studio
+- `CustomAgent.<name>` - Custom-built agents
+- Copilot-specific identifiers for built-in agents
+
+**Output Columns:**
+- `AgentId` - The unique agent identifier
+- `AgentName` - Human-readable agent name (if available)
+- `AppIdentity` - Application context for the agent
+- Plus all standard Copilot usage fields
+
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
 
 ---
 
@@ -713,7 +907,7 @@ For a complete list of available Purview audit activities and operations, refer 
 
 This comprehensive reference includes all available operations across Microsoft 365 services, including SharePoint, Exchange, Teams, Copilot, and more.
 
-[⬆ Back to Top](#)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
 
 ---
 
@@ -743,7 +937,7 @@ When processing multiple activity types, parallel execution can significantly im
 Re-process previously exported raw audit CSV files without querying Exchange Online:
 
 - **No Authentication Required:** Skip connection to Microsoft 365
-- **Flexible Filtering:** Apply date and activity filters to existing data
+- **Flexible Filtering:** Apply date, activity, and agent filters to existing data
 - **Schema Transformation:** Convert raw exports to exploded or deep flatten schemas
 - **Reproducible Analysis:** Test transformations against known datasets
 - **Development Workflow:** Build pipelines without production access
@@ -766,7 +960,7 @@ Status: Query: 45/100(45%) | Explosion: 12000/25000(48%) | Export: 0/1(0%) :: 42
 - **Batch info:** Current batch number, estimated total, percentage range
 - **Record range:** Shows which records currently processing (in batches)
 
-[⬆ Back to Top](#)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
 
 ---
 
@@ -783,7 +977,7 @@ Status: Query: 45/100(45%) | Explosion: 12000/25000(48%) | Export: 0/1(0%) :: 42
 
 ```powershell
 # Reduce block hours to 15 minutes or less
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 `
+pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 `
   -BlockHours 0.25 `
   -StartDate 2025-10-03 `
   -EndDate 2025-10-03
@@ -813,13 +1007,13 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 `
 
 ```powershell
 # Add inter-page pacing (250ms delay between API calls)
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -PacingMs 250 -StartDate 2025-10-01 -EndDate 2025-10-02
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -PacingMs 250 -StartDate 2025-10-01 -EndDate 2025-10-02
 
 # Reduce ResultSize to smaller batches
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ResultSize 5000 -StartDate 2025-10-01 -EndDate 2025-10-02
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ResultSize 5000 -StartDate 2025-10-01 -EndDate 2025-10-02
 
 # Combine both approaches
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ResultSize 5000 -PacingMs 250 -StartDate 2025-10-01 -EndDate 2025-10-02
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ResultSize 5000 -PacingMs 250 -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
 ### Memory Optimization
@@ -828,7 +1022,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 `
 
 ```powershell
 # Increase schema sample, reduce chunk size
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ExplodeDeep `
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ExplodeDeep `
   -StreamingSchemaSample 5000 `
   -StreamingChunkSize 2000 `
   -StartDate 2025-10-01 `
@@ -839,7 +1033,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 `
 
 ```powershell
 # Reduce schema sample, increase chunk size
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ExplodeArrays `
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ExplodeArrays `
   -StreamingSchemaSample 1000 `
   -StreamingChunkSize 10000 `
   -StartDate 2025-10-01 `
@@ -851,7 +1045,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 `
 **Conservative Approach (Avoid Throttling):**
 
 ```powershell
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ParallelMode On `
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ParallelMode On `
   -MaxConcurrency 2 `
   -MaxParallelGroups 2 `
   -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
@@ -860,13 +1054,13 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 `
 **Aggressive Approach (Maximum Throughput):**
 
 ```powershell
-.\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 -ParallelMode On `
+.\PAX_Purview_Audit_Log_Processor_v1.6.0.ps1 -ParallelMode On `
   -MaxConcurrency 4 `
   -MaxParallelGroups 3 `
   -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
 ```
 
-[⬆ Back to Top](#)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
 
 ---
 
@@ -999,7 +1193,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 `
 
 **A:** `-ExplodeArrays` creates 35 columns with array elements as separate rows. `-ExplodeDeep` adds all nested `CopilotEventData.*` fields as additional columns (wide schema).
 
-[⬆ Back to Top](#)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
 
 ---
 
@@ -1047,7 +1241,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 `
 - Dynamic throttle + batch resizing (targets ~0.8s–2.5s batches)
 - Metrics emitted at completion
 
-[⬆ Back to Top](#)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
 
 ---
 
@@ -1093,7 +1287,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 `
 5. **Output Protection:** Store CSV files in encrypted volumes or secure file shares
 6. **Access Logging:** Enable filesystem auditing for output directories
 
-[⬆ Back to Top](#)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
 
 ---
 
@@ -1105,7 +1299,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 `
 
 **Disclaimer:** This script is provided "AS IS" without warranties or official support. Validate fit for purpose before production use. Not endorsed or officially supported by Microsoft Product Groups. Community-driven maintenance model.
 
-[⬆ Back to Top](#)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
 
 ---
 
@@ -1124,7 +1318,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.5.9.ps1 `
 - **[Azure Synapse Analytics](https://azure.microsoft.com/en-us/products/synapse-analytics/)** - Data warehousing for large audit datasets
 - **[Microsoft Sentinel](https://azure.microsoft.com/en-us/products/microsoft-sentinel/)** - SIEM integration for audit logs
 
-[⬆ Back to Top](#)
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-exporter)
 
 ---
 
