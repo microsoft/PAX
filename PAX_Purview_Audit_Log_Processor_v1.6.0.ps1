@@ -1707,7 +1707,7 @@ try {
         $allLogs = $filteredLogs
         $postPromptCount = $allLogs.Count
         $promptEnd = Get-Date
-        $promptElapsed = [int]($promptEnd - $promptStart).TotalSeconds
+        $promptElapsed = [Math]::Round(($promptEnd - $promptStart).TotalSeconds, 2)
         $promptFilteredCount = $prePromptCount - $postPromptCount
         $totalMsgRemoved = $totalMsgBefore - $totalMsgAfter
         
@@ -2227,9 +2227,9 @@ try {
         Write-LogHost "" -ForegroundColor Gray
     }
     
-    # Always show timing summary (inline console output)
-    $totalMs = [Math]::Max(1, ($script:metrics.QueryMs + $script:metrics.ExplosionMs + $script:metrics.ExportMs)); $qPct = if ($totalMs -gt 0) { [Math]::Round(($script:metrics.QueryMs / $totalMs) * 100, 1) } else { 0 }; $xPct = if ($totalMs -gt 0 -and $script:metrics.ExplosionMs -gt 0) { [Math]::Round(($script:metrics.ExplosionMs / $totalMs) * 100, 1) } else { 0 }; $ePct = if ($totalMs -gt 0) { [Math]::Round(($script:metrics.ExportMs / $totalMs) * 100, 1) } else { 0 }; $startStamp = try { $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') } catch { '' }; if ($startStamp) { Write-Host ("Execution start time (UTC): {0} UTC" -f $startStamp) }; Write-Host ("Final durations -> query={0}ms ({1}%)  explosion={2}ms ({3}%)  export={4}ms ({5}%)" -f $script:metrics.QueryMs, $qPct, $script:metrics.ExplosionMs, $xPct, $script:metrics.ExportMs, $ePct)
-    if ($ExplodeArrays) { Write-LogHost "- ArrayIndex_* (Explosion metadata fields)" -ForegroundColor Gray }
+    # Log timing summary (for log file only, not console)
+    $totalMs = [Math]::Max(1, ($script:metrics.QueryMs + $script:metrics.ExplosionMs + $script:metrics.ExportMs)); $qPct = if ($totalMs -gt 0) { [Math]::Round(($script:metrics.QueryMs / $totalMs) * 100, 1) } else { 0 }; $xPct = if ($totalMs -gt 0 -and $script:metrics.ExplosionMs -gt 0) { [Math]::Round(($script:metrics.ExplosionMs / $totalMs) * 100, 1) } else { 0 }; $ePct = if ($totalMs -gt 0) { [Math]::Round(($script:metrics.ExportMs / $totalMs) * 100, 1) } else { 0 }; $startStamp = try { $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') } catch { '' }; if ($startStamp) { Write-Log ("Execution start time (UTC): {0} UTC" -f $startStamp) }; Write-Log ("Final durations -> query={0}ms ({1}%)  explosion={2}ms ({3}%)  export={4}ms ({5}%)" -f $script:metrics.QueryMs, $qPct, $script:metrics.ExplosionMs, $xPct, $script:metrics.ExportMs, $ePct)
+    if ($ExplodeArrays) { Write-Log "- ArrayIndex_* (Explosion metadata fields)" }
 }
 catch { Write-LogHost "Script failed: $($_.Exception.Message)" -ForegroundColor Red; Write-LogHost $_.ScriptStackTrace -ForegroundColor Red }
 finally { $endUtc = (Get-Date).ToUniversalTime(); try { if ($script:metrics -and $script:metrics.StartTime) { $startTail = $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss'); Write-Log ("Script execution started at $startTail UTC") } } catch {}; Write-Log "Script execution completed at $($endUtc.ToString('yyyy-MM-dd HH:mm:ss')) UTC"; Write-Log "Script version: v$ScriptVersion"; try { if ($script:metrics -and $script:metrics.StartTime) { $elapsed = $endUtc - $script:metrics.StartTime; $totalHours = [math]::Floor($elapsed.TotalHours); $remainder = $elapsed - [TimeSpan]::FromHours($totalHours); $elapsedFormatted = ("{0}:{1:00}:{2:00}.{3:000}" -f $totalHours, $remainder.Minutes, $remainder.Seconds, $remainder.Milliseconds); Write-Log ("Total elapsed time: {0} (hours:minutes:seconds.milliseconds)" -f $elapsedFormatted) } } catch {}; if ($script:Connected) { try { Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue | Out-Null; Write-LogHost "Disconnected from Exchange Online" -ForegroundColor Gray } catch {} } }
