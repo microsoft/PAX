@@ -862,7 +862,8 @@ function Convert-ToPurviewExplodedRecords {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)] $Record,
-        [switch]$Deep
+        [switch]$Deep,
+        [string]$PromptFilterValue
     )
     try {
         # Use pre-parsed AuditData if available for improved processing speed
@@ -880,10 +881,10 @@ function Convert-ToPurviewExplodedRecords {
         $messages = script:GetArrayFast $ced 'Messages'
         
         # Apply PromptFilter if specified (message-level filtering)
-        if ($PromptFilter) {
+        if ($PromptFilterValue) {
             $msgBefore = $messages.Count
             # Map Prompt→True, Response→False
-            $targetValue = ($PromptFilter -eq 'Prompt')
+            $targetValue = ($PromptFilterValue -eq 'Prompt')
             $messages = $messages | Where-Object { 
                 try { 
                     $_.isPrompt -eq $targetValue 
@@ -897,7 +898,7 @@ function Convert-ToPurviewExplodedRecords {
             # Track prompt filter metrics (thread-safe increment for parallel processing)
             if (-not $script:metrics.PromptFilterApplied) {
                 $script:metrics.PromptFilterApplied = $true
-                $script:metrics.PromptFilterType = $PromptFilter
+                $script:metrics.PromptFilterType = $PromptFilterValue
             }
             [System.Threading.Interlocked]::Add([ref]$script:metrics.PromptFilterMsgBefore, $msgBefore) | Out-Null
             [System.Threading.Interlocked]::Add([ref]$script:metrics.PromptFilterMsgAfter, $msgAfter) | Out-Null
@@ -1621,7 +1622,7 @@ try {
             # Skip remaining logs if parallel processing already handled them
             if ($parallelProcessingComplete) { continue }
             
-            $records = if ($effectiveExplode) { Convert-ToPurviewExplodedRecords -Record $log -Deep:$ExplodeDeep } else { Convert-ToStructuredRecord -Record $log -EnableExplosion:$false }
+            $records = if ($effectiveExplode) { Convert-ToPurviewExplodedRecords -Record $log -Deep:$ExplodeDeep -PromptFilterValue $PromptFilter } else { Convert-ToStructuredRecord -Record $log -EnableExplosion:$false }
             if ($records -and $records.Count -gt 0) {
                 try {
                     $script:metrics.TotalStructuredRows += $records.Count; $structuredDataCount += $records.Count
@@ -1800,8 +1801,9 @@ try {
                                             # Access variables from outer scope using $using:
                                             $effectiveExplode = $using:effectiveExplode
                                             $explodeDeep = $using:ExplodeDeep
+                                            $promptFilterVal = $using:PromptFilter
                                             
-                                            $rows = if ($effectiveExplode) { Convert-ToPurviewExplodedRecords -Record $_ -Deep:$explodeDeep } else { Convert-ToStructuredRecord -Record $_ -EnableExplosion:$false }
+                                            $rows = if ($effectiveExplode) { Convert-ToPurviewExplodedRecords -Record $_ -Deep:$explodeDeep -PromptFilterValue $promptFilterVal } else { Convert-ToStructuredRecord -Record $_ -EnableExplosion:$false }
                                             $rc = 0; if ($null -ne $rows) { if ($rows -is [System.Array]) { $rc = $rows.Count } else { $rc = 1 } }
                                             [pscustomobject]@{ Rows = $rows; RowCount = $rc; ExplosionRows = if ($rc -gt 1) { $rc - 1 } else { 0 }; MaxRows = $rc }
                                         } -ThrottleLimit $throttle
