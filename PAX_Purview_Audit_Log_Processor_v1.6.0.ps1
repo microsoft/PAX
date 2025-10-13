@@ -200,26 +200,41 @@ if ($RAWInputCSV) {
         try { $parsedEnd = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null) } catch { Write-Host "ERROR: EndDate must be yyyy-MM-dd if provided." -ForegroundColor Red; exit 1 }
     }
     if ($parsedStart -and $parsedEnd -and $parsedEnd -lt $parsedStart) { Write-Host "ERROR: EndDate ($EndDate) is earlier than StartDate ($StartDate)." -ForegroundColor Red; exit 1 }
-    # If not provided, leave $StartDate/$EndDate unset (blank) so snapshot shows no filter.
-    if (-not $PSBoundParameters.ContainsKey('StartDate')) { $StartDate = '' }
-    if (-not $PSBoundParameters.ContainsKey('EndDate')) { $EndDate = '' }
+    # If not provided, set to asterisk for display purposes
+    if (-not $PSBoundParameters.ContainsKey('StartDate')) { $StartDate = '*' }
+    if (-not $PSBoundParameters.ContainsKey('EndDate')) { $EndDate = '*' }
 }
 else {
-    # Live mode: if neither date provided, default to previous full UTC day window.
+    # Live mode: allow partial date specification
     if (-not $PSBoundParameters.ContainsKey('StartDate') -and -not $PSBoundParameters.ContainsKey('EndDate')) {
+        # Neither date provided: default to previous full UTC day window
         $yesterdayUtc = (Get-Date).ToUniversalTime().Date.AddDays(-1)
         $StartDate = $yesterdayUtc.ToString('yyyy-MM-dd')
         $EndDate = $yesterdayUtc.AddDays(1).ToString('yyyy-MM-dd')
     }
-    elseif (-not $PSBoundParameters.ContainsKey('StartDate') -or -not $PSBoundParameters.ContainsKey('EndDate')) {
-        Write-Host "ERROR: Provide both StartDate and EndDate, or neither (to use automatic previous-day window)." -ForegroundColor Red; exit 1
+    elseif (-not $PSBoundParameters.ContainsKey('StartDate')) {
+        # Only EndDate provided: set StartDate to asterisk (beginning of available data)
+        $StartDate = '*'
+        try {
+            $parsedEnd = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null)
+        } catch { Write-Host "ERROR: EndDate must be yyyy-MM-dd format." -ForegroundColor Red; exit 1 }
     }
-    try {
-        $parsedStart = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null)
-        $parsedEnd = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null)
+    elseif (-not $PSBoundParameters.ContainsKey('EndDate')) {
+        # Only StartDate provided: set EndDate to asterisk (up to current time)
+        $EndDate = '*'
+        try {
+            $parsedStart = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null)
+        } catch { Write-Host "ERROR: StartDate must be yyyy-MM-dd format." -ForegroundColor Red; exit 1 }
     }
-    catch { Write-Host "ERROR: StartDate/EndDate must be in yyyy-MM-dd format." -ForegroundColor Red; exit 1 }
-    if ($parsedEnd -lt $parsedStart) { Write-Host "ERROR: EndDate ($EndDate) is earlier than StartDate ($StartDate)." -ForegroundColor Red; exit 1 }
+    else {
+        # Both dates provided: validate them
+        try {
+            $parsedStart = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null)
+            $parsedEnd = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null)
+        }
+        catch { Write-Host "ERROR: StartDate/EndDate must be in yyyy-MM-dd format." -ForegroundColor Red; exit 1 }
+        if ($parsedEnd -lt $parsedStart) { Write-Host "ERROR: EndDate ($EndDate) is earlier than StartDate ($StartDate)." -ForegroundColor Red; exit 1 }
+    }
 }
 
 if ($BlockHours -le 0) { Write-Host "ERROR: BlockHours must be positive." -ForegroundColor Red; exit 1 }
@@ -657,15 +672,15 @@ if ($RAWInputCSV) {
         RAWInputCSV            = $RAWInputCSV
         'StartDate (inclusive)' = $StartDate
         'EndDate (exclusive)'   = $EndDate
-        ActivityTypes_Filter   = ($ActivityTypes -join ';')
+        ActivityTypes          = ($ActivityTypes -join ';')
         AgentOnly              = $AgentOnly.IsPresent
         AgentId                = $(if ($AgentId) { ($AgentId -join ';') } else { '' })
         ExcludeAgents          = $ExcludeAgents.IsPresent
         PromptFilter           = $(if ($PromptFilter) { $PromptFilter } else { '' })
-        ForcedExplosion        = $ForcedRawInputCsvExplosion
+        ExplodeArrays          = $ForcedRawInputCsvExplosion
         ExplodeDeep            = $ExplodeDeep.IsPresent
         OutputFile             = $OutputFile
-        ExportProgressInterval = $ExportProgressInterval
+        LogFile                = $LogFile
         PSVersion              = $PSVersionTable.PSVersion.ToString()
         PSEdition              = $PSVersionTable.PSEdition
         HostName               = $Host.Name
@@ -677,6 +692,7 @@ else {
         'StartDate (inclusive)' = $StartDate
         'EndDate (exclusive)'   = $EndDate
         OutputFile              = $OutputFile
+        LogFile                = $LogFile
         Auth                    = $Auth
         BlockHours              = $BlockHours
         ResultSize              = $ResultSize
@@ -687,14 +703,11 @@ else {
         ExcludeAgents          = $ExcludeAgents.IsPresent
         PromptFilter           = $(if ($PromptFilter) { $PromptFilter } else { '' })
         ExplodeArrays          = ($ExplodeArrays.IsPresent -or $ForcedRawInputCsvExplosion -or $ExplodeDeep.IsPresent)
-        ExplodeArrays_Forced   = $ForcedRawInputCsvExplosion
         ExplodeDeep            = $ExplodeDeep.IsPresent
         RAWInputCSV            = $(if ([string]::IsNullOrWhiteSpace($RAWInputCSV)) { '' } else { $RAWInputCSV })
         MaxConcurrency         = $MaxConcurrency
-        EnableParallelLegacy   = $EnableParallel.IsPresent
         ParallelMode           = $ParallelMode
         MaxParallelGroups      = $MaxParallelGroups
-        ExportProgressInterval = $ExportProgressInterval
         PSVersion              = $PSVersionTable.PSVersion.ToString()
         PSEdition              = $PSVersionTable.PSEdition
         HostName               = $Host.Name
@@ -1694,7 +1707,7 @@ try {
         $allLogs = $filteredLogs
         $postPromptCount = $allLogs.Count
         $promptEnd = Get-Date
-        $promptElapsed = [int]($promptEnd - $promptStart).TotalSeconds
+        $promptElapsed = [Math]::Round(($promptEnd - $promptStart).TotalSeconds, 2)
         $promptFilteredCount = $prePromptCount - $postPromptCount
         $totalMsgRemoved = $totalMsgBefore - $totalMsgAfter
         
@@ -2213,10 +2226,6 @@ try {
         if ($ParallelMode -eq 'Auto') { $highGroups = ($queryPlan | Where-Object { $_.Group -eq 'High' }).Count; $mediumGroups = ($queryPlan | Where-Object { $_.Group -eq 'Medium' }).Count; $lowGroups = ($queryPlan | Where-Object { $_.Group -eq 'Low' }).Count; $activitiesTotal = ($queryPlan | ForEach-Object { $_.Activities.Count } | Measure-Object -Sum).Sum; $groupsTotal = $queryPlan.Count; $autoStatus = if ($parallelOverallEnabled) { 'met' } else { 'not met' }; Write-LogHost ("Auto criteria (PS7+, MPG>0, MC>1, <=1 High, >=1 Med/Low, activities<=15, groups>1): {0}; High={1} Medium={2} Low={3} Activities={4} Groups={5}" -f $autoStatus, $highGroups, $mediumGroups, $lowGroups, $activitiesTotal, $groupsTotal) -ForegroundColor Gray }
         Write-LogHost "" -ForegroundColor Gray
     }
-    
-    # Always show timing summary (inline console output)
-    $totalMs = [Math]::Max(1, ($script:metrics.QueryMs + $script:metrics.ExplosionMs + $script:metrics.ExportMs)); $qPct = if ($totalMs -gt 0) { [Math]::Round(($script:metrics.QueryMs / $totalMs) * 100, 1) } else { 0 }; $xPct = if ($totalMs -gt 0 -and $script:metrics.ExplosionMs -gt 0) { [Math]::Round(($script:metrics.ExplosionMs / $totalMs) * 100, 1) } else { 0 }; $ePct = if ($totalMs -gt 0) { [Math]::Round(($script:metrics.ExportMs / $totalMs) * 100, 1) } else { 0 }; $startStamp = try { $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') } catch { '' }; if ($startStamp) { Write-Host ("Execution start time (UTC): {0} UTC" -f $startStamp) }; Write-Host ("Final durations -> query={0}ms ({1}%)  explosion={2}ms ({3}%)  export={4}ms ({5}%)" -f $script:metrics.QueryMs, $qPct, $script:metrics.ExplosionMs, $xPct, $script:metrics.ExportMs, $ePct)
-    if ($ExplodeArrays) { Write-LogHost "- ArrayIndex_* (Explosion metadata fields)" -ForegroundColor Gray }
 }
 catch { Write-LogHost "Script failed: $($_.Exception.Message)" -ForegroundColor Red; Write-LogHost $_.ScriptStackTrace -ForegroundColor Red }
 finally { $endUtc = (Get-Date).ToUniversalTime(); try { if ($script:metrics -and $script:metrics.StartTime) { $startTail = $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss'); Write-Log ("Script execution started at $startTail UTC") } } catch {}; Write-Log "Script execution completed at $($endUtc.ToString('yyyy-MM-dd HH:mm:ss')) UTC"; Write-Log "Script version: v$ScriptVersion"; try { if ($script:metrics -and $script:metrics.StartTime) { $elapsed = $endUtc - $script:metrics.StartTime; $totalHours = [math]::Floor($elapsed.TotalHours); $remainder = $elapsed - [TimeSpan]::FromHours($totalHours); $elapsedFormatted = ("{0}:{1:00}:{2:00}.{3:000}" -f $totalHours, $remainder.Minutes, $remainder.Seconds, $remainder.Milliseconds); Write-Log ("Total elapsed time: {0} (hours:minutes:seconds.milliseconds)" -f $elapsedFormatted) } } catch {}; if ($script:Connected) { try { Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue | Out-Null; Write-LogHost "Disconnected from Exchange Online" -ForegroundColor Gray } catch {} } }
