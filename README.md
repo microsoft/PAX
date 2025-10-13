@@ -25,7 +25,7 @@
 7. [Authentication Methods](#authentication-methods)
 8. [Usage Examples](#usage-examples)
 9. [Agent Filtering](#agent-filtering)
-10. [Prompt and Response Filtering (PromptFilter)](#prompt-and-response-filtering-promptfilter)
+10. [Prompt and Response Filtering](#prompt-and-response-filtering)
 11. [Output Files & Schema](#output-files--schema)
 12. [Activity Types Reference](#activity-types-reference)
 13. [Advanced Features](#advanced-features)
@@ -834,7 +834,7 @@ The `AgentId` field appears in Copilot audit records and identifies the specific
 
 ---
 
-## Prompt and Response Filtering (PromptFilter)
+## Prompt and Response Filtering
 
 ### Overview
 
