@@ -385,6 +385,15 @@ function Update-ReadmeVersion {
             Write-Success "Updated README command examples to use v$NewVersion"
         }
         
+        # Update Quick Start download link version (keeps full URL structure)
+        $quickStartPattern = "(\[``PAX_Purview_Audit_Log_Processor_v)[\d\.]+\.ps1``\]\(https://github\.com/microsoft/PAX/blob/release/script_archive/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_v)[\d\.]+\.ps1\)"
+        if ($content -match $quickStartPattern) {
+            $newQuickStartLink = "`${1}$NewVersion.ps1``](https://github.com/microsoft/PAX/blob/release/script_archive/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_v$NewVersion.ps1)"
+            $content = [regex]::Replace($content, $quickStartPattern, $newQuickStartLink)
+            $updated = $true
+            Write-Success "Updated Quick Start download link to v$NewVersion"
+        }
+        
         # Save changes if any updates were made
         if ($updated) {
             $content | Set-Content -Path $FilePath -Encoding UTF8 -NoNewline
