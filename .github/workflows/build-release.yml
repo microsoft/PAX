@@ -275,43 +275,67 @@ jobs:
             exit 1
           fi
 
+      - name: Read release notes
+        id: release_notes
+        run: |
+          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          # Remove 'v' prefix for file lookup (e.g., v1.7.0 -> 1.7.0)
+          VERSION_NUM="${VERSION#v}"
+          NOTES_FILE="release_notes/Purview_Audit_Log_Processor/v${VERSION_NUM}.md"
+          
+          if [ -f "$NOTES_FILE" ]; then
+            echo "✅ Found release notes: $NOTES_FILE"
+            # Read the file and set as output (handle multiline)
+            {
+              echo "notes<<EOF"
+              cat "$NOTES_FILE"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Release notes file not found: $NOTES_FILE"
+            echo "Using fallback release notes"
+            {
+              echo "notes<<EOF"
+              echo "## PAX (Purview Audit eXporter) Release"
+              echo ""
+              echo "### Downloads"
+              echo ""
+              echo "**Windows Users:**"
+              echo "- \`PAX-${VERSION}-Windows-Portable.exe\` - Single executable, no installation required"
+              echo "- \`PAX-${VERSION}-Windows-Installer.msi\` - Traditional Windows installer"
+              echo ""
+              echo "**Mac Users:**"
+              echo "- \`PAX-${VERSION}-macOS-Universal.zip\` - Universal app for all Mac computers (Intel & Apple Silicon)"
+              echo ""
+              echo "### Quick Start"
+              echo ""
+              echo "1. **Windows**: Download and run the .exe file"
+              echo "2. **Mac**: Download the .zip file, extract, then:"
+              echo "   - **Right-click** the app and choose \"Open\" (don't double-click)"
+              echo "   - If you see \"damaged\" error, run in Terminal: \`xattr -d com.apple.quarantine \"/path/to/app\"\`"
+              echo ""
+              echo "### Requirements"
+              echo ""
+              echo "- PowerShell (automatically detected)"
+              echo "- Microsoft 365 account with audit log access"
+              echo "- Internet connection for authentication"
+              echo ""
+              echo "No administrative privileges required on any platform!"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          fi
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: release-assets/*
           draft: false
           prerelease: false
-          generate_release_notes: true
+          generate_release_notes: false
           fail_on_unmatched_files: false
           tag_name: ${{ github.event.inputs.version || github.ref_name }}
           name: "PAX ${{ github.event.inputs.version || github.ref_name }}"
-          body: |
-            ## PAX (Purview Audit eXporter) Release
-
-            ### Downloads
-
-            **Windows Users:**
-            - `PAX-${{ github.event.inputs.version || github.ref_name }}-Windows-Portable.exe` - Single executable, no installation required
-            - `PAX-${{ github.event.inputs.version || github.ref_name }}-Windows-Installer.msi` - Traditional Windows installer
-
-            **Mac Users:**
-            - `PAX-${{ github.event.inputs.version || github.ref_name }}-macOS-Universal.zip` - Universal app for all Mac computers (Intel & Apple Silicon)
-
-            ### Quick Start
-
-            1. **Windows**: Download and run the .exe file
-            2. **Mac**: Download the .zip file, extract, then:
-               - **Right-click** the app and choose "Open" (don't double-click)
-               - If you see "damaged" error, run in Terminal: `xattr -d com.apple.quarantine "/path/to/app"`
-               - See MAC_USER_GUIDE.md for detailed instructions
-
-            ### Requirements
-
-            - PowerShell (automatically detected)
-            - Microsoft 365 account with audit log access
-            - Internet connection for authentication
-
-            No administrative privileges required on any platform!
+          body: ${{ steps.release_notes.outputs.notes }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
