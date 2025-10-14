@@ -1,4 +1,5 @@
 name: Build Multi-Platform Release
+# Automatically builds and creates releases from release notes files
 
 on:
   push:
