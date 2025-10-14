@@ -4,7 +4,7 @@
 >
 > **📋 Release Notes:** See what's new → [`release_notes/Purview_Audit_Log_Processor/`](release_notes/Purview_Audit_Log_Processor/)
 >
-> **📜 Previous Script Versions:** Access archived versions → [`script_archive/`](script_archive/)
+> **📜 Previous Script Versions:** Access archived versions → [`script_archive/Purview_Audit_Log_Processor/`](script_archive/Purview_Audit_Log_Processor/)
 >
 > **📚 Documentation Archive:** Version-specific docs → [`release_documentation/Purview_Audit_Log_Processor/`](release_documentation/Purview_Audit_Log_Processor/)
 
