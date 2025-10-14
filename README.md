@@ -1,6 +1,6 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`](PAX_Purview_Audit_Log_Processor_v1.7.0.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`](script_archive/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_v1.7.0.ps1)
 >
 > **📋 Release Notes:** See what's new → [`release_notes/Purview_Audit_Log_Processor/`](release_notes/Purview_Audit_Log_Processor/)
 >
@@ -187,7 +187,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 
 ### Download the Script
 
-Download [`PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`](PAX_Purview_Audit_Log_Processor_v1.7.0.ps1) and save to a working directory (e.g., `C:\Scripts\PAX\`).
+Download [`PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`](script_archive/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_v1.7.0.ps1) and save to a working directory (e.g., `C:\Scripts\PAX\`).
 
 ### First Run (Quick Start)
 
