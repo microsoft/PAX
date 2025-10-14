@@ -28,13 +28,13 @@
         -AgentsOnly                 : Filter to records with any AgentId present (mutually exclusive with -ExcludeAgents)
         -ExcludeAgents              : Filter to records WITHOUT AgentId (mutually exclusive with -AgentId/-AgentsOnly)
         -PromptFilter <Prompt|Response|Both|Null>
-            Prompt   : Only export messages where Message_isPrompt = True
-            Response : Only export messages where Message_isPrompt = False
-            Both     : Export messages with either True or False isPrompt values
-            Null     : Only export messages with null/undefined isPrompt values (rare)
+            Prompt   : Only export conversation turns where Message_isPrompt = True
+            Response : Only export conversation turns where Message_isPrompt = False
+            Both     : Export conversation turns with explicit isPrompt values (True or False) - filters out resource-only rows
+            Null     : Only export conversation turns with null/undefined isPrompt values (rare)
             Note: PromptFilter uses two-stage filtering for optimal performance:
-                  Stage 1 (Pre-filter): Filters records before explosion based on message content
-                  Stage 2 (Message-level): Filters individual messages during explosion
+                  Stage 1 (Record-level): Filters entire audit records based on conversation content
+                  Stage 2 (Conversation-level): Filters individual conversation turns during explosion
 
     PowerShell 5.1 & 7+ supported. Parallel (Auto/On) requires 7+.
 
@@ -924,17 +924,26 @@ function Convert-ToPurviewExplodedRecords {
         # Extract array properties from CopilotEventData
         $messages = script:GetArrayFast $ced 'Messages'
         
-        # Apply message-level PromptFilter during explosion (Stage 2 filtering) - OPTIMIZED
-        # Stage 1 already filtered out records without any matching messages (or kept all for 'Both')
-        # This filters the actual messages to only output matching types
-        if ($PromptFilterValue -and $PromptFilterValue -ne 'Both') {
+        # Apply conversation-level PromptFilter during explosion (Stage 2 filtering) - OPTIMIZED
+        # Stage 1 already filtered out records without any matching conversation turns (or kept all for 'Both')
+        # This filters the actual conversation turns (prompts/responses) to only output matching types
+        if ($PromptFilterValue) {
             # Fast filtering using List instead of Where-Object pipeline
             $filteredMessages = New-Object System.Collections.Generic.List[object]
             
             if ($PromptFilterValue -eq 'Null') {
-                # Keep messages where isPrompt is null/missing
+                # Keep conversation turns where isPrompt is null/missing
                 foreach ($msg in $messages) {
                     if ($null -eq $msg.isPrompt) {
+                        $filteredMessages.Add($msg)
+                    }
+                }
+            }
+            elseif ($PromptFilterValue -eq 'Both') {
+                # Keep conversation turns where isPrompt has an explicit value (TRUE or FALSE)
+                # This filters out resource-only rows that have no conversation data
+                foreach ($msg in $messages) {
+                    if ($null -ne $msg.isPrompt) {
                         $filteredMessages.Add($msg)
                     }
                 }
@@ -955,12 +964,11 @@ function Convert-ToPurviewExplodedRecords {
             
             $messages = $filteredMessages
             
-            # If no messages remain after filtering, return empty (no rows for this record)
+            # If no conversation turns remain after filtering, return empty (no rows for this record)
             if ($messages.Count -eq 0) {
                 return @()
             }
         }
-        # If 'Both', no filtering - keep all messages
         
         $contexts = script:GetArrayFast $ced 'Contexts'
         $resources = script:GetArrayFast $ced 'AccessedResources'
@@ -969,14 +977,14 @@ function Convert-ToPurviewExplodedRecords {
         $messageIds = script:GetArrayFast $ced 'MessageIds'
 
         # Determine max row count across exploded arrays
-        # When PromptFilter is active (not 'Both'), base rowCount on filtered messages only
+        # When PromptFilter is active, base rowCount on filtered conversation turns only
         # to avoid outputting rows with blank Message_isPrompt values for unmatched contexts/resources
-        if ($PromptFilterValue -and $PromptFilterValue -ne 'Both') {
-            # When filtering messages, only output rows for the filtered messages
+        if ($PromptFilterValue) {
+            # When filtering conversation turns (including 'Both'), only output rows for the filtered turns
             $rowCount = [Math]::Max(1, $messages.Count)
         }
         else {
-            # No filter or 'Both' - use max of all arrays
+            # No filter - use max of all arrays
             $rowCount = (1, $messages.Count, $contexts.Count, $resources.Count | Measure-Object -Maximum).Maximum
         }
 
@@ -1710,12 +1718,17 @@ try {
                     
                     # Check based on filter type
                     if ($PromptFilter -eq 'Both') {
-                        # Keep all records with any messages
-                        $hasMatchingMessages = $true
-                        $totalMsgAfter += $msgCount
+                        # Keep records with at least one conversation turn that has explicit isPrompt value (TRUE or FALSE)
+                        # This filters out records where all conversation turns have null/undefined isPrompt
+                        foreach ($msg in $messages) {
+                            if ($null -ne $msg.isPrompt) {
+                                $hasMatchingMessages = $true
+                                $totalMsgAfter++
+                            }
+                        }
                     }
                     elseif ($PromptFilter -eq 'Null') {
-                        # Keep records that have at least one message with null isPrompt
+                        # Keep records that have at least one conversation turn with null isPrompt
                         foreach ($msg in $messages) {
                             if ($null -eq $msg.isPrompt) {
                                 $hasMatchingMessages = $true
@@ -2229,12 +2242,12 @@ try {
             Write-LogHost ("  Records with no messages: {0}" -f $script:metrics.PromptFilterRecordsNoMessages) -ForegroundColor DarkYellow
         }
         
-        # Message-level statistics
+        # Conversation-level statistics (prompts and responses)
         Write-LogHost ""
-        Write-LogHost "Message-level statistics:" -ForegroundColor Yellow
-        Write-LogHost ("  Messages before filter: {0}" -f $script:metrics.PromptFilterMsgBefore) -ForegroundColor White
-        Write-LogHost ("  Messages after filter: {0}" -f $script:metrics.PromptFilterMsgAfter) -ForegroundColor White
-        Write-LogHost ("  Messages filtered out: {0}" -f $script:metrics.PromptFilterMsgRemoved) -ForegroundColor Gray
+        Write-LogHost "Conversation-level statistics:" -ForegroundColor Yellow
+        Write-LogHost ("  Conversation turns before filter: {0}" -f $script:metrics.PromptFilterMsgBefore) -ForegroundColor White
+        Write-LogHost ("  Conversation turns after filter: {0}" -f $script:metrics.PromptFilterMsgAfter) -ForegroundColor White
+        Write-LogHost ("  Conversation turns filtered out: {0}" -f $script:metrics.PromptFilterMsgRemoved) -ForegroundColor Gray
         $msgRetentionRate = if ($script:metrics.PromptFilterMsgBefore -gt 0) { [Math]::Round(($script:metrics.PromptFilterMsgAfter / $script:metrics.PromptFilterMsgBefore) * 100, 2) } else { 0 }
         Write-LogHost ("  Retention rate: {0}%" -f $msgRetentionRate) -ForegroundColor White
         
@@ -2242,8 +2255,8 @@ try {
         if ($script:metrics.PromptFilterType -eq 'Null' -and $script:metrics.PromptFilterMsgAfter -eq 0) {
             Write-LogHost ""
             Write-LogHost "Explanation of PromptFilter=Null results:" -ForegroundColor Yellow
-            Write-LogHost "  No messages with null/undefined isPrompt values were found." -ForegroundColor White
-            Write-LogHost ("  All {0} messages in the {1} analyzed records had explicit isPrompt values (True or False)." -f $script:metrics.PromptFilterMsgBefore, $script:metrics.PromptFilterPreCount) -ForegroundColor White
+            Write-LogHost "  No conversation turns with null/undefined isPrompt values were found." -ForegroundColor White
+            Write-LogHost ("  All {0} conversation turns in the {1} analyzed records had explicit isPrompt values (True or False)." -f $script:metrics.PromptFilterMsgBefore, $script:metrics.PromptFilterPreCount) -ForegroundColor White
             if ($script:metrics.PromptFilterRecordsNoMessages -gt 0) {
                 Write-LogHost ("  Note: {0} record(s) had no Messages array and were excluded." -f $script:metrics.PromptFilterRecordsNoMessages) -ForegroundColor Gray
             }
