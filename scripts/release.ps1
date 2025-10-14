@@ -594,13 +594,19 @@ function Sync-ReleaseBranch {
     Write-Status "Generating PAX_Documentation_v${NewVersion}.pdf from README.md..."
     
     # Generate PDF from README.md using VS Code Markdown PDF extension
+    # Create PDF in TEMP folder to avoid OneDrive security policies
     $readmePath = Join-Path (Get-Location) "README.md"
     $pdfFilename = "PAX_Documentation_v${NewVersion}.pdf"
-    $pdfPath = Join-Path (Get-Location) $pdfFilename
+    
+    # Use TEMP folder for PDF generation (outside OneDrive)
+    $tempFolder = [System.IO.Path]::GetTempPath()
+    $tempReadmePath = Join-Path $tempFolder "README_temp_for_pdf.md"
+    $tempPdfPath = Join-Path $tempFolder "README_temp_for_pdf.pdf"
+    $finalPdfPath = Join-Path (Get-Location) $pdfFilename
     
     if (Test-Path $readmePath) {
         try {
-            # Remove old versioned PDFs
+            # Remove old versioned PDFs from repo
             Get-ChildItem -Path "PAX_Documentation_v*.pdf" -ErrorAction SilentlyContinue | ForEach-Object {
                 Remove-Item $_.FullName -Force
                 Write-Status "Removed old PDF: $($_.Name)"
@@ -613,6 +619,14 @@ function Sync-ReleaseBranch {
                 Write-Status "Removed legacy README.pdf"
             }
             
+            # Clean up any old temp files
+            if (Test-Path $tempReadmePath) { Remove-Item $tempReadmePath -Force }
+            if (Test-Path $tempPdfPath) { Remove-Item $tempPdfPath -Force }
+            
+            # Copy README to TEMP folder for PDF generation
+            Copy-Item $readmePath $tempReadmePath -Force
+            Write-Status "Copied README.md to TEMP folder (avoids OneDrive security policies)"
+            
             Write-Status "Attempting to generate PDF using VS Code Markdown PDF extension..."
             
             # Open README.md in VS Code and wait for user to export
@@ -620,7 +634,7 @@ function Sync-ReleaseBranch {
             Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
             Write-Host "║  PDF GENERATION REQUIRED                                       ║" -ForegroundColor Yellow
             Write-Host "╠════════════════════════════════════════════════════════════════╣" -ForegroundColor Yellow
-            Write-Host "║  Opening README.md in VS Code...                               ║" -ForegroundColor Yellow
+            Write-Host "║  Opening README copy in VS Code (TEMP folder)...               ║" -ForegroundColor Yellow
             Write-Host "║                                                                ║" -ForegroundColor Yellow
             Write-Host "║  Please export to PDF:                                         ║" -ForegroundColor Cyan
             Write-Host "║  1. Right-click in the editor                                  ║" -ForegroundColor White
@@ -630,6 +644,8 @@ function Sync-ReleaseBranch {
             Write-Host "║  OR use Command Palette (Ctrl+Shift+P):                        ║" -ForegroundColor Cyan
             Write-Host "║  - Type 'Markdown PDF: Export (pdf)'                           ║" -ForegroundColor White
             Write-Host "║                                                                ║" -ForegroundColor Yellow
+            Write-Host "║  NOTE: Using TEMP folder to avoid OneDrive security policies   ║" -ForegroundColor Magenta
+            Write-Host "║                                                                ║" -ForegroundColor Yellow
             Write-Host "║  Press any key here when PDF export is complete...             ║" -ForegroundColor Green
             Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
             Write-Host ""
@@ -637,8 +653,8 @@ function Sync-ReleaseBranch {
             # Get VS Code command
             $vscode = Get-VSCode
             
-            # Open README.md in VS Code (don't wait for editor to close)
-            Start-Process $vscode -ArgumentList $readmePath -NoNewWindow
+            # Open README copy in VS Code (don't wait for editor to close)
+            Start-Process $vscode -ArgumentList $tempReadmePath -NoNewWindow
             
             # Wait for user confirmation
             $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
@@ -646,33 +662,28 @@ function Sync-ReleaseBranch {
             # Check if PDF was created
             Start-Sleep -Milliseconds 500  # Brief pause for file system
             
-            # First check for the default README.pdf that Markdown PDF creates
-            $defaultPdfPath = Join-Path (Get-Location) "README.pdf"
-            if (Test-Path $defaultPdfPath) {
-                # Rename it to the versioned name
-                Move-Item $defaultPdfPath $pdfPath -Force
-                $pdfSize = (Get-Item $pdfPath).Length / 1KB
+            # Check for the PDF in TEMP folder
+            if (Test-Path $tempPdfPath) {
+                # Move from TEMP to repo location
+                Move-Item $tempPdfPath $finalPdfPath -Force
+                $pdfSize = (Get-Item $finalPdfPath).Length / 1KB
                 Write-Success "✓ $pdfFilename generated successfully ($([math]::Round($pdfSize, 2)) KB)"
-            } elseif (Test-Path $pdfPath) {
-                # Already has correct name
-                $pdfSize = (Get-Item $pdfPath).Length / 1KB
-                Write-Success "✓ $pdfFilename generated successfully ($([math]::Round($pdfSize, 2)) KB)"
-            } else {
-                Write-Warning "$pdfFilename was not found. Checking common locations..."
                 
-                # Check if user saved it elsewhere
-                $altPdfPath = Join-Path (Split-Path $readmePath) "README.pdf"
-                if (Test-Path $altPdfPath) {
-                    Move-Item $altPdfPath $pdfPath -Force
-                    Write-Success "✓ Found and renamed to $pdfFilename"
-                } else {
-                    Write-Error "$pdfFilename was not generated. Please generate it manually and re-run the script."
-                    Write-Host "To generate PDF manually:" -ForegroundColor Yellow
-                    Write-Host "  1. Open README.md in VS Code" -ForegroundColor White
-                    Write-Host "  2. Right-click → 'Markdown PDF: Export (pdf)'" -ForegroundColor White
-                    Write-Host "  3. It will create README.pdf (script will rename it automatically)" -ForegroundColor White
-                    throw "PDF generation incomplete"
-                }
+                # Clean up temp README
+                if (Test-Path $tempReadmePath) { Remove-Item $tempReadmePath -Force }
+            } else {
+                Write-Warning "$pdfFilename was not found in TEMP folder. Please try again."
+                
+                # Clean up temp README
+                if (Test-Path $tempReadmePath) { Remove-Item $tempReadmePath -Force }
+                
+                Write-Error "$pdfFilename was not generated. Please generate it manually and re-run the script."
+                Write-Host "To generate PDF manually:" -ForegroundColor Yellow
+                Write-Host "  1. Copy README.md to a folder outside OneDrive (e.g., C:\Temp)" -ForegroundColor White
+                Write-Host "  2. Open the copy in VS Code" -ForegroundColor White
+                Write-Host "  3. Right-click → 'Markdown PDF: Export (pdf)'" -ForegroundColor White
+                Write-Host "  4. Copy the generated PDF back to the repo as $pdfFilename" -ForegroundColor White
+                throw "PDF generation incomplete"
             }
             
             # Copy PDF to release_documentation folder for historical archive
@@ -684,14 +695,18 @@ function Sync-ReleaseBranch {
             }
             
             $archivePdfPath = Join-Path $releaseDocFolder $pdfFilename
-            if (Test-Path $pdfPath) {
-                Copy-Item -Path $pdfPath -Destination $archivePdfPath -Force
+            if (Test-Path $finalPdfPath) {
+                Copy-Item -Path $finalPdfPath -Destination $archivePdfPath -Force
                 Write-Success "✓ Archived $pdfFilename to release_documentation\Purview_Audit_Log_Processor\"
             } else {
                 Write-Warning "Could not archive PDF - source file not found"
             }
         }
         catch {
+            # Clean up temp files on error
+            if (Test-Path $tempReadmePath) { Remove-Item $tempReadmePath -Force -ErrorAction SilentlyContinue }
+            if (Test-Path $tempPdfPath) { Remove-Item $tempPdfPath -Force -ErrorAction SilentlyContinue }
+            
             Write-Error "PDF generation failed: $($_.Exception.Message)"
             Write-Host "Please generate $pdfFilename manually before continuing." -ForegroundColor Yellow
             throw
