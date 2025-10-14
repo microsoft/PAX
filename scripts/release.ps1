@@ -565,11 +565,12 @@ For the most recent release, visit:
 ## Support
 
 For questions or issues, refer to the documentation:
-- **Documentation v$NewVersion**: [PAX_Documentation_v$NewVersion.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PDF/PAX_Documentation_v$NewVersion.pdf)
+- **Documentation v$NewVersion (PDF)**: [PAX_Documentation_v$NewVersion.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PDF/PAX_Documentation_v$NewVersion.pdf)
+- **Documentation v$NewVersion (Markdown)**: [PAX_Documentation_v$NewVersion.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v$NewVersion.md)
 
 ---
 
-*Released by the Microsoft PAX Team*
+*Managed and released by the Microsoft Copilot Growth ROI Advisory Team. Please reach out to [Brian Middendorf](mailto:bmiddendorf@microsoft.com?subject=Microsoft%20PAX%3A%20Purview%20Audit%20Log%20Processor%20v$NewVersion%20Feedback) with any feedback.*
 "@
     
     # Save release notes file
