@@ -924,7 +924,10 @@ function Sync-ReleaseBranch {
             # Touch all root-level files to update their commit timestamp
             Write-Status "Updating root-level file timestamps in release branch..."
             Get-ChildItem -File | ForEach-Object {
-                $_.LastWriteTime = Get-Date
+                # Add a newline to the end of text files to force a git change
+                if ($_.Extension -match '\.(md|txt|json|js|ts|html|css|ps1|sh|yml|yaml|gitignore|gitattributes)$') {
+                    Add-Content -Path $_.FullName -Value "" -NoNewline
+                }
             }
             Write-Success "✓ Updated directory and file timestamps in release branch"
             
@@ -1101,7 +1104,10 @@ function Sync-ReleaseBranch {
             # Touch all root-level files to update their commit timestamp
             Write-Status "Updating root-level file timestamps in release branch..."
             Get-ChildItem -File | ForEach-Object {
-                $_.LastWriteTime = Get-Date
+                # Add a newline to the end of text files to force a git change
+                if ($_.Extension -match '\.(md|txt|json|js|ts|html|css|ps1|sh|yml|yaml|gitignore|gitattributes)$') {
+                    Add-Content -Path $_.FullName -Value "" -NoNewline
+                }
             }
             Write-Success "✓ Updated directory and file timestamps in release branch"
             
@@ -1223,7 +1229,10 @@ function New-CommitAndTag {
     # Touch all root-level files to update their commit timestamp
     Write-Status "Updating root-level file timestamps..."
     Get-ChildItem -File | ForEach-Object {
-        $_.LastWriteTime = Get-Date
+        # Add a newline to the end of text files to force a git change
+        if ($_.Extension -match '\.(md|txt|json|js|ts|html|css|ps1|sh|yml|yaml|gitignore|gitattributes)$') {
+            Add-Content -Path $_.FullName -Value "" -NoNewline
+        }
     }
     Write-Success "✓ Updated directory and file timestamps"
     
