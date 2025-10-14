@@ -1,6 +1,6 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`](PAX_Purview_Audit_Log_Processor_v1.7.0.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`](script_archive/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_v1.7.0.ps1)
 >
 > **📋 Release Notes:** See what's new → [`release_notes/Purview_Audit_Log_Processor/`](release_notes/Purview_Audit_Log_Processor/)
 >
