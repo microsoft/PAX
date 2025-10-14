@@ -68,6 +68,31 @@ function Get-GitHubCLI {
     return $null
 }
 
+# Function to get VS Code path (supports both PATH and direct installation)
+function Get-VSCode {
+    $codeCommand = Get-Command code -ErrorAction SilentlyContinue
+    if ($codeCommand) {
+        return "code"
+    }
+    
+    # Check common installation locations
+    $commonPaths = @(
+        "${env:LOCALAPPDATA}\Programs\Microsoft VS Code\bin\code.cmd",
+        "C:\Program Files\Microsoft VS Code\bin\code.cmd",
+        "C:\Program Files (x86)\Microsoft VS Code\bin\code.cmd",
+        "${env:LOCALAPPDATA}\Programs\Microsoft VS Code Insiders\bin\code-insiders.cmd"
+    )
+    
+    foreach ($path in $commonPaths) {
+        if (Test-Path $path) {
+            return $path
+        }
+    }
+    
+    Write-Warning "VS Code not found. Please ensure VS Code is installed."
+    return "code"  # Return 'code' as fallback - user might have it in PATH after restart
+}
+
 function Write-Header {
     Write-Host ""
     Write-Host "================================" -ForegroundColor Cyan
@@ -609,8 +634,11 @@ function Sync-ReleaseBranch {
             Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
             Write-Host ""
             
+            # Get VS Code command
+            $vscode = Get-VSCode
+            
             # Open README.md in VS Code (don't wait for editor to close)
-            Start-Process "code" -ArgumentList $readmePath -NoNewWindow
+            Start-Process $vscode -ArgumentList $readmePath -NoNewWindow
             
             # Wait for user confirmation
             $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
