@@ -900,6 +900,34 @@ function Sync-ReleaseBranch {
         # Navigate to release worktree and commit changes
         Push-Location $releaseWorktreePath
         try {
+            # Create .gitkeep files in all parent directories to ensure they're tracked with current version
+            Write-Status "Updating parent directory timestamps in release branch..."
+            $parentDirs = @(
+                '.github',
+                '.github\workflows',
+                'release_documentation',
+                'release_documentation\Purview_Audit_Log_Processor',
+                'release_documentation\Purview_Audit_Log_Processor\MD',
+                'release_documentation\Purview_Audit_Log_Processor\PDF',
+                'release_notes',
+                'release_notes\Purview_Audit_Log_Processor',
+                'script_archive',
+                'script_archive\Purview_Audit_Log_Processor'
+            )
+            foreach ($dir in $parentDirs) {
+                $gitkeepPath = Join-Path $dir ".gitkeep"
+                if (Test-Path $dir) {
+                    New-Item -Path $gitkeepPath -ItemType File -Force | Out-Null
+                }
+            }
+            
+            # Touch all root-level files to update their commit timestamp
+            Write-Status "Updating root-level file timestamps in release branch..."
+            Get-ChildItem -File | ForEach-Object {
+                $_.LastWriteTime = Get-Date
+            }
+            Write-Success "✓ Updated directory and file timestamps in release branch"
+            
             # Check if there are changes
             $changes = git status --porcelain
             if ($changes) {
@@ -1049,6 +1077,34 @@ function Sync-ReleaseBranch {
                     Write-Status "Removed old PDF version: $($_.Name)"
                 }
             
+            # Create .gitkeep files in all parent directories to ensure they're tracked with current version
+            Write-Status "Updating parent directory timestamps in release branch..."
+            $parentDirs = @(
+                '.github',
+                '.github\workflows',
+                'release_documentation',
+                'release_documentation\Purview_Audit_Log_Processor',
+                'release_documentation\Purview_Audit_Log_Processor\MD',
+                'release_documentation\Purview_Audit_Log_Processor\PDF',
+                'release_notes',
+                'release_notes\Purview_Audit_Log_Processor',
+                'script_archive',
+                'script_archive\Purview_Audit_Log_Processor'
+            )
+            foreach ($dir in $parentDirs) {
+                $gitkeepPath = Join-Path $dir ".gitkeep"
+                if (Test-Path $dir) {
+                    New-Item -Path $gitkeepPath -ItemType File -Force | Out-Null
+                }
+            }
+            
+            # Touch all root-level files to update their commit timestamp
+            Write-Status "Updating root-level file timestamps in release branch..."
+            Get-ChildItem -File | ForEach-Object {
+                $_.LastWriteTime = Get-Date
+            }
+            Write-Success "✓ Updated directory and file timestamps in release branch"
+            
             # Stage and commit
             git add . 2>$null
             $changes = git diff --cached --name-only
@@ -1163,7 +1219,13 @@ function New-CommitAndTag {
             New-Item -Path $gitkeepPath -ItemType File -Force | Out-Null
         }
     }
-    Write-Success "✓ Updated directory timestamps"
+    
+    # Touch all root-level files to update their commit timestamp
+    Write-Status "Updating root-level file timestamps..."
+    Get-ChildItem -File | ForEach-Object {
+        $_.LastWriteTime = Get-Date
+    }
+    Write-Success "✓ Updated directory and file timestamps"
     
     # Add all uncommitted changes to ensure GitHub workflow has access to everything
     git add .
