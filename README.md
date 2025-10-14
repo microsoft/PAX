@@ -27,14 +27,16 @@
 7. [Authentication Methods](#authentication-methods)
 8. [Usage Examples](#usage-examples)
 9. [Agent Filtering](#agent-filtering)
-10. [Prompt and Response Filtering](#prompt-and-response-filtering)
-11. [Output Files & Schema](#output-files--schema)
-12. [Activity Types Reference](#activity-types-reference)
-13. [Advanced Features](#advanced-features)
-14. [Performance Tuning](#performance-tuning)
-15. [Troubleshooting & FAQ](#troubleshooting--faq)
-16. [Known Limitations](#known-limitations)
-17. [Security & Compliance](#security--compliance)
+10. [User and Group Filtering](#user-and-group-filtering)
+11. [Prompt and Response Filtering](#prompt-and-response-filtering)
+12. [Combining Filters](#combining-filters)
+13. [Output Files & Schema](#output-files--schema)
+14. [Activity Types Reference](#activity-types-reference)
+15. [Advanced Features](#advanced-features)
+16. [Performance Tuning](#performance-tuning)
+17. [Troubleshooting & FAQ](#troubleshooting--faq)
+18. [Known Limitations](#known-limitations)
+19. [Security & Compliance](#security--compliance)
 
 ---
 
@@ -61,7 +63,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 3. **Deep Flatten Mode** (`-ExplodeDeep`) - 35-column base schema + fully flattened `CopilotEventData.*` columns
 4. **Offline Replay Mode** (`-RAWInputCSV`) - Re-process previously exported raw audit CSV files without querying the service
 5. **Agent Filtering Mode** (`-AgentsOnly` or `-AgentId` or `-ExcludeAgents`) - Filter for records based on Copilot agent presence (works with live queries and replay mode)
-6. **Prompt and Response Filtering Mode** (`-PromptFilter`) - Filter messages by isPrompt property to isolate prompts, responses, or both
+6. **Prompt and Response Filtering Mode** (`-PromptFilter`) - Filter Copilot conversation turns by isPrompt property to isolate prompts, responses, or both
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
@@ -82,6 +84,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - **Purview Schema Compliance:** Matches Microsoft Purview's canonical exploded schema structure
 - **Deep JSON Flattening:** Optional recursive flattening of nested `CopilotEventData` structures
 - **Agent Filtering:** Filter records by specific AgentId values or any agent-related activity
+- **User & Group Filtering:** Server-side (live mode) or client-side (replay mode) filtering by user emails; group expansion to members in live mode
 - **Streaming Export:** Memory-efficient chunked CSV writing for large datasets
 - **UTF-8 Encoding:** Consistent UTF-8 (no BOM) output for cross-platform compatibility
 - **Header Stability:** Always writes CSV header even when zero records match (ensures schema consistency)
@@ -403,9 +406,71 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.
 
 ---
 
+#### `-UserIds` (string[])
+
+**Purpose:** Filter audit records to include only those from specific user(s)  
+**Default:** Not set (no user filtering)  
+**Mode Compatibility:**
+- **Live Mode:** Server-side filtering via `Search-UnifiedAuditLog -UserIds` (highly efficient)
+- **Replay Mode:** Client-side filtering by parsing `UserId` from AuditData JSON
+
+**Use When:**
+
+- Investigating specific user's Copilot activity
+- Security reviews or compliance audits for individual accounts
+- Troubleshooting user-reported issues
+- Analyzing power users or early adopters
+- Post-processing existing exports (replay mode)
+
+**Examples:**
+
+- Single: `-UserIds "john.doe@contoso.com"`
+- Multiple: `-UserIds "john.doe@contoso.com","jane.smith@contoso.com","bob.jones@contoso.com"`
+- Array: `-UserIds @("user1@contoso.com", "user2@contoso.com")`
+
+**Notes:** 
+- User emails are case-insensitive
+- Can be combined with `-GroupNames` (users are merged and deduplicated)
+- Works with all other filters (`-AgentsOnly`, `-AgentId`, `-ExcludeAgents`, `-PromptFilter`)
+- Server-side filtering (live mode) is highly efficient
+- Client-side filtering (replay mode) processes ~5,000 records/second
+
+---
+
+#### `-GroupNames` (string[])
+
+**Purpose:** Filter audit records to include only those from members of specific distribution group(s)  
+**Default:** Not set (no group filtering)  
+**Mode Compatibility:**
+- **Live Mode Only:** Expands groups to member emails, then filters server-side (efficient)
+- **Replay Mode:** ⚠️ **BLOCKED** - Group expansion requires Exchange Online authentication
+
+**Use When:**
+
+- Analyzing department-wide or team-level Copilot adoption (live mode only)
+- Tracking usage across organizational units
+- Compliance audits for specific business groups
+- ROI analysis by functional group
+
+**Examples:**
+
+- Single: `-GroupNames "Engineering-Team@contoso.com"`
+- Multiple: `-GroupNames "Sales@contoso.com","Marketing@contoso.com"`
+- Array: `-GroupNames @("Group1@contoso.com", "Group2@contoso.com")`
+
+**Notes:** 
+- Requires Exchange Online authentication for group expansion
+- Uses `Get-DistributionGroupMember` to expand groups to member emails
+- Expansion adds ~2-5 seconds per group (one-time cost)
+- Can be combined with `-UserIds` (users are merged and deduplicated)
+- Works with all other filters (`-AgentsOnly`, `-AgentId`, `-ExcludeAgents`, `-PromptFilter`)
+- **Replay mode:** Script will display error and exit if `-GroupNames` used
+
+---
+
 #### `-PromptFilter` (string)
 
-**Purpose:** Filter messages by `Message_isPrompt` property to isolate specific message types  
+**Purpose:** Filter Copilot conversation turns by `Message_isPrompt` property to isolate prompts, responses, or both  
 **Default:** Not set (no prompt/response filtering)  
 **Valid Values:** `Prompt`, `Response`, `Both`, `Null`  
 **Use When:**
@@ -416,16 +481,16 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.
 - **Null**: Debugging records with malformed or missing isPrompt properties
 
 **Examples:**
-- `-PromptFilter Prompt` - Only messages where Message_isPrompt = True
-- `-PromptFilter Response` - Only messages where Message_isPrompt = False
-- `-PromptFilter Both` - Messages with either True or False (excludes nulls)
-- `-PromptFilter Null` - Messages with null/undefined isPrompt values
+- `-PromptFilter Prompt` - Only conversation turns where Message_isPrompt = True
+- `-PromptFilter Response` - Only conversation turns where Message_isPrompt = False
+- `-PromptFilter Both` - Conversation turns with either True or False (excludes nulls)
+- `-PromptFilter Null` - Conversation turns with null/undefined isPrompt values
 
 **Notes:**
 - Works in both live query and replay modes
-- Uses two-stage filtering: pre-filter records, then filter messages during explosion
+- Uses two-stage filtering: pre-filter records, then filter conversation turns during explosion
 - Can be combined with `-AgentsOnly`, `-ExcludeAgents`, or `-AgentId`
-- Provides detailed metrics in summary (record/message retention, type breakdown)
+- Provides detailed metrics in summary (record/conversation retention, type breakdown)
 - Stage 1 reduces records before explosion for performance
 - Stage 2 ensures clean output with no blank Message_isPrompt values
 
@@ -836,11 +901,187 @@ The `AgentId` field appears in Copilot audit records and identifies the specific
 
 ---
 
+## User and Group Filtering
+
+### Overview
+
+User and Group Filtering enables targeted extraction of audit records for specific users or distribution groups from your Purview audit logs. This feature is essential for investigating individual user activity, analyzing group adoption patterns, or conducting compliance audits for specific teams.
+
+**Why Use User and Group Filtering?**
+
+- **Efficiency**: In live mode, reduces data retrieved from Purview server-side; in replay mode, filters locally
+- **User-Specific Investigations**: Track a specific user's Copilot interactions for security reviews, compliance audits, or support troubleshooting
+- **Group Analysis**: Automatically expand distribution groups to monitor department-wide or team-level adoption
+- **Performance**: Reduce processing time and data transfer by targeting specific users
+- **Compliance**: Isolate user activity for regulatory audits, eDiscovery requests, or data governance
+
+### Modes and Behavior
+
+**Live Query Mode (Server-Side Filtering):**
+- Uses `Search-UnifiedAuditLog -UserIds` parameter for server-side filtering at Purview
+- Highly efficient: Only matching records are retrieved from Microsoft 365
+- Supports both `-UserIds` and `-GroupNames` parameters
+- Groups are expanded to member emails using `Get-DistributionGroupMember` before querying
+- Requires Exchange Online authentication for group expansion
+
+**Replay Mode (Client-Side Filtering):**
+- Filters previously exported CSV files by extracting `UserId` from parsed AuditData JSON
+- `-UserIds` parameter supported
+- `-GroupNames` parameter **NOT supported** (requires authentication for group expansion)
+- Slower than live mode but useful for post-processing large exports
+
+### When to Use User/Group Filtering
+
+**Use `-UserIds`** when:
+- Investigating specific user(s) Copilot activity
+- Conducting security reviews or compliance audits for individual accounts
+- Troubleshooting user-reported issues
+- Analyzing power users or early adopters
+- Post-processing existing exports (replay mode)
+
+**Use `-GroupNames`** when:
+- Analyzing department-wide or team-level adoption (live mode only)
+- Tracking Copilot usage across organizational units
+- Compliance audits for specific business groups
+- ROI analysis by functional group
+
+### User and Group Filtering Examples
+
+```powershell
+# Filter for a single user (live mode)
+.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -UserIds "john.doe@contoso.com" `
+    -OutputFile "C:\Exports\JohnDoe_Activity.csv"
+
+# Filter for multiple users (live mode)
+.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -UserIds "john.doe@contoso.com","jane.smith@contoso.com","bob.jones@contoso.com" `
+    -OutputFile "C:\Exports\MultipleUsers_Activity.csv"
+
+# Filter for a distribution group (live mode only)
+.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -GroupNames "Engineering-Team@contoso.com" `
+    -OutputFile "C:\Exports\EngineeringTeam_Activity.csv"
+
+# Filter for multiple groups (live mode only)
+.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -GroupNames "Sales@contoso.com","Marketing@contoso.com" `
+    -OutputFile "C:\Exports\SalesAndMarketing_Activity.csv"
+
+# Combine UserIds and GroupNames (live mode only)
+.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -UserIds "ceo@contoso.com","cfo@contoso.com" `
+    -GroupNames "ExecutiveTeam@contoso.com" `
+    -OutputFile "C:\Exports\Leadership_Activity.csv"
+
+# Replay mode: Filter users from previously exported data
+.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+    -RAWInputCSV "C:\Exports\RawAuditLogs.csv" `
+    -UserIds "john.doe@contoso.com","jane.smith@contoso.com" `
+    -OutputFile "C:\Exports\Users_Replay.csv"
+
+# Combine with agent filtering for targeted analysis
+.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -UserIds "poweruser@contoso.com" `
+    -AgentsOnly `
+    -ExplodeDeep `
+    -OutputFile "C:\Exports\PowerUser_Agents.csv"
+```
+
+### How User and Group Filtering Works
+
+**Live Mode Process:**
+
+1. **Group Expansion** (if `-GroupNames` used):
+   - Connects to Exchange Online using existing authentication
+   - Calls `Get-DistributionGroupMember` for each group
+   - Extracts `PrimarySmtpAddress` from each member
+   - Combines with any `-UserIds` provided
+   - Deduplicates final user list
+
+2. **Server-Side Filtering**:
+   - Passes expanded user list to `Search-UnifiedAuditLog -UserIds` parameter
+   - Purview server filters records matching any UserIds
+   - Only matching records are transmitted to client
+   - Highly efficient: reduces network transfer and processing time
+
+3. **Progress Tracking**:
+   - Shows user/group expansion status
+   - Displays target user count
+   - Progress bar reflects retrieval and processing phases
+
+**Replay Mode Process:**
+
+1. **Pre-Parsing Phase**:
+   - Parses AuditData JSON for all records
+   - Extracts `UserId` field into `_ParsedAuditData` object
+   - Enables fast filtering without repeated JSON parsing
+
+2. **User Filtering Phase**:
+   - Creates hashtable lookup of target users (case-insensitive)
+   - Evaluates each record's `_ParsedAuditData.UserId`
+   - Includes records where UserId matches target list
+   - Non-matching records excluded from output
+
+3. **Output Generation**:
+   - Only filtered records proceed to explosion/flattening
+   - Summary includes pre/post filter counts and retention rate
+   - Log file documents exact filter criteria applied
+
+### User and Group Filtering Performance
+
+**Live Query Mode (Server-Side):**
+- Extremely efficient: filtering happens at Microsoft 365 Purview
+- Only matching records transmitted over network
+- No local processing overhead for non-matching records
+- Group expansion adds ~2-5 seconds per group (one-time cost)
+- **Recommended** when targeting specific users/groups
+
+**Replay Mode (Client-Side):**
+- Memory efficient: only filtered records retained
+- Useful for post-processing large exports
+
+### User Field Reference
+
+The `UserId` field appears in all Copilot audit records and identifies the user who performed the activity:
+
+**Format:**
+- Typically: `user@domain.com` (User Principal Name or email)
+- Case-insensitive matching
+
+**Output Columns:**
+- `UserId` - The user's email/UPN
+- Plus all standard Copilot usage fields (Operation, ClientIP, AppName, etc.)
+
+### Important Notes
+
+- **Replay Mode Limitation**: `-GroupNames` parameter blocked in replay mode (displays error)
+- **Authentication**: Group expansion requires Exchange Online authentication in live mode
+- **Deduplication**: When combining `-UserIds` and `-GroupNames`, duplicates are automatically removed
+- **Case Sensitivity**: User email matching is case-insensitive
+- **Filter Combinations**: Can combine with `-AgentsOnly`, `-AgentId`, `-ExcludeAgents`, `-PromptFilter`
+
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
+
+---
+
 ## Prompt and Response Filtering
 
 ### Overview
 
-Prompt and Response Filtering (`-PromptFilter`) enables targeted extraction of specific message types from Copilot audit logs based on the `Message_isPrompt` property. This feature is essential for analyzing prompt engineering, conversation patterns, and user interaction behaviors.
+Prompt and Response Filtering (`-PromptFilter`) enables targeted extraction of specific conversation turn types from Copilot audit logs based on the `Message_isPrompt` property. This feature is essential for analyzing prompt engineering, conversation patterns, and user interaction behaviors.
 
 **Why Use PromptFilter?**
 
@@ -848,7 +1089,7 @@ Prompt and Response Filtering (`-PromptFilter`) enables targeted extraction of s
 - **Response Analysis**: Extract Copilot responses for content analysis, latency measurement, and tracking acceptance rates (combine with prompts via ThreadId for full conversation context)
 - **Conversation Segmentation**: Separate prompts from responses for training data or analysis pipelines
 - **Data Reduction**: Reduce output size by 50%+ when only prompts or responses are needed
-- **Performance**: Two-stage filtering optimizes processing (pre-filter records + message-level filtering)
+- **Performance**: Two-stage filtering optimizes processing (pre-filter records + conversation-level filtering during explosion)
 
 ### PromptFilter Options
 
@@ -857,7 +1098,7 @@ Prompt and Response Filtering (`-PromptFilter`) enables targeted extraction of s
 | `Prompt` | Only prompts (user inputs) | `True` | Analyze what users are asking |
 | `Response` | Only responses (Copilot outputs) | `False` | Extract response content (combine with prompts via ThreadId for quality evaluation) |
 | `Both` | Both prompts and responses | `True` or `False` | Full conversation analysis |
-| `Null` | Messages with no isPrompt value | `null` or empty | Debug malformed data |
+| `Null` | Conversation turns with no isPrompt value | `null` or empty | Debug malformed data |
 
 ### PromptFilter Examples
 
@@ -898,27 +1139,27 @@ Prompt and Response Filtering (`-PromptFilter`) enables targeted extraction of s
 
 **Two-Stage Filtering for Optimal Performance:**
 
-1. **Stage 1 (Pre-Filter)**: Record-level filtering BEFORE explosion
+1. **Stage 1 (Record-level Filter)**: Filters entire audit records BEFORE explosion
    - **Always applies** when PromptFilter is used
-   - Analyzes each record's Messages array
-   - Categorizes records: Mixed (prompts+responses), Prompt-only, Response-only, No messages
-   - Filters out records without matching messages
+   - Analyzes each record's Messages array (conversation turns)
+   - Categorizes records: Mixed (prompts+responses), Prompt-only, Response-only, No conversation data
+   - Filters out records without matching conversation turns
    - Typical reduction: 10-15% of records filtered before explosion
    - In non-explosion mode (live query without explosion switches), this is the only filtering stage
 
-2. **Stage 2 (Message-Level)**: Prompt/response filtering DURING explosion
+2. **Stage 2 (Conversation-level Filter)**: Filters individual prompts/responses DURING explosion
    - **Only applies during explosion** (when using `-ExplodeArrays`, `-ExplodeDeep`, or `-RAWInputCSV` replay mode)
-   - Filters individual messages within each record
-   - Only outputs rows for messages matching the filter
+   - Filters individual conversation turns (prompts/responses) within each record
+   - Only outputs rows for conversation turns matching the filter
    - Prevents blank `Message_isPrompt` values in output
    - Not used in standard 1:1 mode (live query without explosion switches)
 
 **PromptFilter Behavior by Option:**
 
-- **Prompt**: Stage 1 keeps records with at least one prompt; Stage 2 (if explosion enabled) outputs only prompt messages
-- **Response**: Stage 1 keeps records with at least one response; Stage 2 (if explosion enabled) outputs only response messages
-- **Both**: Stage 1 keeps all records with messages; Stage 2 (if explosion enabled) outputs messages with defined isPrompt values
-- **Null**: Stage 1 keeps records with null isPrompt messages; Stage 2 (if explosion enabled) outputs only messages with null isPrompt
+- **Prompt**: Stage 1 keeps records with at least one prompt; Stage 2 (if explosion enabled) outputs only prompt conversation turns
+- **Response**: Stage 1 keeps records with at least one response; Stage 2 (if explosion enabled) outputs only response conversation turns
+- **Both**: Stage 1 keeps records with at least one conversation turn having explicit isPrompt value; Stage 2 (if explosion enabled) outputs conversation turns with defined isPrompt values
+- **Null**: Stage 1 keeps records with null isPrompt conversation turns; Stage 2 (if explosion enabled) outputs only conversation turns with null isPrompt
 
 ### PromptFilter + Agent Filtering Combination
 
@@ -949,8 +1190,8 @@ PromptFilter works independently with all agent switches:
 The script provides detailed PromptFilter metrics in the summary:
 
 - **Record-level**: Records before/after filter, retention rate
-- **Record type breakdown**: Mixed, Prompt-only, Response-only, No messages (with percentages)
-- **Message-level**: Messages before/after filter, retention rate
+- **Record type breakdown**: Mixed, Prompt-only, Response-only, No conversation data (with percentages)
+- **Conversation-level**: Conversation turns before/after filter, retention rate
 - **Processing time**: Stage 1 pre-filter execution time
 
 ### Output Schema
@@ -961,6 +1202,202 @@ When using PromptFilter with `-ExplodeArrays` or `-ExplodeDeep`, the `Message_is
 - **PromptFilter=Response**: All rows have `Message_isPrompt = False`
 - **PromptFilter=Both**: Mix of `True` and `False` values
 - **PromptFilter=Null**: All rows have blank `Message_isPrompt` values
+
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
+
+---
+
+## Combining Filters
+
+### Overview
+
+All filtering switches (`-UserIds`, `-GroupNames`, `-AgentsOnly`, `-AgentId`, `-ExcludeAgents`, `-PromptFilter`) can be combined for highly targeted data extraction. This enables powerful use cases like analyzing specific users' interactions with agents, or isolating conversation patterns for specific teams.
+
+**Filter Application Order:**
+
+Filters are applied in a consistent sequence across both live and replay modes:
+
+**BOTH MODES (Live & Replay):**
+1. **User/Group Filtering** - Server-side in live mode (via `Search-UnifiedAuditLog -UserIds`), client-side in replay mode (parsing UserId from JSON)
+2. **Agent Filtering** - Filters by agent presence or specific agent IDs (AgentsOnly, AgentId, ExcludeAgents)
+3. **Prompt Filtering** - Filters conversation turns by isPrompt property during explosion
+
+**Performance Note:** Applying User/Group filtering first significantly improves performance by reducing the dataset size before subsequent filters. For example, filtering to a single user can reduce the dataset by 95%+, making agent and prompt filtering much faster.
+
+### Two-Filter Combinations
+
+#### User + Agent Filtering
+
+**Use Case:** Analyze specific user(s) interactions with Copilot agents
+
+**Example Scenario:** "Show me all agent usage by our power users"
+
+```powershell
+# Single power user with any agents
+.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -UserIds "poweruser@contoso.com" `
+    -AgentsOnly `
+    -OutputFile "C:\Exports\PowerUser_Agents.csv"
+
+# Executive team with specific declarative agent
+.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -GroupNames "Executive Team" `
+    -AgentId "CopilotStudio.Declarative.ExecutiveAssistant" `
+    -OutputFile "C:\Exports\Exec_CustomAgent.csv"
+```
+
+**Benefits:**
+- Server-side user filtering reduces data transfer (live mode)
+- Agent filter removes non-agent interactions
+- Focused dataset for agent adoption analysis per user/team
+
+---
+
+#### User + PromptFilter
+
+**Use Case:** Focus on conversation patterns (prompts/responses) for specific users
+
+**Example Scenario:** "Show me only the questions asked by the sales team"
+
+```powershell
+# Sales team prompts only (removes responses and resource-only rows)
+.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -GroupNames "Sales Team" `
+    -PromptFilter Prompt `
+    -OutputFile "C:\Exports\Sales_Prompts.csv"
+
+# Individual user's full conversations (prompts + responses, no resource rows)
+.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -UserIds "analyst@contoso.com" `
+    -PromptFilter Both `
+    -OutputFile "C:\Exports\Analyst_Conversations.csv"
+```
+
+**Benefits:**
+- Removes resource-only explosion rows (cleaner message-focused dataset)
+- Typical reduction: 15-20% smaller file when using `PromptFilter Both`
+- Ideal for conversation analysis, prompt engineering studies, token usage
+
+---
+
+#### Agent + PromptFilter
+
+**Use Case:** Analyze agent conversation quality and prompt engineering effectiveness
+
+**Example Scenario:** "Show me all prompts sent to our custom sales agent"
+
+```powershell
+# All prompts sent to a specific agent
+.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -AgentId "CopilotStudio.Declarative.SalesAssistant" `
+    -PromptFilter Prompt `
+    -OutputFile "C:\Exports\SalesAgent_Prompts.csv"
+
+# Agent responses only (for quality/latency analysis)
+.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -AgentsOnly `
+    -PromptFilter Response `
+    -OutputFile "C:\Exports\Agent_Responses.csv"
+```
+
+**Benefits:**
+- Focus on agent-specific conversation patterns
+- Analyze prompt engineering effectiveness per agent
+- Measure agent response quality and latency
+
+---
+
+### Three-Filter Combination
+
+#### User + Agent + PromptFilter
+
+**Use Case:** Deep-dive conversation analysis for specific users with specific agents
+
+**Example Scenario:** "Show me all questions the marketing team asked our content creation agent"
+
+```powershell
+# Marketing team prompts to content agent
+.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -GroupNames "Marketing Team" `
+    -AgentId "ContentCreation.Agent" `
+    -PromptFilter Prompt `
+    -OutputFile "C:\Exports\Marketing_ContentAgent_Prompts.csv"
+
+# Executive team's full conversations with all agents
+.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+    -StartDate 2025-10-01 `
+    -EndDate 2025-10-02 `
+    -GroupNames "Executive Leadership" `
+    -AgentsOnly `
+    -PromptFilter Both `
+    -ExplodeDeep `
+    -OutputFile "C:\Exports\Exec_Agent_Conversations.csv"
+```
+
+**Benefits:**
+- **Maximum precision:** Combines server-side user filtering, agent filtering, and conversation turn filtering
+- **Optimal performance:** Server-side reduces data transfer (live mode)
+- **Clean dataset:** Only relevant conversation turns for the targeted user/agent combination
+- **Typical reduction:** 95%+ of original data filtered out for highly focused analysis
+
+---
+
+### Replay Mode Combinations
+
+All filter combinations work in replay mode **except `-GroupNames`** (requires authentication).
+
+```powershell
+# Replay: User + Agent + PromptFilter
+.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+    -RAWInputCSV "C:\Exports\RawData.csv" `
+    -UserIds "poweruser@contoso.com","analyst@contoso.com" `
+    -AgentsOnly `
+    -PromptFilter Both `
+    -OutputFile "C:\Exports\Replay_Users_Agents_Messages.csv"
+
+# Replay: User + PromptFilter (client-side user filtering from JSON)
+.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+    -RAWInputCSV "C:\Exports\RawData.csv" `
+    -UserIds "exec@contoso.com" `
+    -PromptFilter Prompt `
+    -OutputFile "C:\Exports\Replay_Exec_Prompts.csv"
+```
+
+**Note:** Use `-UserIds` with explicit email addresses instead of `-GroupNames` in replay mode.
+
+---
+
+### Common Use Cases
+
+| Use Case | Filters | Example Output |
+|----------|---------|----------------|
+| **Power user agent adoption** | User + Agent | All agent interactions for specific power users |
+| **Team prompt analysis** | Group + PromptFilter | All questions asked by a department |
+| **Agent quality review** | Agent + PromptFilter | Prompts and responses for a specific agent |
+| **User conversation focus** | User + PromptFilter | Clean message dataset without resource rows |
+| **Targeted deep-dive** | User + Agent + PromptFilter | Specific users' questions to specific agents |
+| **Executive summary** | Group + Agent + PromptFilter | Leadership team's agent conversations |
+
+### Performance Tips
+
+- **Live Mode:** User/group filtering is server-side (highly efficient) - always filter users first
+- **Replay Mode:** All filtering is client-side - expect longer processing times
+- **PromptFilter Impact:** Reduces output rows by 15-20% when using `Both` (removes resource-only rows)
+- **Three-Filter Combo:** Can reduce final output by 95%+ for highly targeted analysis
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
