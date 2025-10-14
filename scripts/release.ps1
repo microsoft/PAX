@@ -686,20 +686,43 @@ function Sync-ReleaseBranch {
                 throw "PDF generation incomplete"
             }
             
-            # Copy PDF to release_documentation folder for historical archive
-            Write-Status "Archiving PDF to release_documentation\Purview_Audit_Log_Processor folder..."
+            # Archive PDF and README.md to release_documentation folder (before README gets updated)
+            Write-Status "Archiving documentation to release_documentation\Purview_Audit_Log_Processor\..."
             $releaseDocFolder = Join-Path (Get-Location) "release_documentation\Purview_Audit_Log_Processor"
+            $releaseDocPdfFolder = Join-Path $releaseDocFolder "PDF"
+            $releaseDocMdFolder = Join-Path $releaseDocFolder "MD"
+            
+            # Create folder structure if needed
             if (-not (Test-Path $releaseDocFolder)) {
                 New-Item -ItemType Directory -Path $releaseDocFolder -Force | Out-Null
                 Write-Status "Created release_documentation\Purview_Audit_Log_Processor folder"
             }
+            if (-not (Test-Path $releaseDocPdfFolder)) {
+                New-Item -ItemType Directory -Path $releaseDocPdfFolder -Force | Out-Null
+                Write-Status "Created PDF subfolder"
+            }
+            if (-not (Test-Path $releaseDocMdFolder)) {
+                New-Item -ItemType Directory -Path $releaseDocMdFolder -Force | Out-Null
+                Write-Status "Created MD subfolder"
+            }
             
-            $archivePdfPath = Join-Path $releaseDocFolder $pdfFilename
+            # Archive the PDF
+            $archivePdfPath = Join-Path $releaseDocPdfFolder $pdfFilename
             if (Test-Path $finalPdfPath) {
                 Copy-Item -Path $finalPdfPath -Destination $archivePdfPath -Force
-                Write-Success "✓ Archived $pdfFilename to release_documentation\Purview_Audit_Log_Processor\"
+                Write-Success "✓ Archived PDF: PDF\$pdfFilename"
             } else {
                 Write-Warning "Could not archive PDF - source file not found"
+            }
+            
+            # Archive the current README.md (before it gets updated for new version)
+            $readmeMdFilename = "PAX_Documentation_v${NewVersion}.md"
+            $archiveMdPath = Join-Path $releaseDocMdFolder $readmeMdFilename
+            if (Test-Path $readmePath) {
+                Copy-Item -Path $readmePath -Destination $archiveMdPath -Force
+                Write-Success "✓ Archived README: MD\$readmeMdFilename"
+            } else {
+                Write-Warning "Could not archive README.md - source file not found"
             }
         }
         catch {
