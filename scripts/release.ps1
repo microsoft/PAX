@@ -549,7 +549,18 @@ $($commits -join "`n")
 
 ## Installation
 
-Download the latest script from the [Microsoft PAX Repository - Release Branch](https://github.com/microsoft/PAX/tree/release).
+### Download v$NewVersion (This Version)
+This release note documents **version $NewVersion**. Use the direct download links below to obtain this specific version:
+
+- **Script v$NewVersion**: [PAX_Purview_Audit_Log_Processor_v$NewVersion.ps1](https://github.com/microsoft/PAX/blob/release/script_archive/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_v$NewVersion.ps1)
+- **Documentation v$NewVersion**: [PAX_Documentation_v$NewVersion.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PDF/PAX_Documentation_v$NewVersion.pdf)
+
+### Get Latest Version
+For the most recent release, visit:
+- **Latest Script Archive**: [Microsoft PAX Repository - Script Archive](https://github.com/microsoft/PAX/tree/release/script_archive/Purview_Audit_Log_Processor)
+- **All Release Notes**: [Microsoft PAX Repository - Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
+
+---
 "@
     
     # Save release notes file
