@@ -4,9 +4,9 @@
 >
 > **📋 Release Notes:** See what's new → [`release_notes/`](release_notes/)
 >
-> **� Previous Script Versions:** Access archived versions → [`script_archive/Purview_Audit_Log_Processor/`](script_archive/Purview_Audit_Log_Processor/)
+> **📜 Previous Script Versions:** Access archived versions → [`script_archive/Purview_Audit_Log_Processor/`](script_archive/Purview_Audit_Log_Processor/)
 >
-> **�📚 Documentation Archive:** Version-specific docs → [`release_documentation/`](release_documentation/)
+> **📚 Documentation Archive:** Version-specific docs → [`release_documentation/`](release_documentation/)
 
 **Script:** `PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`  
 **Version:** 1.7.0  
