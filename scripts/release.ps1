@@ -924,13 +924,8 @@ function Sync-ReleaseBranch {
             # Touch all root-level files to update their commit timestamp
             Write-Status "Updating root-level file timestamps in release branch..."
             Get-ChildItem -File | ForEach-Object {
-                # Add a newline to the end of text files to force a git change
-                # Matches files with common text extensions, dotfiles, or no extension (like LICENSE)
-                if ($_.Extension -match '\.(md|txt|json|js|ts|html|css|ps1|sh|yml|yaml|gitignore|gitattributes|tauriignore)$' -or 
-                    $_.Extension -eq '' -or 
-                    $_.Name -match '^\.') {
-                    "`n" | Add-Content -Path $_.FullName -NoNewline
-                }
+                # Add a newline to all root files to force a git change
+                "`n" | Add-Content -Path $_.FullName -NoNewline
             }
             Write-Success "✓ Updated directory and file timestamps in release branch"
             
@@ -1107,13 +1102,8 @@ function Sync-ReleaseBranch {
             # Touch all root-level files to update their commit timestamp
             Write-Status "Updating root-level file timestamps in release branch..."
             Get-ChildItem -File | ForEach-Object {
-                # Add a newline to the end of text files to force a git change
-                # Matches files with common text extensions, dotfiles, or no extension (like LICENSE)
-                if ($_.Extension -match '\.(md|txt|json|js|ts|html|css|ps1|sh|yml|yaml|gitignore|gitattributes|tauriignore)$' -or 
-                    $_.Extension -eq '' -or 
-                    $_.Name -match '^\.') {
-                    "`n" | Add-Content -Path $_.FullName -NoNewline
-                }
+                # Add a newline to all root files to force a git change
+                "`n" | Add-Content -Path $_.FullName -NoNewline
             }
             Write-Success "✓ Updated directory and file timestamps in release branch"
             
@@ -1235,13 +1225,8 @@ function New-CommitAndTag {
     # Touch all root-level files to update their commit timestamp
     Write-Status "Updating root-level file timestamps..."
     Get-ChildItem -File | ForEach-Object {
-        # Add a newline to the end of text files to force a git change
-        # Matches files with common text extensions, dotfiles, or no extension (like LICENSE)
-        if ($_.Extension -match '\.(md|txt|json|js|ts|html|css|ps1|sh|yml|yaml|gitignore|gitattributes|tauriignore)$' -or 
-            $_.Extension -eq '' -or 
-            $_.Name -match '^\.') {
-            "`n" | Add-Content -Path $_.FullName -NoNewline
-        }
+        # Add a newline to all root files to force a git change
+        "`n" | Add-Content -Path $_.FullName -NoNewline
     }
     Write-Success "✓ Updated directory and file timestamps"
     
