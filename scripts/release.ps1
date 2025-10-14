@@ -1137,6 +1137,34 @@ function New-CommitAndTag {
         [string]$CustomMessage
     )
     
+    # Create .gitkeep files in directories to track them with current version (PAX branch)
+    Write-Status "Updating directory timestamps in PAX branch..."
+    
+    # Get all root-level directories (excluding .git, node_modules, and temporary folders)
+    $rootDirs = Get-ChildItem -Directory | Where-Object { 
+        $_.Name -notmatch '^(\.git|node_modules)$' 
+    } | Select-Object -ExpandProperty Name
+    
+    # Get all subdirectories within specific folders
+    $detailedDirs = @()
+    $foldersToExpand = @('release_documentation', 'release_notes', 'script_archive', 'scripts', '.github')
+    foreach ($folder in $foldersToExpand) {
+        if (Test-Path $folder) {
+            $detailedDirs += Get-ChildItem -Path $folder -Directory -Recurse | 
+                ForEach-Object { $_.FullName.Replace((Get-Location).Path + '\', '') }
+        }
+    }
+    
+    # Combine all directories and create .gitkeep files
+    $allDirs = $rootDirs + $detailedDirs | Select-Object -Unique
+    foreach ($dir in $allDirs) {
+        if (Test-Path $dir) {
+            $gitkeepPath = Join-Path $dir ".gitkeep"
+            New-Item -Path $gitkeepPath -ItemType File -Force | Out-Null
+        }
+    }
+    Write-Success "✓ Updated directory timestamps"
+    
     # Add all uncommitted changes to ensure GitHub workflow has access to everything
     git add .
     Write-Status "Staged all uncommitted changes for release"
