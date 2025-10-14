@@ -561,6 +561,15 @@ For the most recent release, visit:
 - **All Release Notes**: [Microsoft PAX Repository - Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 
 ---
+
+## Support
+
+For questions or issues, refer to the documentation:
+- **Documentation v$NewVersion**: [PAX_Documentation_v$NewVersion.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PDF/PAX_Documentation_v$NewVersion.pdf)
+
+---
+
+*Released by the Microsoft PAX Team*
 "@
     
     # Save release notes file
