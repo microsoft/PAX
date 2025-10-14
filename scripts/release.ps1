@@ -925,7 +925,10 @@ function Sync-ReleaseBranch {
             Write-Status "Updating root-level file timestamps in release branch..."
             Get-ChildItem -File | ForEach-Object {
                 # Add a newline to the end of text files to force a git change
-                if ($_.Extension -match '\.(md|txt|json|js|ts|html|css|ps1|sh|yml|yaml|gitignore|gitattributes)$') {
+                # Matches files with common text extensions, dotfiles, or no extension (like LICENSE)
+                if ($_.Extension -match '\.(md|txt|json|js|ts|html|css|ps1|sh|yml|yaml|gitignore|gitattributes|tauriignore)$' -or 
+                    $_.Extension -eq '' -or 
+                    $_.Name -match '^\.') {
                     "`n" | Add-Content -Path $_.FullName -NoNewline
                 }
             }
@@ -1105,7 +1108,10 @@ function Sync-ReleaseBranch {
             Write-Status "Updating root-level file timestamps in release branch..."
             Get-ChildItem -File | ForEach-Object {
                 # Add a newline to the end of text files to force a git change
-                if ($_.Extension -match '\.(md|txt|json|js|ts|html|css|ps1|sh|yml|yaml|gitignore|gitattributes)$') {
+                # Matches files with common text extensions, dotfiles, or no extension (like LICENSE)
+                if ($_.Extension -match '\.(md|txt|json|js|ts|html|css|ps1|sh|yml|yaml|gitignore|gitattributes|tauriignore)$' -or 
+                    $_.Extension -eq '' -or 
+                    $_.Name -match '^\.') {
                     "`n" | Add-Content -Path $_.FullName -NoNewline
                 }
             }
@@ -1230,7 +1236,10 @@ function New-CommitAndTag {
     Write-Status "Updating root-level file timestamps..."
     Get-ChildItem -File | ForEach-Object {
         # Add a newline to the end of text files to force a git change
-        if ($_.Extension -match '\.(md|txt|json|js|ts|html|css|ps1|sh|yml|yaml|gitignore|gitattributes)$') {
+        # Matches files with common text extensions, dotfiles, or no extension (like LICENSE)
+        if ($_.Extension -match '\.(md|txt|json|js|ts|html|css|ps1|sh|yml|yaml|gitignore|gitattributes|tauriignore)$' -or 
+            $_.Extension -eq '' -or 
+            $_.Name -match '^\.') {
             "`n" | Add-Content -Path $_.FullName -NoNewline
         }
     }
