@@ -45,6 +45,29 @@ function Write-Error {
     Write-Host "[ERROR] $Message" -ForegroundColor Red
 }
 
+# Function to get GitHub CLI path (supports both PATH and direct installation)
+function Get-GitHubCLI {
+    $ghCommand = Get-Command gh -ErrorAction SilentlyContinue
+    if ($ghCommand) {
+        return "gh"
+    }
+    
+    # Check common installation locations
+    $commonPaths = @(
+        "C:\Program Files\GitHub CLI\gh.exe",
+        "${env:LOCALAPPDATA}\Programs\GitHub CLI\gh.exe"
+    )
+    
+    foreach ($path in $commonPaths) {
+        if (Test-Path $path) {
+            return $path
+        }
+    }
+    
+    Write-Warning "GitHub CLI (gh) not found. Please install from https://cli.github.com/"
+    return $null
+}
+
 function Write-Header {
     Write-Host ""
     Write-Host "================================" -ForegroundColor Cyan
@@ -801,42 +824,49 @@ function Sync-ReleaseBranch {
                 Write-Status "Creating PR for microsoft/PAX release branch..."
                 $tempBranch = "release-sync-v${NewVersion}"
                 
-                # Clean up old temporary branches before creating new one
-                Write-Status "Checking for old temporary branches..."
-                $oldTempBranches = git ls-remote --heads origin | Where-Object { $_ -match "release-sync-v" -and $_ -notmatch $tempBranch }
-                if ($oldTempBranches) {
-                    $oldTempBranches | ForEach-Object {
-                        if ($_ -match "refs/heads/(.+)$") {
-                            $oldBranch = $matches[1]
-                            # Check if there's a merged or closed PR for this branch
-                            $prState = gh pr list --repo microsoft/PAX --head $oldBranch --state all --json state,number --jq '.[0] | "\(.state)|\(.number)"' 2>$null
-                            if ($prState) {
-                                $state, $prNum = $prState -split '\|'
-                                if ($state -eq "MERGED" -or $state -eq "CLOSED") {
-                                    Write-Status "Deleting old temporary branch: $oldBranch (PR #$prNum was $state)"
-                                    git push origin --delete $oldBranch 2>$null
+                # Get GitHub CLI command
+                $gh = Get-GitHubCLI
+                if (-not $gh) {
+                    Write-Error "Cannot create PR - GitHub CLI not found"
+                    Write-Status "Skipping PR creation (manual PR required)"
+                } else {
+                    # Clean up old temporary branches before creating new one
+                    Write-Status "Checking for old temporary branches..."
+                    $oldTempBranches = git ls-remote --heads origin | Where-Object { $_ -match "release-sync-v" -and $_ -notmatch $tempBranch }
+                    if ($oldTempBranches) {
+                        $oldTempBranches | ForEach-Object {
+                            if ($_ -match "refs/heads/(.+)$") {
+                                $oldBranch = $matches[1]
+                                # Check if there's a merged or closed PR for this branch
+                                $prState = & $gh pr list --repo microsoft/PAX --head $oldBranch --state all --json state,number --jq '.[0] | "\(.state)|\(.number)"' 2>$null
+                                if ($prState) {
+                                    $state, $prNum = $prState -split '\|'
+                                    if ($state -eq "MERGED" -or $state -eq "CLOSED") {
+                                        Write-Status "Deleting old temporary branch: $oldBranch (PR #$prNum was $state)"
+                                        git push origin --delete $oldBranch 2>$null
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                
-                # Push to temporary branch on microsoft/PAX only (not Rance9)
-                git push origin release:$tempBranch -f 2>$null
-                
-                # Check if PR already exists
-                $existingPR = gh pr list --repo microsoft/PAX --base release --head $tempBranch --json number --jq '.[0].number' 2>$null
-                
-                if ($existingPR) {
-                    Write-Status "PR already exists: https://github.com/microsoft/PAX/pull/$existingPR"
-                } else {
-                    # Create new PR
-                    $prUrl = gh pr create --repo microsoft/PAX --base release --head $tempBranch --title "v${NewVersion}" --body "Automated release sync for v${NewVersion}`n`nSynced files from PAX branch to release branch." 2>&1
-                    if ($LASTEXITCODE -eq 0) {
-                        Write-Success "PR created: $prUrl"
-                        Write-Host "`n⚠️  ACTION REQUIRED: Please approve and merge the PR at: $prUrl" -ForegroundColor Yellow
+                    
+                    # Push to temporary branch on microsoft/PAX only (not Rance9)
+                    git push origin release:$tempBranch -f 2>$null
+                    
+                    # Check if PR already exists
+                    $existingPR = & $gh pr list --repo microsoft/PAX --base release --head $tempBranch --json number --jq '.[0].number' 2>$null
+                    
+                    if ($existingPR) {
+                        Write-Status "PR already exists: https://github.com/microsoft/PAX/pull/$existingPR"
                     } else {
-                        Write-Error "Failed to create PR: $prUrl"
+                        # Create new PR
+                        $prUrl = & $gh pr create --repo microsoft/PAX --base release --head $tempBranch --title "v${NewVersion}" --body "Automated release sync for v${NewVersion}`n`nSynced files from PAX branch to release branch." 2>&1
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-Success "PR created: $prUrl"
+                            Write-Host "`n⚠️  ACTION REQUIRED: Please approve and merge the PR at: $prUrl" -ForegroundColor Yellow
+                        } else {
+                            Write-Error "Failed to create PR: $prUrl"
+                        }
                     }
                 }
                 
@@ -939,42 +969,49 @@ function Sync-ReleaseBranch {
                 Write-Status "Creating PR for microsoft/PAX release branch..."
                 $tempBranch = "release-sync-v${NewVersion}"
                 
-                # Clean up old temporary branches before creating new one
-                Write-Status "Checking for old temporary branches..."
-                $oldTempBranches = git ls-remote --heads origin | Where-Object { $_ -match "release-sync-v" -and $_ -notmatch $tempBranch }
-                if ($oldTempBranches) {
-                    $oldTempBranches | ForEach-Object {
-                        if ($_ -match "refs/heads/(.+)$") {
-                            $oldBranch = $matches[1]
-                            # Check if there's a merged or closed PR for this branch
-                            $prState = gh pr list --repo microsoft/PAX --head $oldBranch --state all --json state,number --jq '.[0] | "\(.state)|\(.number)"' 2>$null
-                            if ($prState) {
-                                $state, $prNum = $prState -split '\|'
-                                if ($state -eq "MERGED" -or $state -eq "CLOSED") {
-                                    Write-Status "Deleting old temporary branch: $oldBranch (PR #$prNum was $state)"
-                                    git push origin --delete $oldBranch 2>$null
+                # Get GitHub CLI command
+                $gh = Get-GitHubCLI
+                if (-not $gh) {
+                    Write-Error "Cannot create PR - GitHub CLI not found"
+                    Write-Status "Skipping PR creation (manual PR required)"
+                } else {
+                    # Clean up old temporary branches before creating new one
+                    Write-Status "Checking for old temporary branches..."
+                    $oldTempBranches = git ls-remote --heads origin | Where-Object { $_ -match "release-sync-v" -and $_ -notmatch $tempBranch }
+                    if ($oldTempBranches) {
+                        $oldTempBranches | ForEach-Object {
+                            if ($_ -match "refs/heads/(.+)$") {
+                                $oldBranch = $matches[1]
+                                # Check if there's a merged or closed PR for this branch
+                                $prState = & $gh pr list --repo microsoft/PAX --head $oldBranch --state all --json state,number --jq '.[0] | "\(.state)|\(.number)"' 2>$null
+                                if ($prState) {
+                                    $state, $prNum = $prState -split '\|'
+                                    if ($state -eq "MERGED" -or $state -eq "CLOSED") {
+                                        Write-Status "Deleting old temporary branch: $oldBranch (PR #$prNum was $state)"
+                                        git push origin --delete $oldBranch 2>$null
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                
-                # Push to temporary branch on microsoft/PAX only (not Rance9)
-                git push origin release:$tempBranch -f 2>$null
-                
-                # Check if PR already exists
-                $existingPR = gh pr list --repo microsoft/PAX --base release --head $tempBranch --json number --jq '.[0].number' 2>$null
-                
-                if ($existingPR) {
-                    Write-Status "PR already exists: https://github.com/microsoft/PAX/pull/$existingPR"
-                } else {
-                    # Create new PR
-                    $prUrl = gh pr create --repo microsoft/PAX --base release --head $tempBranch --title "v${NewVersion}" --body "Automated release sync for v${NewVersion}`n`nSynced files from PAX branch to release branch." 2>&1
-                    if ($LASTEXITCODE -eq 0) {
-                        Write-Success "PR created: $prUrl"
-                        Write-Host "`n⚠️  ACTION REQUIRED: Please approve and merge the PR at: $prUrl" -ForegroundColor Yellow
+                    
+                    # Push to temporary branch on microsoft/PAX only (not Rance9)
+                    git push origin release:$tempBranch -f 2>$null
+                    
+                    # Check if PR already exists
+                    $existingPR = & $gh pr list --repo microsoft/PAX --base release --head $tempBranch --json number --jq '.[0].number' 2>$null
+                    
+                    if ($existingPR) {
+                        Write-Status "PR already exists: https://github.com/microsoft/PAX/pull/$existingPR"
                     } else {
-                        Write-Error "Failed to create PR: $prUrl"
+                        # Create new PR
+                        $prUrl = & $gh pr create --repo microsoft/PAX --base release --head $tempBranch --title "v${NewVersion}" --body "Automated release sync for v${NewVersion}`n`nSynced files from PAX branch to release branch." 2>&1
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-Success "PR created: $prUrl"
+                            Write-Host "`n⚠️  ACTION REQUIRED: Please approve and merge the PR at: $prUrl" -ForegroundColor Yellow
+                        } else {
+                            Write-Error "Failed to create PR: $prUrl"
+                        }
                     }
                 }
                 
