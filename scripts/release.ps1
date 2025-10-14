@@ -926,7 +926,7 @@ function Sync-ReleaseBranch {
             Get-ChildItem -File | ForEach-Object {
                 # Add a newline to the end of text files to force a git change
                 if ($_.Extension -match '\.(md|txt|json|js|ts|html|css|ps1|sh|yml|yaml|gitignore|gitattributes)$') {
-                    Add-Content -Path $_.FullName -Value "" -NoNewline
+                    "`n" | Add-Content -Path $_.FullName -NoNewline
                 }
             }
             Write-Success "✓ Updated directory and file timestamps in release branch"
@@ -1106,7 +1106,7 @@ function Sync-ReleaseBranch {
             Get-ChildItem -File | ForEach-Object {
                 # Add a newline to the end of text files to force a git change
                 if ($_.Extension -match '\.(md|txt|json|js|ts|html|css|ps1|sh|yml|yaml|gitignore|gitattributes)$') {
-                    Add-Content -Path $_.FullName -Value "" -NoNewline
+                    "`n" | Add-Content -Path $_.FullName -NoNewline
                 }
             }
             Write-Success "✓ Updated directory and file timestamps in release branch"
@@ -1231,7 +1231,7 @@ function New-CommitAndTag {
     Get-ChildItem -File | ForEach-Object {
         # Add a newline to the end of text files to force a git change
         if ($_.Extension -match '\.(md|txt|json|js|ts|html|css|ps1|sh|yml|yaml|gitignore|gitattributes)$') {
-            Add-Content -Path $_.FullName -Value "" -NoNewline
+            "`n" | Add-Content -Path $_.FullName -NoNewline
         }
     }
     Write-Success "✓ Updated directory and file timestamps"
