@@ -2,11 +2,11 @@
 
 > **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`](PAX_Purview_Audit_Log_Processor_v1.7.0.ps1)
 >
-> **📋 Release Notes:** See what's new → [`release_notes/`](release_notes/)
+> **📋 Release Notes:** See what's new → [`release_notes/Purview_Audit_Log_Processor/`](release_notes/Purview_Audit_Log_Processor/)
 >
-> **📜 Previous Script Versions:** Access archived versions → [`script_archive/Purview_Audit_Log_Processor/`](script_archive/Purview_Audit_Log_Processor/)
+> **📜 Previous Script Versions:** Access archived versions → [`script_archive/`](script_archive/)
 >
-> **📚 Documentation Archive:** Version-specific docs → [`release_documentation/`](release_documentation/)
+> **📚 Documentation Archive:** Version-specific docs → [`release_documentation/Purview_Audit_Log_Processor/`](release_documentation/Purview_Audit_Log_Processor/)
 
 **Script:** `PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`  
 **Version:** 1.7.0  

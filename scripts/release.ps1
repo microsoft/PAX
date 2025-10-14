@@ -362,10 +362,10 @@ function New-ReleaseNotesFile {
     Write-Status "Generating release notes for v$NewVersion..."
     
     # Create release_notes folder if it doesn't exist
-    $releaseNotesFolder = "release_notes"
+    $releaseNotesFolder = "release_notes\Purview_Audit_Log_Processor"
     if (-not (Test-Path $releaseNotesFolder)) {
         New-Item -Path $releaseNotesFolder -ItemType Directory -Force | Out-Null
-        Write-Success "Created release_notes folder"
+        Write-Success "Created release_notes\Purview_Audit_Log_Processor folder"
     }
     
     # Get GitHub username from git config
@@ -625,17 +625,17 @@ function Sync-ReleaseBranch {
             }
             
             # Copy PDF to release_documentation folder for historical archive
-            Write-Status "Archiving PDF to release_documentation folder..."
-            $releaseDocFolder = Join-Path (Get-Location) "release_documentation"
+            Write-Status "Archiving PDF to release_documentation\Purview_Audit_Log_Processor folder..."
+            $releaseDocFolder = Join-Path (Get-Location) "release_documentation\Purview_Audit_Log_Processor"
             if (-not (Test-Path $releaseDocFolder)) {
                 New-Item -ItemType Directory -Path $releaseDocFolder -Force | Out-Null
-                Write-Status "Created release_documentation folder"
+                Write-Status "Created release_documentation\Purview_Audit_Log_Processor folder"
             }
             
             $archivePdfPath = Join-Path $releaseDocFolder $pdfFilename
             if (Test-Path $pdfPath) {
                 Copy-Item -Path $pdfPath -Destination $archivePdfPath -Force
-                Write-Success "✓ Archived $pdfFilename to release_documentation/"
+                Write-Success "✓ Archived $pdfFilename to release_documentation\Purview_Audit_Log_Processor\"
             } else {
                 Write-Warning "Could not archive PDF - source file not found"
             }
@@ -730,9 +730,9 @@ function Sync-ReleaseBranch {
         }
         
         # Sync release_documentation folder (entire directory with all PDFs)
-        Write-Status "Syncing release_documentation folder..."
-        $sourceDocFolder = Join-Path (Get-Location) "release_documentation"
-        $destDocFolder = Join-Path $releaseWorktreePath "release_documentation"
+        Write-Status "Syncing release_documentation\Purview_Audit_Log_Processor folder..."
+        $sourceDocFolder = Join-Path (Get-Location) "release_documentation\Purview_Audit_Log_Processor"
+        $destDocFolder = Join-Path $releaseWorktreePath "release_documentation\Purview_Audit_Log_Processor"
         if (Test-Path $sourceDocFolder) {
             if (-not (Test-Path $destDocFolder)) {
                 New-Item -ItemType Directory -Path $destDocFolder -Force | Out-Null
@@ -740,14 +740,14 @@ function Sync-ReleaseBranch {
             # Copy all files from source to destination
             Get-ChildItem -Path $sourceDocFolder -File | ForEach-Object {
                 Copy-Item -Path $_.FullName -Destination $destDocFolder -Force
-                Write-Success "✓ Synced release_documentation/$($_.Name)"
+                Write-Success "✓ Synced release_documentation\Purview_Audit_Log_Processor\$($_.Name)"
             }
         }
         
         # Sync release_notes folder (entire directory with all release notes)
-        Write-Status "Syncing release_notes folder..."
-        $sourceNotesFolder = Join-Path (Get-Location) "release_notes"
-        $destNotesFolder = Join-Path $releaseWorktreePath "release_notes"
+        Write-Status "Syncing release_notes\Purview_Audit_Log_Processor folder..."
+        $sourceNotesFolder = Join-Path (Get-Location) "release_notes\Purview_Audit_Log_Processor"
+        $destNotesFolder = Join-Path $releaseWorktreePath "release_notes\Purview_Audit_Log_Processor"
         if (Test-Path $sourceNotesFolder) {
             if (-not (Test-Path $destNotesFolder)) {
                 New-Item -ItemType Directory -Path $destNotesFolder -Force | Out-Null
@@ -755,7 +755,7 @@ function Sync-ReleaseBranch {
             # Copy all files from source to destination
             Get-ChildItem -Path $sourceNotesFolder -File | ForEach-Object {
                 Copy-Item -Path $_.FullName -Destination $destNotesFolder -Force
-                Write-Success "✓ Synced release_notes/$($_.Name)"
+                Write-Success "✓ Synced release_notes\Purview_Audit_Log_Processor\$($_.Name)"
             }
         }
         
