@@ -107,7 +107,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const result = ${{ steps.summary.outputs.result }};
+            const result = JSON.parse('${{ steps.summary.outputs.result }}');
             
             // Create an issue that will be assigned to repo owner
             const { data: issue } = await github.rest.issues.create({
