@@ -94,7 +94,7 @@ jobs:
             
             summary += `---\n\n`;
             summary += `*This is an automated weekly summary of PRs that were auto-closed by the PR management workflow.*\n`;
-            summary += `*To review or adjust the automation, see `.github/workflows/manage-prs.yml`*\n`;
+            summary += `*To review or adjust the automation, see \`.github/workflows/manage-prs.yml\`*\n`;
             
             return {
               hasContent: true,
