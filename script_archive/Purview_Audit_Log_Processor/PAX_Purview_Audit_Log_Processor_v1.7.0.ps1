@@ -14,13 +14,15 @@
         * Skips authentication & live Search-UnifiedAuditLog queries entirely
         * Forces at least Purview array explosion even if -ExplodeArrays not supplied
         * Optional -ExplodeDeep further deep‑flattens CopilotEventData.*
-        * Allows only filtering parameters (StartDate / EndDate / ActivityTypes / AgentId / AgentsOnly / PromptFilter / ExcludeAgents) plus OutputFile & explosion switches
-        * Disallowed with RAWInputCSV (error if present): BlockHours, ResultSize, PacingMs, Auth, ParallelMode, MaxParallelGroups, MaxConcurrency, EnableParallel
+        * Allows only filtering parameters (StartDate / EndDate / ActivityTypes / AgentId / AgentsOnly / PromptFilter / ExcludeAgents / UserIds) plus OutputFile & explosion switches
+        * Disallowed with RAWInputCSV (error if present): BlockHours, ResultSize, PacingMs, Auth, ParallelMode, MaxParallelGroups, MaxConcurrency, EnableParallel, GroupNames
         * StartDate / EndDate act as inclusive(lower)/exclusive(upper) UTC filters on CreationDate in the replay dataset
         * ActivityTypes filters by Operation (case‑insensitive membership)
         * AgentId filters for specific AgentId value(s); AgentsOnly includes any record with an AgentId present
         * PromptFilter filters messages by isPrompt property (Prompt/Response/Both/Null)
         * ExcludeAgents removes records with AgentId present (inverse of AgentsOnly)
+        * UserIds filters by UserId extracted from AuditData JSON (client-side filtering)
+        * GroupNames is NOT supported in replay mode (requires authentication for group expansion)
         * Non‑exploded 1:1 mode is intentionally disabled for deterministic schema in offline transforms
     
     Filtering:
@@ -28,13 +30,93 @@
         -AgentsOnly                 : Filter to records with any AgentId present (mutually exclusive with -ExcludeAgents)
         -ExcludeAgents              : Filter to records WITHOUT AgentId (mutually exclusive with -AgentId/-AgentsOnly)
         -PromptFilter <Prompt|Response|Both|Null>
-            Prompt   : Only export conversation turns where Message_isPrompt = True
-            Response : Only export conversation turns where Message_isPrompt = False
-            Both     : Export conversation turns with explicit isPrompt values (True or False) - filters out resource-only rows
-            Null     : Only export conversation turns with null/undefined isPrompt values (rare)
+            Prompt   : Only export messages where Message_isPrompt = True
+            Response : Only export messages where Message_isPrompt = False
+            Both     : Export messages with either True or False isPrompt values
+            Null     : Only export messages with null/undefined isPrompt values (rare)
             Note: PromptFilter uses two-stage filtering for optimal performance:
-                  Stage 1 (Record-level): Filters entire audit records based on conversation content
-                  Stage 2 (Conversation-level): Filters individual conversation turns during explosion
+                  Stage 1 (Pre-filter): Filters records before explosion based on message content
+                  Stage 2 (Message-level): Filters individual messages during explosion
+        
+        -UserIds <string[]>         : Filter to specific user identifier(s)
+            LIVE MODE: SERVER-SIDE filtering at Purview (efficient, no unnecessary data transfer)
+            REPLAY MODE: CLIENT-SIDE filtering by extracting UserId from AuditData JSON (slower but functional)
+            
+            Accepted formats:
+                • User Principal Name (UPN): "john.doe@contoso.com"
+                • SMTP Address: "john.doe@contoso.com"
+                • User GUID: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            Examples:
+                -UserIds "john.doe@contoso.com"
+                -UserIds "john.doe@contoso.com","jane.smith@contoso.com","bob.jones@contoso.com"
+        
+        -GroupNames <string[]>      : Filter to members of distribution/security group(s)
+            LIVE MODE ONLY: Groups automatically expanded to individual users after authentication using Get-DistributionGroupMember
+            REPLAY MODE: NOT SUPPORTED (requires authentication) - use -UserIds with explicit email addresses instead
+            
+            Accepted formats (LIVE MODE only):
+                • Group Display Name: "Executive Leadership Team"
+                • Group Email (Alias): "exec-team@contoso.com"
+                • Group GUID: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                • Distinguished Name: "CN=ExecTeam,OU=Groups,DC=contoso,DC=com"
+            Examples:
+                -GroupNames "Executive Leadership"
+                -GroupNames "exec-team@contoso.com"
+                -GroupNames "Engineering Managers","Product Leads","Sales Directors"
+            Note: Groups are expanded once after authentication
+                  Blocked in replay mode (-RAWInputCSV) - script will exit with error
+        
+        Combining UserIds + GroupNames (LIVE MODE ONLY):
+            • When both are specified, the script combines and deduplicates the user lists
+            • Example: -UserIds "ceo@contoso.com" -GroupNames "Board of Directors"
+              Pulls records for the CEO plus all expanded board members (duplicates removed)
+            • Not available in replay mode - use -UserIds only
+
+    COMBINING FILTERS - Powerful Use Cases:
+        
+        All filters can be combined for highly targeted data extraction. Filter application order is now CONSISTENT across both modes:
+        
+        FILTER APPLICATION ORDER (BOTH MODES):
+        1. User/Group filtering (server-side in live mode via -UserIds, client-side in replay mode)
+        2. Agent filtering (AgentsOnly, AgentId, or ExcludeAgents)
+        3. PromptFilter (during explosion: Prompt, Response, Both, or Null)
+        
+        NOTE: Applying User/Group filtering first improves performance by reducing the dataset before subsequent filters.
+        
+        TWO-FILTER COMBINATIONS:
+        
+        User + Agent:
+            Use Case: Analyze specific user(s) interactions with Copilot agents
+            Example: "Show me all agent usage by our power users"
+            Command: -UserIds "poweruser@contoso.com" -AgentsOnly
+        
+        User + PromptFilter:
+            Use Case: Focus on conversation patterns (prompts/responses) for specific users
+            Example: "Show me only the questions asked by the executive team"
+            Command: -GroupNames "Executive Team" -PromptFilter Prompt
+            Result: Removes resource-only explosion rows, keeps only message data
+        
+        Agent + PromptFilter:
+            Use Case: Analyze agent conversation quality, prompt engineering effectiveness
+            Example: "Show me all prompts sent to our custom declarative agent"
+            Command: -AgentId "CopilotStudio.Declarative.abc123" -PromptFilter Prompt
+        
+        THREE-FILTER COMBINATION:
+        
+        User + Agent + PromptFilter:
+            Use Case: Deep-dive conversation analysis for specific users with agents
+            Example: "Show me all questions the sales team asked our Sales Copilot agent"
+            Command: -GroupNames "Sales Team" -AgentId "SalesCopilot.Agent" -PromptFilter Prompt
+            Benefits:
+                • Server-side filtering reduces data transfer (live mode)
+                • Agent filter removes non-agent interactions
+                • PromptFilter removes responses and resource-only rows
+                • Result: Clean dataset of just sales team questions to the agent
+        
+        REPLAY MODE COMBINATIONS:
+            All filter combinations work in replay mode except GroupNames
+            Use -UserIds with explicit email addresses instead of -GroupNames
+            Example: -RAWInputCSV "data.csv" -UserIds "user@contoso.com" -AgentsOnly -PromptFilter Both
 
     PowerShell 5.1 & 7+ supported. Parallel (Auto/On) requires 7+.
 
@@ -84,6 +166,33 @@
 .EXAMPLE
     # Combine filters: agents + prompts only
     pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -AgentsOnly -PromptFilter Prompt -OutputFile C:\Temp\Copilot_agent_prompts.csv
+.EXAMPLE
+    # Filter to specific users
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -UserIds "john.doe@contoso.com","jane.smith@contoso.com" -OutputFile C:\Temp\Copilot_users.csv
+.EXAMPLE
+    # Filter to security group members (automatically expanded)
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -GroupNames "Executive Leadership" -OutputFile C:\Temp\Copilot_executives.csv
+.EXAMPLE
+    # Filter to multiple groups
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -GroupNames "Executive Team","Engineering Managers" -OutputFile C:\Temp\Copilot_leadership.csv
+.EXAMPLE
+    # Combine individual users and groups
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -UserIds "ceo@contoso.com" -GroupNames "Board of Directors" -OutputFile C:\Temp\Copilot_mixed.csv
+.EXAMPLE
+    # Replay mode with user filtering (client-side filtering from JSON)
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -UserIds "john.doe@contoso.com","jane.smith@contoso.com" -OutputFile C:\Temp\Copilot_replay_users.csv
+.EXAMPLE
+    # COMBINING FILTERS: User + PromptFilter (conversation focus, removes resource-only rows)
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -UserIds "poweruser@contoso.com" -PromptFilter Both -OutputFile C:\Temp\User_Conversations.csv
+.EXAMPLE
+    # COMBINING FILTERS: Group + Agent (team adoption of specific agent)
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -GroupNames "Sales Team" -AgentsOnly -OutputFile C:\Temp\Sales_Agent_Usage.csv
+.EXAMPLE
+    # COMBINING FILTERS: User + Agent + PromptFilter (prompts sent to agents by specific users)
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -UserIds "analyst@contoso.com" -AgentId "DataAnalysis.Agent" -PromptFilter Prompt -OutputFile C:\Temp\Analyst_Agent_Prompts.csv
+.EXAMPLE
+    # COMBINING FILTERS: Replay mode with User + Agent + PromptFilter
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -RAWInputCSV .\data.csv -UserIds "exec@contoso.com" -AgentsOnly -PromptFilter Both -OutputFile C:\Temp\Exec_Agent_Messages.csv
 #>
 
 param(
@@ -158,6 +267,12 @@ param(
 
     [Parameter(Mandatory = $false)]
     [switch]$ExcludeAgents,
+
+    [Parameter(Mandatory = $false)]
+    [string[]]$UserIds,
+
+    [Parameter(Mandatory = $false)]
+    [string[]]$GroupNames,
 
     [Parameter(Mandatory = $false)]
     [switch]$Help
@@ -272,14 +387,15 @@ if ($BlockHours -le 0) { Write-Host "ERROR: BlockHours must be positive." -Foreg
 
 try { if ($PSVersionTable.PSEdition -eq 'Core' -and ($global:InformationPreference -in @('SilentlyContinue', 'Ignore'))) { $global:InformationPreference = 'Continue' } } catch {}
 
-# Safeguard: When using -RAWInputCSV, only filtering params (StartDate, EndDate, ActivityTypes, AgentId, AgentsOnly) are allowed; others are invalid.
+# Safeguard: When using -RAWInputCSV, only filtering params (StartDate, EndDate, ActivityTypes, AgentId, AgentsOnly, UserIds) are allowed; others are invalid.
 if ($RAWInputCSV) {
-    $rawConflictParams = @('BlockHours', 'ResultSize', 'PacingMs', 'Auth', 'ParallelMode', 'MaxParallelGroups', 'MaxConcurrency', 'EnableParallel')
+    $rawConflictParams = @('BlockHours', 'ResultSize', 'PacingMs', 'Auth', 'ParallelMode', 'MaxParallelGroups', 'MaxConcurrency', 'EnableParallel', 'GroupNames')
     $specifiedConflicts = @()
     foreach ($cp in $rawConflictParams) { if ($PSBoundParameters.ContainsKey($cp)) { $specifiedConflicts += $cp } }
     if ($specifiedConflicts.Count -gt 0) {
         Write-Host "ERROR: -RAWInputCSV cannot be combined with live query parameter(s): $($specifiedConflicts -join ', ')" -ForegroundColor Red
-        Write-Host "Remove those conflicting parameters and re-run. Allowed with RAWInputCSV: StartDate, EndDate, ActivityTypes, AgentId, AgentsOnly, OutputFile, explosion switches." -ForegroundColor Yellow
+        Write-Host "Remove those conflicting parameters and re-run. Allowed with RAWInputCSV: StartDate, EndDate, ActivityTypes, AgentId, AgentsOnly, UserIds, OutputFile, explosion switches." -ForegroundColor Yellow
+        Write-Host "Note: -GroupNames requires authentication and cannot be used in replay mode. Use -UserIds with explicit email addresses instead." -ForegroundColor Yellow
         exit 1
     }
 }
@@ -515,7 +631,7 @@ function Update-LearnedBlockSize { param([string]$ActivityType, [double]$BlockHo
 function Get-NextSmallerBlockSize { param([double]$CurrentSize) foreach ($size in $script:subdivisionSequence) { if ($size -lt $CurrentSize) { return $size } } return [Math]::Max(0.016667, $CurrentSize / 2) }
 function Get-ActivityVolumeClassification { param([string]$ActivityType) if ($script:highVolumeActivities -contains $ActivityType) { 'High' } elseif ($script:mediumVolumeActivities -contains $ActivityType) { 'Medium' } else { 'Low' } }
 
-function Invoke-ActivityTimeWindowProcessing { param([Parameter(Mandatory = $true)][string]$ActivityType, [Parameter(Mandatory = $true)][datetime]$StartDate, [Parameter(Mandatory = $true)][datetime]$EndDate) Write-Host "Processing $ActivityType from $($StartDate.ToString('yyyy-MM-dd HH:mm')) to $($EndDate.ToString('yyyy-MM-dd HH:mm'))..." -ForegroundColor White; $blockHours = Get-OptimalBlockSize -ActivityType $ActivityType; Write-Host "  Using learned block size: $blockHours hours" -ForegroundColor DarkCyan; $allResults = New-Object System.Collections.ArrayList; $current = $StartDate; $blockNumber = 1; while ($current -lt $EndDate) { $blockEnd = $current.AddHours($blockHours); if ($blockEnd -gt $EndDate) { $blockEnd = $EndDate } Write-Host "  Block $blockNumber`: $($current.ToString('yyyy-MM-dd HH:mm')) to $($blockEnd.ToString('yyyy-MM-dd HH:mm')) ($([math]::Round(($blockEnd - $current).TotalHours,2))h)" -ForegroundColor Yellow; try { $results = Invoke-SearchUnifiedAuditLogWithRetry -Start $current -End $blockEnd -Operation $ActivityType -ResultSize $ResultSize -AutoSubdivide $true; if ($results -and $results.Count -gt 0) { $null = $allResults.AddRange($results); Write-Host "    Added $($results.Count) records (total: $($allResults.Count))" -ForegroundColor Green; Update-LearnedBlockSize -ActivityType $ActivityType -BlockHours $blockHours -RecordCount $results.Count -Success $true } else { Write-Host "    No records found in this block" -ForegroundColor Gray } } catch { Write-Host "    Block failed: $($_.Exception.Message)" -ForegroundColor Red; Update-LearnedBlockSize -ActivityType $ActivityType -BlockHours $blockHours -RecordCount 0 -Success $false; if ($blockHours -gt 0.5) { $smallerBlockHours = Get-NextSmallerBlockSize -CurrentSize $blockHours; Write-Host "    Retrying with smaller $smallerBlockHours hour block..." -ForegroundColor Yellow; try { $blockEnd = $current.AddHours($smallerBlockHours); if ($blockEnd -gt $EndDate) { $blockEnd = $EndDate } $results = Invoke-SearchUnifiedAuditLogWithRetry -Start $current -End $blockEnd -Operation $ActivityType -ResultSize $ResultSize -AutoSubdivide $true; if ($results -and $results.Count -gt 0) { $null = $allResults.AddRange($results); Write-Host "      Smaller block succeeded: $($results.Count) records" -ForegroundColor Green; Update-LearnedBlockSize -ActivityType $ActivityType -BlockHours $smallerBlockHours -RecordCount $results.Count -Success $true; $blockHours = $smallerBlockHours } } catch { Write-Host "      Smaller block also failed: $($_.Exception.Message)" -ForegroundColor Red } } } try { if ($script:progressState.Query.Current -ge $script:progressState.Query.Total) { $script:progressState.Query.Total += 1 } $script:progressState.Query.Current += 1; Update-Progress } catch {} $current = $blockEnd; $blockNumber++ } Write-Host "  Completed $ActivityType`: $($allResults.Count) total records" -ForegroundColor Green; return $allResults.ToArray() }
+function Invoke-ActivityTimeWindowProcessing { param([Parameter(Mandatory = $true)][string]$ActivityType, [Parameter(Mandatory = $true)][datetime]$StartDate, [Parameter(Mandatory = $true)][datetime]$EndDate) Write-Host "Processing $ActivityType from $($StartDate.ToString('yyyy-MM-dd HH:mm')) to $($EndDate.ToString('yyyy-MM-dd HH:mm'))..." -ForegroundColor White; $blockHours = Get-OptimalBlockSize -ActivityType $ActivityType; Write-Host "  Using learned block size: $blockHours hours" -ForegroundColor DarkCyan; $allResults = New-Object System.Collections.ArrayList; $current = $StartDate; $blockNumber = 1; while ($current -lt $EndDate) { $blockEnd = $current.AddHours($blockHours); if ($blockEnd -gt $EndDate) { $blockEnd = $EndDate } Write-Host "  Block $blockNumber`: $($current.ToString('yyyy-MM-dd HH:mm')) to $($blockEnd.ToString('yyyy-MM-dd HH:mm')) ($([math]::Round(($blockEnd - $current).TotalHours,2))h)" -ForegroundColor Yellow; try { $results = Invoke-SearchUnifiedAuditLogWithRetry -Start $current -End $blockEnd -Operation $ActivityType -ResultSize $ResultSize -UserIds $script:targetUsers -AutoSubdivide $true; if ($results -and $results.Count -gt 0) { $null = $allResults.AddRange($results); Write-Host "    Added $($results.Count) records (total: $($allResults.Count))" -ForegroundColor Green; Update-LearnedBlockSize -ActivityType $ActivityType -BlockHours $blockHours -RecordCount $results.Count -Success $true } else { Write-Host "    No records found in this block" -ForegroundColor Gray } } catch { Write-Host "    Block failed: $($_.Exception.Message)" -ForegroundColor Red; Update-LearnedBlockSize -ActivityType $ActivityType -BlockHours $blockHours -RecordCount 0 -Success $false; if ($blockHours -gt 0.5) { $smallerBlockHours = Get-NextSmallerBlockSize -CurrentSize $blockHours; Write-Host "    Retrying with smaller $smallerBlockHours hour block..." -ForegroundColor Yellow; try { $blockEnd = $current.AddHours($smallerBlockHours); if ($blockEnd -gt $EndDate) { $blockEnd = $EndDate } $results = Invoke-SearchUnifiedAuditLogWithRetry -Start $current -End $blockEnd -Operation $ActivityType -ResultSize $ResultSize -UserIds $script:targetUsers -AutoSubdivide $true; if ($results -and $results.Count -gt 0) { $null = $allResults.AddRange($results); Write-Host "      Smaller block succeeded: $($results.Count) records" -ForegroundColor Green; Update-LearnedBlockSize -ActivityType $ActivityType -BlockHours $smallerBlockHours -RecordCount $results.Count -Success $true; $blockHours = $smallerBlockHours } } catch { Write-Host "      Smaller block also failed: $($_.Exception.Message)" -ForegroundColor Red } } } try { if ($script:progressState.Query.Current -ge $script:progressState.Query.Total) { $script:progressState.Query.Total += 1 } $script:progressState.Query.Current += 1; Update-Progress } catch {} $current = $blockEnd; $blockNumber++ } Write-Host "  Completed $ActivityType`: $($allResults.Count) total records" -ForegroundColor Green; return $allResults.ToArray() }
 
 $LogFile = $OutputFile -replace '\.csv$', '.log'
 function Write-Log { param([Parameter(Mandatory = $true)][string]$Message, [string]$Level = "INFO") $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"; $logEntry = "[$timestamp] [$Level] $Message"; Write-Host $Message; try { Add-Content -Path $LogFile -Value $logEntry -Encoding UTF8 -ErrorAction SilentlyContinue } catch {} }
@@ -648,7 +764,7 @@ if (-not $RAWInputCSV) {
 Write-LogHost ("Activity Types: " + ($ActivityTypes -join ', ')) -ForegroundColor White
 
 # Show filters if enabled
-if ($AgentId -or $AgentsOnly -or $ExcludeAgents -or $PromptFilter) {
+if ($AgentId -or $AgentsOnly -or $ExcludeAgents -or $PromptFilter -or $UserIds -or $GroupNames) {
     Write-LogHost "Filters:" -ForegroundColor Yellow
     
     # Agent filters
@@ -693,6 +809,24 @@ if ($AgentId -or $AgentsOnly -or $ExcludeAgents -or $PromptFilter) {
         }
         Write-LogHost "  PromptFilter: $promptLabel" -ForegroundColor Gray
     }
+    
+    # User/Group filtering
+    if ($UserIds -or $GroupNames) {
+        if ($UserIds) {
+            if ($UserIds.Count -eq 1) {
+                Write-LogHost "  UserIds: 1 user" -ForegroundColor Gray
+            } else {
+                Write-LogHost "  UserIds: $($UserIds.Count) users" -ForegroundColor Gray
+            }
+        }
+        if ($GroupNames) {
+            if ($GroupNames.Count -eq 1) {
+                Write-LogHost "  GroupNames: 1 group" -ForegroundColor Gray
+            } else {
+                Write-LogHost "  GroupNames: $($GroupNames.Count) groups" -ForegroundColor Gray
+            }
+        }
+    }
 }
 
 Write-LogHost "=============================================" -ForegroundColor Cyan
@@ -712,6 +846,7 @@ if ($RAWInputCSV) {
         AgentsOnly              = $AgentsOnly.IsPresent
         AgentId                = $(if ($AgentId) { ($AgentId -join ';') } else { '' })
         ExcludeAgents          = $ExcludeAgents.IsPresent
+        UserId                = $(if ($UserIds) { ($UserIds -join ';') } else { '' })
         PromptFilter           = $(if ($PromptFilter) { $PromptFilter } else { '' })
         ExplodeArrays          = $ForcedRawInputCsvExplosion
         ExplodeDeep            = $ExplodeDeep.IsPresent
@@ -737,6 +872,8 @@ else {
         AgentsOnly              = $AgentsOnly.IsPresent
         AgentId                = $(if ($AgentId) { ($AgentId -join ';') } else { '' })
         ExcludeAgents          = $ExcludeAgents.IsPresent
+        UserId                = $(if ($UserIds) { ($UserIds -join ';') } else { '' })
+        GroupName             = $(if ($GroupNames) { ($GroupNames -join ';') } else { '' })
         PromptFilter           = $(if ($PromptFilter) { $PromptFilter } else { '' })
         ExplodeArrays          = ($ExplodeArrays.IsPresent -or $ForcedRawInputCsvExplosion -or $ExplodeDeep.IsPresent)
         ExplodeDeep            = $ExplodeDeep.IsPresent
@@ -776,8 +913,8 @@ function Connect-ToComplianceCenter {
 }
 
 function Invoke-SearchUnifiedAuditLogWithRetry {
-    param([Parameter(Mandatory = $true)][datetime]$Start, [Parameter(Mandatory = $true)][datetime]$End, [Parameter(Mandatory = $true)][string]$Operation, [Parameter(Mandatory = $true)][int]$ResultSize, [int]$MaxRetries = 3, [bool]$AutoSubdivide = $true) $script:Hit10KLimit = $false; $script:LimitTimeWindow = ""; $allResults = New-Object System.Collections.ArrayList; $totalFetched = 0; $pageNumber = 1; $maxPages = 50; $pageSize = [Math]::Min($ResultSize, 5000); $useSessionPagination = $ResultSize -gt 5000; if ($useSessionPagination) { Write-LogHost "  Using session-based pagination for ResultSize $ResultSize (page size: $pageSize)" -ForegroundColor Cyan; $sessionId = [Guid]::NewGuid().ToString() } else { Write-LogHost "  Using standard pagination for ResultSize $ResultSize (page size: $pageSize)" -ForegroundColor Cyan }
-    try { while ($totalFetched -lt $ResultSize -and $pageNumber -le $maxPages) { $remainingNeeded = $ResultSize - $totalFetched; $currentPageSize = [Math]::Min($pageSize, $remainingNeeded); $pageAttempt = 0; $pageResults = $null; $pageMaxRetries = 3; while ($pageAttempt -le $pageMaxRetries) { try { $params = @{ 'StartDate' = $Start; 'EndDate' = $End; 'Operations' = $Operation; 'ResultSize' = $currentPageSize; 'ErrorAction' = 'Stop' }; if ($useSessionPagination) { $params.Add('SessionId', $sessionId); if ($pageNumber -eq 1) { $params.Add('SessionCommand', 'ReturnLargeSet') } else { $params.Add('SessionCommand', 'ReturnNextPreviewPage') } } if ($pageAttempt -eq 0) { if ($useSessionPagination) { if ($pageNumber -eq 1) { Write-LogHost "    Starting session $sessionId, requesting page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan } else { Write-LogHost "    Fetching page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan } } else { Write-LogHost "    Fetching page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan } } else { Write-LogHost "    Retrying page $pageNumber (attempt $($pageAttempt + 1) of $($pageMaxRetries + 1))" -ForegroundColor Yellow } $delayMs = $PacingMs + ($pageAttempt * 2000); if ($delayMs -gt 0) { Start-Sleep -Milliseconds $delayMs } $pageResults = Search-UnifiedAuditLog @params; break } catch { $pageAttempt++; if ($pageAttempt -le $pageMaxRetries) { $msg = $_.Exception.Message; $status = $null; try { $status = $_.Exception.Response.StatusCode.Value__ } catch {}; $isThrottle = ($msg -match '429' -or $msg -match 'Too\s*Many\s*Requests' -or $msg -match 'throttl' -or $msg -match '503' -or $msg -match 'Service\s*Unavailable' -or $status -in 429, 503); if ($isThrottle) { Write-LogHost "    Page $pageNumber throttled (attempt $pageAttempt). Retrying..." -ForegroundColor Yellow; $base = 0.5; $delay = [math]::Min(30.0, $base * [math]::Pow(2, $pageAttempt - 1)); $jitter = (Get-Random -Minimum 0 -Maximum 250) / 1000.0; Start-Sleep -Milliseconds ([int]([math]::Round(($delay + $jitter) * 1000))) } else { Write-LogHost "    Page $pageNumber attempt $pageAttempt failed: $($_.Exception.Message). Retrying..." -ForegroundColor Yellow } if ($useSessionPagination -and $pageAttempt -gt 1) { $sessionId = [Guid]::NewGuid().ToString(); Write-LogHost "    Creating new session ID for retry: $sessionId" -ForegroundColor Yellow } } else { Write-LogHost "    Page $pageNumber failed after $($pageMaxRetries + 1) attempts: $($_.Exception.Message)" -ForegroundColor Red; throw } } } if ($pageResults -and $pageResults.Count -gt 0) { $null = $allResults.AddRange($pageResults); $totalFetched += $pageResults.Count; try { $script:metrics.PagesFetched += 1 } catch {}; Write-LogHost "    Page $pageNumber returned $($pageResults.Count) records (total: $totalFetched)" -ForegroundColor DarkCyan; if ($pageResults.Count -lt $currentPageSize) { Write-LogHost "    Reached end of data (page returned $($pageResults.Count) < $currentPageSize requested)" -ForegroundColor DarkCyan; break } if ($totalFetched -eq 10000 -and $pageResults.Count -eq $currentPageSize) { Write-LogHost "" -ForegroundColor Red; Write-LogHost "      CRITICAL: Exchange Online 10,000 Record Server Limit Reached!" -ForegroundColor Red; Write-LogHost "     Retrieved: 10,000 records" -ForegroundColor Yellow; Write-LogHost "     Missing: Additional records are likely available but CANNOT be accessed" -ForegroundColor Red; Write-LogHost "     Solution: Use smaller time blocks (30 minutes or less) to get complete data" -ForegroundColor Cyan; Write-LogHost "     This is a hard Exchange Online server limitation - pagination cannot bypass it" -ForegroundColor Yellow; Write-LogHost "" -ForegroundColor Red; $script:Hit10KLimit = $true; $script:LimitTimeWindow = "$(($Start).ToString('yyyy-MM-dd HH:mm')) to $(($End).ToString('yyyy-MM-dd HH:mm'))" } } else { Write-LogHost "    Page $pageNumber returned no results - ending pagination" -ForegroundColor DarkCyan; break } $pageNumber++ } if ($pageNumber -gt $maxPages) { Write-LogHost "  WARNING: Reached maximum page limit ($maxPages). There may be more data available." -ForegroundColor Yellow } if ($script:Hit10KLimit) { Write-LogHost "" -ForegroundColor Red; Write-LogHost "   INCOMPLETE DATA WARNING " -ForegroundColor Red; Write-LogHost "  Time window: $($script:LimitTimeWindow)" -ForegroundColor Yellow; Write-LogHost "  Retrieved exactly 10,000 records - Exchange Online server limit reached" -ForegroundColor Red; Write-LogHost "  Additional records exist but are inaccessible with this time window" -ForegroundColor Red; Write-LogHost "  REQUIRED ACTION: Re-run with smaller time blocks (30min recommended)" -ForegroundColor Cyan; Write-LogHost "" -ForegroundColor Red } Write-LogHost "  Pagination done: $($allResults.Count) total records" -ForegroundColor Green; $res = $allResults.ToArray() } catch { Write-LogHost "  Pagination failed: $($_.Exception.Message)" -ForegroundColor Red; throw } if ($AutoSubdivide -and $res -and $res.Count -eq $ResultSize) { $timeSpan = $End - $Start; if ($timeSpan.TotalMinutes -gt 30) { if ($timeSpan.TotalHours -ge 12) { Write-LogHost "  Limit hit. Using aggressive 2hr subdivision..." -ForegroundColor Yellow; $chunkResults = New-Object System.Collections.ArrayList; $current = $Start; while ($current -lt $End) { $chunkEndTicks = [Math]::Min($current.AddHours(2).Ticks, $End.Ticks); $base = Get-Date '0001-01-01Z'; $chunkEnd = $base.AddTicks($chunkEndTicks); $chunk = Invoke-SearchUnifiedAuditLogWithRetry -Start $current -End $chunkEnd -Operation $Operation -ResultSize $ResultSize -MaxRetries $MaxRetries -AutoSubdivide $AutoSubdivide; if ($chunk) { $null = $chunkResults.AddRange($chunk) } $current = $chunkEnd } Write-LogHost "  Aggressive subdivision completed. Total records: $($chunkResults.Count)" -ForegroundColor Green; return $chunkResults.ToArray() } else { Write-LogHost "  Limit hit. Auto-subdividing..." -ForegroundColor Yellow; $midPoint = $Start.AddTicks(($End - $Start).Ticks / 2); $firstHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $Start -End $midPoint -Operation $Operation -ResultSize $ResultSize -MaxRetries $MaxRetries -AutoSubdivide $AutoSubdivide; $secondHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $midPoint -End $End -Operation $Operation -ResultSize $ResultSize -MaxRetries $MaxRetries -AutoSubdivide $AutoSubdivide; $combinedResults = New-Object System.Collections.ArrayList; if ($firstHalf) { $null = $combinedResults.AddRange($firstHalf) } if ($secondHalf) { $null = $combinedResults.AddRange($secondHalf) } Write-LogHost "  Auto-subdivision completed. Total records: $($combinedResults.Count)" -ForegroundColor Green; return $combinedResults.ToArray() } } else { Write-LogHost "  WARNING: Result limit hit but time window too small to subdivide. Possible data loss!" -ForegroundColor Red } } return $res 
+    param([Parameter(Mandatory = $true)][datetime]$Start, [Parameter(Mandatory = $true)][datetime]$End, [Parameter(Mandatory = $true)][string]$Operation, [Parameter(Mandatory = $true)][int]$ResultSize, [Parameter(Mandatory = $false)][string[]]$UserIds, [int]$MaxRetries = 3, [bool]$AutoSubdivide = $true) $script:Hit10KLimit = $false; $script:LimitTimeWindow = ""; $allResults = New-Object System.Collections.ArrayList; $totalFetched = 0; $pageNumber = 1; $maxPages = 50; $pageSize = [Math]::Min($ResultSize, 5000); $useSessionPagination = $ResultSize -gt 5000; if ($useSessionPagination) { Write-LogHost "  Using session-based pagination for ResultSize $ResultSize (page size: $pageSize)" -ForegroundColor Cyan; $sessionId = [Guid]::NewGuid().ToString() } else { Write-LogHost "  Using standard pagination for ResultSize $ResultSize (page size: $pageSize)" -ForegroundColor Cyan }
+    try { while ($totalFetched -lt $ResultSize -and $pageNumber -le $maxPages) { $remainingNeeded = $ResultSize - $totalFetched; $currentPageSize = [Math]::Min($pageSize, $remainingNeeded); $pageAttempt = 0; $pageResults = $null; $pageMaxRetries = 3; while ($pageAttempt -le $pageMaxRetries) { try { $params = @{ 'StartDate' = $Start; 'EndDate' = $End; 'Operations' = $Operation; 'ResultSize' = $currentPageSize; 'ErrorAction' = 'Stop' }; if ($UserIds -and $UserIds.Count -gt 0) { $params['UserIds'] = $UserIds }; if ($useSessionPagination) { $params.Add('SessionId', $sessionId); if ($pageNumber -eq 1) { $params.Add('SessionCommand', 'ReturnLargeSet') } else { $params.Add('SessionCommand', 'ReturnNextPreviewPage') } } if ($pageAttempt -eq 0) { if ($useSessionPagination) { if ($pageNumber -eq 1) { Write-LogHost "    Starting session $sessionId, requesting page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan } else { Write-LogHost "    Fetching page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan } } else { Write-LogHost "    Fetching page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan } } else { Write-LogHost "    Retrying page $pageNumber (attempt $($pageAttempt + 1) of $($pageMaxRetries + 1))" -ForegroundColor Yellow } $delayMs = $PacingMs + ($pageAttempt * 2000); if ($delayMs -gt 0) { Start-Sleep -Milliseconds $delayMs } $pageResults = Search-UnifiedAuditLog @params; break } catch { $pageAttempt++; if ($pageAttempt -le $pageMaxRetries) { $msg = $_.Exception.Message; $status = $null; try { $status = $_.Exception.Response.StatusCode.Value__ } catch {}; $isThrottle = ($msg -match '429' -or $msg -match 'Too\s*Many\s*Requests' -or $msg -match 'throttl' -or $msg -match '503' -or $msg -match 'Service\s*Unavailable' -or $status -in 429, 503); if ($isThrottle) { Write-LogHost "    Page $pageNumber throttled (attempt $pageAttempt). Retrying..." -ForegroundColor Yellow; $base = 0.5; $delay = [math]::Min(30.0, $base * [math]::Pow(2, $pageAttempt - 1)); $jitter = (Get-Random -Minimum 0 -Maximum 250) / 1000.0; Start-Sleep -Milliseconds ([int]([math]::Round(($delay + $jitter) * 1000))) } else { Write-LogHost "    Page $pageNumber attempt $pageAttempt failed: $($_.Exception.Message). Retrying..." -ForegroundColor Yellow } if ($useSessionPagination -and $pageAttempt -gt 1) { $sessionId = [Guid]::NewGuid().ToString(); Write-LogHost "    Creating new session ID for retry: $sessionId" -ForegroundColor Yellow } } else { Write-LogHost "    Page $pageNumber failed after $($pageMaxRetries + 1) attempts: $($_.Exception.Message)" -ForegroundColor Red; throw } } } if ($pageResults -and $pageResults.Count -gt 0) { $null = $allResults.AddRange($pageResults); $totalFetched += $pageResults.Count; try { $script:metrics.PagesFetched += 1 } catch {}; Write-LogHost "    Page $pageNumber returned $($pageResults.Count) records (total: $totalFetched)" -ForegroundColor DarkCyan; if ($pageResults.Count -lt $currentPageSize) { Write-LogHost "    Reached end of data (page returned $($pageResults.Count) < $currentPageSize requested)" -ForegroundColor DarkCyan; break } if ($totalFetched -eq 10000 -and $pageResults.Count -eq $currentPageSize) { Write-LogHost "" -ForegroundColor Red; Write-LogHost "      CRITICAL: Exchange Online 10,000 Record Server Limit Reached!" -ForegroundColor Red; Write-LogHost "     Retrieved: 10,000 records" -ForegroundColor Yellow; Write-LogHost "     Missing: Additional records are likely available but CANNOT be accessed" -ForegroundColor Red; Write-LogHost "     Solution: Use smaller time blocks (30 minutes or less) to get complete data" -ForegroundColor Cyan; Write-LogHost "     This is a hard Exchange Online server limitation - pagination cannot bypass it" -ForegroundColor Yellow; Write-LogHost "" -ForegroundColor Red; $script:Hit10KLimit = $true; $script:LimitTimeWindow = "$(($Start).ToString('yyyy-MM-dd HH:mm')) to $(($End).ToString('yyyy-MM-dd HH:mm'))" } } else { Write-LogHost "    Page $pageNumber returned no results - ending pagination" -ForegroundColor DarkCyan; break } $pageNumber++ } if ($pageNumber -gt $maxPages) { Write-LogHost "  WARNING: Reached maximum page limit ($maxPages). There may be more data available." -ForegroundColor Yellow } if ($script:Hit10KLimit) { Write-LogHost "" -ForegroundColor Red; Write-LogHost "   INCOMPLETE DATA WARNING " -ForegroundColor Red; Write-LogHost "  Time window: $($script:LimitTimeWindow)" -ForegroundColor Yellow; Write-LogHost "  Retrieved exactly 10,000 records - Exchange Online server limit reached" -ForegroundColor Red; Write-LogHost "  Additional records exist but are inaccessible with this time window" -ForegroundColor Red; Write-LogHost "  REQUIRED ACTION: Re-run with smaller time blocks (30min recommended)" -ForegroundColor Cyan; Write-LogHost "" -ForegroundColor Red } Write-LogHost "  Pagination done: $($allResults.Count) total records" -ForegroundColor Green; $res = $allResults.ToArray() } catch { Write-LogHost "  Pagination failed: $($_.Exception.Message)" -ForegroundColor Red; throw } if ($AutoSubdivide -and $res -and $res.Count -eq $ResultSize) { $timeSpan = $End - $Start; if ($timeSpan.TotalMinutes -gt 30) { if ($timeSpan.TotalHours -ge 12) { Write-LogHost "  Limit hit. Using aggressive 2hr subdivision..." -ForegroundColor Yellow; $chunkResults = New-Object System.Collections.ArrayList; $current = $Start; while ($current -lt $End) { $chunkEndTicks = [Math]::Min($current.AddHours(2).Ticks, $End.Ticks); $base = Get-Date '0001-01-01Z'; $chunkEnd = $base.AddTicks($chunkEndTicks); $chunk = Invoke-SearchUnifiedAuditLogWithRetry -Start $current -End $chunkEnd -Operation $Operation -ResultSize $ResultSize -UserId $UserIds -MaxRetries $MaxRetries -AutoSubdivide $AutoSubdivide; if ($chunk) { $null = $chunkResults.AddRange($chunk) } $current = $chunkEnd } Write-LogHost "  Aggressive subdivision completed. Total records: $($chunkResults.Count)" -ForegroundColor Green; return $chunkResults.ToArray() } else { Write-LogHost "  Limit hit. Auto-subdividing..." -ForegroundColor Yellow; $midPoint = $Start.AddTicks(($End - $Start).Ticks / 2); $firstHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $Start -End $midPoint -Operation $Operation -ResultSize $ResultSize -UserId $UserIds -MaxRetries $MaxRetries -AutoSubdivide $AutoSubdivide; $secondHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $midPoint -End $End -Operation $Operation -ResultSize $ResultSize -UserId $UserIds -MaxRetries $MaxRetries -AutoSubdivide $AutoSubdivide; $combinedResults = New-Object System.Collections.ArrayList; if ($firstHalf) { $null = $combinedResults.AddRange($firstHalf) } if ($secondHalf) { $null = $combinedResults.AddRange($secondHalf) } Write-LogHost "  Auto-subdivision completed. Total records: $($combinedResults.Count)" -ForegroundColor Green; return $combinedResults.ToArray() } } else { Write-LogHost "  WARNING: Result limit hit but time window too small to subdivide. Possible data loss!" -ForegroundColor Red } } return $res 
 }
 
 function Find-AllArrays {
@@ -1361,6 +1498,39 @@ try {
         Import-Module ExchangeOnlineManagement -Force
         Connect-ToComplianceCenter
 
+        # Handle user/group filtering
+        $script:targetUsers = @()
+        if ($UserIds -or $GroupNames) {
+            Write-LogHost ""
+            Write-LogHost "User/Group Filtering Enabled:" -ForegroundColor Cyan
+            
+            if ($UserIds) {
+                $script:targetUsers += $UserIds
+                Write-LogHost "  Individual users: $($UserIds.Count)" -ForegroundColor DarkCyan
+            }
+            
+            if ($GroupNames) {
+                Write-LogHost "  Expanding groups to individual users..." -ForegroundColor DarkCyan
+                foreach ($group in $GroupNames) {
+                    try {
+                        Write-LogHost "    Processing group: '$group'" -ForegroundColor Gray
+                        $members = Get-DistributionGroupMember -Identity $group -ErrorAction Stop | 
+                                   Select-Object -ExpandProperty PrimarySmtpAddress
+                        $script:targetUsers += $members
+                        Write-LogHost "      Expanded: $($members.Count) member(s)" -ForegroundColor DarkGray
+                    }
+                    catch {
+                        Write-LogHost "      Warning: Failed to expand group '$group': $($_.Exception.Message)" -ForegroundColor Yellow
+                    }
+                }
+            }
+            
+            # Deduplicate
+            $script:targetUsers = $script:targetUsers | Select-Object -Unique
+            Write-LogHost "  Total target users after deduplication: $($script:targetUsers.Count)" -ForegroundColor Green
+            Write-LogHost ""
+        }
+
         $startDateObj = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null)
         $endDateObj = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null)
 
@@ -1520,6 +1690,9 @@ try {
         if ($AgentId -or $AgentsOnly) {
             $parsingStatus += ' + Agent filter'
         }
+        if ($UserIds) {
+            $parsingStatus += ' + User filter'
+        }
         Set-ProgressPhase -Phase 'Parsing' -Status $parsingStatus
         $script:progressState.Parsing.Total = [int]$allLogs.Count
         $script:progressState.Parsing.Current = 0
@@ -1548,9 +1721,9 @@ try {
         # Update parsing progress (replay mode only)
         if ($RAWInputCSV) {
             $parseCount++
-            # Pre-parsing represents 90% of the parsing+filtering task
-            # Scale current to 90% of actual progress
-            $script:progressState.Parsing.Current = [int]($parseCount * 0.9)
+            # Pre-parsing represents 80% of the parsing+filtering task
+            # Scale current to 80% of actual progress
+            $script:progressState.Parsing.Current = [int]($parseCount * 0.8)
             # Update progress bar every 500 records or at completion
             if ($parseCount % 500 -eq 0 -or $parseCount -eq $allLogs.Count) {
                 Update-Progress
@@ -1560,6 +1733,102 @@ try {
     $parseEnd = Get-Date
     $parseElapsed = [int]($parseEnd - $parseStart).TotalSeconds
     Write-LogHost "JSON pre-parsing complete in $parseElapsed seconds ($parseErrors parse errors)" -ForegroundColor Green
+    
+    # Calculate filter progress allocation (replay mode only)
+    # Pre-parsing = 80%, All filters = 20% (divided among active filters)
+    # Filter order: User → Agent → ExcludeAgents → Prompt (matches live mode logic)
+    if ($RAWInputCSV) {
+        $activeFilters = @()
+        if ($UserIds) { $activeFilters += 'User' }
+        if ($AgentId -or $AgentsOnly) { $activeFilters += 'Agent' }
+        if ($ExcludeAgents) { $activeFilters += 'ExcludeAgents' }
+        if ($PromptFilter) { $activeFilters += 'Prompt' }
+        
+        $filterCount = $activeFilters.Count
+        if ($filterCount -gt 0) {
+            $filterProgressPerFilter = 0.20 / $filterCount  # 20% divided among active filters
+            $script:filterProgressOffset = 0.80  # Start at 80% (after pre-parsing)
+            $script:filterProgressAllocation = $filterProgressPerFilter
+            $script:currentFilterIndex = 0
+        } else {
+            # No filters active, set to 100%
+            $script:progressState.Parsing.Current = $script:progressState.Parsing.Total
+            Update-Progress
+        }
+    }
+    
+    # --- User/Group Filtering (if specified in replay mode) ---
+    # Applied FIRST in replay mode to match live mode logic and improve performance
+    if ($RAWInputCSV -and $UserIds) {
+        Write-LogHost "Applying User filtering (client-side)..." -ForegroundColor Yellow
+        
+        # In replay mode, UserIds is used directly (GroupNames is blocked)
+        $targetUserList = $UserIds
+        
+        # Populate script-level targetUsers for summary display consistency
+        $script:targetUsers = $UserIds
+        
+        # Normalize to lowercase for case-insensitive comparison
+        $targetUserLookup = @{}
+        foreach ($user in $targetUserList) {
+            if ($user) {
+                $targetUserLookup[$user.ToLower()] = $true
+            }
+        }
+        
+        Write-LogHost "  Filtering for $($targetUserLookup.Count) unique user identifier(s)" -ForegroundColor Gray
+        
+        $preUserFilterCount = $allLogs.Count
+        $userFilterStart = Get-Date
+        $filteredLogs = New-Object System.Collections.Generic.List[object]
+        $userFilterCount = 0
+        
+        foreach ($log in $allLogs) {
+            $logUserId = $null
+            try {
+                $logUserId = $log._ParsedAuditData.UserId
+            } catch {}
+            
+            if ($logUserId -and $targetUserLookup.ContainsKey($logUserId.ToLower())) {
+                $filteredLogs.Add($log)
+            }
+            $userFilterCount++
+            
+            # Update progress (replay mode only)
+            if ($RAWInputCSV -and ($userFilterCount % 500 -eq 0 -or $userFilterCount -eq $preUserFilterCount)) {
+                # Calculate this filter's progress within its allocated 20% slice
+                $userFilterProgress = $userFilterCount / $preUserFilterCount
+                $progressStart = $script:filterProgressOffset + ($script:currentFilterIndex * $script:filterProgressAllocation)
+                $script:progressState.Parsing.Current = [int]($script:progressState.Parsing.Total * ($progressStart + ($userFilterProgress * $script:filterProgressAllocation)))
+                Update-Progress
+            }
+        }
+        
+        $allLogs = $filteredLogs
+        $postUserFilterCount = $allLogs.Count
+        $userFilterEnd = Get-Date
+        $userFilterElapsed = [int](($userFilterEnd - $userFilterStart).TotalSeconds)
+        $userFilteredOutCount = [int]$preUserFilterCount - [int]$postUserFilterCount
+        
+        # Store user filter metrics
+        $script:metrics.UserFilterApplied = $true
+        $script:metrics.UserFilterPreCount = $preUserFilterCount
+        $script:metrics.UserFilterPostCount = $postUserFilterCount
+        $script:metrics.UserFilterRemovedCount = $userFilteredOutCount
+        $script:metrics.UserFilterElapsedSec = $userFilterElapsed
+        
+        Write-LogHost "User filtering complete in $userFilterElapsed seconds" -ForegroundColor Green
+        Write-LogHost "  Records before filtering: $preUserFilterCount" -ForegroundColor Gray
+        Write-LogHost "  Records after filtering: $postUserFilterCount" -ForegroundColor Gray
+        Write-LogHost "  Records filtered out: $userFilteredOutCount" -ForegroundColor Gray
+        
+        if ($postUserFilterCount -eq 0) {
+            Write-LogHost "WARNING: No records match the User filter criteria. Output will contain header only." -ForegroundColor Yellow
+        }
+        
+        # Increment filter index for progress tracking
+        if ($RAWInputCSV) { $script:currentFilterIndex++ }
+    }
     
     # --- Agent Filtering (if specified) ---
     $preFilterCount = $allLogs.Count
@@ -1584,9 +1853,11 @@ try {
             
             # Update parsing progress bar during filtering (replay mode only)
             if ($RAWInputCSV -and ($filterCount % 500 -eq 0 -or $filterCount -eq $preFilterCount)) {
-                # Agent filtering represents the final 10% (from 90% to 100%)
+                # Calculate this filter's progress within its allocated 20% slice
                 $filterProgress = $filterCount / $preFilterCount
-                $script:progressState.Parsing.Current = [int](($allLogs.Count * 0.9) + ($allLogs.Count * 0.1 * $filterProgress))
+                $progressStart = $script:filterProgressOffset + ($script:currentFilterIndex * $script:filterProgressAllocation)
+                $progressEnd = $progressStart + $script:filterProgressAllocation
+                $script:progressState.Parsing.Current = [int]($script:progressState.Parsing.Total * ($progressStart + ($filterProgress * $script:filterProgressAllocation)))
                 Update-Progress
             }
         }
@@ -1594,8 +1865,8 @@ try {
         $allLogs = $filteredLogs
         $postFilterCount = $allLogs.Count
         $filterEnd = Get-Date
-        $filterElapsed = [int]($filterEnd - $filterStart).TotalSeconds
-        $filteredOutCount = $preFilterCount - $postFilterCount
+        $filterElapsed = [int](($filterEnd - $filterStart).TotalSeconds)
+        $filteredOutCount = [int]$preFilterCount - [int]$postFilterCount
         
         # Store agent filter metrics
         $script:metrics.AgentFilterApplied = $true
@@ -1612,6 +1883,9 @@ try {
         if ($postFilterCount -eq 0) {
             Write-LogHost "WARNING: No records match the Agent filter criteria. Output will contain header only." -ForegroundColor Yellow
         }
+        
+        # Increment filter index for progress tracking
+        if ($RAWInputCSV) { $script:currentFilterIndex++ }
     }
     
     # --- ExcludeAgents Filtering (if specified) ---
@@ -1635,9 +1909,10 @@ try {
             
             # Update parsing progress bar during ExcludeAgents filtering (replay mode only)
             if ($RAWInputCSV -and ($excludeCount % 500 -eq 0 -or $excludeCount -eq $preExcludeCount)) {
-                # ExcludeAgents filtering represents the final 10% (from 90% to 100%)
+                # Calculate this filter's progress within its allocated 20% slice
                 $excludeProgress = $excludeCount / $preExcludeCount
-                $script:progressState.Parsing.Current = [int](($preExcludeCount * 0.9) + ($preExcludeCount * 0.1 * $excludeProgress))
+                $progressStart = $script:filterProgressOffset + ($script:currentFilterIndex * $script:filterProgressAllocation)
+                $script:progressState.Parsing.Current = [int]($script:progressState.Parsing.Total * ($progressStart + ($excludeProgress * $script:filterProgressAllocation)))
                 Update-Progress
             }
         }
@@ -1645,8 +1920,8 @@ try {
         $allLogs = $filteredLogs
         $postExcludeCount = $allLogs.Count
         $excludeEnd = Get-Date
-        $excludeElapsed = [int]($excludeEnd - $excludeStart).TotalSeconds
-        $excludedCount = $preExcludeCount - $postExcludeCount
+        $excludeElapsed = [int](($excludeEnd - $excludeStart).TotalSeconds)
+        $excludedCount = [int]$preExcludeCount - [int]$postExcludeCount
         
         # Store ExcludeAgents filter metrics
         $script:metrics.ExcludeAgentsApplied = $true
@@ -1663,6 +1938,9 @@ try {
         if ($postExcludeCount -eq 0) {
             Write-LogHost "WARNING: No non-agent records found. Output will contain header only." -ForegroundColor Yellow
         }
+        
+        # Increment filter index for progress tracking
+        if ($RAWInputCSV) { $script:currentFilterIndex++ }
     }
     
     # --- PromptFilter Filtering (if specified) ---
@@ -1756,8 +2034,10 @@ try {
             
             # Update progress bar during PromptFilter filtering (replay mode only)
             if ($RAWInputCSV -and ($promptCount % 500 -eq 0 -or $promptCount -eq $prePromptCount)) {
+                # Calculate this filter's progress within its allocated 20% slice
                 $promptProgress = $promptCount / $prePromptCount
-                $script:progressState.Parsing.Current = [int](($prePromptCount * 0.9) + ($prePromptCount * 0.1 * $promptProgress))
+                $progressStart = $script:filterProgressOffset + ($script:currentFilterIndex * $script:filterProgressAllocation)
+                $script:progressState.Parsing.Current = [int]($script:progressState.Parsing.Total * ($progressStart + ($promptProgress * $script:filterProgressAllocation)))
                 Update-Progress
             }
         }
@@ -1766,8 +2046,8 @@ try {
         $postPromptCount = $allLogs.Count
         $promptEnd = Get-Date
         $promptElapsed = [Math]::Round(($promptEnd - $promptStart).TotalSeconds, 2)
-        $promptFilteredCount = $prePromptCount - $postPromptCount
-        $totalMsgRemoved = $totalMsgBefore - $totalMsgAfter
+        $promptFilteredCount = [int]$prePromptCount - [int]$postPromptCount
+        $totalMsgRemoved = [int]$totalMsgBefore - [int]$totalMsgAfter
         
         # Store PromptFilter metrics
         $script:metrics.PromptFilterApplied = $true
@@ -1799,6 +2079,14 @@ try {
             Write-LogHost "  This means all messages in the filtered records have explicit isPrompt values (True or False)." -ForegroundColor Yellow
             Write-LogHost "  Consider using PromptFilter=Prompt or PromptFilter=Response instead." -ForegroundColor Yellow
         }
+        
+        # Increment filter index for progress tracking (final filter)
+        if ($RAWInputCSV) { 
+            $script:currentFilterIndex++ 
+            # Set progress to 100% after all filters complete
+            $script:progressState.Parsing.Current = $script:progressState.Parsing.Total
+            Update-Progress
+        }
     }
     
     # Set explosion phase total based on final filtered count
@@ -1825,6 +2113,9 @@ try {
     
     # Begin record explosion and transformation phase
     Set-ProgressPhase -Phase 'Explosion' -Status 'Analyzing and exploding records'
+    
+    # Capture the count of records going into explosion (after all filtering)
+    $script:metrics.RecordsAfterFiltering = $allLogs.Count
     
     $parallelProcessingComplete = $false
     try {
@@ -2205,6 +2496,74 @@ try {
         Write-LogHost ("ExcludeAgents filter time: {0:F2} seconds" -f $script:metrics.ExcludeAgentsElapsedSec) -ForegroundColor Gray
     }
     
+    # Show User/Group filtering metrics if filter was applied
+    if ($script:metrics.UserFilterApplied) {
+        Write-LogHost ""; Write-LogHost "=== User/Group Filtering Summary ===" -ForegroundColor Cyan
+        
+        # Determine which criteria to display (use script:targetUsers for actual values, parameters for type detection)
+        $displayUserList = if ($script:targetUsers -and $script:targetUsers.Count -gt 0) { $script:targetUsers } else { $UserIds }
+        
+        # Show filter criteria
+        if ($UserIds -and $GroupNames) {
+            Write-LogHost ("Filter type: UserIds + GroupNames") -ForegroundColor White
+            # Show UserIds (truncate if more than 5)
+            if ($displayUserList.Count -le 5) {
+                Write-LogHost ("  UserIds: {0}" -f ($displayUserList -join ', ')) -ForegroundColor Gray
+            } else {
+                Write-LogHost ("  UserIds: {0} users specified ({1}, {2}, {3}, ... and {4} more)" -f $displayUserList.Count, $displayUserList[0], $displayUserList[1], $displayUserList[2], ($displayUserList.Count - 3)) -ForegroundColor Gray
+            }
+            # Show GroupNames (truncate if more than 5)
+            if ($GroupNames.Count -le 5) {
+                Write-LogHost ("  GroupNames: {0}" -f ($GroupNames -join ', ')) -ForegroundColor Gray
+            } else {
+                Write-LogHost ("  GroupNames: {0} groups specified ({1}, {2}, {3}, ... and {4} more)" -f $GroupNames.Count, $GroupNames[0], $GroupNames[1], $GroupNames[2], ($GroupNames.Count - 3)) -ForegroundColor Gray
+            }
+        }
+        elseif ($UserIds) {
+            Write-LogHost ("Filter type: UserIds") -ForegroundColor White
+            if ($displayUserList.Count -le 5) {
+                Write-LogHost ("  Criteria: {0}" -f ($displayUserList -join ', ')) -ForegroundColor Gray
+            } else {
+                Write-LogHost ("  Criteria: {0} users specified ({1}, {2}, {3}, ... and {4} more)" -f $displayUserList.Count, $displayUserList[0], $displayUserList[1], $displayUserList[2], ($displayUserList.Count - 3)) -ForegroundColor Gray
+            }
+        }
+        elseif ($GroupNames) {
+            Write-LogHost ("Filter type: GroupNames") -ForegroundColor White
+            if ($GroupNames.Count -le 5) {
+                Write-LogHost ("  Criteria: {0}" -f ($GroupNames -join ', ')) -ForegroundColor Gray
+            } else {
+                Write-LogHost ("  Criteria: {0} groups specified ({1}, {2}, {3}, ... and {4} more)" -f $GroupNames.Count, $GroupNames[0], $GroupNames[1], $GroupNames[2], ($GroupNames.Count - 3)) -ForegroundColor Gray
+            }
+        }
+        
+        # Show expansion results (only show if different from input or if groups were expanded)
+        if ($script:targetUsers -and $script:targetUsers.Count -gt 0 -and $GroupNames) {
+            Write-LogHost ("Total unique users after expansion: {0}" -f $script:targetUsers.Count) -ForegroundColor White
+        }
+        
+        # Show filtering results
+        Write-LogHost ("Records before user filter: {0}" -f $script:metrics.UserFilterPreCount) -ForegroundColor White
+        Write-LogHost ("Records after user filter: {0}" -f $script:metrics.UserFilterPostCount) -ForegroundColor White
+        Write-LogHost ("Records filtered out: {0}" -f $script:metrics.UserFilterRemovedCount) -ForegroundColor Gray
+        $userRetentionRate = if ($script:metrics.UserFilterPreCount -gt 0) { [Math]::Round(($script:metrics.UserFilterPostCount / $script:metrics.UserFilterPreCount) * 100, 2) } else { 0 }
+        Write-LogHost ("Retention rate: {0}%" -f $userRetentionRate) -ForegroundColor White
+        
+        # Show explosion impact if arrays were exploded
+        if ($ExplodeArrays -or $ExplodeDeep -or $RAWInputCSV) {
+            # Use RecordsAfterFiltering if available (accounts for all filters), otherwise use TotalRecordsFetched as baseline
+            $recordsIntoExplosion = if ($script:metrics.RecordsAfterFiltering -gt 0) { $script:metrics.RecordsAfterFiltering } else { $script:metrics.TotalRecordsFetched }
+            $explosionRatio = if ($recordsIntoExplosion -gt 0) { [Math]::Round(($script:metrics.TotalStructuredRows / $recordsIntoExplosion), 2) } else { 0 }
+            Write-LogHost ("Exploded to {0} output rows (explosion ratio: {1}x)" -f $script:metrics.TotalStructuredRows, $explosionRatio) -ForegroundColor White
+        }
+        
+        Write-LogHost ("User filter time: {0:F2} seconds" -f $script:metrics.UserFilterElapsedSec) -ForegroundColor Gray
+        if ($RAWInputCSV) {
+            Write-LogHost ("Note: Client-side filtering in replay mode (extracted from AuditData JSON)") -ForegroundColor DarkGray
+        } else {
+            Write-LogHost ("Note: Server-side filtering at Purview (efficient)") -ForegroundColor DarkGray
+        }
+    }
+    
     # Show PromptFilter metrics if filter was applied
     if ($script:metrics.PromptFilterApplied) {
         Write-LogHost ""; Write-LogHost "=== Prompt Filtering Summary ===" -ForegroundColor Cyan
@@ -2242,9 +2601,9 @@ try {
             Write-LogHost ("  Records with no messages: {0}" -f $script:metrics.PromptFilterRecordsNoMessages) -ForegroundColor DarkYellow
         }
         
-        # Conversation-level statistics (prompts and responses)
+        # Conversation turn-level statistics
         Write-LogHost ""
-        Write-LogHost "Conversation-level statistics:" -ForegroundColor Yellow
+        Write-LogHost "Conversation turn-level statistics:" -ForegroundColor Yellow
         Write-LogHost ("  Conversation turns before filter: {0}" -f $script:metrics.PromptFilterMsgBefore) -ForegroundColor White
         Write-LogHost ("  Conversation turns after filter: {0}" -f $script:metrics.PromptFilterMsgAfter) -ForegroundColor White
         Write-LogHost ("  Conversation turns filtered out: {0}" -f $script:metrics.PromptFilterMsgRemoved) -ForegroundColor Gray
@@ -2255,8 +2614,8 @@ try {
         if ($script:metrics.PromptFilterType -eq 'Null' -and $script:metrics.PromptFilterMsgAfter -eq 0) {
             Write-LogHost ""
             Write-LogHost "Explanation of PromptFilter=Null results:" -ForegroundColor Yellow
-            Write-LogHost "  No conversation turns with null/undefined isPrompt values were found." -ForegroundColor White
-            Write-LogHost ("  All {0} conversation turns in the {1} analyzed records had explicit isPrompt values (True or False)." -f $script:metrics.PromptFilterMsgBefore, $script:metrics.PromptFilterPreCount) -ForegroundColor White
+            Write-LogHost "  No messages with null/undefined isPrompt values were found." -ForegroundColor White
+            Write-LogHost ("  All {0} messages in the {1} analyzed records had explicit isPrompt values (True or False)." -f $script:metrics.PromptFilterMsgBefore, $script:metrics.PromptFilterPreCount) -ForegroundColor White
             if ($script:metrics.PromptFilterRecordsNoMessages -gt 0) {
                 Write-LogHost ("  Note: {0} record(s) had no Messages array and were excluded." -f $script:metrics.PromptFilterRecordsNoMessages) -ForegroundColor Gray
             }
@@ -2282,7 +2641,23 @@ try {
         Write-LogHost ("Query time: {0} ms | Explosion time: {1} ms | Export time: {2} ms" -f $script:metrics.QueryMs, $script:metrics.ExplosionMs, $script:metrics.ExportMs) -ForegroundColor Gray
         Write-LogHost ("Pages fetched: {0}" -f $script:metrics.PagesFetched) -ForegroundColor Gray
         Write-LogHost ("Records fetched: {0} | Structured rows: {1}" -f $script:metrics.TotalRecordsFetched, $script:metrics.TotalStructuredRows) -ForegroundColor Gray
-        if ($script:metrics.ExplosionEvents -gt 0) { $avg = [math]::Round(($script:metrics.ExplosionRowsFromEvents + $script:metrics.ExplosionEvents) / $script:metrics.ExplosionEvents, 2); Write-LogHost ("Explosion events: {0} | Avg rows/record (exploded): {1} | Max rows in a single record: {2}" -f $script:metrics.ExplosionEvents, $avg, $script:metrics.ExplosionMaxPerRecord) -ForegroundColor Gray } else { Write-LogHost "Explosion events: 0 (no multi-row expansions)" -ForegroundColor Gray }
+        
+        # Calculate overall explosion ratio using records that actually went into explosion (after all filtering)
+        $recordsIntoExplosion = if ($script:metrics.RecordsAfterFiltering -gt 0) { [int]$script:metrics.RecordsAfterFiltering } else { [int]$script:metrics.TotalRecordsFetched }
+        $overallExplosionRatio = if ($recordsIntoExplosion -gt 0) { [math]::Round($script:metrics.TotalStructuredRows / $recordsIntoExplosion, 2) } else { 0 }
+        
+        if ($script:metrics.ExplosionEvents -gt 0) {
+            # Calculate single-row records (records that produced exactly 1 output row)
+            $singleRowRecords = [int]$recordsIntoExplosion - [int]$script:metrics.ExplosionEvents
+            
+            Write-LogHost ("Explosion summary:") -ForegroundColor Gray
+            Write-LogHost ("  Multi-row records (explosion events): {0}" -f $script:metrics.ExplosionEvents) -ForegroundColor Gray
+            Write-LogHost ("  Single-row records: {0}" -f $singleRowRecords) -ForegroundColor Gray
+            Write-LogHost ("  Total records exploded: {0}" -f $recordsIntoExplosion) -ForegroundColor Gray
+            Write-LogHost ("  Avg rows/record: {0} | Max rows in single record: {1}" -f $overallExplosionRatio, $script:metrics.ExplosionMaxPerRecord) -ForegroundColor Gray
+        } else { 
+            Write-LogHost "Explosion events: 0 (no multi-row expansions)" -ForegroundColor Gray 
+        }
         if ($script:metrics.ExplosionTruncated) { Write-LogHost "WARNING: One or more exploded records exceeded row cap (1000) and were truncated." -ForegroundColor Yellow }
         if ($script:metrics.EffectiveChunkSize -gt 0) { Write-LogHost ("Effective chunk size: {0}" -f $script:metrics.EffectiveChunkSize) -ForegroundColor Gray }
         if ($script:metrics.ParallelBatchSizeFinal -gt 0) { Write-LogHost ("Final parallel batch size: {0}" -f $script:metrics.ParallelBatchSizeFinal) -ForegroundColor Gray }
@@ -2304,6 +2679,7 @@ try {
 }
 catch { Write-LogHost "Script failed: $($_.Exception.Message)" -ForegroundColor Red; Write-LogHost $_.ScriptStackTrace -ForegroundColor Red }
 finally { $endUtc = (Get-Date).ToUniversalTime(); try { if ($script:metrics -and $script:metrics.StartTime) { $startTail = $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss'); Write-Log ("Script execution started at $startTail UTC") } } catch {}; Write-Log "Script execution completed at $($endUtc.ToString('yyyy-MM-dd HH:mm:ss')) UTC"; Write-Log "Script version: v$ScriptVersion"; try { if ($script:metrics -and $script:metrics.StartTime) { $elapsed = $endUtc - $script:metrics.StartTime; $totalHours = [math]::Floor($elapsed.TotalHours); $remainder = $elapsed - [TimeSpan]::FromHours($totalHours); $elapsedFormatted = ("{0}:{1:00}:{2:00}.{3:000}" -f $totalHours, $remainder.Minutes, $remainder.Seconds, $remainder.Milliseconds); Write-Log ("Total elapsed time: {0} (hours:minutes:seconds.milliseconds)" -f $elapsedFormatted) } } catch {}; if ($script:Connected) { try { Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue | Out-Null; Write-LogHost "Disconnected from Exchange Online" -ForegroundColor Gray } catch {} } }
+
 
 
 
