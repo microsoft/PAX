@@ -111,7 +111,7 @@ jobs:
             const { data: issue } = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `📊 Weekly PR Summary - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+              title: `GitHub Microsoft/PAX Weekly PR Summary - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
               body: summary,
               labels: ['weekly-summary', 'automated'],
               assignees: ['Rance9']
