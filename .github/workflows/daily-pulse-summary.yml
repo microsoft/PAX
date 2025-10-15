@@ -210,24 +210,23 @@ jobs:
             summary += `---\n\n`;
             summary += `*This is an automated daily pulse summary. View the full [repository insights](https://github.com/${owner}/${repo}/pulse) on GitHub.*\n`;
             
-            return {
-              summary: summary,
-              hasActivity: commits.length > 0 || recentlyMergedPRs.length > 0 || recentIssues.length > 0
-            };
+            // Write summary to environment file for next step
+            const fs = require('fs');
+            fs.appendFileSync(process.env.GITHUB_ENV, `SUMMARY<<EOF\n${summary}\nEOF\n`);
       
       - name: Create pulse summary issue
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const result = JSON.parse('${{ steps.pulse.outputs.result }}');
+            const summary = process.env.SUMMARY;
             
             // Create an issue that will be assigned to repo owner
             const { data: issue } = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: `📈 Daily Pulse - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
-              body: result.summary,
+              body: summary,
               labels: ['daily-pulse', 'automated'],
               assignees: ['bmiddendorf']  // Assign to Brian
             });
