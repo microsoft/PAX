@@ -160,18 +160,17 @@ c6c87a2 - v1.7.0 (Brian Middendorf, 5 hours ago) f950d46 - v1.7.0 (Brian Middend
 ## Installation
 
 ### Download v1.7.0 (This Version)
-This release note documents **version 1.7.0**. Use the direct download links below to obtain this specific version:
+This release note documents **version 1.7.0**. Use the direct download link below to obtain this specific version:
 
 - **Script v1.7.0**: [PAX_Purview_Audit_Log_Processor_v1.7.0.ps1](https://github.com/microsoft/PAX/releases/download/v1.7.0/PAX_Purview_Audit_Log_Processor_v1.7.0.ps1)
-- **Documentation v1.7.0 (PDF)**: [PAX_Documentation_v1.7.0.pdf](https://github.com/microsoft/PAX/releases/download/v1.7.0/PAX_Documentation_v1.7.0.pdf)
-- **Documentation v1.7.0 (Markdown)**: [PAX_Documentation_v1.7.0.md](https://github.com/microsoft/PAX/releases/download/v1.7.0/PAX_Documentation_v1.7.0.md)
 
 ### Previous Versions
-- **v1.6.0**: [Script](https://github.com/microsoft/PAX/releases/download/v1.6.0/PAX_Purview_Audit_Log_Processor_v1.6.0.ps1) | [Docs (PDF)](https://github.com/microsoft/PAX/releases/download/v1.6.0/PAX_Documentation_v1.6.0.pdf) | [Release Notes](https://github.com/microsoft/PAX/releases/download/v1.6.0/v1.6.0.md)
+- **v1.6.0**: [Script](https://github.com/microsoft/PAX/releases/download/v1.6.0/PAX_Purview_Audit_Log_Processor_v1.6.0.ps1) | [Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/v1.6.0.md)
 
-### Get Latest Version
-For the most recent release, visit:
-- **All Releases**: [Microsoft PAX Repository - Releases](https://github.com/microsoft/PAX/releases)
+### Additional Resources
+- **All Script Releases**: [Microsoft PAX Repository - Releases](https://github.com/microsoft/PAX/releases)
+- **Documentation**: [v1.7.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v1.7.0.md) | [v1.6.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v1.6.0.md) | [All Docs](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor/MD)
+- **All Release Notes**: [Release Notes Archive](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 
 ---
 

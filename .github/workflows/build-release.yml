@@ -223,26 +223,14 @@ jobs:
           # Copy any other artifacts
           find . -name "*.zip" -path "*/PAX-*" -exec cp {} release-assets/ \; 2>/dev/null || echo "No other zips found"
           
-          # Copy ALL repository files (excluding .github folder) as individual release assets
-          echo "=== Adding individual repository files to release ==="
+          # Copy ONLY PowerShell scripts as individual release assets (for download tracking)
+          echo "=== Adding PowerShell scripts to release for download tracking ==="
           
-          # Copy all files from root (excluding .github)
-          find . -maxdepth 1 -type f ! -path "./.git*" -exec cp {} release-assets/ \; 2>/dev/null || true
+          # Copy the current version script from root
+          find . -maxdepth 1 -type f -name "*.ps1" -exec cp {} release-assets/ \; 2>/dev/null || true
           
-          # Copy all files from subdirectories (excluding .github and build artifacts)
-          find . -type f \
-            ! -path "./.github/*" \
-            ! -path "./.git/*" \
-            ! -path "./src-tauri/*" \
-            ! -path "./node_modules/*" \
-            ! -path "./target/*" \
-            ! -path "./dist/*" \
-            ! -path "./PAX-*/*" \
-            ! -path "./windows-dist/*" \
-            ! -path "./macos-dist-native/*" \
-            ! -path "./release-assets/*" \
-            ! -name ".gitattributes" \
-            ! -name ".gitkeep" \
+          # Copy all PowerShell scripts from script_archive subdirectories
+          find ./script_archive -type f -name "*.ps1" \
             -exec bash -c 'mkdir -p "release-assets/$(dirname "{}" | sed "s|^\./||")" && cp "{}" "release-assets/$(echo "{}" | sed "s|^\./||")"' \; 2>/dev/null || true
 
           echo "=== Release assets prepared ==="
@@ -278,15 +266,16 @@ jobs:
             **Mac Users:**
             - `PAX-${{ github.event.inputs.version || github.ref_name }}-macOS-Universal.zip` - Universal app for all Mac computers (Intel & Apple Silicon)
 
-            ### Individual Repository Files
+            ### PowerShell Scripts
 
-            All repository files are included as individual release assets below for download tracking.
-            This includes:
-            - PowerShell scripts (`PAX_Purview_Audit_Log_Processor_v*.ps1`)
-            - Documentation (PDF and MD formats)
-            - Release notes
-            - License and security files
-            - Script archive versions
+            PowerShell scripts are included as individual release assets for download tracking:
+            - `PAX_Purview_Audit_Log_Processor_v*.ps1` - Current and archived script versions
+
+            ### Additional Resources
+
+            - **Documentation**: [View Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor/MD)
+            - **Release Notes**: [View All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
+            - **Repository Files**: Browse the [release branch](https://github.com/microsoft/PAX/tree/release) for all project files
 
             ### Quick Start
 

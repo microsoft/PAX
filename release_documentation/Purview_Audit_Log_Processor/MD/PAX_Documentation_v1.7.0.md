@@ -2,9 +2,11 @@
 
 > **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`](https://github.com/microsoft/PAX/releases/download/v1.7.0/PAX_Purview_Audit_Log_Processor_v1.7.0.ps1)
 >
-> **📋 Release Notes:** See what's new → [v1.7.0 Release Notes](https://github.com/microsoft/PAX/releases/download/v1.7.0/v1.7.0.md) | [All Releases](https://github.com/microsoft/PAX/releases)
+> **📋 Release Notes:** See what's new → [v1.7.0 Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/v1.7.0.md) | [v1.6.0 Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/v1.6.0.md) | [All Releases](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
-> **📚 Documentation Archive:** [v1.7.0 PDF](https://github.com/microsoft/PAX/releases/download/v1.7.0/PAX_Documentation_v1.7.0.pdf) | [v1.6.0 PDF](https://github.com/microsoft/PAX/releases/download/v1.6.0/PAX_Documentation_v1.6.0.pdf) | [v1.6.0 MD](https://github.com/microsoft/PAX/releases/download/v1.6.0/PAX_Documentation_v1.6.0.md) | [All Releases](https://github.com/microsoft/PAX/releases)
+> **� Previous Script Versions:** [v1.6.0 Script](https://github.com/microsoft/PAX/releases/download/v1.6.0/PAX_Purview_Audit_Log_Processor_v1.6.0.ps1) | [All Releases](https://github.com/microsoft/PAX/releases)
+>
+> **�📚 Documentation Archive:** [v1.7.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v1.7.0.md) | [v1.6.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v1.6.0.md) | [All Releases](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor/MD)
 
 **Script:** `PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`  
 **Version:** 1.7.0  
