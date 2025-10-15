@@ -1,0 +1,245 @@
+name: Daily Pulse Summary
+
+on:
+  schedule:
+    # Runs daily at 9:00 AM Central Time (2:00 PM UTC / 3:00 PM UTC depending on DST)
+    # Using 14:00 UTC which is 9:00 AM CDT (summer) or 8:00 AM CST (winter)
+    - cron: '0 14 * * *'
+  workflow_dispatch:  # Allow manual triggering for testing
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  send-pulse-summary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate pulse insights
+        id: pulse
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            
+            // Get date ranges
+            const today = new Date();
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            const oneWeekAgo = new Date(today);
+            oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+            
+            // Get repository info
+            const { data: repoInfo } = await github.rest.repos.get({
+              owner: owner,
+              repo: repo
+            });
+            
+            // Get commits from last 24 hours
+            const { data: commits } = await github.rest.repos.listCommits({
+              owner: owner,
+              repo: repo,
+              since: yesterday.toISOString(),
+              per_page: 100
+            });
+            
+            // Get PRs (open, merged recently, and closed)
+            const { data: openPRs } = await github.rest.pulls.list({
+              owner: owner,
+              repo: repo,
+              state: 'open',
+              sort: 'updated',
+              direction: 'desc',
+              per_page: 100
+            });
+            
+            const { data: closedPRs } = await github.rest.pulls.list({
+              owner: owner,
+              repo: repo,
+              state: 'closed',
+              sort: 'updated',
+              direction: 'desc',
+              per_page: 100
+            });
+            
+            // Filter merged PRs from last 7 days
+            const recentlyMergedPRs = closedPRs.filter(pr => {
+              if (!pr.merged_at) return false;
+              const mergedAt = new Date(pr.merged_at);
+              return mergedAt >= oneWeekAgo;
+            });
+            
+            // Filter closed (not merged) PRs from last 7 days
+            const recentlyClosedPRs = closedPRs.filter(pr => {
+              if (pr.merged_at) return false;
+              const closedAt = new Date(pr.closed_at);
+              return closedAt >= oneWeekAgo;
+            });
+            
+            // Get issues
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner: owner,
+              repo: repo,
+              state: 'open',
+              sort: 'updated',
+              direction: 'desc',
+              per_page: 100
+            });
+            
+            // Filter out PRs from issues (GitHub API returns PRs in issues endpoint)
+            const actualOpenIssues = openIssues.filter(issue => !issue.pull_request);
+            
+            // Get recent issue activity (last 7 days)
+            const recentIssues = actualOpenIssues.filter(issue => {
+              const updatedAt = new Date(issue.updated_at);
+              return updatedAt >= oneWeekAgo;
+            });
+            
+            // Get contributors from last week
+            const contributorSet = new Set();
+            commits.forEach(commit => {
+              if (commit.author && commit.author.login) {
+                contributorSet.add(commit.author.login);
+              }
+            });
+            
+            // Build summary
+            let summary = `# Daily Pulse for microsoft/${repo}\n\n`;
+            summary += `**Date:** ${today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n\n`;
+            summary += `---\n\n`;
+            
+            // Overview Section
+            summary += `## 📊 Overview\n\n`;
+            summary += `- **Stars:** ${repoInfo.stargazers_count} ⭐\n`;
+            summary += `- **Forks:** ${repoInfo.forks_count}\n`;
+            summary += `- **Open Issues:** ${actualOpenIssues.length}\n`;
+            summary += `- **Open PRs:** ${openPRs.length}\n`;
+            summary += `- **Watchers:** ${repoInfo.subscribers_count}\n\n`;
+            
+            // Activity Summary (Last 24 hours)
+            summary += `## 🔥 Recent Activity (Last 24 hours)\n\n`;
+            summary += `- **Commits:** ${commits.length}\n`;
+            summary += `- **Active Contributors:** ${contributorSet.size}\n\n`;
+            
+            if (commits.length > 0) {
+              summary += `### Latest Commits\n\n`;
+              const displayCommits = commits.slice(0, 5);
+              for (const commit of displayCommits) {
+                const message = commit.commit.message.split('\n')[0];
+                const author = commit.author ? `@${commit.author.login}` : commit.commit.author.name;
+                const shortSha = commit.sha.substring(0, 7);
+                summary += `- \`${shortSha}\` ${message} - ${author}\n`;
+              }
+              if (commits.length > 5) {
+                summary += `- ... and ${commits.length - 5} more commits\n`;
+              }
+              summary += `\n`;
+            }
+            
+            // Pull Requests
+            summary += `## 🔀 Pull Requests\n\n`;
+            summary += `- **Open:** ${openPRs.length}\n`;
+            summary += `- **Merged (last 7 days):** ${recentlyMergedPRs.length}\n`;
+            summary += `- **Closed (last 7 days):** ${recentlyClosedPRs.length}\n\n`;
+            
+            if (recentlyMergedPRs.length > 0) {
+              summary += `### Recently Merged PRs\n\n`;
+              const displayMergedPRs = recentlyMergedPRs.slice(0, 5);
+              for (const pr of displayMergedPRs) {
+                summary += `- **#${pr.number}**: ${pr.title}\n`;
+                summary += `  - Merged by: @${pr.merged_by ? pr.merged_by.login : 'unknown'}\n`;
+                summary += `  - [View PR](${pr.html_url})\n\n`;
+              }
+              if (recentlyMergedPRs.length > 5) {
+                summary += `- ... and ${recentlyMergedPRs.length - 5} more merged PRs\n\n`;
+              }
+            }
+            
+            if (openPRs.length > 0) {
+              summary += `### Open PRs Needing Attention\n\n`;
+              const displayOpenPRs = openPRs.slice(0, 5);
+              for (const pr of displayOpenPRs) {
+                const createdAt = new Date(pr.created_at);
+                const daysOpen = Math.floor((today - createdAt) / (1000 * 60 * 60 * 24));
+                summary += `- **#${pr.number}**: ${pr.title}\n`;
+                summary += `  - Author: @${pr.user.login}\n`;
+                summary += `  - Open for: ${daysOpen} day${daysOpen !== 1 ? 's' : ''}\n`;
+                summary += `  - [View PR](${pr.html_url})\n\n`;
+              }
+              if (openPRs.length > 5) {
+                summary += `- ... and ${openPRs.length - 5} more open PRs\n\n`;
+              }
+            }
+            
+            // Issues
+            summary += `## 🐛 Issues\n\n`;
+            summary += `- **Total Open:** ${actualOpenIssues.length}\n`;
+            summary += `- **Recently Updated (last 7 days):** ${recentIssues.length}\n\n`;
+            
+            if (recentIssues.length > 0) {
+              summary += `### Recently Active Issues\n\n`;
+              const displayIssues = recentIssues.slice(0, 5);
+              for (const issue of displayIssues) {
+                const createdAt = new Date(issue.created_at);
+                const daysOpen = Math.floor((today - createdAt) / (1000 * 60 * 60 * 24));
+                const labels = issue.labels.map(l => l.name).join(', ');
+                summary += `- **#${issue.number}**: ${issue.title}\n`;
+                summary += `  - Author: @${issue.user.login}\n`;
+                summary += `  - Open for: ${daysOpen} day${daysOpen !== 1 ? 's' : ''}\n`;
+                if (labels) {
+                  summary += `  - Labels: ${labels}\n`;
+                }
+                summary += `  - [View Issue](${issue.html_url})\n\n`;
+              }
+              if (recentIssues.length > 5) {
+                summary += `- ... and ${recentIssues.length - 5} more active issues\n\n`;
+              }
+            }
+            
+            // Contributors
+            if (contributorSet.size > 0) {
+              summary += `## 👥 Active Contributors (Last 24h)\n\n`;
+              const contributors = Array.from(contributorSet);
+              summary += contributors.map(c => `@${c}`).join(', ');
+              summary += `\n\n`;
+            }
+            
+            summary += `---\n\n`;
+            summary += `*This is an automated daily pulse summary. View the full [repository insights](https://github.com/${owner}/${repo}/pulse) on GitHub.*\n`;
+            
+            return {
+              summary: summary,
+              hasActivity: commits.length > 0 || recentlyMergedPRs.length > 0 || recentIssues.length > 0
+            };
+      
+      - name: Create pulse summary issue
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const result = JSON.parse('${{ steps.pulse.outputs.result }}');
+            
+            // Create an issue that will be assigned to repo owner
+            const { data: issue } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `📈 Daily Pulse - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+              body: result.summary,
+              labels: ['daily-pulse', 'automated'],
+              assignees: ['bmiddendorf']  // Assign to Brian
+            });
+            
+            console.log(`Created pulse summary issue: ${issue.html_url}`);
+            
+            // Immediately close the issue so it doesn't clutter open issues
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              state: 'closed'
+            });
+            
+            console.log(`Closed pulse issue #${issue.number} - you'll receive notification but it won't stay in open issues`);
