@@ -16,8 +16,10 @@ permissions:
 jobs:
   send-insights-summary:
     runs-on: ubuntu-latest
+    # Only run on microsoft/PAX release branch
+    if: github.repository == 'microsoft/PAX' && (github.ref == 'refs/heads/release' || github.event_name == 'workflow_dispatch')
     steps:
-      - name: Generate repository insights
+      - name: Generate repository insights with weekly tracking
         id: insights
         uses: actions/github-script@v7
         with:
@@ -29,8 +31,64 @@ jobs:
             
             // Get date info
             const today = new Date();
-            const yesterday = new Date(today);
-            yesterday.setDate(yesterday.getDate() - 1);
+            const dayOfWeek = today.getDay(); // 0=Sunday, 1=Monday, ..., 5=Friday
+            const isFriday = dayOfWeek === 5;
+            
+            // Calculate which day of the week (1-5 for Monday-Friday)
+            const dayOfWeekNum = dayOfWeek === 0 ? 5 : (dayOfWeek === 6 ? 5 : dayOfWeek);
+            
+            // Calculate week start (Monday)
+            const weekStart = new Date(today);
+            const daysToMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
+            weekStart.setDate(today.getDate() - daysToMonday);
+            
+            // Calculate week end (Friday)
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekStart.getDate() + 4);
+            
+            const dateRangeStr = weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + '-' + weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            
+            // Get last baseline issue
+            let baseline = null;
+            let baselineWeek = 0;
+            try {
+              const { data: issues } = await github.rest.issues.listForRepo({
+                owner: owner,
+                repo: repo,
+                labels: 'download-baseline',
+                state: 'closed',
+                sort: 'created',
+                direction: 'desc',
+                per_page: 1
+              });
+              
+              if (issues.length > 0) {
+                const baselineIssue = issues[0];
+                const match = baselineIssue.body.match(/Week (\d+)/);
+                if (match) {
+                  baselineWeek = parseInt(match[1]);
+                }
+                
+                // Parse baseline data from issue body
+                const downloadMatch = baselineIssue.body.match(/Total Downloads: (\d+)/);
+                const viewsMatch = baselineIssue.body.match(/Total Views: (\d+)/);
+                const uniqueViewsMatch = baselineIssue.body.match(/Unique Visitors: (\d+)/);
+                const clonesMatch = baselineIssue.body.match(/Total Clones: (\d+)/);
+                const uniqueClonesMatch = baselineIssue.body.match(/Unique Cloners: (\d+)/);
+                
+                baseline = {
+                  downloads: downloadMatch ? parseInt(downloadMatch[1]) : 0,
+                  views: viewsMatch ? parseInt(viewsMatch[1]) : 0,
+                  uniqueViews: uniqueViewsMatch ? parseInt(uniqueViewsMatch[1]) : 0,
+                  clones: clonesMatch ? parseInt(clonesMatch[1]) : 0,
+                  uniqueClones: uniqueClonesMatch ? parseInt(uniqueClonesMatch[1]) : 0
+                };
+              }
+            } catch (error) {
+              console.log('Unable to fetch baseline:', error.message);
+            }
+            
+            const currentWeek = baselineWeek + 1;
             
             // Get repository info
             const { data: repoInfo } = await github.rest.repos.get({
@@ -88,25 +146,7 @@ jobs:
               console.log('Unable to fetch popular paths data:', error.message);
             }
             
-            // Get latest release info for downloads
-            let latestRelease = null;
-            let totalDownloads = 0;
-            try {
-              const { data: releaseData } = await github.rest.repos.getLatestRelease({
-                owner: owner,
-                repo: repo
-              });
-              latestRelease = releaseData;
-              
-              // Calculate total downloads for latest release
-              if (latestRelease && latestRelease.assets) {
-                totalDownloads = latestRelease.assets.reduce((sum, asset) => sum + asset.download_count, 0);
-              }
-            } catch (error) {
-              console.log('Unable to fetch release data:', error.message);
-            }
-            
-            // Get all releases for total download count
+            // Get all releases for download tracking
             let allReleases = [];
             let allTimeDownloads = 0;
             try {
@@ -125,10 +165,23 @@ jobs:
               console.log('Unable to fetch all releases:', error.message);
             }
             
+            // Calculate this week's activity (delta from baseline)
+            const thisWeekDownloads = baseline ? allTimeDownloads - baseline.downloads : allTimeDownloads;
+            const thisWeekViews = baseline && views ? views.count - baseline.views : (views ? views.count : 0);
+            const thisWeekUniqueViews = baseline && views ? views.uniques - baseline.uniqueViews : (views ? views.uniques : 0);
+            const thisWeekClones = baseline && clones ? clones.count - baseline.clones : (clones ? clones.count : 0);
+            const thisWeekUniqueClones = baseline && clones ? clones.uniques - baseline.uniqueClones : (clones ? clones.uniques : 0);
+            
             // Build summary
             let summary = `# Daily Repository Insights for microsoft/${repo}\n\n`;
-            summary += `**Date:** ${today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n\n`;
-            summary += `---\n\n`;
+            summary += `**Date:** ${today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n`;
+            summary += `**Period:** ${dateRangeStr} (Day ${dayOfWeekNum} of 5${isFriday ? ' - Week Complete' : ''})\n`;
+            if (baseline) {
+              summary += `**Week ${currentWeek}** | Previous baseline: Week ${baselineWeek}\n`;
+            } else {
+              summary += `**Week ${currentWeek}** | First tracking week (no baseline yet)\n`;
+            }
+            summary += `\n---\n\n`;
             
             // Repository Stats
             summary += `## 📊 Repository Overview\n\n`;
@@ -138,14 +191,25 @@ jobs:
             summary += `- **Open Issues:** ${repoInfo.open_issues_count}\n`;
             summary += `- **Size:** ${(repoInfo.size / 1024).toFixed(2)} MB\n\n`;
             
+            // This Week's Activity Summary
+            summary += `## 📈 This Week's Activity (${dateRangeStr})\n\n`;
+            summary += `- **Page Views:** ${thisWeekViews} (${thisWeekUniqueViews} unique)\n`;
+            summary += `- **Git Clones:** ${thisWeekClones} (${thisWeekUniqueClones} unique)\n`;
+            summary += `- **Release Downloads:** ${thisWeekDownloads}\n`;
+            if (baseline) {
+              summary += `\n*Calculated from baseline set on previous Friday*\n`;
+            } else {
+              summary += `\n*No baseline yet - this is your first tracking week. Baseline will be created this Friday.*\n`;
+            }
+            summary += `\n`;
+            
             // Traffic - Views
             if (views) {
-              summary += `## � Traffic - Page Views (Last 14 Days)\n\n`;
-              summary += `- **Total Views:** ${views.count}\n`;
-              summary += `- **Unique Visitors:** ${views.uniques}\n\n`;
+              summary += `## 👀 Traffic - Page Views\n\n`;
+              summary += `**All-Time Total:** ${views.count} views (${views.uniques} unique visitors)\n\n`;
               
               if (views.views && views.views.length > 0) {
-                summary += `### Daily Breakdown:\n\n`;
+                summary += `### Recent Daily Activity (Last 7 Days):\n\n`;
                 // Show last 7 days
                 const recentViews = views.views.slice(-7);
                 for (const day of recentViews) {
@@ -161,12 +225,11 @@ jobs:
             
             // Traffic - Clones
             if (clones) {
-              summary += `## 📥 Git Clones (Last 14 Days)\n\n`;
-              summary += `- **Total Clones:** ${clones.count}\n`;
-              summary += `- **Unique Cloners:** ${clones.uniques}\n\n`;
+              summary += `## 📥 Git Clones\n\n`;
+              summary += `**All-Time Total:** ${clones.count} clones (${clones.uniques} unique cloners)\n\n`;
               
               if (clones.clones && clones.clones.length > 0) {
-                summary += `### Daily Breakdown:\n\n`;
+                summary += `### Recent Daily Activity (Last 7 Days):\n\n`;
                 const recentClones = clones.clones.slice(-7);
                 for (const day of recentClones) {
                   const date = new Date(day.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -179,49 +242,95 @@ jobs:
               summary += `*Clone data not available (requires push access)*\n\n`;
             }
             
-            // Downloads
-            if (latestRelease) {
-              summary += `## 💾 Downloads\n\n`;
-              summary += `### Latest Release: ${latestRelease.name || latestRelease.tag_name}\n\n`;
-              summary += `- **Release Date:** ${new Date(latestRelease.published_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}\n`;
-              summary += `- **Total Downloads (this release):** ${totalDownloads}\n\n`;
+            // Downloads - All Releases
+            if (allReleases.length > 0) {
+              summary += `## 💾 Release Downloads\n\n`;
+              summary += `**All-Time Total:** ${allTimeDownloads} downloads across ${allReleases.length} release(s)\n\n`;
               
-              if (latestRelease.assets && latestRelease.assets.length > 0) {
-                summary += `#### Assets:\n\n`;
-                for (const asset of latestRelease.assets) {
-                  summary += `- **${asset.name}:** ${asset.download_count} downloads\n`;
+              summary += `### All Releases:\n\n`;
+              for (const release of allReleases) {
+                const releaseDownloads = release.assets.reduce((sum, asset) => sum + asset.download_count, 0);
+                const releaseDate = new Date(release.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                
+                summary += `#### ${release.name || release.tag_name} (${releaseDate})\n`;
+                summary += `**Total:** ${releaseDownloads} downloads\n\n`;
+                
+                if (release.assets.length > 0) {
+                  for (const asset of release.assets) {
+                    summary += `- **${asset.name}:** ${asset.download_count}\n`;
+                  }
+                  summary += `\n`;
                 }
-                summary += `\n`;
               }
-              
-              summary += `### All-Time Statistics:\n\n`;
-              summary += `- **Total Releases:** ${allReleases.length}\n`;
-              summary += `- **All-Time Downloads:** ${allTimeDownloads}\n\n`;
             } else {
               summary += `## 💾 Downloads\n\n`;
               summary += `*No releases found*\n\n`;
             }
             
+            // Most Viewed Files
+            if (popularPaths && popularPaths.length > 0) {
+              summary += `## � Most Viewed Repository Files\n\n`;
+              summary += `*These are the most viewed files/paths in the repository (last 14 days)*\n\n`;
+              
+              for (const path of popularPaths.slice(0, 10)) {
+                // Highlight if it's the PowerShell script
+                const isScript = path.path.includes('.ps1') || path.path.includes('script');
+                const indicator = isScript ? ' 📜' : '';
+                summary += `- **${path.path}**${indicator}: ${path.count} views (${path.uniques} unique)\n`;
+              }
+              summary += `\n`;
+            }
+            
             // Referrers
             if (referrers && referrers.length > 0) {
-              summary += `## 🔗 Top Referrers (Last 14 Days)\n\n`;
+              summary += `## � Top Traffic Sources (Last 14 Days)\n\n`;
               for (const referrer of referrers.slice(0, 10)) {
                 summary += `- **${referrer.referrer || 'Direct'}:** ${referrer.count} views (${referrer.uniques} unique)\n`;
               }
               summary += `\n`;
             }
             
-            // Popular Paths
-            if (popularPaths && popularPaths.length > 0) {
-              summary += `## 📄 Popular Content (Last 14 Days)\n\n`;
-              for (const path of popularPaths.slice(0, 10)) {
-                summary += `- **${path.path}:** ${path.count} views (${path.uniques} unique)\n`;
-              }
-              summary += `\n`;
-            }
-            
             summary += `---\n\n`;
             summary += `*This is an automated daily insights summary. View the full [traffic analytics](https://github.com/${owner}/${repo}/graphs/traffic) on GitHub.*\n`;
+            
+            // If it's Friday, create a new baseline issue
+            if (isFriday) {
+              try {
+                const baselineBody = '# Weekly Baseline - Week ' + currentWeek + '\\n\\n' +
+                  '**Date:** ' + today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) + '\\n' +
+                  '**Week Range:** ' + dateRangeStr + '\\n\\n' +
+                  '## Baseline Metrics (for next week\\'s comparison):\\n\\n' +
+                  '- **Total Downloads:** ' + allTimeDownloads + '\\n' +
+                  '- **Total Views:** ' + (views ? views.count : 0) + '\\n' +
+                  '- **Unique Visitors:** ' + (views ? views.uniques : 0) + '\\n' +
+                  '- **Total Clones:** ' + (clones ? clones.count : 0) + '\\n' +
+                  '- **Unique Cloners:** ' + (clones ? clones.uniques : 0) + '\\n\\n' +
+                  '*This baseline will be used to calculate next week\\'s activity (Week ' + (currentWeek + 1) + ').*';
+
+                const { data: baselineIssue } = await github.rest.issues.create({
+                  owner: owner,
+                  repo: repo,
+                  title: 'Weekly Baseline - Week ' + currentWeek + ' - ' + today.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                  body: baselineBody,
+                  labels: ['download-baseline', 'automated']
+                });
+                
+                // Immediately close it
+                await github.rest.issues.update({
+                  owner: owner,
+                  repo: repo,
+                  issue_number: baselineIssue.number,
+                  state: 'closed'
+                });
+                
+                console.log('Created and closed baseline issue #' + baselineIssue.number + ' for Week ' + currentWeek);
+                
+                summary += '\\n\\n---\\n\\n';
+                summary += '✅ **Week ' + currentWeek + ' Complete!** Baseline saved for next week\\'s tracking.\\n';
+              } catch (error) {
+                console.log('Unable to create baseline issue:', error.message);
+              }
+            }
             
             // Write summary to environment file for next step
             fs.appendFileSync(process.env.GITHUB_ENV, `SUMMARY<<EOF\n${summary}\nEOF\n`);
