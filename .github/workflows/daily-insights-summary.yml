@@ -149,6 +149,7 @@ jobs:
             // Get all releases for download tracking
             let allReleases = [];
             let allTimeDownloads = 0;
+            let currentAssetDownloads = {}; // Track current per-asset downloads
             try {
               const { data: releases } = await github.rest.repos.listReleases({
                 owner: owner,
@@ -157,8 +158,12 @@ jobs:
               });
               allReleases = releases;
               
-              // Calculate all-time downloads
+              // Calculate all-time downloads and collect per-asset counts
               allTimeDownloads = releases.reduce((total, release) => {
+                release.assets.forEach(asset => {
+                  const assetKey = `${release.tag_name}::${asset.name}`;
+                  currentAssetDownloads[assetKey] = asset.download_count;
+                });
                 return total + release.assets.reduce((sum, asset) => sum + asset.download_count, 0);
               }, 0);
             } catch (error) {
@@ -242,22 +247,80 @@ jobs:
               summary += `*Clone data not available (requires push access)*\n\n`;
             }
             
-            // Downloads - All Releases
+            // Downloads - All Releases with Weekly Deltas
             if (allReleases.length > 0) {
               summary += `## 💾 Release Downloads\n\n`;
-              summary += `**All-Time Total:** ${allTimeDownloads} downloads across ${allReleases.length} release(s)\n\n`;
+              summary += `**All-Time Total:** ${allTimeDownloads.toLocaleString()} downloads across ${allReleases.length} release(s)\n`;
+              if (baseline) {
+                summary += `**This Week (${dateRangeStr}):** ${thisWeekDownloads.toLocaleString()} downloads\n`;
+              }
+              summary += `\n`;
+              
+              // Group files by category for better organization
+              const categorizeAsset = (name) => {
+                if (name.match(/\.exe$|\.msi$/i)) return { category: 'Applications', order: 1, icon: '🖥️' };
+                if (name.match(/\.zip$|\.dmg$/i) && name.includes('macOS')) return { category: 'Applications', order: 1, icon: '🍎' };
+                if (name.match(/\.ps1$/i)) return { category: 'PowerShell Scripts', order: 2, icon: '📜' };
+                if (name.match(/\.pdf$/i)) return { category: 'Documentation (PDF)', order: 3, icon: '📄' };
+                if (name.match(/\.md$/i) && name.includes('Documentation')) return { category: 'Documentation (Markdown)', order: 4, icon: '📝' };
+                if (name.match(/^v\d+\.\d+\.\d+\.md$/i)) return { category: 'Release Notes', order: 5, icon: '📋' };
+                if (name.match(/^(README|LICENSE|SECURITY|CONTRIBUTORS|CODE_OF_CONDUCT)\.md$/i)) return { category: 'Project Files', order: 6, icon: '📑' };
+                return { category: 'Other Files', order: 7, icon: '📦' };
+              };
               
               summary += `### All Releases:\n\n`;
               for (const release of allReleases) {
                 const releaseDownloads = release.assets.reduce((sum, asset) => sum + asset.download_count, 0);
                 const releaseDate = new Date(release.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
                 
+                // Calculate weekly downloads for this release
+                let releaseWeeklyDownloads = 0;
+                if (baseline) {
+                  releaseWeeklyDownloads = release.assets.reduce((sum, asset) => {
+                    const assetKey = `${release.tag_name}::${asset.name}`;
+                    const baselineCount = baselineAssetDownloads[assetKey] || 0;
+                    return sum + (asset.download_count - baselineCount);
+                  }, 0);
+                }
+                
                 summary += `#### ${release.name || release.tag_name} (${releaseDate})\n`;
-                summary += `**Total:** ${releaseDownloads} downloads\n\n`;
+                summary += `**All-Time Total:** ${releaseDownloads.toLocaleString()} downloads`;
+                if (baseline && releaseWeeklyDownloads > 0) {
+                  summary += ` | **This Week:** ${releaseWeeklyDownloads.toLocaleString()}`;
+                }
+                summary += `\n\n`;
                 
                 if (release.assets.length > 0) {
-                  for (const asset of release.assets) {
-                    summary += `- **${asset.name}:** ${asset.download_count}\n`;
+                  // Group assets by category
+                  const categorizedAssets = release.assets.map(asset => ({
+                    ...asset,
+                    ...categorizeAsset(asset.name)
+                  })).sort((a, b) => {
+                    if (a.order !== b.order) return a.order - b.order;
+                    return b.download_count - a.download_count; // Within category, sort by downloads desc
+                  });
+                  
+                  let currentCategory = '';
+                  for (const asset of categorizedAssets) {
+                    // Print category header if changed
+                    if (asset.category !== currentCategory) {
+                      if (currentCategory !== '') summary += `\n`;
+                      summary += `**${asset.icon} ${asset.category}:**\n`;
+                      currentCategory = asset.category;
+                    }
+                    
+                    // Calculate weekly delta for this asset
+                    let weeklyDelta = '';
+                    if (baseline) {
+                      const assetKey = `${release.tag_name}::${asset.name}`;
+                      const baselineCount = baselineAssetDownloads[assetKey] || 0;
+                      const thisWeekCount = asset.download_count - baselineCount;
+                      if (thisWeekCount > 0) {
+                        weeklyDelta = ` | +${thisWeekCount} this week`;
+                      }
+                    }
+                    
+                    summary += `  - ${asset.name}: ${asset.download_count.toLocaleString()}${weeklyDelta}\n`;
                   }
                   summary += `\n`;
                 }
@@ -296,6 +359,9 @@ jobs:
             // If it's Friday, create a new baseline issue
             if (isFriday) {
               try {
+                // Serialize per-asset downloads as JSON
+                const assetDownloadsJson = JSON.stringify(currentAssetDownloads, null, 2);
+                
                 const baselineBody = '# Weekly Baseline - Week ' + currentWeek + '\\n\\n' +
                   '**Date:** ' + today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) + '\\n' +
                   '**Week Range:** ' + dateRangeStr + '\\n\\n' +
@@ -305,6 +371,9 @@ jobs:
                   '- **Unique Visitors:** ' + (views ? views.uniques : 0) + '\\n' +
                   '- **Total Clones:** ' + (clones ? clones.count : 0) + '\\n' +
                   '- **Unique Cloners:** ' + (clones ? clones.uniques : 0) + '\\n\\n' +
+                  '## Per-Asset Download Counts:\\n\\n' +
+                  '```json\\n' + assetDownloadsJson + '\\n```\\n\\n' +
+                  '*Asset downloads are tracked with format: "tag::filename"*\\n\\n' +
                   '*This baseline will be used to calculate next week\\'s activity (Week ' + (currentWeek + 1) + ').*';
 
                 const { data: baselineIssue } = await github.rest.issues.create({
@@ -326,7 +395,7 @@ jobs:
                 console.log('Created and closed baseline issue #' + baselineIssue.number + ' for Week ' + currentWeek);
                 
                 summary += '\\n\\n---\\n\\n';
-                summary += '✅ **Week ' + currentWeek + ' Complete!** Baseline saved for next week\\'s tracking.\\n';
+                summary += '✅ **Week ' + currentWeek + ' Complete!** Baseline saved for next week\\'s tracking (including ' + Object.keys(currentAssetDownloads).length + ' individual file download counts).\\n';
               } catch (error) {
                 console.log('Unable to create baseline issue:', error.message);
               }
@@ -342,17 +411,18 @@ jobs:
           script: |
             const summary = process.env.SUMMARY;
             
-            // Create an issue that will be assigned to repo owner
+            // Create an issue that will be assigned to repo maintainers
             const { data: issue } = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: `GitHub Microsoft/PAX Daily Insights Summary - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
               body: summary,
               labels: ['daily-insights', 'automated'],
-              assignees: ['Rance9']
+              assignees: ['Rance9', 'shailendrahegde']
             });
             
             console.log(`Created insights summary issue: ${issue.html_url}`);
+            console.log(`Assigned to: Rance9, shailendrahegde`);
             
             // Immediately close the issue so it doesn't clutter open issues
             await github.rest.issues.update({
