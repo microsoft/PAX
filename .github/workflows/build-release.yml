@@ -50,8 +50,8 @@ jobs:
         run: |
           mkdir windows-dist
           # Extract version from git tag
-          $version = if ($env:GITHUB_REF -like "refs/tags/*") { 
-            $env:GITHUB_REF -replace "refs/tags/", "" 
+          $version = if ($env:GITHUB_REF -like "refs/tags/*") {
+            $env:GITHUB_REF -replace "refs/tags/", ""
           } elseif ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
             "${{ github.event.inputs.version }}"
           } else {
@@ -104,69 +104,22 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install system dependencies
+      - name: Install Tauri prerequisites
         run: |
-          # Install system dependencies that might be needed for Tauri on macOS
-          echo "Installing system dependencies..."
+          brew install create-dmg
 
       - name: Install Tauri CLI
         run: npm install -g @tauri-apps/cli@1.6.0
 
-      - name: Verify Tauri CLI installation
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build Tauri app for macOS
+        run: npm run tauri build -- --target universal-apple-darwin
+
+      - name: Debug build outputs
         run: |
-          npm list -g @tauri-apps/cli
-          tauri --version
-          echo "Validating Tauri configuration..."
-          tauri info || echo "Tauri info failed, but continuing..."
-
-      - name: Verify frontend build
-        run: |
-          echo "Ensuring frontend is built..."
-          if [ ! -d "dist" ] || [ -z "$(ls -A dist)" ]; then
-            echo "Frontend not built, building now..."
-            npm run build
-          else
-            echo "Frontend already built"
-          fi
-          echo "Frontend dist contents:"
-          ls -la dist/
-
-      - name: Build Tauri app for native macOS (no cross-compilation)
-        run: |
-          echo "=== Pre-build checks ==="
-          echo "Current working directory: $(pwd)"
-          echo "Node.js version: $(node --version)"
-          echo "npm version: $(npm --version)"
-          echo "Rust version: $(rustc --version)"
-          echo "Cargo version: $(cargo --version)"
-          echo "Tauri CLI version: $(tauri --version)"
-
-          echo "=== File system checks ==="
-          echo "Tauri config file exists: $(test -f src-tauri/tauri.conf.json && echo 'yes' || echo 'no')"
-          echo "Cargo.toml exists: $(test -f src-tauri/Cargo.toml && echo 'yes' || echo 'no')"
-          echo "Frontend dist exists: $(test -d dist && echo 'yes' || echo 'no')"
-          echo "Frontend dist contents:"
-          ls -la dist/ || echo "dist directory not found"
-
-          echo "=== Starting Tauri build ==="
-          echo "Running: tauri build --verbose"
-          tauri build --verbose 2>&1 | tee tauri-build.log
-          BUILD_EXIT_CODE=${PIPESTATUS[0]}
-          echo "Tauri build exit code: $BUILD_EXIT_CODE"
-
-          echo "=== Post-build directory scan ==="
-          echo "Entire src-tauri/target structure:"
-          find src-tauri/target -type f -name "*.app" 2>/dev/null || echo "No .app files found"
-          find src-tauri/target -type d -name "*.app" 2>/dev/null || echo "No .app directories found"
-
-          if [ $BUILD_EXIT_CODE -ne 0 ]; then
-            echo "=== Build failed with exit code $BUILD_EXIT_CODE ==="
-            exit $BUILD_EXIT_CODE
-          fi
-
-      - name: Debug native build output
-        run: |
-          echo "=== Native build completed, checking output ==="
+          echo "=== Debug: Checking build outputs ==="
           echo "Release directory contents:"
           ls -la "src-tauri/target/release/" 2>/dev/null || echo "Release directory not found"
           echo "Bundle directory contents:"
@@ -180,7 +133,7 @@ jobs:
       - name: Create macOS distribution (native build)
         run: |
           # Extract version from git tag
-          VERSION=$(if [[ "$GITHUB_REF" == refs/tags/* ]]; then 
+          VERSION=$(if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             echo "${GITHUB_REF#refs/tags/}"
           elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
             echo "${{ github.event.inputs.version }}"
@@ -250,7 +203,7 @@ jobs:
       - name: Prepare release assets
         run: |
           # Extract version from git tag or workflow input
-          VERSION=$(if [[ "$GITHUB_REF" == refs/tags/* ]]; then 
+          VERSION=$(if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             echo "${GITHUB_REF#refs/tags/}"
           elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
             echo "${{ github.event.inputs.version }}"
@@ -259,16 +212,43 @@ jobs:
           fi)
 
           mkdir release-assets
+          
           # Copy Windows artifacts with dynamic version
           find . -name "PAX-${VERSION}-Windows-Portable.exe" -exec cp {} release-assets/ \; 2>/dev/null || echo "No Windows exe found"
           find . -name "PAX-${VERSION}-Windows-Installer.msi" -exec cp {} release-assets/ \; 2>/dev/null || echo "No Windows msi found"
-          # Copy macOS artifacts with dynamic version  
+          
+          # Copy macOS artifacts with dynamic version
           find . -name "PAX-${VERSION}-macOS-Universal.zip" -exec cp {} release-assets/ \; 2>/dev/null || echo "No macOS universal zip found"
+          
           # Copy any other artifacts
           find . -name "*.zip" -path "*/PAX-*" -exec cp {} release-assets/ \; 2>/dev/null || echo "No other zips found"
+          
+          # Copy ALL repository files (excluding .github folder) as individual release assets
+          echo "=== Adding individual repository files to release ==="
+          
+          # Copy all files from root (excluding .github)
+          find . -maxdepth 1 -type f ! -path "./.git*" -exec cp {} release-assets/ \; 2>/dev/null || true
+          
+          # Copy all files from subdirectories (excluding .github and build artifacts)
+          find . -type f \
+            ! -path "./.github/*" \
+            ! -path "./.git/*" \
+            ! -path "./src-tauri/*" \
+            ! -path "./node_modules/*" \
+            ! -path "./target/*" \
+            ! -path "./dist/*" \
+            ! -path "./PAX-*/*" \
+            ! -path "./windows-dist/*" \
+            ! -path "./macos-dist-native/*" \
+            ! -path "./release-assets/*" \
+            ! -name ".gitattributes" \
+            ! -name ".gitkeep" \
+            -exec bash -c 'mkdir -p "release-assets/$(dirname "{}" | sed "s|^\./||")" && cp "{}" "release-assets/$(echo "{}" | sed "s|^\./||")"' \; 2>/dev/null || true
 
           echo "=== Release assets prepared ==="
           ls -la release-assets/
+          echo "=== All files in release-assets (including subdirectories) ==="
+          find release-assets/ -type f
 
           if [ -z "$(ls -A release-assets/)" ]; then
             echo "ERROR: No release assets found!"
@@ -279,7 +259,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release-assets/*
+          files: release-assets/**/*
           draft: false
           prerelease: false
           generate_release_notes: true
@@ -289,7 +269,7 @@ jobs:
           body: |
             ## PAX (Purview Audit eXporter) Release
 
-            ### Downloads
+            ### Application Downloads
 
             **Windows Users:**
             - `PAX-${{ github.event.inputs.version || github.ref_name }}-Windows-Portable.exe` - Single executable, no installation required
@@ -297,6 +277,16 @@ jobs:
 
             **Mac Users:**
             - `PAX-${{ github.event.inputs.version || github.ref_name }}-macOS-Universal.zip` - Universal app for all Mac computers (Intel & Apple Silicon)
+
+            ### Individual Repository Files
+
+            All repository files are included as individual release assets below for download tracking.
+            This includes:
+            - PowerShell scripts (`PAX_Purview_Audit_Log_Processor_v*.ps1`)
+            - Documentation (PDF and MD formats)
+            - Release notes
+            - License and security files
+            - Script archive versions
 
             ### Quick Start
 
@@ -315,5 +305,3 @@ jobs:
             No administrative privileges required on any platform!
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-

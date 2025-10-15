@@ -23,6 +23,7 @@ jobs:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
+            const fs = require('fs');
             
             // Get PRs closed in the last 7 days
             const oneWeekAgo = new Date();
@@ -46,10 +47,8 @@ jobs:
             
             if (autoClosedPRs.length === 0) {
               console.log('No PRs were auto-closed this week');
-              return {
-                hasContent: false,
-                summary: 'No PRs were automatically closed this week.'
-              };
+              core.setOutput('has_content', 'false');
+              return;
             }
             
             // Categorize PRs
@@ -96,27 +95,26 @@ jobs:
             summary += `*This is an automated weekly summary of PRs that were auto-closed by the PR management workflow.*\n`;
             summary += `*To review or adjust the automation, see `.github/workflows/manage-prs.yml`*\n`;
             
-            return {
-              hasContent: true,
-              summary: summary
-            };
+            // Write summary to environment file for next step
+            fs.appendFileSync(process.env.GITHUB_ENV, `SUMMARY<<EOF\n${summary}\nEOF\n`);
+            core.setOutput('has_content', 'true');
       
       - name: Create summary issue
-        if: fromJson(steps.summary.outputs.result).hasContent == true
+        if: steps.summary.outputs.has_content == 'true'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const result = ${{ steps.summary.outputs.result }};
+            const summary = process.env.SUMMARY;
             
             // Create an issue that will be assigned to repo owner
             const { data: issue } = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `📊 Weekly PR Summary - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
-              body: result.summary,
+              title: `GitHub Microsoft/PAX Weekly PR Summary - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+              body: summary,
               labels: ['weekly-summary', 'automated'],
-              assignees: ['bmiddendorf']  // Assign to Brian
+              assignees: ['Rance9']
             });
             
             console.log(`Created summary issue: ${issue.html_url}`);
