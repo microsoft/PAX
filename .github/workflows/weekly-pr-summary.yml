@@ -116,7 +116,7 @@ jobs:
               title: `📊 Weekly PR Summary - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
               body: result.summary,
               labels: ['weekly-summary', 'automated'],
-              assignees: ['bmiddendorf']  // Assign to Brian
+              assignees: ['Rance9']
             });
             
             console.log(`Created summary issue: ${issue.html_url}`);
