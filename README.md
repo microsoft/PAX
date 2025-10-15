@@ -126,10 +126,12 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 
 ### Performance & Capacity Planning
 
-- Analyze response latencies and model performance
-- Identify throttling patterns and peak usage periods
-- Forecast infrastructure needs based on token consumption trends
-- Optimize block sizing for your tenant's data density
+- Track Copilot usage patterns and peak activity periods
+- Analyze model names and app host distribution across your tenant
+- Optimize script performance with adaptive block sizing for your tenant's data density
+- Identify query throttling patterns during high-volume periods
+
+**Note:** Advanced metrics like response latencies and token consumption require `-ExplodeDeep` mode to extract nested CopilotEventData fields.
 
 ### Data Integration & BI
 
@@ -1463,32 +1465,32 @@ Every execution produces two files:
 7. AssociatedAdminUnitsNames
 8. AgentId
 9. AgentName
-10. AppIdentity_AppId
+10. AppIdentity
 11. AppIdentity_DisplayName
 12. AppIdentity_PublisherId
 13. ApplicationName
 14. CreationTime
 15. ClientRegion
-16. Audit_UserId
-17. AppHost
-18. ThreadId
-19. Context_Id
-20. Context_Type
-21. Message_Id
-22. Message_isPrompt
-23. AccessedResource_Action
-24. AccessedResource_PolicyDetails
-25. AccessedResource_SiteUrl
-26. AISystemPlugin_Id
-27. AISystemPlugin_Name
-28. ModelTransparencyDetails_ModelName
-29. MessageIds
-30. Message_AcceptanceState
-31. Message_TokenCount
-32. Message_CharacterCount
-33. Message_LengthPreference
-34. Message_LatencyMilliseconds
-35. ExplosionTruncated
+16. ClientIP
+17. Audit_UserId
+18. AppHost
+19. ThreadId
+20. Context_Id
+21. Context_Type
+22. Message_Id
+23. Message_isPrompt
+24. AccessedResource_Action
+25. AccessedResource_PolicyDetails
+26. AccessedResource_SiteUrl
+27. AISystemPlugin_Id
+28. AISystemPlugin_Name
+29. ModelTransparencyDetails_ModelName
+30. MessageIds
+31. OrganizationId
+32. Version
+33. UserType
+34. CopilotLogVersion
+35. Workload
 
 **Use When:** Need relational format for BI tools or matching Microsoft Purview exports
 
