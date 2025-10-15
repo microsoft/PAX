@@ -1,0 +1,256 @@
+name: Daily Insights Summary
+
+on:
+  schedule:
+    # Runs daily at 9:00 AM Central Time (2:00 PM UTC / 3:00 PM UTC depending on DST)
+    # Using 14:00 UTC which is 9:00 AM CDT (summer) or 8:00 AM CST (winter)
+    - cron: '0 14 * * *'
+  workflow_dispatch:  # Allow manual triggering for testing
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+  repository-projects: read
+
+jobs:
+  send-insights-summary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate repository insights
+        id: insights
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const fs = require('fs');
+            
+            // Get date info
+            const today = new Date();
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            
+            // Get repository info
+            const { data: repoInfo } = await github.rest.repos.get({
+              owner: owner,
+              repo: repo
+            });
+            
+            // Get traffic views (last 14 days)
+            let views = null;
+            try {
+              const { data: viewsData } = await github.rest.repos.getViews({
+                owner: owner,
+                repo: repo,
+                per: 'day'
+              });
+              views = viewsData;
+            } catch (error) {
+              console.log('Unable to fetch views data:', error.message);
+            }
+            
+            // Get traffic clones (last 14 days)
+            let clones = null;
+            try {
+              const { data: clonesData } = await github.rest.repos.getClones({
+                owner: owner,
+                repo: repo,
+                per: 'day'
+              });
+              clones = clonesData;
+            } catch (error) {
+              console.log('Unable to fetch clones data:', error.message);
+            }
+            
+            // Get referrers (top 10 referring sites)
+            let referrers = null;
+            try {
+              const { data: referrersData } = await github.rest.repos.getTopReferrers({
+                owner: owner,
+                repo: repo
+              });
+              referrers = referrersData;
+            } catch (error) {
+              console.log('Unable to fetch referrers data:', error.message);
+            }
+            
+            // Get popular content (top 10 paths)
+            let popularPaths = null;
+            try {
+              const { data: pathsData } = await github.rest.repos.getTopPaths({
+                owner: owner,
+                repo: repo
+              });
+              popularPaths = pathsData;
+            } catch (error) {
+              console.log('Unable to fetch popular paths data:', error.message);
+            }
+            
+            // Get latest release info for downloads
+            let latestRelease = null;
+            let totalDownloads = 0;
+            try {
+              const { data: releaseData } = await github.rest.repos.getLatestRelease({
+                owner: owner,
+                repo: repo
+              });
+              latestRelease = releaseData;
+              
+              // Calculate total downloads for latest release
+              if (latestRelease && latestRelease.assets) {
+                totalDownloads = latestRelease.assets.reduce((sum, asset) => sum + asset.download_count, 0);
+              }
+            } catch (error) {
+              console.log('Unable to fetch release data:', error.message);
+            }
+            
+            // Get all releases for total download count
+            let allReleases = [];
+            let allTimeDownloads = 0;
+            try {
+              const { data: releases } = await github.rest.repos.listReleases({
+                owner: owner,
+                repo: repo,
+                per_page: 100
+              });
+              allReleases = releases;
+              
+              // Calculate all-time downloads
+              allTimeDownloads = releases.reduce((total, release) => {
+                return total + release.assets.reduce((sum, asset) => sum + asset.download_count, 0);
+              }, 0);
+            } catch (error) {
+              console.log('Unable to fetch all releases:', error.message);
+            }
+            
+            // Build summary
+            let summary = `# Daily Repository Insights for microsoft/${repo}\n\n`;
+            summary += `**Date:** ${today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n\n`;
+            summary += `---\n\n`;
+            
+            // Repository Stats
+            summary += `## 📊 Repository Overview\n\n`;
+            summary += `- **Stars:** ${repoInfo.stargazers_count} ⭐\n`;
+            summary += `- **Forks:** ${repoInfo.forks_count}\n`;
+            summary += `- **Watchers:** ${repoInfo.subscribers_count}\n`;
+            summary += `- **Open Issues:** ${repoInfo.open_issues_count}\n`;
+            summary += `- **Size:** ${(repoInfo.size / 1024).toFixed(2)} MB\n\n`;
+            
+            // Traffic - Views
+            if (views) {
+              summary += `## � Traffic - Page Views (Last 14 Days)\n\n`;
+              summary += `- **Total Views:** ${views.count}\n`;
+              summary += `- **Unique Visitors:** ${views.uniques}\n\n`;
+              
+              if (views.views && views.views.length > 0) {
+                summary += `### Daily Breakdown:\n\n`;
+                // Show last 7 days
+                const recentViews = views.views.slice(-7);
+                for (const day of recentViews) {
+                  const date = new Date(day.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                  summary += `- **${date}:** ${day.count} views (${day.uniques} unique)\n`;
+                }
+                summary += `\n`;
+              }
+            } else {
+              summary += `## 👀 Traffic - Page Views\n\n`;
+              summary += `*Traffic data not available (requires push access)*\n\n`;
+            }
+            
+            // Traffic - Clones
+            if (clones) {
+              summary += `## 📥 Git Clones (Last 14 Days)\n\n`;
+              summary += `- **Total Clones:** ${clones.count}\n`;
+              summary += `- **Unique Cloners:** ${clones.uniques}\n\n`;
+              
+              if (clones.clones && clones.clones.length > 0) {
+                summary += `### Daily Breakdown:\n\n`;
+                const recentClones = clones.clones.slice(-7);
+                for (const day of recentClones) {
+                  const date = new Date(day.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                  summary += `- **${date}:** ${day.count} clones (${day.uniques} unique)\n`;
+                }
+                summary += `\n`;
+              }
+            } else {
+              summary += `## 📥 Git Clones\n\n`;
+              summary += `*Clone data not available (requires push access)*\n\n`;
+            }
+            
+            // Downloads
+            if (latestRelease) {
+              summary += `## 💾 Downloads\n\n`;
+              summary += `### Latest Release: ${latestRelease.name || latestRelease.tag_name}\n\n`;
+              summary += `- **Release Date:** ${new Date(latestRelease.published_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}\n`;
+              summary += `- **Total Downloads (this release):** ${totalDownloads}\n\n`;
+              
+              if (latestRelease.assets && latestRelease.assets.length > 0) {
+                summary += `#### Assets:\n\n`;
+                for (const asset of latestRelease.assets) {
+                  summary += `- **${asset.name}:** ${asset.download_count} downloads\n`;
+                }
+                summary += `\n`;
+              }
+              
+              summary += `### All-Time Statistics:\n\n`;
+              summary += `- **Total Releases:** ${allReleases.length}\n`;
+              summary += `- **All-Time Downloads:** ${allTimeDownloads}\n\n`;
+            } else {
+              summary += `## 💾 Downloads\n\n`;
+              summary += `*No releases found*\n\n`;
+            }
+            
+            // Referrers
+            if (referrers && referrers.length > 0) {
+              summary += `## 🔗 Top Referrers (Last 14 Days)\n\n`;
+              for (const referrer of referrers.slice(0, 10)) {
+                summary += `- **${referrer.referrer || 'Direct'}:** ${referrer.count} views (${referrer.uniques} unique)\n`;
+              }
+              summary += `\n`;
+            }
+            
+            // Popular Paths
+            if (popularPaths && popularPaths.length > 0) {
+              summary += `## 📄 Popular Content (Last 14 Days)\n\n`;
+              for (const path of popularPaths.slice(0, 10)) {
+                summary += `- **${path.path}:** ${path.count} views (${path.uniques} unique)\n`;
+              }
+              summary += `\n`;
+            }
+            
+            summary += `---\n\n`;
+            summary += `*This is an automated daily insights summary. View the full [traffic analytics](https://github.com/${owner}/${repo}/graphs/traffic) on GitHub.*\n`;
+            
+            // Write summary to environment file for next step
+            fs.appendFileSync(process.env.GITHUB_ENV, `SUMMARY<<EOF\n${summary}\nEOF\n`);
+      
+      - name: Create insights summary issue
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const summary = process.env.SUMMARY;
+            
+            // Create an issue that will be assigned to repo owner
+            const { data: issue } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `GitHub Microsoft/PAX Daily Insights Summary - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+              body: summary,
+              labels: ['daily-insights', 'automated'],
+              assignees: ['Rance9']
+            });
+            
+            console.log(`Created insights summary issue: ${issue.html_url}`);
+            
+            // Immediately close the issue so it doesn't clutter open issues
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              state: 'closed'
+            });
+            
+            console.log(`Closed insights issue #${issue.number} - you'll receive notification but it won't stay in open issues`);
