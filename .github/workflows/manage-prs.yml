@@ -1,0 +1,232 @@
+name: Manage Pull Requests
+
+on:
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  categorize-and-manage-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine PR category
+        id: categorize
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const username = context.payload.pull_request.user.login;
+            const org = context.repo.owner;
+            const repo = context.repo.repo;
+            const teamSlug = 'copilot-roi-advisors';
+            
+            // Ensure we're only running on microsoft/PAX repo
+            if (org !== 'microsoft' || repo !== 'PAX') {
+              console.log(`Skipping - not microsoft/PAX repo`);
+              return { category: 'skip', label: null };
+            }
+            
+            // Check if it's a bot (Dependabot, security, etc.)
+            if (username.includes('bot') || username.includes('[bot]') || username === 'dependabot') {
+              console.log(`System contribution from ${username}`);
+              return { category: 'system', label: 'System-Contribution' };
+            }
+            
+            // Whitelist of individual users (future-proofing)
+            const whitelistedUsers = [
+              // Add individual usernames here in the future if needed
+            ];
+            
+            // Check if user is a repo collaborator (has write/admin access)
+            try {
+              const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner: org,
+                repo: repo,
+                username: username
+              });
+              
+              if (permission.permission === 'admin' || permission.permission === 'write') {
+                console.log(`${username} is a repo collaborator with ${permission.permission} permission`);
+                return { category: 'team', label: 'Team-Contribution' };
+              }
+            } catch (error) {
+              console.log(`Could not check collaborator status: ${error.message}`);
+            }
+            
+            // Check if user is in the Copilot-ROI-Advisors team
+            try {
+              await github.rest.teams.getMembershipForUserInOrg({
+                org: org,
+                team_slug: teamSlug,
+                username: username
+              });
+              
+              console.log(`${username} is a member of ${teamSlug} team`);
+              return { category: 'team', label: 'Team-Contribution' };
+            } catch (error) {
+              if (error.status !== 404) {
+                console.log(`Error checking team membership: ${error.message}`);
+              }
+            }
+            
+            // Check if user is in whitelist
+            if (whitelistedUsers.includes(username)) {
+              console.log(`${username} is whitelisted`);
+              return { category: 'team', label: 'Team-Contribution' };
+            }
+            
+            // Check if user is a Microsoft employee
+            try {
+              const { data: user } = await github.rest.users.getByUsername({
+                username: username
+              });
+              
+              // Check if company field indicates Microsoft
+              const company = user.company?.toLowerCase() || '';
+              if (company.includes('microsoft')) {
+                console.log(`${username} is a Microsoft employee (not on team)`);
+                return { category: 'internal', label: 'Internal-Contribution' };
+              }
+              
+              // Check if user is member of microsoft org
+              try {
+                await github.rest.orgs.checkMembershipForUser({
+                  org: 'microsoft',
+                  username: username
+                });
+                console.log(`${username} is in microsoft org (not on team)`);
+                return { category: 'internal', label: 'Internal-Contribution' };
+              } catch (orgError) {
+                // Not in microsoft org
+              }
+            } catch (error) {
+              console.log(`Could not check Microsoft affiliation: ${error.message}`);
+            }
+            
+            // External contributor
+            console.log(`${username} is an external contributor`);
+            return { category: 'external', label: 'External-Contribution' };
+      
+      - name: Create labels if they don't exist
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const labels = [
+              { name: 'External-Contribution', color: 'd73a4a', description: 'PR from external contributor' },
+              { name: 'Internal-Contribution', color: 'fbca04', description: 'PR from Microsoft employee (not on team)' },
+              { name: 'Team-Contribution', color: '0e8a16', description: 'PR from Copilot-ROI-Advisors team member' },
+              { name: 'System-Contribution', color: 'a371f7', description: 'PR from automated system or bot' }
+            ];
+            
+            for (const label of labels) {
+              try {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label.name,
+                  color: label.color,
+                  description: label.description
+                });
+                console.log(`Created label: ${label.name}`);
+              } catch (error) {
+                if (error.status === 422) {
+                  console.log(`Label ${label.name} already exists`);
+                } else {
+                  console.log(`Error creating label ${label.name}: ${error.message}`);
+                }
+              }
+            }
+      
+      - name: Apply label
+        if: fromJson(steps.categorize.outputs.result).label != null
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const result = ${{ steps.categorize.outputs.result }};
+            if (result.label) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                labels: [result.label]
+              });
+              console.log(`Applied label: ${result.label}`);
+            }
+      
+      - name: Handle external contribution
+        if: fromJson(steps.categorize.outputs.result).category == 'external'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const username = context.payload.pull_request.user.login;
+            
+            // Post comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: `Thank you for your interest in contributing to PAX! 🙏\n\nAt this time, we're limiting direct contributions to our internal team members. However, you're welcome to fork this repository for your own use and customize it for your needs.\n\nIf you have questions or would like to discuss your contribution, please feel free to reach out:\n\n**Brian Middendorf**\n*Copilot ROI Advisor*\n📧 bmiddendorf@microsoft.com\n\nThis PR has been automatically closed, but we appreciate your interest in the project!`
+            });
+            
+            // Close the PR
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              state: 'closed'
+            });
+            
+            console.log(`Closed external PR #${prNumber} from ${username}`);
+      
+      - name: Handle internal Microsoft contribution
+        if: fromJson(steps.categorize.outputs.result).category == 'internal'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const username = context.payload.pull_request.user.login;
+            
+            // Post informal comment for Microsoft employees
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: `Hey @${username}! 👋\n\nThanks for taking the time to work on this! I really appreciate fellow Microsoft folks contributing ideas and improvements.\n\nRight now, I'm keeping direct contributions limited to the Copilot-ROI-Advisors team, but I'd love to chat about your changes and potentially collaborate on this. Let's connect!\n\n**Brian Middendorf**\n*Copilot ROI Advisor*\n📧 bmiddendorf@microsoft.com\n\nI'm closing this PR for now, but definitely reach out – would love to hear more about what you're working on! 🚀`
+            });
+            
+            // Close the PR
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              state: 'closed'
+            });
+            
+            console.log(`Closed internal PR #${prNumber} from Microsoft employee ${username}`);
+      
+      - name: Comment on team contribution
+        if: fromJson(steps.categorize.outputs.result).category == 'team'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const username = context.payload.pull_request.user.login;
+            
+            // Just add a welcoming comment for team members
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: `Thanks for the contribution, @${username}! ✅ This PR is from an approved team member and will be reviewed normally.`
+            });
+            
+            console.log(`Team member PR #${prNumber} from ${username} - no action needed`);
