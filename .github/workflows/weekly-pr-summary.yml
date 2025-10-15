@@ -9,7 +9,7 @@ on:
 
 permissions:
   pull-requests: read
-  issues: read
+  issues: write
 
 jobs:
   send-pr-summary:
