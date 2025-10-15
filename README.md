@@ -196,7 +196,7 @@ Download [`PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`](PAX_Purview_Audit_Log_Pr
 
 ```powershell
 # PowerShell 7+ (recommended)
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
 
 # Windows PowerShell 5.1
 powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
@@ -1599,7 +1599,7 @@ Status: Query: 45/100(45%) | Explosion: 12000/25000(48%) | Export: 0/1(0%) :: 42
 
 ```powershell
 # Reduce block hours to 15 minutes or less
-pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
   -BlockHours 0.25 `
   -StartDate 2025-10-03 `
   -EndDate 2025-10-03
