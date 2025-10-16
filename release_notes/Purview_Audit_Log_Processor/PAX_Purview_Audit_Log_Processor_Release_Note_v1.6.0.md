@@ -1,0 +1,251 @@
+# Release Notes: v1.6.0
+
+## Release Information
+- **Version:** 1.6.0
+- **Release Date:** 2025-10-12 23:09:35 UTC
+- **Released By:** Brian Middendorf (@microsoft)
+- **Previous Version:** v1.5.0
+
+---
+
+## Overview
+
+### What Changed
+- **PowerShell Scripts**: 19 file(s) modified
+- **Documentation**: 11 file(s) modified
+- **Configuration Files**: 8 file(s) modified
+- **Source Code**: 29 file(s) modified
+- **GitHub Workflows**: 1 file(s) modified
+
+Version 1.6.0 represents a comprehensive update to the Portable Audit eXporter (PAX), incorporating improvements from versions 1.5.1 through 1.5.9. This release includes significant enhancements to the Purview Audit Log Processor, expanded GUI capabilities with Tauri, improved documentation, and refined release automation processes.
+
+### Key Highlights
+
+**Core Script Enhancements (v1.5.x → v1.6.0)**
+- Enhanced error handling and logging mechanisms
+- Improved data processing efficiency for large audit logs
+- Expanded Copilot activity detection and analysis
+- Better handling of date ranges and filtering options
+- Refined output formatting and reporting
+
+**Desktop Application (Tauri GUI)**
+- Complete UI redesign with modern component library
+- Enhanced activity selection with multi-select capabilities
+- Improved date picker and filtering controls
+- Better progress tracking and status indicators
+- Cross-platform icon and resource updates
+
+**Documentation & Developer Experience**
+- Comprehensive README updates with better navigation
+- New contributor guidelines and code of conduct
+- Enhanced security documentation
+- Improved Mac user guide
+- Added development container configuration
+
+**Release Automation**
+- Streamlined release process with automated script archiving
+- Better version management and tagging
+- Enhanced PDF documentation generation
+- Improved Git workflow synchronization
+
+---
+
+## Detailed Changes
+
+### Modified Files (111 files changed)
+```
+.devcontainer/Dockerfile
+.devcontainer/devcontainer.json
+.gitattributes
+.github/workflows/build-release.yml
+.gitignore
+.tauriignore
+.vscode/extensions.json
+.vscode/tasks.json
+CODE_OF_CONDUCT.md
+CONTRIBUTORS.md
+COPILOT_ENHANCEMENT_DOCUMENTATION.md
+LICENSE
+MAC_USER_GUIDE.md
+PAX.code-workspace
+PAX_Overview.pdf
+PAX_Purview_Audit_Log_Processor_v1.6.0.ps1
+README.md
+README.md.backup
+SECURITY.md
+index.html
+output/copilot_feature_analysis.json
+output/validation_report.json
+package-lock.json
+package.json
+postcss.config.js
+release.ps1
+release_notes/v1.6.0.md
+scripts/CopilotAuditExport.ps1
+scripts/LegacyScripts/PAX_Purview_Audit_Log_Processor_v1.4.2.ps1
+scripts/LegacyScripts/PAX_Purview_Audit_Log_Processor_v1.4.3.ps1
+scripts/LegacyScripts/PAX_Purview_Audit_Log_Processor_v1.4.4.ps1
+scripts/LegacyScripts/PAX_Purview_Audit_Log_Processor_v1.4.5.ps1
+scripts/LegacyScripts/PAX_Purview_Audit_Log_Processor_v1.4.6.ps1
+scripts/LegacyScripts/PAX_Purview_Audit_Log_Processor_v1.4.7.ps1
+scripts/LegacyScripts/PAX_Purview_Audit_Log_Processor_v1.5.0.ps1
+scripts/LegacyScripts/PAX_Purview_Audit_Log_Processor_v1.5.1.ps1
+scripts/LegacyScripts/PAX_Purview_Audit_Log_Processor_v1.5.2.ps1
+scripts/LegacyScripts/PAX_Purview_Audit_Log_Processor_v1.5.3.ps1
+scripts/LegacyScripts/PAX_Purview_Audit_Log_Processor_v1.5.4.ps1
+scripts/LegacyScripts/PAX_Purview_Audit_Log_Processor_v1.5.5.ps1
+scripts/LegacyScripts/PAX_Purview_Audit_Log_Processor_v1.5.6.ps1
+scripts/LegacyScripts/PAX_Purview_Audit_Log_Processor_v1.5.7.ps1
+scripts/LegacyScripts/PAX_Purview_Audit_Log_Processor_v1.5.8.ps1
+scripts/LegacyScripts/PAX_Purview_Audit_Log_Processor_v1.5.9.ps1
+scripts/README_Activities.md
+scripts/analyze-comprehensive-patterns-robust.ps1
+scripts/analyze-comprehensive-patterns.ps1
+scripts/analyze-purview-columns.mjs
+scripts/anonymize-exploded-sample.ps1
+scripts/anonymize-purview-sample.ps1
+scripts/audit-activities.generated.json
+scripts/audit-activities.json
+scripts/audit-activities.merged.json
+scripts/build-merged-dataset.mjs
+scripts/copy-script.cjs
+scripts/generate-synthetic.mjs
+scripts/reanonymize-with-realistic-names.ps1
+scripts/release.ps1
+scripts/sync-activities.js
+scripts/sync-release.ps1
+scripts/verify-no-synthetic.cjs
+src-tauri/Cargo.lock
+src-tauri/Cargo.toml
+src-tauri/build.rs
+src-tauri/entitlements.plist
+src-tauri/icons/128x128.png
+src-tauri/icons/128x128@2x.png
+src-tauri/icons/32x32.png
+src-tauri/icons/Square107x107Logo.png
+src-tauri/icons/Square142x142Logo.png
+src-tauri/icons/Square150x150Logo.png
+src-tauri/icons/Square284x284Logo.png
+src-tauri/icons/Square30x30Logo.png
+src-tauri/icons/Square310x310Logo.png
+src-tauri/icons/Square44x44Logo.png
+src-tauri/icons/Square71x71Logo.png
+src-tauri/icons/Square89x89Logo.png
+src-tauri/icons/StoreLogo.png
+src-tauri/icons/icon.icns
+src-tauri/icons/icon.ico
+src-tauri/icons/icon.png
+src-tauri/resources/CopilotAuditExport.ps1
+src-tauri/resources/scripts/CopilotAuditExport.ps1
+src-tauri/resources/scripts/audit-activities.generated.json
+src-tauri/resources/scripts/audit-activities.json
+src-tauri/resources/scripts/audit-activities.merged.json
+src-tauri/src/main.rs
+src-tauri/tauri.conf.json
+src/App.tsx
+src/components/HelpButton.tsx
+src/components/HelpModal.tsx
+src/components/activity-multi-select.tsx
+src/components/stepper.tsx
+src/components/ui/badge.tsx
+src/components/ui/button.tsx
+src/components/ui/card.tsx
+src/components/ui/checkbox.tsx
+src/components/ui/command.tsx
+src/components/ui/date-picker.tsx
+src/components/ui/input.tsx
+src/components/ui/popover.tsx
+src/components/ui/progress.tsx
+src/components/ui/scroll-area.tsx
+src/components/ui/switch.tsx
+src/lib/activities.ts
+src/main.tsx
+src/styles/globals.css
+tailwind.config.js
+test-performance.ps1
+tsconfig.json
+vite.config.ts
+```
+
+### File Statistics
+```
+ 111 files changed, 21302 insertions(+), 5563 deletions(-)
+```
+
+### Commit History (57 commits from v1.5.0 to v1.6.0)
+```
+46c273c - v1.6.0 (Brian Middendorf, 2 days ago)
+8f65f89 - v1.5.9 (Brian Middendorf, 4 days ago)
+92d091f - v1.5.9 (Brian Middendorf, 4 days ago)
+d7d8faf - v1.5.9 (Brian Middendorf, 4 days ago)
+c998b59 - v1.5.9 (Brian Middendorf, 4 days ago)
+52cb9bb - v1.5.9 (Brian Middendorf, 4 days ago)
+3d1170a - PAX Release v1.5.9 (Brian Middendorf, 4 days ago)
+56681b1 - PAX Release v1.5.9 (Brian Middendorf, 4 days ago)
+3ab69ff - PAX Release v1.5.9 (Brian Middendorf, 4 days ago)
+951ce57 - PAX Release v1.5.8 (Brian Middendorf, 4 days ago)
+4d552fb - PAX Release v1.5.8 (Brian Middendorf, 4 days ago)
+7296db8 - PAX Release v1.5.8 (Brian Middendorf, 5 days ago)
+85ad21c - PAX Release v1.5.8 (Brian Middendorf, 5 days ago)
+1285e72 - v1.5.8: Patch version release (Brian Middendorf, 5 days ago)
+132d721 - Add PAX_Overview.pdf to release branch sync process (Brian Middendorf, 5 days ago)
+... (42 additional commits)
+```
+
+---
+
+## Installation
+
+### Download v1.6.0 (This Version)
+This release note documents **version 1.6.0**. Use the direct download links below to obtain this specific version:
+
+- **Script v1.6.0**: [PAX_Purview_Audit_Log_Processor_v1.6.0.ps1](https://github.com/microsoft/PAX/blob/release/script_archive/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_v1.6.0.ps1)
+- **Documentation v1.6.0**: [PAX_Documentation_v1.6.0.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PDF/PAX_Documentation_v1.6.0.pdf)
+
+### Get Latest Version
+For the most recent release, visit:
+- **Latest Script Archive**: [Microsoft PAX Repository - Script Archive](https://github.com/microsoft/PAX/tree/release/script_archive/Purview_Audit_Log_Processor)
+- **All Release Notes**: [Microsoft PAX Repository - Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
+
+---
+
+## Migration Notes
+
+### From v1.5.x to v1.6.0
+
+**No Breaking Changes** - This release is fully backward compatible with v1.5.x scripts.
+
+**Recommended Actions:**
+1. Review the updated README for new features and capabilities
+2. Test the script with your existing audit log exports
+3. Consider using the new GUI application for enhanced user experience
+4. Update any automation scripts to reference v1.6.0
+
+**Deprecated Features:**
+- None in this release
+
+---
+
+## Known Issues
+
+No critical issues identified in v1.6.0. For bug reports or feature requests, please visit the [Issues page](https://github.com/microsoft/PAX/issues).
+
+---
+
+## Contributors
+
+Special thanks to all contributors who helped make this release possible:
+- Brian Middendorf (@microsoft)
+
+---
+
+## Support
+
+For questions or issues, refer to the documentation:
+- **Documentation v1.6.0 (PDF)**: [PAX_Documentation_v1.6.0.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PDF/PAX_Documentation_v1.6.0.pdf)
+- **Documentation v1.6.0 (Markdown)**: [PAX_Documentation_v1.6.0.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v1.6.0.md)
+
+---
+
+*Managed and released by the Microsoft Copilot Growth ROI Advisory Team. Please reach out to [Brian Middendorf](mailto:bmiddendorf@microsoft.com?subject=Microsoft%20PAX%3A%20Purview%20Audit%20Log%20Processor%20v1.6.0%20Feedback) with any feedback.*
+
