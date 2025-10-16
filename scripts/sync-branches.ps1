@@ -601,7 +601,7 @@ function Add-VersionMarkers {
             }
         }
         
-        # For Purview commits, add version comment to script
+        # For Purview commits, add version comment to script and update subfolder .gitkeep files
         if ($isPurviewCommit) {
             $purviewScript = Get-ChildItem -Path "PAX_Purview_Audit_Log_Processor_v*.ps1" -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($purviewScript) {
@@ -610,9 +610,20 @@ function Add-VersionMarkers {
                     "`n# Updated: v$version" | Out-File -FilePath $purviewScript.Name -Encoding utf8 -Append
                 }
             }
+            
+            # Update Purview subfolder .gitkeep files to show purview-vx.x.x
+            if (Test-Path "release_documentation\Purview_Audit_Log_Processor\.gitkeep") {
+                "# Purview Audit Log Processor - Release Documentation`n" | Out-File -FilePath "release_documentation\Purview_Audit_Log_Processor\.gitkeep" -Encoding utf8
+            }
+            if (Test-Path "release_notes\Purview_Audit_Log_Processor\.gitkeep") {
+                "# Purview Audit Log Processor - Release Notes`n" | Out-File -FilePath "release_notes\Purview_Audit_Log_Processor\.gitkeep" -Encoding utf8
+            }
+            if (Test-Path "script_archive\Purview_Audit_Log_Processor\.gitkeep") {
+                "# Purview Audit Log Processor - Script Archive`n" | Out-File -FilePath "script_archive\Purview_Audit_Log_Processor\.gitkeep" -Encoding utf8
+            }
         }
         
-        # For Graph commits, add version comment to script
+        # For Graph commits, add version comment to script and update subfolder .gitkeep files
         if ($isGraphCommit) {
             $graphScript = Get-ChildItem -Path "PAX_Graph_Audit_Log_Processor_v*.ps1" -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($graphScript) {
@@ -620,6 +631,17 @@ function Add-VersionMarkers {
                 if ($version) {
                     "`n# Updated: v$version" | Out-File -FilePath $graphScript.Name -Encoding utf8 -Append
                 }
+            }
+            
+            # Update Graph subfolder .gitkeep files to show graph-vx.x.x
+            if (Test-Path "release_documentation\Graph_Audit_Log_Processor\.gitkeep") {
+                "# Graph Audit Log Processor - Release Documentation`n" | Out-File -FilePath "release_documentation\Graph_Audit_Log_Processor\.gitkeep" -Encoding utf8
+            }
+            if (Test-Path "release_notes\Graph_Audit_Log_Processor\.gitkeep") {
+                "# Graph Audit Log Processor - Release Notes`n" | Out-File -FilePath "release_notes\Graph_Audit_Log_Processor\.gitkeep" -Encoding utf8
+            }
+            if (Test-Path "script_archive\Graph_Audit_Log_Processor\.gitkeep") {
+                "# Graph Audit Log Processor - Script Archive`n" | Out-File -FilePath "script_archive\Graph_Audit_Log_Processor\.gitkeep" -Encoding utf8
             }
         }
         
