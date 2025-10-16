@@ -872,6 +872,49 @@ function Sync-ReleaseBranch {
         $newCommit = git rev-parse HEAD
         Write-Success "Committed changes to release branch: $newCommit"
         
+        # CRITICAL: After Purview or Graph commits, re-update parent folders to maintain PAX-vx.x.x commit messages
+        if ($CommitMessage -match "^(purview-v|graph-v)") {
+            Write-Status "Re-updating parent folder .gitkeep files to maintain PAX commit messages..."
+            
+            # Extract current PAX version from parent folder .gitkeep files
+            $paxVersion = "PAX-v1.0.2"  # Default
+            if (Test-Path "release_documentation\.gitkeep") {
+                $content = Get-Content "release_documentation\.gitkeep" -Raw -ErrorAction SilentlyContinue
+                if ($content -match "PAX-v([\d\.]+)") {
+                    $paxVersion = "PAX-v$($matches[1])"
+                }
+            }
+            
+            # Update parent folder .gitkeep files
+            @"
+# PAX Solution Set - Release Documentation
+# Re-updated after $CommitMessage
+
+"@ | Out-File -FilePath "release_documentation\.gitkeep" -Encoding utf8
+            
+            @"
+# PAX Solution Set - Release Notes
+# Re-updated after $CommitMessage
+
+"@ | Out-File -FilePath "release_notes\.gitkeep" -Encoding utf8
+            
+            @"
+# PAX Script Archive
+# Re-updated after $CommitMessage
+
+"@ | Out-File -FilePath "script_archive\.gitkeep" -Encoding utf8
+            
+            # Commit parent folder updates
+            git add release_documentation\.gitkeep release_notes\.gitkeep script_archive\.gitkeep
+            $parentChanges = git status --porcelain
+            if ($parentChanges) {
+                git commit -m $paxVersion
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Success "Re-updated parent folders with $paxVersion commit"
+                }
+            }
+        }
+        
         # Push release branch to Rance9/PAX (backup) - no protection
         Write-Status "Pushing release branch to Rance9/PAX..."
         git push backup release -f 2>$null
