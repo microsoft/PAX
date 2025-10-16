@@ -545,6 +545,91 @@ function Sync-ReleaseWorktreeFiles {
     return $true
 }
 
+# Function to add version markers to files to ensure they're included in commits
+function Add-VersionMarkers {
+    param(
+        [string]$CommitMessage,
+        [string]$ReleaseWorktreePath
+    )
+    
+    Write-Status "Adding version markers to ensure files are committed..."
+    
+    Push-Location $ReleaseWorktreePath
+    try {
+        # Determine commit type from commit message
+        $isUmbrellaCommit = $CommitMessage -match "^PAX-v"
+        $isPurviewCommit = $CommitMessage -match "^purview-v"
+        $isGraphCommit = $CommitMessage -match "^graph-v"
+        
+        # Add markers to governance files ONLY for Umbrella commits
+        if ($isUmbrellaCommit) {
+            $governanceFiles = @("CODE_OF_CONDUCT.md", "CONTRIBUTORS.md", "SECURITY.md")
+            foreach ($file in $governanceFiles) {
+                if (Test-Path $file) {
+                    "`n<!-- $CommitMessage -->" | Out-File -FilePath $file -Encoding utf8 -Append
+                }
+            }
+            
+            # Add marker to LICENSE (uses # comment)
+            if (Test-Path "LICENSE") {
+                "`n# $CommitMessage" | Out-File -FilePath "LICENSE" -Encoding utf8 -Append
+            }
+            
+            # Add marker to .gitattributes
+            if (Test-Path ".gitattributes") {
+                # Check if header already exists
+                $content = Get-Content ".gitattributes" -Raw
+                if ($content -notmatch "^# PAX Solution Set") {
+                    "# PAX Solution Set - Git Attributes`n$content" | Out-File -FilePath ".gitattributes" -Encoding utf8 -NoNewline
+                }
+            }
+            
+            # Add markers to parent folder .gitkeep files (ONLY for Umbrella)
+            if (Test-Path "release_documentation\.gitkeep") {
+                "# PAX Solution Set - Release Documentation`n" | Out-File -FilePath "release_documentation\.gitkeep" -Encoding utf8
+            }
+            
+            if (Test-Path "release_notes\.gitkeep") {
+                "# PAX Solution Set - Release Notes`n" | Out-File -FilePath "release_notes\.gitkeep" -Encoding utf8
+            }
+            
+            if (Test-Path "script_archive\.gitkeep") {
+                $content = Get-Content "script_archive\.gitkeep" -Raw -ErrorAction SilentlyContinue
+                if ($content -notmatch "^# PAX Script Archive") {
+                    "# PAX Script Archive`n" | Out-File -FilePath "script_archive\.gitkeep" -Encoding utf8
+                }
+            }
+        }
+        
+        # For Purview commits, add version comment to script
+        if ($isPurviewCommit) {
+            $purviewScript = Get-ChildItem -Path "PAX_Purview_Audit_Log_Processor_v*.ps1" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($purviewScript) {
+                $version = if ($CommitMessage -match "purview-v([\d\.]+)") { $matches[1] }
+                if ($version) {
+                    "`n# Updated: v$version" | Out-File -FilePath $purviewScript.Name -Encoding utf8 -Append
+                }
+            }
+        }
+        
+        # For Graph commits, add version comment to script
+        if ($isGraphCommit) {
+            $graphScript = Get-ChildItem -Path "PAX_Graph_Audit_Log_Processor_v*.ps1" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($graphScript) {
+                $version = if ($CommitMessage -match "graph-v([\d\.]+)") { $matches[1] }
+                if ($version) {
+                    "`n# Updated: v$version" | Out-File -FilePath $graphScript.Name -Encoding utf8 -Append
+                }
+            }
+        }
+        
+        Write-Success "Version markers added"
+    }
+    finally {
+        Pop-Location
+    }
+}
+
 # Function to sync files from PAX branch to release worktree (mirrors release.ps1 approach)
 function Sync-ReleaseWorktreeFiles {
     param(
@@ -748,6 +833,11 @@ function Sync-ReleaseBranch {
         
         Write-Status "Changes detected in release worktree:"
         $changes | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+        
+        # Add version markers to ensure files are included in commits
+        Pop-Location
+        Add-VersionMarkers -CommitMessage $CommitMessage -ReleaseWorktreePath $ReleaseWorktreePath
+        Push-Location $ReleaseWorktreePath
         
         # Stage and commit changes
         git add .
