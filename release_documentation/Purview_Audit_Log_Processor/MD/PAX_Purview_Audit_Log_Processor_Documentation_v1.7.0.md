@@ -1,1106 +1,408 @@
-# Portable Audit eXporter (PAX)# Portable Audit eXporter (PAX)# Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
+# Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`](https://github.com/microsoft/PAX/releases/download/v1.7.0/PAX_Purview_Audit_Log_Processor_v1.7.0.ps1)
+>
+> **📋 Release Notes:** See what's new → [v1.7.0 Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/v1.7.0.md) | [v1.6.0 Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/v1.6.0.md) | [All Releases](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
+>
+> **📜 Previous Script Versions:** [v1.6.0 Script](https://github.com/microsoft/PAX/releases/download/v1.6.0/PAX_Purview_Audit_Log_Processor_v1.6.0.ps1) | [All Releases](https://github.com/microsoft/PAX/releases)
+>
+> **📚 Documentation Archive:** [v1.7.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v1.7.0.md) | [v1.6.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v1.6.0.md) | [All Releases](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor/MD)
 
-
-> Enterprise-grade Microsoft 365 audit log processing suite for Copilot analytics and compliance
-
-
-
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)> Enterprise-grade Microsoft 365 audit log processing suite for Copilot analytics and compliance> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`](https://github.com/microsoft/PAX/releases/download/v1.7.0/PAX_Purview_Audit_Log_Processor_v1.7.0.ps1)
-
-[![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://github.com/PowerShell/PowerShell)
-
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()>
-
-
-
----[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)> **📋 Release Notes:** See what's new → [v1.7.0 Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/v1.7.0.md) | [v1.6.0 Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/v1.6.0.md) | [All Releases](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
-
-
-
-## 🎯 Overview[![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://github.com/PowerShell/PowerShell)>
-
-
-
-PAX provides PowerShell-based solutions for extracting and processing Microsoft 365 audit data, with specialized support for **Microsoft Copilot analytics, usage tracking, and compliance reporting**.[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()> **📜 Previous Script Versions:** [v1.6.0 Script](https://github.com/microsoft/PAX/releases/download/v1.6.0/PAX_Purview_Audit_Log_Processor_v1.6.0.ps1) | [All Releases](https://github.com/microsoft/PAX/releases)
-
-
-
-The PAX suite consists of two complementary scripts, each designed for different data sources and use cases:>
-
-
-
-| Script | Purpose | Current Version | Documentation |---> **📚 Documentation Archive:** [v1.7.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v1.7.0.md) | [v1.6.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v1.6.0.md) | [All Releases](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor/MD)
-
-|--------|---------|-----------------|---------------|
-
-| **Purview Audit Log Processor** | Extract detailed Copilot activity from Microsoft Purview Unified Audit Log | **v1.7.0** | [📖 Documentation](./release_documentation/Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.0.md) |
-
-| **Graph API Audit Log Processor** | Extract Copilot usage analytics via Microsoft Graph API | **v0.1.0** *(In Development)* | [📖 Documentation](./release_documentation/Graph_Audit_Log_Processor/MD/PAX_Graph_Audit_Log_Processor_Documentation_v0.1.0.md) |
-
-## 🎯 Overview**Script:** `PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`  
-
----
-
+**Script:** `PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`  
 **Version:** 1.7.0  
-
-## 📦 Available Scripts
-
-PAX provides PowerShell-based solutions for extracting and processing Microsoft 365 audit data, with specialized support for **Microsoft Copilot analytics, usage tracking, and compliance reporting**.**Audience:** IT admins, security/compliance analysts, BI/data teams  
-
-### 🔍 Purview Audit Log Processor
-
+**Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 5.1 (compatible) / PowerShell 7+ (recommended)  
+**License:** MIT
 
-**Extract detailed Copilot conversation logs and audit compliance data from Microsoft Purview**
+---
 
-The PAX suite consists of two complementary scripts, each designed for different data sources and use cases:**License:** MIT
+## Table of Contents
 
-- **Version:** 1.7.0
-
-- **Script:** [`PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`](./PAX_Purview_Audit_Log_Processor_v1.7.0.ps1)
-
-- **Documentation:** [PAX_Purview_Audit_Log_Processor_Documentation_v1.7.0.md](./release_documentation/Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.0.md)
-
-- **Release Notes:** [PAX_Purview_Audit_Log_Processor_Release_Note_v1.7.0.md](./release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.7.0.md)| Script | Purpose | Current Version | Documentation |---
-
-
-
-#### **Use Purview When You Need:**|--------|---------|-----------------|---------------|
-
-
-
-✅ **Detailed conversation logs** - Complete Copilot prompts, responses, and context  | **[Purview Audit Log Processor](#-purview-audit-log-processor)** | Extract detailed Copilot activity from Microsoft Purview Unified Audit Log | **v1.7.0** | [📖 Full Documentation](./README-Purview.md) |## Table of Contents
-
-✅ **Audit compliance data** - Who, when, what, where for regulatory requirements  
-
-✅ **Historical data** - Access logs beyond Graph API's retention period  | **[Graph API Audit Log Processor](#-graph-api-audit-log-processor)** | Extract Copilot usage analytics via Microsoft Graph API | **v1.0.0** *(Coming Soon)* | [📖 Full Documentation](./README-Graph.md) |
-
-✅ **Advanced filtering** - Filter by agents, users, groups, prompts  
-
-✅ **Deep JSON extraction** - Nested CopilotEventData with latency, tokens, citations  1. [Overview](#overview)
-
-✅ **Offline processing** - Replay mode for re-processing exported data  
-
----2. [Key Features](#key-features)
-
-#### **Key Features:**
-
+1. [Overview](#overview)
+2. [Key Features](#key-features)
 3. [Use Cases](#use-cases)
-
-- 🔄 **Three explosion modes** - Standard (1:1), ExplodeArrays (35 columns), ExplodeDeep (dynamic columns)
-
-- 👥 **User & group filtering** - Target specific users or expand distribution groups## 📦 Available Scripts4. [Prerequisites](#prerequisites)
-
-- 🤖 **Agent filtering** - Isolate Copilot agent interactions (AgentsOnly, AgentId, ExcludeAgents)
-
-- 💬 **Prompt filtering** - Separate prompts from responses for conversation analysis5. [Installation & Setup](#installation--setup)
-
-- 📊 **Streaming CSV export** - Memory-efficient processing of large datasets
-
-- ⚡ **Parallel execution** - PowerShell 7+ support for multi-threaded queries### 🔍 Purview Audit Log Processor6. [Parameters Reference](#parameters-reference)
-
-- 🎯 **Smart block sizing** - Adaptive query optimization for performance
-
-- 🔁 **Replay mode** - Re-process previously exported CSVs with new filters7. [Authentication Methods](#authentication-methods)
-
-
-
-#### **Quick Start:****Extract detailed Copilot conversation logs and audit compliance data from Microsoft Purview**8. [Usage Examples](#usage-examples)
-
-
-
-```powershell9. [Agent Filtering](#agent-filtering)
-
-# Download script from GitHub release branch
-
-# https://github.com/microsoft/PAX/blob/release/PAX_Purview_Audit_Log_Processor_v1.7.0.ps1- **Version:** 1.7.010. [User and Group Filtering](#user-and-group-filtering)
-
-
-
-# Basic usage (last 24 hours)- **Script:** [`PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`](./PAX_Purview_Audit_Log_Processor_v1.7.0.ps1)11. [Prompt and Response Filtering](#prompt-and-response-filtering)
-
-.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1
-
-- **Full Documentation:** [README-Purview.md](./README-Purview.md)12. [Combining Filters](#combining-filters)
-
-# With exploded schema (35 base columns)
-
-.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-0213. [Output Files & Schema](#output-files--schema)
-
-
-
-# Filter for specific users#### **Use Purview When You Need:**14. [Activity Types Reference](#activity-types-reference)
-
-.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -UserIds "user@contoso.com" -StartDate 2025-10-01 -EndDate 2025-10-02
-
+4. [Prerequisites](#prerequisites)
+5. [Installation & Setup](#installation--setup)
+6. [Parameters Reference](#parameters-reference)
+7. [Authentication Methods](#authentication-methods)
+8. [Usage Examples](#usage-examples)
+9. [Agent Filtering](#agent-filtering)
+10. [User and Group Filtering](#user-and-group-filtering)
+11. [Prompt and Response Filtering](#prompt-and-response-filtering)
+12. [Combining Filters](#combining-filters)
+13. [Output Files & Schema](#output-files--schema)
+14. [Activity Types Reference](#activity-types-reference)
 15. [Advanced Features](#advanced-features)
-
-# Agent interactions only
-
-.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -AgentsOnly -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02✅ **Detailed conversation logs** - Complete Copilot prompts, responses, and context  16. [Performance Tuning](#performance-tuning)
-
-```
-
-✅ **Audit compliance data** - Who, when, what, where for regulatory requirements  17. [Troubleshooting & FAQ](#troubleshooting--faq)
-
-**[📖 Read Full Documentation →](./release_documentation/Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.0.md)**
-
-✅ **Historical data** - Access logs beyond Graph API's retention period  18. [Known Limitations](#known-limitations)
+16. [Performance Tuning](#performance-tuning)
+17. [Troubleshooting & FAQ](#troubleshooting--faq)
+18. [Known Limitations](#known-limitations)
+19. [Security & Compliance](#security--compliance)
 
 ---
 
-✅ **Advanced filtering** - Filter by agents, users, groups, prompts  19. [Security & Compliance](#security--compliance)
+## Overview
 
-### 📊 Graph API Audit Log Processor
+### What It Does
 
-✅ **Deep JSON extraction** - Nested CopilotEventData with latency, tokens, citations  
+The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script that exports Microsoft Purview Unified Audit Log events, with specialized support for Microsoft 365 Copilot activities and related operations. It transforms raw audit data into analysis-ready CSV files with enriched metadata, intelligent query optimization, and flexible schema options.
 
-**Extract Copilot usage analytics and M365 app data via Microsoft Graph API**
+**Core Capabilities:**
 
-✅ **Offline processing** - Replay mode for re-processing exported data  ---
-
-- **Version:** 0.1.0 *(In Development)*
-
-- **Script:** `PAX_Graph_Audit_Log_Processor_v0.1.0.ps1` *(Coming Soon)*
-
-- **Documentation:** [PAX_Graph_Audit_Log_Processor_Documentation_v0.1.0.md](./release_documentation/Graph_Audit_Log_Processor/MD/PAX_Graph_Audit_Log_Processor_Documentation_v0.1.0.md)
-
-#### **Key Features:**## Overview
-
-#### **Use Graph API When You Need:**
-
-
-
-✅ **Usage analytics** - Adoption rates, frequency, active users  
-
-✅ **M365 app metrics** - Teams, Outlook, Word, Excel usage with Copilot  - 🔄 **Three explosion modes** - Standard (1:1), ExplodeArrays (35 columns), ExplodeDeep (dynamic columns)### What It Does
-
-✅ **License utilization** - Track Copilot license consumption  
-
-✅ **Real-time dashboards** - Power BI integration for live reporting  - 👥 **User & group filtering** - Target specific users or expand distribution groups
-
-✅ **Aggregated statistics** - Server-side rollups and summaries  
-
-✅ **Simplified access** - No Exchange Online Management required  - 🤖 **Agent filtering** - Isolate Copilot agent interactions (AgentsOnly, AgentId, ExcludeAgents)The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script that exports Microsoft Purview Unified Audit Log events, with specialized support for Microsoft 365 Copilot activities and related operations. It transforms raw audit data into analysis-ready CSV files with enriched metadata, intelligent query optimization, and flexible schema options.
-
-
-
-#### **Key Features (Planned):**- 💬 **Prompt filtering** - Separate prompts from responses for conversation analysis
-
-
-
-- 📈 **Copilot usage reports** - User-level and tenant-level analytics- 📊 **Streaming CSV export** - Memory-efficient processing of large datasets**Core Capabilities:**
-
-- 📱 **M365 app usage** - Granular app-by-app Copilot metrics
-
-- 🎫 **License tracking** - Copilot license assignment and utilization- ⚡ **Parallel execution** - PowerShell 7+ support for multi-threaded queries
-
-- 🔄 **Automated exports** - Scheduled execution with incremental updates
-
-- 📊 **Power BI ready** - Direct integration with Power BI Desktop- 🎯 **Smart block sizing** - Adaptive query optimization for performance- Retrieves audit events from Microsoft 365 Unified Audit Log via Exchange Online Management
-
-- ⚡ **Fast retrieval** - Server-side aggregation reduces data transfer
-
-- 🔁 **Replay mode** - Re-process previously exported CSVs with new filters- Exports to structured CSV with optional array explosion and deep JSON flattening
-
-**[📖 Read Full Documentation →](./release_documentation/Graph_Audit_Log_Processor/MD/PAX_Graph_Audit_Log_Processor_Documentation_v0.1.0.md)**
-
+- Retrieves audit events from Microsoft 365 Unified Audit Log via Exchange Online Management
+- Exports to structured CSV with optional array explosion and deep JSON flattening
 - Includes enriched usage & ROI fields (tokens, models, latency, acceptance metrics)
-
----
-
-#### **Quick Start:**- Supports both live querying and offline replay/transformation of previously exported data
-
-## 🚀 Choosing the Right Script
-
+- Supports both live querying and offline replay/transformation of previously exported data
 - Implements adaptive time slicing to navigate service limits intelligently
+- Provides detailed logging of all operations, warnings, and performance metrics
+- Automatically handles ExchangeOnlineManagement module installation and connection
 
-### **Decision Matrix**
+**Execution Modes:**
 
-```powershell- Provides detailed logging of all operations, warnings, and performance metrics
-
-| Your Need | Recommended Script | Why? |
-
-|-----------|-------------------|------|# Download script- Automatically handles ExchangeOnlineManagement module installation and connection
-
-| **"Show me all Copilot conversations for compliance audit"** | Purview | Detailed conversation logs with full context |
-
-| **"What's our Copilot adoption rate by department?"** | Graph API | Usage analytics with aggregated statistics |# https://github.com/microsoft/PAX/blob/release/PAX_Purview_Audit_Log_Processor_v1.7.0.ps1
-
-| **"Find all prompts containing sensitive keywords"** | Purview | Content-level filtering and search |
-
-| **"Track which M365 apps use Copilot most"** | Graph API | App-specific usage breakdowns |**Execution Modes:**
-
-| **"Export last 6 months of Copilot activity"** | Purview | Historical data beyond Graph retention |
-
-| **"Create Power BI dashboard of Copilot usage"** | Graph API | Optimized for BI tool integration |# Basic usage (last 24 hours)
-
-| **"Analyze agent response quality and latency"** | Purview | Deep JSON extraction with performance metrics |
-
-| **"Monitor Copilot license utilization"** | Graph API | License assignment and consumption tracking |.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps11. **Standard Mode** - One row per audit record (raw JSON preserved in `CopilotEventData` column)
-
-| **"Filter Copilot activity for specific users/groups"** | Purview | Advanced user and group filtering |
-
-| **"Generate executive summary reports"** | Graph API | Pre-aggregated tenant-level statistics |2. **Array Explosion Mode** (`-ExplodeArrays`) - Canonical Purview 35-column schema with array elements expanded
-
-
-
-### **Can I Use Both?**# With exploded schema (35 base columns)3. **Deep Flatten Mode** (`-ExplodeDeep`) - 35-column base schema + fully flattened `CopilotEventData.*` columns
-
-
-
-**Yes!** The scripts are complementary:.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-024. **Offline Replay Mode** (`-RAWInputCSV`) - Re-process previously exported raw audit CSV files without querying the service
-
-
-
-- **Graph API** for high-level dashboards and trends5. **Agent Filtering Mode** (`-AgentsOnly` or `-AgentId` or `-ExcludeAgents`) - Filter for records based on Copilot agent presence (works with live queries and replay mode)
-
-- **Purview** for detailed investigations and compliance deep-dives
-
-# Filter for specific users6. **Prompt and Response Filtering Mode** (`-PromptFilter`) - Filter Copilot conversation turns by isPrompt property to isolate prompts, responses, or both
-
-Many enterprises use both: Graph API for daily monitoring, Purview for detailed analysis when needed.
-
-.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -UserIds "user@contoso.com" -StartDate 2025-10-01 -EndDate 2025-10-02
-
----
+1. **Standard Mode** - One row per audit record (raw JSON preserved in `CopilotEventData` column)
+2. **Array Explosion Mode** (`-ExplodeArrays`) - Canonical Purview 35-column schema with array elements expanded
+3. **Deep Flatten Mode** (`-ExplodeDeep`) - 35-column base schema + fully flattened `CopilotEventData.*` columns
+4. **Offline Replay Mode** (`-RAWInputCSV`) - Re-process previously exported raw audit CSV files without querying the service
+5. **Agent Filtering Mode** (`-AgentsOnly` or `-AgentId` or `-ExcludeAgents`) - Filter for records based on Copilot agent presence (works with live queries and replay mode)
+6. **Prompt and Response Filtering Mode** (`-PromptFilter`) - Filter Copilot conversation turns by isPrompt property to isolate prompts, responses, or both
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
-## 💻 System Requirements
-
-# Agent interactions only
-
-### **Both Scripts Require:**
-
-.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -AgentsOnly -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02---
-
-- **PowerShell:** 5.1+ (PowerShell 7+ recommended for parallel processing)
-
-- **Operating System:** Windows, macOS, or Linux```
-
-- **Internet Connection:** Required for Microsoft 365 API access
+---
 
 ## Key Features
 
-### **Purview-Specific Requirements:**
-
-**[📖 Read Full Purview Documentation →](./README-Purview.md)**
-
-- **PowerShell Module:** ExchangeOnlineManagement (auto-installed if missing)
-
-- **Permissions:** ### Intelligent Query Management
-
-  - `View-Only Audit Logs` or `Audit Logs` role in Microsoft 365
-
-  - Or: Global Administrator / Compliance Administrator---
-
-- **Authentication:** Interactive, DeviceCode, Credential, or Silent (cached token)
+### Intelligent Query Management
 
 - **Adaptive Block Sizing:** Automatically adjusts time window sizes based on data density
+- **10K Limit Detection:** Identifies when Microsoft 365 service cap is reached and recommends mitigation
+- **Automatic Subdivision:** Binary/aggressive splitting of dense time periods to maximize completeness
+- **Throttle Resilience:** Exponential backoff with jitter for retry operations
+- **Volume Classification:** Smart batching based on activity type (High/Medium/Low volume)
 
-### **Graph API-Specific Requirements:**
+### Data Processing & Output
 
-### 📊 Graph API Audit Log Processor- **10K Limit Detection:** Identifies when Microsoft 365 service cap is reached and recommends mitigation
+- **Purview Schema Compliance:** Matches Microsoft Purview's canonical exploded schema structure
+- **Deep JSON Flattening:** Optional recursive flattening of nested `CopilotEventData` structures
+- **Agent Filtering:** Filter records by specific AgentId values or any agent-related activity
+- **User & Group Filtering:** Server-side (live mode) or client-side (replay mode) filtering by user emails; group expansion to members in live mode
+- **Streaming Export:** Memory-efficient chunked CSV writing for large datasets
+- **UTF-8 Encoding:** Consistent UTF-8 (no BOM) output for cross-platform compatibility
+- **Header Stability:** Always writes CSV header even when zero records match (ensures schema consistency)
 
-- **PowerShell Module:** Microsoft.Graph (auto-installed if missing)
+### Performance Optimization
 
-- **Permissions:**- **Automatic Subdivision:** Binary/aggressive splitting of dense time periods to maximize completeness
+- **Parallel Execution (PS7+):** Concurrent processing of multiple activity types with controlled throttling
+- **Learned Block Sizes:** Per-activity and global adaptive sizing based on observed densities
+- **Fast CSV Writer:** Direct `StreamWriter` usage eliminates repeated `Export-Csv` overhead
+- **Schema Sampling:** Configurable initial sampling to optimize column discovery vs. memory usage
 
-  - `Reports.Read.All` (for usage reports)
+### Operational Excellence
 
-  - `User.Read.All` (for license data)**Extract Copilot usage analytics and M365 app data via Microsoft Graph API**- **Throttle Resilience:** Exponential backoff with jitter for retry operations
-
-  - Or: Global Administrator / Reports Reader
-
-- **Authentication:** Interactive, DeviceCode, ClientSecret, Certificate, or ManagedIdentity- **Volume Classification:** Smart batching based on activity type (High/Medium/Low volume)
-
-
-
----- **Version:** 1.0.0 *(In Development)*
-
-
-
-## 📥 Installation- **Script:** `PAX_Graph_Audit_Log_Processor_v1.0.0.ps1` *(Coming Soon)*### Data Processing & Output
-
-
-
-### **Option 1: Direct Download (Recommended)**- **Full Documentation:** [README-Graph.md](./README-Graph.md) *(Coming Soon)*
-
-
-
-Download the script you need directly from the release branch:- **Purview Schema Compliance:** Matches Microsoft Purview's canonical exploded schema structure
-
-
-
-**Purview Script:**#### **Use Graph API When You Need:**- **Deep JSON Flattening:** Optional recursive flattening of nested `CopilotEventData` structures
-
-```powershell
-
-# Download from GitHub- **Agent Filtering:** Filter records by specific AgentId values or any agent-related activity
-
-Invoke-WebRequest -Uri "https://github.com/microsoft/PAX/raw/release/PAX_Purview_Audit_Log_Processor_v1.7.0.ps1" -OutFile "PAX_Purview_Audit_Log_Processor_v1.7.0.ps1"
-
-✅ **Usage analytics** - Adoption rates, frequency, active users  - **User & Group Filtering:** Server-side (live mode) or client-side (replay mode) filtering by user emails; group expansion to members in live mode
-
-# Run the script
-
-.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1✅ **M365 app metrics** - Teams, Outlook, Word, Excel usage with Copilot  - **Streaming Export:** Memory-efficient chunked CSV writing for large datasets
-
-```
-
-✅ **License utilization** - Track Copilot license consumption  - **UTF-8 Encoding:** Consistent UTF-8 (no BOM) output for cross-platform compatibility
-
-**Graph API Script:** *(Coming Soon)*
-
-```powershell✅ **Real-time dashboards** - Power BI integration for live reporting  - **Header Stability:** Always writes CSV header even when zero records match (ensures schema consistency)
-
-# Download from GitHub
-
-Invoke-WebRequest -Uri "https://github.com/microsoft/PAX/raw/release/PAX_Graph_Audit_Log_Processor_v0.1.0.ps1" -OutFile "PAX_Graph_Audit_Log_Processor_v0.1.0.ps1"✅ **Aggregated statistics** - Server-side rollups and summaries  
-
-
-
-# Run the script✅ **Simplified access** - No Exchange Online Management required  ### Performance Optimization
-
-.\PAX_Graph_Audit_Log_Processor_v0.1.0.ps1
-
-```
-
-
-
-### **Option 2: Clone Repository**#### **Key Features (Planned):**- **Parallel Execution (PS7+):** Concurrent processing of multiple activity types with controlled throttling
-
-
-
-```powershell- **Learned Block Sizes:** Per-activity and global adaptive sizing based on observed densities
-
-# Clone the repository
-
-git clone https://github.com/microsoft/PAX.git- 📈 **Copilot usage reports** - User-level and tenant-level analytics- **Fast CSV Writer:** Direct `StreamWriter` usage eliminates repeated `Export-Csv` overhead
-
-cd PAX
-
-- 📱 **M365 app usage** - Granular app-by-app Copilot metrics- **Schema Sampling:** Configurable initial sampling to optimize column discovery vs. memory usage
-
-# Switch to release branch (customer-facing)
-
-git checkout release- 🎫 **License tracking** - Copilot license assignment and utilization
-
-
-
-# Run the script(s)- 🔄 **Automated exports** - Scheduled execution with incremental updates### Operational Excellence
-
-.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1
-
-.\PAX_Graph_Audit_Log_Processor_v0.1.0.ps1- 📊 **Power BI ready** - Direct integration with Power BI Desktop
-
-```
-
-- ⚡ **Fast retrieval** - Server-side aggregation reduces data transfer- **Composite Progress:** Single weighted percentage across Query/Explosion/Export phases
-
----
-
+- **Composite Progress:** Single weighted percentage across Query/Explosion/Export phases
 - **Detailed Logging:** Comprehensive log file with parameters, decisions, warnings, and metrics
-
-## 📚 Documentation
-
-#### **Quick Start (Planned):**- **Automated Setup:** Detects, installs, and connects ExchangeOnlineManagement module automatically
-
-### **Detailed Script Documentation**
-
+- **Automated Setup:** Detects, installs, and connects ExchangeOnlineManagement module automatically
 - **Offline Replay:** Transform previously exported raw CSVs without Exchange Online connection
-
-- **[Purview Documentation](./release_documentation/Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.0.md)** - Complete Purview script documentation
-
-- **[Graph Documentation](./release_documentation/Graph_Audit_Log_Processor/MD/PAX_Graph_Audit_Log_Processor_Documentation_v0.1.0.md)** *(In Development)* - Complete Graph API script documentation```powershell
-
-
-
-### **Release Documentation**# Download script (Coming Soon)[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
-
-
-
-Archived version-specific documentation in PDF and Markdown formats:# https://github.com/microsoft/PAX/blob/release/PAX_Graph_Audit_Log_Processor_v1.0.0.ps1
-
-
-
-- **[Purview Release Docs](./release_documentation/Purview_Audit_Log_Processor/)** - Versioned PDF/MD archives---
-
-- **[Graph Release Docs](./release_documentation/Graph_Audit_Log_Processor/)** *(Coming Soon)* - Versioned PDF/MD archives
-
-# Basic Copilot usage report
-
-### **Release Notes**
-
-.\PAX_Graph_Audit_Log_Processor_v1.0.0.ps1 -ReportType CopilotUsage -Period 7## Use Cases
-
-Version-specific change logs:
-
-
-
-- **[Purview Release Notes](./release_notes/Purview_Audit_Log_Processor/)** - Version history and changes
-
-- **[Graph Release Notes](./release_notes/Graph_Audit_Log_Processor/)** *(Coming Soon)* - Version history and changes# Multiple report types### Adoption & Usage Analytics
-
-
-
----.\PAX_Graph_Audit_Log_Processor_v1.0.0.ps1 -ReportType CopilotUsage,M365AppsUsage -Period 30
-
-
-
-## 🤝 Contributing- Track Microsoft 365 Copilot adoption across your organization
-
-
-
-We welcome contributions from the community! Please see our [Contributing Guidelines](./CONTRIBUTORS.md) for details.# Export for Power BI- Measure user engagement with AI features (interactions, token consumption, model usage)
-
-
-
----.\PAX_Graph_Audit_Log_Processor_v1.0.0.ps1 -ReportType CopilotUsage -Period 90 -OutputFormat PowerBI- Identify power users and underutilized licenses
-
-
-
-## 📄 License```- Calculate ROI metrics based on time saved and acceptance rates
-
-
-
-This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
-
-
-
----**[📖 Read Full Graph Documentation →](./README-Graph.md)** *(Coming Soon)*### Compliance & Governance
-
-
-
-## 🔒 Security
-
-
-
-For security concerns or vulnerability reports, please see our [Security Policy](./SECURITY.md).---- Audit Copilot interactions for regulatory compliance requirements
-
-
-
----- Monitor data access patterns and sensitivity indicators
-
-
-
-## 💬 Support## 🚀 Choosing the Right Script- Track plugin usage and custom GPT deployment
-
-
-
-### **Need Help?**- Generate audit trails for security reviews
-
-
-
-- **📖 Read the docs** - Check script-specific documentation files for detailed guidance### **Decision Matrix**- Filter and analyze specific Copilot Studio declarative agent activity
-
-- **🐛 Report issues** - Use GitHub Issues for bug reports
-
-- **💡 Feature requests** - Submit via GitHub Issues with enhancement label
-
-- **📧 Contact** - Reach out to [Brian Middendorf](mailto:bmiddendorf@microsoft.com?subject=PAX%20Support%20Request)
-
-| Your Need | Recommended Script | Why? |### Performance & Capacity Planning
-
----
-
-|-----------|-------------------|------|
-
-## 🏆 Credits
-
-| **"Show me all Copilot conversations for compliance audit"** | Purview | Detailed conversation logs with full context |- Track Copilot usage patterns and peak activity periods
-
-**PAX** (Portable Audit eXporter) is developed and maintained by the **Microsoft Copilot Growth ROI Advisory Team**.
-
-| **"What's our Copilot adoption rate by department?"** | Graph API | Usage analytics with aggregated statistics |- Analyze model names and app host distribution across your tenant
-
-**Lead Developer:** Brian Middendorf
-
-| **"Find all prompts containing sensitive keywords"** | Purview | Content-level filtering and search |- Optimize script performance with adaptive block sizing for your tenant's data density
-
----
-
-| **"Track which M365 apps use Copilot most"** | Graph API | App-specific usage breakdowns |- Identify query throttling patterns during high-volume periods
-
-## 📊 Project Status
-
-| **"Export last 6 months of Copilot activity"** | Purview | Historical data beyond Graph retention |
-
-| Component | Status | Version | Last Updated |
-
-|-----------|--------|---------|--------------|| **"Create Power BI dashboard of Copilot usage"** | Graph API | Optimized for BI tool integration |**Note:** Advanced metrics like response latencies and token consumption require `-ExplodeDeep` mode to extract nested CopilotEventData fields.
-
-| Purview Audit Log Processor | ✅ Stable | v1.7.0 | October 14, 2025 |
-
-| Graph API Audit Log Processor | 🚧 In Development | v0.1.0 | TBD || **"Analyze agent response quality and latency"** | Purview | Deep JSON extraction with performance metrics |
-
-| Documentation | ✅ Current | - | October 16, 2025 |
-
-| **"Monitor Copilot license utilization"** | Graph API | License assignment and consumption tracking |### Data Integration & BI
-
----
-
-| **"Filter Copilot activity for specific users/groups"** | Purview | Advanced user and group filtering |
-
-## 📈 Version History
-
-| **"Generate executive summary reports"** | Graph API | Pre-aggregated tenant-level statistics |- Export enriched data to Power BI, Azure Synapse, or data warehouses
-
-### **Latest Releases**
-
-- Join audit data with licensing information for coverage analysis
-
-- **[Purview v1.7.0](./release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.7.0.md)** (October 14, 2025) - Added UserIds, GroupNames, and PromptFilter support
-
-- **[Purview v1.6.0](./release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.6.0.md)** (September 2025) - Added AgentId and ExcludeAgents filtering### **Can I Use Both?**- Build custom dashboards with wide-schema flattened data
-
-- **Graph v0.1.0** (In Development) - Initial development version
-
-- Maintain historical archives with consistent schema over time
-
-[View All Release Notes →](./release_notes/)
-
-**Yes!** The scripts are complementary:
-
----
-
-### Development & Testing
-
-<div align="center">
-
-- **Graph API** for high-level dashboards and trends
-
-**Built with ❤️ by the Microsoft Copilot Growth ROI Advisory Team**
-
-- **Purview** for detailed investigations and compliance deep-dives- Offline replay mode for reproducible transformations
-
-[⭐ Star on GitHub](https://github.com/microsoft/PAX) | [🐛 Report Bug](https://github.com/microsoft/PAX/issues) | [💡 Request Feature](https://github.com/microsoft/PAX/issues)
-
-- Test schema changes against synthetic or sanitized datasets
-
-</div>
-
-Many enterprises use both: Graph API for daily monitoring, Purview for detailed analysis when needed.- Validate data pipelines without querying production audit logs
-
-- Develop downstream analytics without live tenant access
-
----
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
-## 💻 System Requirements
+---
+
+## Use Cases
+
+### Adoption & Usage Analytics
+
+- Track Microsoft 365 Copilot adoption across your organization
+- Measure user engagement with AI features (interactions, token consumption, model usage)
+- Identify power users and underutilized licenses
+- Calculate ROI metrics based on time saved and acceptance rates
+
+### Compliance & Governance
+
+- Audit Copilot interactions for regulatory compliance requirements
+- Monitor data access patterns and sensitivity indicators
+- Track plugin usage and custom GPT deployment
+- Generate audit trails for security reviews
+- Filter and analyze specific Copilot Studio declarative agent activity
+
+### Performance & Capacity Planning
+
+- Track Copilot usage patterns and peak activity periods
+- Analyze model names and app host distribution across your tenant
+- Optimize script performance with adaptive block sizing for your tenant's data density
+- Identify query throttling patterns during high-volume periods
+
+**Note:** Advanced metrics like response latencies and token consumption require `-ExplodeDeep` mode to extract nested CopilotEventData fields.
+
+### Data Integration & BI
+
+- Export enriched data to Power BI, Azure Synapse, or data warehouses
+- Join audit data with licensing information for coverage analysis
+- Build custom dashboards with wide-schema flattened data
+- Maintain historical archives with consistent schema over time
+
+### Development & Testing
+
+- Offline replay mode for reproducible transformations
+- Test schema changes against synthetic or sanitized datasets
+- Validate data pipelines without querying production audit logs
+- Develop downstream analytics without live tenant access
+
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
-### **Both Scripts Require:**
-
 ## Prerequisites
 
-- **PowerShell:** 5.1+ (PowerShell 7+ recommended for parallel processing)
-
-- **Operating System:** Windows, macOS, or Linux| Requirement                 | Details                                 | Notes                                                        |
-
-- **Internet Connection:** Required for Microsoft 365 API access| --------------------------- | --------------------------------------- | ------------------------------------------------------------ |
-
+| Requirement                 | Details                                 | Notes                                                        |
+| --------------------------- | --------------------------------------- | ------------------------------------------------------------ |
 | **PowerShell**              | 5.1 or 7+                               | 7+ strongly recommended for parallel execution and UTF-8     |
-
-### **Purview-Specific Requirements:**| **Unified Audit Logging**   | Enabled in tenant                       | Verify in Microsoft Purview compliance portal                |
-
+| **Unified Audit Logging**   | Enabled in tenant                       | Verify in Microsoft Purview compliance portal                |
 | **Permissions**             | View-Only Audit Logs or Audit Logs role | Least privilege: Use read-only audit role                    |
+| **Network Access**          | Microsoft 365 endpoints                 | Ensure firewall allows connections to `*.protection.outlook.com` |
+| **Execution Policy**        | Bypass or RemoteSigned                  | See [Authentication Methods](#authentication-methods)        |
 
-- **PowerShell Module:** ExchangeOnlineManagement (auto-installed if missing)| **Network Access**          | Microsoft 365 endpoints                 | Ensure firewall allows connections to `*.protection.outlook.com` |
-
-- **Permissions:** | **Execution Policy**        | Bypass or RemoteSigned                  | See [Authentication Methods](#authentication-methods)        |
-
-  - `View-Only Audit Logs` or `Audit Logs` role in Microsoft 365
-
-  - Or: Global Administrator / Compliance Administrator**Note:** The script automatically handles ExchangeOnlineManagement module detection, installation, and connection. No manual setup required.
-
-- **Authentication:** Interactive, DeviceCode, Credential, or Silent (cached token)
+**Note:** The script automatically handles ExchangeOnlineManagement module detection, installation, and connection. No manual setup required.
 
 ### Permission Details
 
-### **Graph API-Specific Requirements:**
-
 **Minimum RBAC Requirements:**
 
-- **PowerShell Module:** Microsoft.Graph (auto-installed if missing)
+- **View-Only Audit Logs** role (read-only, recommended for production)
+- **Audit Logs** role (if write operations needed elsewhere)
+- Member of appropriate role groups in Microsoft Purview compliance portal
 
-- **Permissions:**- **View-Only Audit Logs** role (read-only, recommended for production)
+### Why PowerShell 7+?
 
-  - `Reports.Read.All` (for usage reports)- **Audit Logs** role (if write operations needed elsewhere)
-
-  - `User.Read.All` (for license data)- Member of appropriate role groups in Microsoft Purview compliance portal
-
-  - Or: Global Administrator / Reports Reader
-
-- **Authentication:** Interactive, DeviceCode, ClientSecret, Certificate, or ManagedIdentity### Why PowerShell 7+?
-
-
-
----| Feature              | PowerShell 5.1                | PowerShell 7+                  |
-
+| Feature              | PowerShell 5.1                | PowerShell 7+                  |
 | -------------------- | ----------------------------- | ------------------------------ |
-
-## 📥 Installation| Parallel Execution   | ❌ Not Available              | ✅ `ForEach-Object -Parallel`  |
-
+| Parallel Execution   | ❌ Not Available              | ✅ `ForEach-Object -Parallel`  |
 | UTF-8 Default        | ❌ Requires explicit encoding | ✅ Native UTF-8                |
-
-### **Option 1: Direct Download (Recommended)**| Performance          | Baseline                      | 🚀 30-50% faster JSON/pipeline |
-
+| Performance          | Baseline                      | 🚀 30-50% faster JSON/pipeline |
 | TLS/Cipher Support   | Legacy protocols              | ✅ Modern TLS 1.3              |
-
-Download the script you need directly from the release branch:| Cross-Platform       | ❌ Windows only               | ✅ Windows/macOS/Linux         |
-
+| Cross-Platform       | ❌ Windows only               | ✅ Windows/macOS/Linux         |
 | Side-by-Side Install | N/A                           | ✅ Does not replace PS 5.1     |
 
-**Purview Script:**
+**Download PowerShell 7:** https://aka.ms/powershell
 
-```powershell**Download PowerShell 7:** https://aka.ms/powershell
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
-# Download from GitHub
+---
 
-Invoke-WebRequest -Uri "https://github.com/microsoft/PAX/raw/release/PAX_Purview_Audit_Log_Processor_v1.7.0.ps1" -OutFile "PAX_Purview_Audit_Log_Processor_v1.7.0.ps1"[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
+## Installation & Setup
 
+### Download the Script
 
-
-# Run the script---
-
-.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1
-
-```## Installation & Setup
-
-
-
-**Graph API Script:** *(Coming Soon)*### Download the Script
-
-```powershell
-
-# Download from GitHub**Latest Version (v1.7.0):**
-
-Invoke-WebRequest -Uri "https://github.com/microsoft/PAX/raw/release/PAX_Graph_Audit_Log_Processor_v1.0.0.ps1" -OutFile "PAX_Graph_Audit_Log_Processor_v1.0.0.ps1"- Download: [`PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`](https://github.com/microsoft/PAX/releases/download/v1.7.0/PAX_Purview_Audit_Log_Processor_v1.7.0.ps1)
-
+**Latest Version (v1.7.0):**
+- Download: [`PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`](https://github.com/microsoft/PAX/releases/download/v1.7.0/PAX_Purview_Audit_Log_Processor_v1.7.0.ps1)
 - Documentation: [PDF](https://github.com/microsoft/PAX/releases/download/v1.7.0/PAX_Documentation_v1.7.0.pdf) | [Markdown](https://github.com/microsoft/PAX/releases/download/v1.7.0/PAX_Documentation_v1.7.0.md)
+- Release Notes: [v1.7.0](https://github.com/microsoft/PAX/releases/download/v1.7.0/v1.7.0.md)
 
-# Run the script- Release Notes: [v1.7.0](https://github.com/microsoft/PAX/releases/download/v1.7.0/v1.7.0.md)
-
-.\PAX_Graph_Audit_Log_Processor_v1.0.0.ps1
-
-```**Previous Versions:**
-
+**Previous Versions:**
 - [v1.6.0 Script](https://github.com/microsoft/PAX/releases/download/v1.6.0/PAX_Purview_Audit_Log_Processor_v1.6.0.ps1) | [Docs (PDF)](https://github.com/microsoft/PAX/releases/download/v1.6.0/PAX_Documentation_v1.6.0.pdf) | [Release Notes](https://github.com/microsoft/PAX/releases/download/v1.6.0/v1.6.0.md)
+- [All Releases](https://github.com/microsoft/PAX/releases)
 
-### **Option 2: Clone Repository**- [All Releases](https://github.com/microsoft/PAX/releases)
+Save the downloaded script to a working directory (e.g., `C:\Scripts\PAX\`).
 
-
-
-```powershellSave the downloaded script to a working directory (e.g., `C:\Scripts\PAX\`).
-
-# Clone the repository
-
-git clone https://github.com/microsoft/PAX.git### First Run (Quick Start)
-
-cd PAX
+### First Run (Quick Start)
 
 ```powershell
+# PowerShell 7+ (recommended)
+pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
 
-# Switch to release branch (customer-facing)# PowerShell 7+ (recommended)
-
-git checkout releasepwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-
-
-
-# Run the script(s)# Windows PowerShell 5.1
-
-.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-
-.\PAX_Graph_Audit_Log_Processor_v1.0.0.ps1```
-
+# Windows PowerShell 5.1
+powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
 **What Happens:**
 
----
-
 1. Script detects and installs ExchangeOnlineManagement module if needed
-
-## 📚 Documentation2. Interactive browser sign-in prompt (unless `-Auth` specified)
-
+2. Interactive browser sign-in prompt (unless `-Auth` specified)
 3. Queries Unified Audit Log for the specified date range
-
-### **Detailed Script Documentation**4. Exports to `C:\Temp\CopilotInteraction_<timestamp>.csv` (default path)
-
+4. Exports to `C:\Temp\CopilotInteraction_<timestamp>.csv` (default path)
 5. Creates matching `.log` file with detailed execution metrics
 
-- **[README-Purview.md](./README-Purview.md)** - Complete Purview script documentation
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
-  - Installation & setup[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
+---
 
-  - Parameter reference
+## Parameters Reference
 
-  - Usage examples---
+### Date & Time Parameters
 
-  - Filtering options
+#### `-StartDate` (string)
 
-  - Output schema## Parameters Reference
-
-  - Troubleshooting
-
-  ### Date & Time Parameters
-
-- **[README-Graph.md](./README-Graph.md)** *(Coming Soon)* - Complete Graph API script documentation
-
-  - Installation & setup#### `-StartDate` (string)
-
-  - Report types
-
-  - Usage examples**Purpose:** UTC start date (inclusive) for audit log query or replay filter  
-
-  - Power BI integration**Format:** `yyyy-MM-dd` (e.g., `2025-10-01`)  
-
-  - Output schema**Default (Live Mode):** Previous full UTC day if both dates omitted  
-
-  - Troubleshooting**Default (Replay Mode):** No filter applied if omitted  
-
+**Purpose:** UTC start date (inclusive) for audit log query or replay filter  
+**Format:** `yyyy-MM-dd` (e.g., `2025-10-01`)  
+**Default (Live Mode):** Previous full UTC day if both dates omitted  
+**Default (Replay Mode):** No filter applied if omitted  
 **Example:** `-StartDate 2025-10-01`
-
-### **Release Documentation**
 
 #### `-EndDate` (string)
 
-Archived version-specific documentation in PDF and Markdown formats:
-
 **Purpose:** UTC end date (exclusive) for audit log query or replay filter  
-
-- **[Purview Release Docs](./release_documentation/Purview_Audit_Log_Processor/)** - Versioned PDF/MD archives**Format:** `yyyy-MM-dd` (e.g., `2025-10-02`)  
-
-- **[Graph Release Docs](./release_documentation/Graph_Audit_Log_Processor/)** *(Coming Soon)* - Versioned PDF/MD archives**Default (Live Mode):** Previous full UTC day + 1 if both dates omitted  
-
+**Format:** `yyyy-MM-dd` (e.g., `2025-10-02`)  
+**Default (Live Mode):** Previous full UTC day + 1 if both dates omitted  
 **Default (Replay Mode):** No filter applied if omitted  
+**Example:** `-EndDate 2025-10-02`
 
-### **Release Notes****Example:** `-EndDate 2025-10-02`
+**Date Behavior:**
 
-
-
-Version-specific change logs:**Date Behavior:**
-
-
-
-- **[Purview Release Notes](./release_notes/Purview_Audit_Log_Processor/)** - Version history and changes- **Live mode:** If both dates omitted, defaults to previous full UTC day (midnight to midnight)
-
-- **[Graph Release Notes](./release_notes/Graph_Audit_Log_Processor/)** *(Coming Soon)* - Version history and changes- **Live mode:** Must specify both or neither (partial specification rejected)
-
+- **Live mode:** If both dates omitted, defaults to previous full UTC day (midnight to midnight)
+- **Live mode:** Must specify both or neither (partial specification rejected)
 - **Replay mode:** Both dates optional; act as filters on `CreationDate` column
+- **Time zone:** All dates interpreted as UTC; convert local times before invocation
 
----- **Time zone:** All dates interpreted as UTC; convert local times before invocation
+---
 
+### Output & File Parameters
 
+#### `-OutputFile` (string)
 
-## 🎓 Getting Started Guides---
-
-
-
-### **New to PAX?**### Output & File Parameters
-
-
-
-1. **Identify your use case** - See [Choosing the Right Script](#-choosing-the-right-script)#### `-OutputFile` (string)
-
-2. **Review permissions** - Ensure you have required Microsoft 365 roles
-
-3. **Download the script** - Use direct download links above**Purpose:** Target CSV file path for exported audit data  
-
-4. **Read script documentation** - Full guides available for each script**Default:** `C:\Temp\CopilotInteraction_<timestamp>.csv`  
-
-5. **Run your first query** - Start with basic examples from Quick Start sections**Use When:** Specifying custom output location or naming convention  
-
+**Purpose:** Target CSV file path for exported audit data  
+**Default:** `C:\Temp\CopilotInteraction_<timestamp>.csv`  
+**Use When:** Specifying custom output location or naming convention  
 **Example:** `-OutputFile "C:\AuditData\Copilot_$(Get-Date -Format 'yyyyMMdd').csv"`  
+**Notes:** Parent directories created automatically if missing
 
-### **Example Workflows****Notes:** Parent directories created automatically if missing
+---
 
+### Authentication Parameters
 
+#### `-Auth` (string)
 
-#### **Scenario 1: Copilot Compliance Audit**---
-
-
-
-```powershell### Authentication Parameters
-
-# Step 1: Extract all Copilot activity for date range
-
-.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `#### `-Auth` (string)
-
-    -ExplodeArrays `
-
-    -StartDate 2025-10-01 `**Purpose:** Authentication method for Exchange Online connection  
-
-    -EndDate 2025-10-31 `**Valid Values:** `WebLogin`, `DeviceCode`, `Credential`, `Silent`  
-
-    -OutputFile "C:\Audit\Copilot_October.csv"**Default:** `WebLogin`  
-
+**Purpose:** Authentication method for Exchange Online connection  
+**Valid Values:** `WebLogin`, `DeviceCode`, `Credential`, `Silent`  
+**Default:** `WebLogin`  
 **Use When:** Automating scripts, using headless terminals, or SSO scenarios  
+**Examples:**
 
-# Step 2: Filter for specific users in offline mode**Examples:**
+- `-Auth WebLogin` - Interactive browser sign-in (default)
+- `-Auth DeviceCode` - Device code flow for headless/remote sessions
+- `-Auth Credential` - Prompt for username/password (stored in memory only)
+- `-Auth Silent` - Attempt cached token (fails if no valid token)
 
-.\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
+**Not applicable in replay mode** (authentication skipped when using `-RAWInputCSV`)
 
-    -RAWInputCSV "C:\Audit\Copilot_October.csv" `- `-Auth WebLogin` - Interactive browser sign-in (default)
+---
 
-    -UserIds "executive@contoso.com" `- `-Auth DeviceCode` - Device code flow for headless/remote sessions
+### Query Behavior Parameters
 
-    -OutputFile "C:\Audit\Executive_Activity.csv"- `-Auth Credential` - Prompt for username/password (stored in memory only)
+#### `-BlockHours` (double)
 
-```- `-Auth Silent` - Attempt cached token (fails if no valid token)
-
-
-
-#### **Scenario 2: Copilot Usage Dashboard** *(Coming Soon)***Not applicable in replay mode** (authentication skipped when using `-RAWInputCSV`)
-
-
-
-```powershell---
-
-# Step 1: Extract usage analytics via Graph API
-
-.\PAX_Graph_Audit_Log_Processor_v1.0.0.ps1 `### Query Behavior Parameters
-
-    -ReportType CopilotUsage,M365AppsUsage `
-
-    -Period 90 `#### `-BlockHours` (double)
-
-    -OutputFormat PowerBI `
-
-    -OutputFile "C:\Reports\Copilot_Usage_90days.csv"**Purpose:** Initial time window size (hours) for each audit query chunk  
-
+**Purpose:** Initial time window size (hours) for each audit query chunk  
 **Range:** `0.016667` to `24.0` (1 minute to 24 hours)  
-
-# Step 2: Import into Power BI Desktop**Default:** `0.5` (30 minutes)  
-
-# (Open Power BI → Get Data → Text/CSV → Select output file)**Use When:**
-
-```
+**Default:** `0.5` (30 minutes)  
+**Use When:**
 
 - Frequently hitting 10K limit (reduce to 0.25 or lower)
-
----- Sparse historical data (increase to 2-8 hours for faster processing)
-
+- Sparse historical data (increase to 2-8 hours for faster processing)
 - Fine-tuning for tenant-specific data density
-
-## 🤝 Contributing
 
 **Examples:**
 
-We welcome contributions from the community! Please see our [Contributing Guidelines](./CONTRIBUTORS.md) for details on:
-
 - `-BlockHours 0.25` - Dense periods, many records
+- `-BlockHours 4.0` - Sparse backfills, low activity
 
-- Reporting bugs- `-BlockHours 4.0` - Sparse backfills, low activity
-
-- Suggesting enhancements
-
-- Submitting pull requests**Notes:** Script learns optimal sizes during execution; this is just the starting point
-
-- Code of conduct
+**Notes:** Script learns optimal sizes during execution; this is just the starting point
 
 #### `-ResultSize` (int)
 
----
-
 **Purpose:** Target number of records to retrieve per activity per time window  
-
-## 📄 License**Range:** `1` to `10000`  
-
+**Range:** `1` to `10000`  
 **Default:** `10000`  
+**Use When:**
 
-This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.**Use When:**
-
-
-
----- Managing memory usage (lower values = smaller batches)
-
+- Managing memory usage (lower values = smaller batches)
 - Testing with small samples
+- Avoiding service throttling (reduce to 2500-5000)
 
-## 🔒 Security- Avoiding service throttling (reduce to 2500-5000)
-
-
-
-For security concerns or vulnerability reports, please see our [Security Policy](./SECURITY.md).**Example:** `-ResultSize 5000`  
-
+**Example:** `-ResultSize 5000`  
 **Notes:** Actual results may be less; this is the requested maximum
-
----
 
 #### `-PacingMs` (int)
 
-## 💬 Support
-
 **Purpose:** Delay (milliseconds) between paginated API calls  
-
-### **Need Help?****Range:** `0` to `10000`  
-
+**Range:** `0` to `10000`  
 **Default:** `0` (no artificial delay)  
+**Use When:**
 
-- **📖 Read the docs** - Check script-specific README files for detailed guidance**Use When:**
-
-- **🐛 Report issues** - Use GitHub Issues for bug reports
-
-- **💡 Feature requests** - Submit via GitHub Issues with enhancement label- Experiencing frequent throttling errors
-
-- **📧 Contact** - Reach out to [Brian Middendorf](mailto:bmiddendorf@microsoft.com?subject=PAX%20Support%20Request)- Running during peak tenant usage
-
+- Experiencing frequent throttling errors
+- Running during peak tenant usage
 - Spreading load over time for politeness
-
-### **Common Questions**
 
 **Examples:**
 
-**Q: Which script should I use?**  
-
-A: See [Choosing the Right Script](#-choosing-the-right-script) decision matrix.- `-PacingMs 250` - Moderate pacing
-
+- `-PacingMs 250` - Moderate pacing
 - `-PacingMs 500` - Conservative pacing
 
-**Q: Can I use both scripts together?**  
+**Notes:** Increases total execution time proportionally
 
-A: Yes! They're complementary. Use Graph API for dashboards, Purview for deep-dives.**Notes:** Increases total execution time proportionally
-
-
-
-**Q: What permissions do I need?**  #### `-ActivityTypes` (string[])
-
-A: See [System Requirements](#-system-requirements) for script-specific permission requirements.
+#### `-ActivityTypes` (string[])
 
 **Purpose:** Array of audit log operation names to retrieve  
+**Default:** `@('CopilotInteraction')`  
+**Use When:**
 
-**Q: Is this officially supported by Microsoft?**  **Default:** `@('CopilotInteraction')`  
-
-A: PAX is provided as-is under MIT license. For official Microsoft support options, contact your Microsoft account team.**Use When:**
-
-
-
----- Querying multiple activity types in one run
-
+- Querying multiple activity types in one run
 - Analyzing cross-functional behaviors (Teams + Copilot)
+- Comparative analysis across services
 
-## 🏆 Credits- Comparative analysis across services
+**Examples:**
 
-
-
-**PAX** (Portable Audit eXporter) is developed and maintained by the **Microsoft Copilot Growth ROI Advisory Team**.**Examples:**
-
-
-
-**Lead Developer:** Brian Middendorf ([@bmiddendorf](mailto:bmiddendorf@microsoft.com))- Single: `-ActivityTypes CopilotInteraction`
-
+- Single: `-ActivityTypes CopilotInteraction`
 - Multiple: `-ActivityTypes CopilotInteraction,MessageSent,FileAccessed`
+- Custom: `-ActivityTypes @('MeetingDetail','SearchQueryPerformed')`
 
-Special thanks to all [contributors](./CONTRIBUTORS.md) who have helped improve PAX!- Custom: `-ActivityTypes @('MeetingDetail','SearchQueryPerformed')`
+**Notes:** See [Activity Types Reference](#activity-types-reference) for common operations
 
+---
 
+#### `-AgentId` (string[])
 
----**Notes:** See [Activity Types Reference](#activity-types-reference) for common operations
+**Purpose:** Filter audit records to include only those with specific AgentId value(s)  
+**Default:** Not set (no agent filtering)  
+**Use When:**
 
-
-
-## 📊 Project Status---
-
-
-
-| Component | Status | Version | Last Updated |#### `-AgentId` (string[])
-
-|-----------|--------|---------|--------------|
-
-| Purview Audit Log Processor | ✅ Stable | v1.7.0 | October 14, 2025 |**Purpose:** Filter audit records to include only those with specific AgentId value(s)  
-
-| Graph API Audit Log Processor | 🚧 In Development | v1.0.0 | TBD |**Default:** Not set (no agent filtering)  
-
-| Documentation | ✅ Current | - | October 16, 2025 |**Use When:**
-
-
-
----- Analyzing specific Copilot Studio declarative agents
-
+- Analyzing specific Copilot Studio declarative agents
 - Tracking usage of particular agent implementations
+- Filtering for known AgentId patterns
 
-## 🗺️ Roadmap- Filtering for known AgentId patterns
+**Examples:**
 
+- Single: `-AgentId "CopilotStudio.Declarative.T_4e671777-fa6c-601a-b416-df08b6ae4c14.03dc0b8b-a75a-4b77-86d7-98185a176d1b"`
+- Multiple: `-AgentId "SYSTEM_CreateGPT.declarativeCopilot","CopilotStudio.Declarative.T_..."`
 
-
-### **Planned Features****Examples:**
-
-
-
-#### **Purview Script:**- Single: `-AgentId "CopilotStudio.Declarative.T_4e671777-fa6c-601a-b416-df08b6ae4c14.03dc0b8b-a75a-4b77-86d7-98185a176d1b"`
-
-- [ ] Azure Data Explorer integration- Multiple: `-AgentId "SYSTEM_CreateGPT.declarativeCopilot","CopilotStudio.Declarative.T_..."`
-
-- [ ] PowerShell Gallery publishing
-
-- [ ] Advanced sentiment analysis**Notes:** 
-
-- [ ] Automated scheduling templates- Works in both live query and replay modes
-
-- AgentId is a top-level field in AuditData JSON
-
-#### **Graph API Script:**- Takes precedence if both `-AgentId` and `-AgentsOnly` are specified
-
-- [x] Core authentication framework
-
-- [ ] Copilot usage reports---
-
-- [ ] M365 app usage reports
-
-- [ ] License tracking#### `-AgentsOnly` (switch)
-
-- [ ] Power BI templates
-
-- [ ] Scheduled execution support**Purpose:** Filter audit records to include only those with any AgentId present  
-
-**Default:** Off (no agent filtering)  
-
----**Use When:**
-
-
-
-## 📈 Version History- Analyzing all agent-related activity regardless of specific agent
-
-- Identifying records that involve Copilot Studio agents
-
-### **Latest Releases**- Filtering out non-agent Copilot interactions
-
-
-
-- **Purview v1.7.0** (October 14, 2025) - Added UserIds, GroupNames, and PromptFilter support**Example:** `-AgentsOnly`
-
-- **Purview v1.6.0** (September 2025) - Added AgentId and ExcludeAgents filtering
-
-- **Graph v1.0.0** (Coming Soon) - Initial release**Notes:**
-
+**Notes:** 
 - Works in both live query and replay modes
+- AgentId is a top-level field in AuditData JSON
+- Takes precedence if both `-AgentId` and `-AgentsOnly` are specified
 
-[View All Release Notes →](./release_notes/)- More inclusive than `-AgentId` (includes any record with AgentId field populated)
+---
 
+#### `-AgentsOnly` (switch)
+
+**Purpose:** Filter audit records to include only those with any AgentId present  
+**Default:** Off (no agent filtering)  
+**Use When:**
+
+- Analyzing all agent-related activity regardless of specific agent
+- Identifying records that involve Copilot Studio agents
+- Filtering out non-agent Copilot interactions
+
+**Example:** `-AgentsOnly`
+
+**Notes:**
+- Works in both live query and replay modes
+- More inclusive than `-AgentId` (includes any record with AgentId field populated)
 - Combined with `-ActivityTypes` for refined filtering
 
 ---
 
----
-
-<div align="center">
-
 #### `-ExcludeAgents` (switch)
 
-**Built with ❤️ by the Microsoft Copilot Growth ROI Advisory Team**
-
 **Purpose:** Filter audit records to EXCLUDE those with AgentId present (inverse of `-AgentsOnly`)  
-
-[⭐ Star on GitHub](https://github.com/microsoft/PAX) | [🐛 Report Bug](https://github.com/microsoft/PAX/issues) | [💡 Request Feature](https://github.com/microsoft/PAX/issues)**Default:** Off (no agent filtering)  
-
+**Default:** Off (no agent filtering)  
 **Use When:**
-
-</div>
 
 - Analyzing non-agent Copilot interactions only
 - Removing agent activity from analysis
