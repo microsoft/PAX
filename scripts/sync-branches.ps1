@@ -335,11 +335,14 @@ function Submit-PAXBranchChanges {
     git commit -m $CommitMessage
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to commit changes"
-        return $false
+        return $null
     }
-    Write-Success "Created commit: $CommitMessage"
     
-    return $true
+    # Get the commit hash for cherry-picking later
+    $commitHash = git rev-parse HEAD
+    Write-Success "Created commit: $CommitMessage ($commitHash)"
+    
+    return $commitHash
 }
 
 # Function to push PAX branch to both repositories
@@ -542,7 +545,181 @@ function Sync-ReleaseWorktreeFiles {
     return $true
 }
 
-# Function to sync release branch with proper cherry-pick workflow
+# Function to sync files from PAX branch to release worktree (mirrors release.ps1 approach)
+function Sync-ReleaseWorktreeFiles {
+    param(
+        [string]$ReleaseWorktreePath,
+        [string]$ScriptType
+    )
+    
+    Write-Status "Syncing files from PAX to release worktree..."
+    
+    # Define files to sync based on script type
+    $filesToSync = @{}
+    
+    switch ($ScriptType) {
+        "Umbrella" {
+            # Core umbrella files (NO scripts/ folder)
+            $filesToSync = @{
+                ".gitattributes" = ".gitattributes"
+                ".github/workflows/build-release.yml" = ".github/workflows/build-release.yml"
+                ".github/workflows/daily-insights-summary.yml" = ".github/workflows/daily-insights-summary.yml"
+                "CODE_OF_CONDUCT.md" = "CODE_OF_CONDUCT.md"
+                "CONTRIBUTORS.md" = "CONTRIBUTORS.md"
+                "LICENSE" = "LICENSE"
+                "README.md" = "README.md"
+                "SECURITY.md" = "SECURITY.md"
+            }
+        }
+        "Purview" {
+            # Find current Purview script dynamically
+            $scriptPattern = "PAX_Purview_Audit_Log_Processor_v*.ps1"
+            $currentScript = Get-ChildItem -Path $scriptPattern -ErrorAction SilentlyContinue | Select-Object -First 1
+            
+            if ($currentScript) {
+                $filesToSync[$currentScript.Name] = $currentScript.Name
+                Write-Status "Found Purview script: $($currentScript.Name)"
+            }
+        }
+        "Graph" {
+            # Find current Graph script dynamically
+            $scriptPattern = "PAX_Graph_Audit_Log_Processor_v*.ps1"
+            $currentScript = Get-ChildItem -Path $scriptPattern -ErrorAction SilentlyContinue | Select-Object -First 1
+            
+            if ($currentScript) {
+                $filesToSync[$currentScript.Name] = $currentScript.Name
+                Write-Status "Found Graph script: $($currentScript.Name)"
+            }
+        }
+    }
+    
+    # Copy individual files
+    foreach ($sourceFile in $filesToSync.Keys) {
+        $destFile = $filesToSync[$sourceFile]
+        $sourcePath = Join-Path (Get-Location) $sourceFile
+        $destPath = Join-Path $ReleaseWorktreePath $destFile
+        
+        if (Test-Path $sourcePath) {
+            $destDir = Split-Path $destPath -Parent
+            if (-not (Test-Path $destDir)) {
+                New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+            }
+            Copy-Item -Path $sourcePath -Destination $destPath -Force
+            Write-Success "✓ Synced $destFile"
+        }
+        else {
+            Write-Warning "Source file not found: $sourceFile (skipping)"
+        }
+    }
+    
+    # Sync folders based on script type
+    if ($ScriptType -eq "Umbrella" -or $ScriptType -eq "Purview") {
+        # Sync Purview documentation folder
+        $sourceDocFolder = "release_documentation\Purview_Audit_Log_Processor"
+        $destDocFolder = Join-Path $ReleaseWorktreePath $sourceDocFolder
+        if (Test-Path $sourceDocFolder) {
+            if (-not (Test-Path $destDocFolder)) {
+                New-Item -ItemType Directory -Path $destDocFolder -Recurse -Force | Out-Null
+            }
+            # Copy entire folder structure (MD and PDF subfolders)
+            Get-ChildItem -Path $sourceDocFolder -Recurse -File | ForEach-Object {
+                $relativePath = $_.FullName.Substring((Get-Location).Path.Length + 1)
+                $destPath = Join-Path $ReleaseWorktreePath $relativePath
+                $destDir = Split-Path $destPath -Parent
+                if (-not (Test-Path $destDir)) {
+                    New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+                }
+                Copy-Item -Path $_.FullName -Destination $destPath -Force
+                Write-Success "✓ Synced $relativePath"
+            }
+        }
+        
+        # Sync Purview release notes folder
+        $sourceNotesFolder = "release_notes\Purview_Audit_Log_Processor"
+        $destNotesFolder = Join-Path $ReleaseWorktreePath $sourceNotesFolder
+        if (Test-Path $sourceNotesFolder) {
+            if (-not (Test-Path $destNotesFolder)) {
+                New-Item -ItemType Directory -Path $destNotesFolder -Force | Out-Null
+            }
+            Get-ChildItem -Path $sourceNotesFolder -File | ForEach-Object {
+                $relativePath = $_.FullName.Substring((Get-Location).Path.Length + 1)
+                $destPath = Join-Path $ReleaseWorktreePath $relativePath
+                Copy-Item -Path $_.FullName -Destination $destPath -Force
+                Write-Success "✓ Synced $relativePath"
+            }
+        }
+        
+        # Sync Purview script archive folder
+        $sourceArchiveFolder = "script_archive\Purview_Audit_Log_Processor"
+        $destArchiveFolder = Join-Path $ReleaseWorktreePath $sourceArchiveFolder
+        if (Test-Path $sourceArchiveFolder) {
+            if (-not (Test-Path $destArchiveFolder)) {
+                New-Item -ItemType Directory -Path $destArchiveFolder -Force | Out-Null
+            }
+            Get-ChildItem -Path $sourceArchiveFolder -File | ForEach-Object {
+                $relativePath = $_.FullName.Substring((Get-Location).Path.Length + 1)
+                $destPath = Join-Path $ReleaseWorktreePath $relativePath
+                Copy-Item -Path $_.FullName -Destination $destPath -Force
+                Write-Success "✓ Synced $relativePath"
+            }
+        }
+    }
+    
+    if ($ScriptType -eq "Umbrella" -or $ScriptType -eq "Graph") {
+        # Sync Graph documentation folder
+        $sourceDocFolder = "release_documentation\Graph_Audit_Log_Processor"
+        $destDocFolder = Join-Path $ReleaseWorktreePath $sourceDocFolder
+        if (Test-Path $sourceDocFolder) {
+            if (-not (Test-Path $destDocFolder)) {
+                New-Item -ItemType Directory -Path $destDocFolder -Recurse -Force | Out-Null
+            }
+            Get-ChildItem -Path $sourceDocFolder -Recurse -File | ForEach-Object {
+                $relativePath = $_.FullName.Substring((Get-Location).Path.Length + 1)
+                $destPath = Join-Path $ReleaseWorktreePath $relativePath
+                $destDir = Split-Path $destPath -Parent
+                if (-not (Test-Path $destDir)) {
+                    New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+                }
+                Copy-Item -Path $_.FullName -Destination $destPath -Force
+                Write-Success "✓ Synced $relativePath"
+            }
+        }
+        
+        # Sync Graph release notes folder
+        $sourceNotesFolder = "release_notes\Graph_Audit_Log_Processor"
+        $destNotesFolder = Join-Path $ReleaseWorktreePath $sourceNotesFolder
+        if (Test-Path $sourceNotesFolder) {
+            if (-not (Test-Path $destNotesFolder)) {
+                New-Item -ItemType Directory -Path $destNotesFolder -Force | Out-Null
+            }
+            Get-ChildItem -Path $sourceNotesFolder -File | ForEach-Object {
+                $relativePath = $_.FullName.Substring((Get-Location).Path.Length + 1)
+                $destPath = Join-Path $ReleaseWorktreePath $relativePath
+                Copy-Item -Path $_.FullName -Destination $destPath -Force
+                Write-Success "✓ Synced $relativePath"
+            }
+        }
+        
+        # Sync Graph script archive folder
+        $sourceArchiveFolder = "script_archive\Graph_Audit_Log_Processor"
+        $destArchiveFolder = Join-Path $ReleaseWorktreePath $sourceArchiveFolder
+        if (Test-Path $sourceArchiveFolder) {
+            if (-not (Test-Path $destArchiveFolder)) {
+                New-Item -ItemType Directory -Path $destArchiveFolder -Force | Out-Null
+            }
+            Get-ChildItem -Path $sourceArchiveFolder -File | ForEach-Object {
+                $relativePath = $_.FullName.Substring((Get-Location).Path.Length + 1)
+                $destPath = Join-Path $ReleaseWorktreePath $relativePath
+                Copy-Item -Path $_.FullName -Destination $destPath -Force
+                Write-Success "✓ Synced $relativePath"
+            }
+        }
+    }
+    
+    return $true
+}
+
+# Function to sync release branch (mirrors release.ps1 workflow exactly)
 function Sync-ReleaseBranch {
     param(
         [string]$ReleaseWorktreePath,
@@ -551,42 +728,21 @@ function Sync-ReleaseBranch {
         [string]$ScriptType
     )
     
-    Write-Status "Syncing release branch..."
+    Write-Status "Syncing release branch using worktree file-copy method..."
+    
+    # Copy files from PAX to release worktree
+    if (-not (Sync-ReleaseWorktreeFiles -ReleaseWorktreePath $ReleaseWorktreePath -ScriptType $ScriptType)) {
+        Write-Error "Failed to sync files to release worktree"
+        return $false
+    }
     
     # Navigate to release worktree
     Push-Location $ReleaseWorktreePath
     try {
-        # CRITICAL: Fetch latest from microsoft/PAX release branch
-        Write-Status "Fetching latest from microsoft/PAX release branch..."
-        git fetch origin release 2>$null
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to fetch from microsoft/PAX release branch"
-            return $false
-        }
-        
-        # Get current release commit before reset
-        $currentCommit = git rev-parse HEAD
-        Write-Status "Current release commit: $currentCommit"
-        
-        # CRITICAL: Reset local release branch to microsoft/PAX's release branch
-        Write-Status "Resetting local release branch to microsoft/PAX's release branch..."
-        git reset --hard origin/release
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to reset to origin/release"
-            return $false
-        }
-        Write-Success "Reset to origin/release ($(git rev-parse --short HEAD))"
-        
-        # Sync files from PAX branch
-        if (-not (Sync-ReleaseWorktreeFiles -ReleaseWorktreePath $ReleaseWorktreePath -ScriptType $ScriptType)) {
-            Write-Error "Failed to sync files to release worktree"
-            return $false
-        }
-        
-        # Check if there are changes after sync
+        # Check if there are changes after file sync
         $changes = git status --porcelain
         if (-not $changes) {
-            Write-Status "No changes detected after file sync (already up to date)"
+            Write-Status "No changes detected in release worktree (already up to date)"
             return $true
         }
         
@@ -617,11 +773,12 @@ function Sync-ReleaseBranch {
         Write-Status "Creating PR for microsoft/PAX release branch..."
         
         # Generate temp branch name based on script type and version
-        $tempBranchSuffix = $CommitMessage -replace '^(purview|graph)-v', ''
-        $tempBranch = if ($ScriptType -eq "Purview") {
-            "release-sync-purview-v${tempBranchSuffix}"
+        $tempBranch = if ($ScriptType -eq "Umbrella") {
+            "release-sync-$CommitMessage"
+        } elseif ($ScriptType -eq "Purview") {
+            "release-sync-$CommitMessage"
         } else {
-            "release-sync-graph-v${tempBranchSuffix}"
+            "release-sync-$CommitMessage"
         }
         
         # Get GitHub CLI command
@@ -634,7 +791,7 @@ function Sync-ReleaseBranch {
         
         # Clean up old temporary branches before creating new one
         Write-Status "Checking for old temporary branches..."
-        $oldTempBranches = git ls-remote --heads origin 2>$null | Where-Object { $_ -match "release-sync-(purview|graph)-v" -and $_ -notmatch $tempBranch }
+        $oldTempBranches = git ls-remote --heads origin 2>$null | Where-Object { $_ -match "release-sync-" -and $_ -notmatch $tempBranch }
         if ($oldTempBranches) {
             $oldTempBranches | ForEach-Object {
                 if ($_ -match "refs/heads/(.+)$") {
@@ -646,6 +803,8 @@ function Sync-ReleaseBranch {
                         if ($state -eq "MERGED" -or $state -eq "CLOSED") {
                             Write-Status "Deleting old temporary branch: $oldBranch (PR #$prNum was $state)"
                             git push origin --delete $oldBranch 2>$null
+                        } else {
+                            Write-Warning "Keeping temporary branch: $oldBranch (PR #$prNum is still $state)"
                         }
                     }
                 }
@@ -786,7 +945,8 @@ function Main {
     }
     
     # Commit changes to PAX branch
-    if (-not (Submit-PAXBranchChanges -CommitMessage $commitMessage -FilesToCommit $fileCategories.Relevant)) {
+    $commitHash = Submit-PAXBranchChanges -CommitMessage $commitMessage -FilesToCommit $fileCategories.Relevant
+    if (-not $commitHash) {
         Write-Error "Failed to commit changes to PAX branch"
         exit 1
     }
@@ -797,7 +957,7 @@ function Main {
         exit 1
     }
     
-    # Sync to release branch and create PR
+    # Sync to release branch using file-copy method (mirrors release.ps1)
     if (-not (Sync-ReleaseBranch -ReleaseWorktreePath $releaseWorktreePath -CommitMessage $commitMessage -PRDescription $Description -ScriptType $ScriptType)) {
         Write-Error "Failed to sync release branch"
         exit 1
