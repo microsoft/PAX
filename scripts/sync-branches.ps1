@@ -188,6 +188,69 @@ function Test-GitStatus {
     return $fileCategories
 }
 
+# Function to clean up old temporary branches
+function Remove-OldTempBranches {
+    Write-Status "Checking for old temporary branches to clean up..."
+    
+    $gh = Get-GitHubCLI
+    if (-not $gh) {
+        Write-Warning "GitHub CLI not found - skipping temp branch cleanup"
+        return
+    }
+    
+    # Get all temp branches from microsoft/PAX
+    Write-Status "Checking microsoft/PAX for merged/closed temp branches..."
+    $remoteBranches = git ls-remote --heads origin 2>$null | Where-Object { $_ -match "release-sync-" }
+    
+    $deletedCount = 0
+    foreach ($branchLine in $remoteBranches) {
+        if ($branchLine -match "refs/heads/(.+)$") {
+            $branchName = $matches[1]
+            
+            # Check if there's a PR for this branch
+            $prInfo = & $gh pr list --repo microsoft/PAX --head $branchName --state all --json state,number --jq '.[0] | "\(.state)|\(.number)"' 2>$null
+            
+            if ($prInfo) {
+                $state, $prNum = $prInfo -split '\|'
+                
+                if ($state -eq "MERGED" -or $state -eq "CLOSED") {
+                    Write-Status "Deleting merged/closed temp branch: $branchName (PR #$prNum - $state)"
+                    git push origin --delete $branchName 2>$null
+                    if ($LASTEXITCODE -eq 0) {
+                        $deletedCount++
+                    }
+                }
+            }
+        }
+    }
+    
+    # Clean up Rance9/PAX by pruning stale branches
+    Write-Status "Pruning stale remote tracking branches from Rance9/PAX..."
+    git remote prune backup 2>$null | Out-Null
+    
+    # Delete local temp branches that no longer have remotes
+    Write-Status "Cleaning up local temp branches..."
+    $localBranches = git branch | Where-Object { $_ -match "release-sync-" }
+    foreach ($branchLine in $localBranches) {
+        $branchName = $branchLine.Trim().TrimStart('* ')
+        
+        # Check if remote branch still exists on either repo
+        $originExists = git ls-remote --heads origin "refs/heads/$branchName" 2>$null
+        $backupExists = git ls-remote --heads backup "refs/heads/$branchName" 2>$null
+        
+        if (-not $originExists -and -not $backupExists) {
+            Write-Status "Deleting local branch with no remote: $branchName"
+            git branch -D $branchName 2>$null | Out-Null
+        }
+    }
+    
+    if ($deletedCount -gt 0) {
+        Write-Success "Cleaned up $deletedCount temp branch(es)"
+    } else {
+        Write-Status "No temp branches to clean up"
+    }
+}
+
 # Function to validate worktree setup
 function Test-WorktreeSetup {
     Write-Status "Validating worktree setup..."
@@ -1082,6 +1145,9 @@ function Main {
     
     # Validate worktree setup
     $releaseWorktreePath = Test-WorktreeSetup
+    
+    # Clean up old temporary branches
+    Remove-OldTempBranches
     
     # Confirm with user
     Write-Host ""
