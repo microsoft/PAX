@@ -550,6 +550,86 @@ catch {
 # Phase 3: Single Endpoint Query Function
 # ==============================================
 
+# Phase 5: Helper function to flatten Entra Users JSON
+function ConvertTo-FlatEntraUsers {
+    param(
+        [Parameter(Mandatory = $true)]
+        [array]$Users,
+        
+        [Parameter(Mandatory = $false)]
+        [switch]$ExplodeArrays
+    )
+    
+    $flattenedUsers = @()
+    
+    foreach ($user in $Users) {
+        $flatUser = [ordered]@{}
+        
+        # Explicitly copy only the requested Entra user properties
+        # This avoids hashtable properties like AdditionalProperties, Keys, Values, etc.
+        $propertiesToCopy = @(
+            'userPrincipalName', 'displayName', 'id', 'mail', 'givenName', 'surname',
+            'jobTitle', 'department', 'employeeType', 'employeeId', 'employeeHireDate',
+            'officeLocation', 'city', 'state', 'country', 'postalCode', 'companyName',
+            'accountEnabled', 'userType', 'createdDateTime',
+            'usageLocation', 'preferredLanguage',
+            'onPremisesSyncEnabled', 'onPremisesImmutableId', 'proxyAddresses',
+            'assignedLicenses', 'assignedPlans', 'provisionedPlans', 'externalUserState'
+        )
+        
+        foreach ($propName in $propertiesToCopy) {
+            $propValue = $user.$propName
+            
+            if ($propValue -is [array]) {
+                # Handle array properties
+                if ($propValue.Count -gt 0) {
+                    $flatUser[$propName] = ($propValue | ConvertTo-Json -Compress -Depth 10)
+                }
+                else {
+                    $flatUser[$propName] = $null
+                }
+            }
+            elseif ($propValue -is [PSCustomObject]) {
+                # Handle nested objects (convert to JSON)
+                $flatUser[$propName] = ($propValue | ConvertTo-Json -Compress -Depth 10)
+            }
+            else {
+                # Simple property
+                $flatUser[$propName] = $propValue
+            }
+        }
+        
+        # Handle manager object separately (flatten to individual columns)
+        if ($user.manager) {
+            $flatUser['manager_displayName'] = $user.manager.displayName
+            $flatUser['manager_userPrincipalName'] = $user.manager.userPrincipalName
+            $flatUser['manager_mail'] = $user.manager.mail
+            $flatUser['manager_id'] = $user.manager.id
+        }
+        else {
+            $flatUser['manager_displayName'] = $null
+            $flatUser['manager_userPrincipalName'] = $null
+            $flatUser['manager_mail'] = $null
+            $flatUser['manager_id'] = $null
+        }
+        
+        # Handle employeeOrgData nested object (flatten to individual columns)
+        if ($user.employeeOrgData) {
+            $flatUser['employeeOrgData_division'] = $user.employeeOrgData.division
+            $flatUser['employeeOrgData_costCenter'] = $user.employeeOrgData.costCenter
+        }
+        else {
+            $flatUser['employeeOrgData_division'] = $null
+            $flatUser['employeeOrgData_costCenter'] = $null
+        }
+        
+        # Convert ordered hashtable to PSCustomObject for proper CSV export
+        $flattenedUsers += [PSCustomObject]$flatUser
+    }
+    
+    return $flattenedUsers
+}
+
 function Invoke-GraphEndpointQuery {
     param(
         [Parameter(Mandatory = $true)]
@@ -610,16 +690,28 @@ function Invoke-GraphEndpointQuery {
         $queryUrl += "(period='$QueryPeriod')"
     }
     
+    # Special handling for Entra Users endpoint
+    if ($Endpoint.Name -eq 'EntraUsers') {
+        # Build $select parameter with all 35 core properties
+        $selectProperties = $EntraUserProperties -join ','
+        $queryUrl += "?`$select=$selectProperties"
+        
+        # Add manager expansion
+        $queryUrl += "&`$expand=manager(`$select=displayName,userPrincipalName,mail,id)"
+        
+        Write-Host "  Format: JSON (with 35 properties + manager expansion)" -ForegroundColor White
+        Write-Host "  URL: $($queryUrl.Substring(0, [Math]::Min(100, $queryUrl.Length)))..." -ForegroundColor Gray
+    }
     # Add CSV format for capable endpoints
-    if ($Endpoint.CsvCapable) {
+    elseif ($Endpoint.CsvCapable) {
         $queryUrl += "?`$format=text/csv"
         Write-Host "  Format: CSV" -ForegroundColor White
+        Write-Host "  URL: $queryUrl" -ForegroundColor Gray
     }
     else {
         Write-Host "  Format: JSON" -ForegroundColor White
+        Write-Host "  URL: $queryUrl" -ForegroundColor Gray
     }
-    
-    Write-Host "  URL: $queryUrl" -ForegroundColor Gray
     
     # Execute query with retry logic
     $maxRetries = 3
@@ -825,12 +917,16 @@ foreach ($endpoint in $endpointsToQuery) {
         $outputFilePath = Join-Path $OutputPath $filename
         
         try {
-            # Export to CSV
-            if ($ExplodeArrays -and $endpoint.Name -eq 'EntraUsers') {
-                # TODO Phase 6: Implement JSON to CSV explosion for Entra Users
-                Write-Host "  ⚠ Entra Users JSON->CSV explosion not yet implemented (Phase 6)" -ForegroundColor Yellow
+            # Special handling for Entra Users JSON->CSV conversion
+            if ($endpoint.Name -eq 'EntraUsers') {
+                Write-Host "  Converting JSON to flattened CSV..." -ForegroundColor Yellow
+                $flattenedData = ConvertTo-FlatEntraUsers -Users $data -ExplodeArrays:$ExplodeArrays
+                $flattenedData | Export-Csv -Path $outputFilePath -NoTypeInformation -Force
+                Write-Host "  ✓ Saved: $filename ($($flattenedData.Count) rows, $($flattenedData[0].PSObject.Properties.Count) columns)" -ForegroundColor Green
+                $filesSaved += $outputFilePath
             }
             else {
+                # Standard CSV export
                 $data | Export-Csv -Path $outputFilePath -NoTypeInformation -Force
                 Write-Host "  ✓ Saved: $filename ($($data.Count) rows)" -ForegroundColor Green
                 $filesSaved += $outputFilePath
@@ -873,8 +969,6 @@ if ($filesSaved.Count -gt 0) {
 # ==============================================
 # PLACEHOLDER: Combined Output & Advanced Features
 # ==============================================
-# TODO Phase 5: Implement Entra user enrichment with $select
-# TODO Phase 6: Implement JSON to CSV explosion
 # TODO Phase 7: Implement combined output with full outer join
 
 if ($CombineOutput) {
@@ -884,7 +978,7 @@ if ($CombineOutput) {
 }
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Phase 4 Complete: Multi-Endpoint Processing" -ForegroundColor Cyan
+Write-Host "Phase 5 Complete: Entra Users Enrichment" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 
 # Disconnect from Graph
