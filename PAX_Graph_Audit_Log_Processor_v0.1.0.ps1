@@ -415,9 +415,140 @@ Write-Host "  Manager expansion: Enabled (displayName, userPrincipalName, mail, 
 Write-Host ""
 
 # ==============================================
-# PLACEHOLDER: Authentication & Query Logic
+# Phase 2: Microsoft Graph Authentication
 # ==============================================
-# TODO Phase 2: Implement Graph authentication
+
+Write-Host "Authenticating to Microsoft Graph API..." -ForegroundColor Cyan
+
+# Required Graph API scopes
+$RequiredScopes = @(
+    'Reports.Read.All',      # Read all usage reports
+    'User.Read.All',         # Read all user profiles
+    'Directory.Read.All'     # Read directory data (for manager expansion)
+)
+
+Write-Host "Required Permissions:" -ForegroundColor Yellow
+foreach ($scope in $RequiredScopes) {
+    Write-Host "  • $scope" -ForegroundColor White
+}
+Write-Host ""
+
+# Check for Microsoft.Graph module
+$graphModule = Get-Module -ListAvailable -Name Microsoft.Graph* | Select-Object -First 1
+if (-not $graphModule) {
+    Write-Host "ERROR: Microsoft.Graph PowerShell SDK not found." -ForegroundColor Red
+    Write-Host "Please install the module using:" -ForegroundColor Yellow
+    Write-Host "  Install-Module Microsoft.Graph -Scope CurrentUser" -ForegroundColor Yellow
+    Write-Host ""
+    exit 1
+}
+
+Write-Host "Microsoft.Graph module detected: $($graphModule.Name) v$($graphModule.Version)" -ForegroundColor Green
+
+# Import required Graph modules
+try {
+    Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+    Import-Module Microsoft.Graph.Reports -ErrorAction Stop
+    if (-not $ExcludeEntraUsers) {
+        Import-Module Microsoft.Graph.Users -ErrorAction Stop
+    }
+    Write-Host "Graph modules imported successfully" -ForegroundColor Green
+}
+catch {
+    Write-Host "ERROR: Failed to import Microsoft.Graph modules: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
+
+# Authenticate based on -Auth parameter
+try {
+    Write-Host "`nAuthentication Method: $Auth" -ForegroundColor Cyan
+    
+    switch ($Auth) {
+        'WebLogin' {
+            Write-Host "Opening interactive browser for authentication..." -ForegroundColor Yellow
+            Connect-MgGraph -Scopes $RequiredScopes -NoWelcome -ErrorAction Stop
+        }
+        'DeviceCode' {
+            Write-Host "Using device code flow..." -ForegroundColor Yellow
+            Write-Host "A browser window will open. Follow the instructions to authenticate." -ForegroundColor Yellow
+            Connect-MgGraph -Scopes $RequiredScopes -UseDeviceCode -NoWelcome -ErrorAction Stop
+        }
+        'Credential' {
+            Write-Host "Using client secret credential..." -ForegroundColor Yellow
+            
+            # Check for required environment variables
+            $tenantId = $env:GRAPH_TENANT_ID
+            $clientId = $env:GRAPH_CLIENT_ID
+            $clientSecret = $env:GRAPH_CLIENT_SECRET
+            
+            if (-not $tenantId -or -not $clientId -or -not $clientSecret) {
+                Write-Host "ERROR: Credential authentication requires environment variables:" -ForegroundColor Red
+                Write-Host "  GRAPH_TENANT_ID     : Your Azure AD Tenant ID" -ForegroundColor Yellow
+                Write-Host "  GRAPH_CLIENT_ID     : Your App Registration Client ID" -ForegroundColor Yellow
+                Write-Host "  GRAPH_CLIENT_SECRET : Your App Registration Client Secret" -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "Set these variables before running the script:" -ForegroundColor Yellow
+                Write-Host "  `$env:GRAPH_TENANT_ID = 'your-tenant-id'" -ForegroundColor White
+                Write-Host "  `$env:GRAPH_CLIENT_ID = 'your-client-id'" -ForegroundColor White
+                Write-Host "  `$env:GRAPH_CLIENT_SECRET = 'your-client-secret'" -ForegroundColor White
+                exit 1
+            }
+            
+            $secureSecret = ConvertTo-SecureString -String $clientSecret -AsPlainText -Force
+            $credential = New-Object System.Management.Automation.PSCredential($clientId, $secureSecret)
+            
+            Connect-MgGraph -TenantId $tenantId -ClientSecretCredential $credential -NoWelcome -ErrorAction Stop
+        }
+        'Silent' {
+            Write-Host "Using managed identity or existing token..." -ForegroundColor Yellow
+            Connect-MgGraph -Identity -NoWelcome -ErrorAction Stop
+        }
+    }
+    
+    Write-Host "✓ Authentication successful!" -ForegroundColor Green
+    
+    # Get and display current context
+    $context = Get-MgContext
+    Write-Host "`nAuthenticated Context:" -ForegroundColor Cyan
+    Write-Host "  Tenant ID: $($context.TenantId)" -ForegroundColor White
+    Write-Host "  Account:   $($context.Account)" -ForegroundColor White
+    Write-Host "  Scopes:    $($context.Scopes -join ', ')" -ForegroundColor White
+    Write-Host ""
+    
+    # Validate required scopes are present
+    $missingScopes = @()
+    foreach ($scope in $RequiredScopes) {
+        if ($context.Scopes -notcontains $scope) {
+            $missingScopes += $scope
+        }
+    }
+    
+    if ($missingScopes.Count -gt 0) {
+        Write-Host "WARNING: Missing required scope(s):" -ForegroundColor Yellow
+        foreach ($scope in $missingScopes) {
+            Write-Host "  • $scope" -ForegroundColor Yellow
+        }
+        Write-Host ""
+        Write-Host "Script may fail when accessing protected resources." -ForegroundColor Yellow
+        Write-Host "Consider re-authenticating with full permissions." -ForegroundColor Yellow
+        Write-Host ""
+    }
+}
+catch {
+    Write-Host "ERROR: Authentication failed: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Troubleshooting:" -ForegroundColor Yellow
+    Write-Host "  1. Ensure you have the required permissions in your tenant" -ForegroundColor White
+    Write-Host "  2. Check if Multi-Factor Authentication is required" -ForegroundColor White
+    Write-Host "  3. Verify network connectivity to Microsoft Graph API" -ForegroundColor White
+    Write-Host "  4. Try a different authentication method (-Auth parameter)" -ForegroundColor White
+    Write-Host ""
+    exit 1
+}
+
+# ==============================================
+# PLACEHOLDER: Query Logic & Data Processing
+# ==============================================
 # TODO Phase 3: Implement single endpoint query
 # TODO Phase 4: Implement multi-endpoint processing
 # TODO Phase 5: Implement Entra user enrichment
@@ -426,16 +557,19 @@ Write-Host ""
 # TODO Phase 8: Implement output file management
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Phase 0 Complete: Script Foundation Ready" -ForegroundColor Cyan
+Write-Host "Phase 2 Complete: Authentication Ready" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 Write-Host "Next Steps:" -ForegroundColor Yellow
-Write-Host "  Phase 1: Date range logic (30-day enforcement)" -ForegroundColor White
-Write-Host "  Phase 2: Graph authentication" -ForegroundColor White
-Write-Host "  Phase 3: Single endpoint query" -ForegroundColor White
-Write-Host "  Phase 4: Multi-endpoint processing" -ForegroundColor White
-Write-Host "  Phase 5: Entra enrichment" -ForegroundColor White
+Write-Host "  Phase 3: Single endpoint query logic" -ForegroundColor White
+Write-Host "  Phase 4: Multi-endpoint processing loop" -ForegroundColor White
+Write-Host "  Phase 5: Entra user enrichment" -ForegroundColor White
 Write-Host "  Phase 6-8: Data transformation & output" -ForegroundColor White
 Write-Host ""
 
-# Exit successfully (Phase 0 validation)
+# Disconnect from Graph (cleanup for Phase 2 testing)
+Disconnect-MgGraph | Out-Null
+Write-Host "Disconnected from Microsoft Graph (Phase 2 testing complete)" -ForegroundColor Gray
+Write-Host ""
+
+# Exit successfully (Phase 2 validation)
 exit 0
