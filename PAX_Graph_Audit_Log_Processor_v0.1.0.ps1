@@ -735,42 +735,162 @@ function Invoke-GraphEndpointQuery {
 }
 
 # ==============================================
-# PLACEHOLDER: Multi-Endpoint Processing
+# Phase 4: Multi-Endpoint Processing Loop
 # ==============================================
-# TODO Phase 4: Implement multi-endpoint processing loop
-# TODO Phase 5: Implement Entra user enrichment
-# TODO Phase 6: Implement JSON to CSV explosion
-# TODO Phase 7: Implement combined output with full outer join
-# TODO Phase 8: Implement output file management
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Phase 3 Complete: Query Logic Ready" -ForegroundColor Cyan
+Write-Host "Phase 4: Processing All Endpoints" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
-Write-Host "Next Steps:" -ForegroundColor Yellow
-Write-Host "  Phase 4: Multi-endpoint processing loop" -ForegroundColor White
-Write-Host "  Phase 5: Entra user enrichment with $select" -ForegroundColor White
-Write-Host "  Phase 6: JSON to CSV explosion" -ForegroundColor White
-Write-Host "  Phase 7-8: Combined output & file management" -ForegroundColor White
+
+# Determine which endpoints to query
+$endpointsToQuery = $Endpoints | Where-Object {
+    # Exclude Entra Users if flag is set
+    if ($ExcludeEntraUsers -and $_.Name -eq 'EntraUsers') {
+        return $false
+    }
+    return $true
+}
+
+Write-Host "Processing $($endpointsToQuery.Count) endpoint(s)...`n" -ForegroundColor Cyan
+
+# Track results for each endpoint
+$endpointResults = @{}
+$filesSaved = @()
+
+# Display Copilot fallback notice if using DaysBack
+if ($DaysBack) {
+    $copilotEndpoint = $endpointsToQuery | Where-Object { $_.Name -eq 'CopilotUsage' }
+    if ($copilotEndpoint) {
+        Write-Host "ℹ NOTICE: Copilot endpoint does not support daily queries" -ForegroundColor Yellow
+        Write-Host "  The Copilot report will use period='D7' while other endpoints query daily data." -ForegroundColor Yellow
+        Write-Host "  This is a Microsoft Graph API limitation, not a script limitation.`n" -ForegroundColor Yellow
+    }
+}
+
+# Process each endpoint
+$endpointNumber = 0
+foreach ($endpoint in $endpointsToQuery) {
+    $endpointNumber++
+    Write-Host "[$endpointNumber/$($endpointsToQuery.Count)] " -NoNewline -ForegroundColor Cyan
+    
+    # Query the endpoint
+    $queryParams = @{
+        Endpoint = $endpoint
+        ThrottleMs = $PacingMs
+    }
+    
+    if ($DaysBack) {
+        # Daily query mode - but Copilot will auto-fallback to period
+        if ($endpoint.Name -eq 'EntraUsers') {
+            # Entra Users doesn't use date/period
+            $data = Invoke-GraphEndpointQuery @queryParams
+        }
+        else {
+            $data = Invoke-GraphEndpointQuery @queryParams -QueryDate $StartDate
+        }
+    }
+    else {
+        # Period query mode
+        if ($endpoint.Name -eq 'EntraUsers') {
+            # Entra Users doesn't use period
+            $data = Invoke-GraphEndpointQuery @queryParams
+        }
+        else {
+            $data = Invoke-GraphEndpointQuery @queryParams -QueryPeriod $Period
+        }
+    }
+    
+    # Store results
+    $endpointResults[$endpoint.Name] = $data
+    
+    # Save to individual file (unless CombineOutput is specified)
+    if (-not $CombineOutput -and $data -and $data.Count -gt 0) {
+        $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+        
+        # Build filename based on query type
+        if ($DaysBack -and $endpoint.Name -eq 'CopilotUsage') {
+            # Copilot with fallback
+            $filename = "$($endpoint.Name)_D7_$timestamp.csv"
+        }
+        elseif ($DaysBack) {
+            # Daily query
+            $dateStr = $StartDate.ToString('yyyyMMdd')
+            $filename = "$($endpoint.Name)_$dateStr`_$timestamp.csv"
+        }
+        else {
+            # Period query
+            $filename = "$($endpoint.Name)_$Period`_$timestamp.csv"
+        }
+        
+        $outputFilePath = Join-Path $OutputPath $filename
+        
+        try {
+            # Export to CSV
+            if ($ExplodeArrays -and $endpoint.Name -eq 'EntraUsers') {
+                # TODO Phase 6: Implement JSON to CSV explosion for Entra Users
+                Write-Host "  ⚠ Entra Users JSON->CSV explosion not yet implemented (Phase 6)" -ForegroundColor Yellow
+            }
+            else {
+                $data | Export-Csv -Path $outputFilePath -NoTypeInformation -Force
+                Write-Host "  ✓ Saved: $filename ($($data.Count) rows)" -ForegroundColor Green
+                $filesSaved += $outputFilePath
+            }
+        }
+        catch {
+            Write-Host "  ✗ Error saving file: $($_.Exception.Message)" -ForegroundColor Red
+        }
+    }
+    elseif (-not $CombineOutput) {
+        Write-Host "  ⊘ Skipped: No data to save" -ForegroundColor Gray
+    }
+    
+    Write-Host ""
+}
+
+# Summary
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "Processing Complete" -ForegroundColor Cyan
+Write-Host "========================================`n" -ForegroundColor Cyan
+
+Write-Host "Endpoint Results Summary:" -ForegroundColor Cyan
+foreach ($key in $endpointResults.Keys | Sort-Object) {
+    $rowCount = if ($endpointResults[$key]) { $endpointResults[$key].Count } else { 0 }
+    $status = if ($rowCount -gt 0) { "✓" } else { "○" }
+    $color = if ($rowCount -gt 0) { "Green" } else { "Gray" }
+    Write-Host "  $status $key : $rowCount rows" -ForegroundColor $color
+}
 Write-Host ""
 
-# Test the query function with one endpoint
-Write-Host "Testing single endpoint query (Copilot)..." -ForegroundColor Cyan
-$testEndpoint = $Endpoints | Where-Object { $_.Name -eq 'CopilotUsage' }
-$testResult = Invoke-GraphEndpointQuery -Endpoint $testEndpoint -QueryPeriod 'D7' -ThrottleMs $PacingMs
-
-if ($testResult) {
-    Write-Host "`n✓ Query test successful! Retrieved $($testResult.Count) rows" -ForegroundColor Green
-    Write-Host "  Sample columns: $($testResult[0].PSObject.Properties.Name[0..4] -join ', ')..." -ForegroundColor Gray
+if ($filesSaved.Count -gt 0) {
+    Write-Host "Files Saved ($($filesSaved.Count)):" -ForegroundColor Green
+    foreach ($file in $filesSaved) {
+        Write-Host "  • $(Split-Path $file -Leaf)" -ForegroundColor White
+    }
+    Write-Host "  Location: $OutputPath" -ForegroundColor Gray
+    Write-Host ""
 }
-else {
-    Write-Host "`n⚠ Query test returned no data (this may be normal if no usage data exists)" -ForegroundColor Yellow
-}
-Write-Host ""
 
-# Disconnect from Graph (cleanup for Phase 3 testing)
+# ==============================================
+# PLACEHOLDER: Combined Output & Advanced Features
+# ==============================================
+# TODO Phase 5: Implement Entra user enrichment with $select
+# TODO Phase 6: Implement JSON to CSV explosion
+# TODO Phase 7: Implement combined output with full outer join
+
+if ($CombineOutput) {
+    Write-Host "⚠ Combined output (-CombineOutput) not yet implemented (Phase 7)" -ForegroundColor Yellow
+    Write-Host "  Individual files have been queried but not merged." -ForegroundColor Yellow
+    Write-Host ""
+}
+
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "Phase 4 Complete: Multi-Endpoint Processing" -ForegroundColor Cyan
+Write-Host "========================================`n" -ForegroundColor Cyan
+
+# Disconnect from Graph
 Disconnect-MgGraph | Out-Null
-Write-Host "Disconnected from Microsoft Graph (Phase 3 testing complete)" -ForegroundColor Gray
+Write-Host "Disconnected from Microsoft Graph" -ForegroundColor Gray
 Write-Host ""
 
-# Exit successfully (Phase 3 validation)
+# Exit successfully
 exit 0
