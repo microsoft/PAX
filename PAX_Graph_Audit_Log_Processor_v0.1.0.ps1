@@ -547,29 +547,230 @@ catch {
 }
 
 # ==============================================
-# PLACEHOLDER: Query Logic & Data Processing
+# Phase 3: Single Endpoint Query Function
 # ==============================================
-# TODO Phase 3: Implement single endpoint query
-# TODO Phase 4: Implement multi-endpoint processing
+
+function Invoke-GraphEndpointQuery {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Endpoint,
+        
+        [Parameter(Mandatory = $false)]
+        [string]$QueryPeriod,
+        
+        [Parameter(Mandatory = $false)]
+        [datetime]$QueryDate,
+        
+        [Parameter(Mandatory = $false)]
+        [int]$ThrottleMs = 0
+    )
+    
+    $endpointName = $Endpoint.Name
+    $endpointUrl = $Endpoint.Url
+    $displayName = $Endpoint.DisplayName
+    
+    Write-Host "Querying: $displayName" -ForegroundColor Cyan
+    
+    # Determine query type based on endpoint capabilities
+    $useDate = $false
+    $usePeriod = $false
+    
+    if ($QueryDate -and $Endpoint.SupportsDate) {
+        $useDate = $true
+        $dateString = $QueryDate.ToString('yyyy-MM-dd')
+        Write-Host "  Query Type: Date ($dateString)" -ForegroundColor White
+    }
+    elseif ($QueryPeriod -and $Endpoint.SupportsPeriod) {
+        $usePeriod = $true
+        Write-Host "  Query Type: Period ($QueryPeriod)" -ForegroundColor White
+    }
+    elseif ($Endpoint.Name -eq 'EntraUsers') {
+        Write-Host "  Query Type: Directory Query (no period/date)" -ForegroundColor White
+    }
+    else {
+        # Copilot auto-fallback scenario
+        if ($QueryDate -and $Endpoint.Name -eq 'CopilotUsage' -and -not $Endpoint.SupportsDate) {
+            Write-Host "  Query Type: Auto-Fallback to Period (D7) - Date queries not supported" -ForegroundColor Yellow
+            $usePeriod = $true
+            $QueryPeriod = 'D7'
+        }
+        else {
+            Write-Host "  SKIP: Endpoint does not support requested query type" -ForegroundColor Yellow
+            return $null
+        }
+    }
+    
+    # Build query URL
+    $queryUrl = $endpointUrl
+    
+    if ($useDate) {
+        $queryUrl += "(date=$dateString)"
+    }
+    elseif ($usePeriod) {
+        $queryUrl += "(period='$QueryPeriod')"
+    }
+    
+    # Add CSV format for capable endpoints
+    if ($Endpoint.CsvCapable) {
+        $queryUrl += "?`$format=text/csv"
+        Write-Host "  Format: CSV" -ForegroundColor White
+    }
+    else {
+        Write-Host "  Format: JSON" -ForegroundColor White
+    }
+    
+    Write-Host "  URL: $queryUrl" -ForegroundColor Gray
+    
+    # Execute query with retry logic
+    $maxRetries = 3
+    $retryCount = 0
+    $success = $false
+    $result = $null
+    
+    while (-not $success -and $retryCount -lt $maxRetries) {
+        try {
+            if ($retryCount -gt 0) {
+                $waitSeconds = [Math]::Pow(2, $retryCount)
+                Write-Host "  Retry $retryCount/$maxRetries after $waitSeconds seconds..." -ForegroundColor Yellow
+                Start-Sleep -Seconds $waitSeconds
+            }
+            
+            # CSV endpoints require special handling (download to temp file then parse)
+            if ($Endpoint.CsvCapable) {
+                $tempCsvFile = [System.IO.Path]::GetTempFileName() + ".csv"
+                
+                try {
+                    # Download CSV to temp file
+                    Invoke-MgGraphRequest -Method GET -Uri $queryUrl -OutputFilePath $tempCsvFile -ErrorAction Stop | Out-Null
+                    
+                    # Read and parse CSV
+                    if (Test-Path $tempCsvFile) {
+                        $csvContent = Get-Content -Path $tempCsvFile -Raw
+                        if ($csvContent -and $csvContent.Trim().Length -gt 0) {
+                            $result = $csvContent | ConvertFrom-Csv
+                            Write-Host "  ✓ Retrieved $($result.Count) rows" -ForegroundColor Green
+                        }
+                        else {
+                            Write-Host "  ✓ Query completed (no data returned)" -ForegroundColor Yellow
+                            $result = @()
+                        }
+                    }
+                }
+                finally {
+                    # Cleanup temp file
+                    if (Test-Path $tempCsvFile) {
+                        Remove-Item -Path $tempCsvFile -Force -ErrorAction SilentlyContinue
+                    }
+                }
+            }
+            # Handle JSON response
+            else {
+                $response = Invoke-MgGraphRequest -Method GET -Uri $queryUrl -ErrorAction Stop
+                
+                if ($response.'@odata.nextLink') {
+                    Write-Host "  Pagination detected, retrieving all pages..." -ForegroundColor Yellow
+                    $allResults = @()
+                    $allResults += $response.value
+                    
+                    $nextLink = $response.'@odata.nextLink'
+                    while ($nextLink) {
+                        if ($ThrottleMs -gt 0) {
+                            Start-Sleep -Milliseconds $ThrottleMs
+                        }
+                        $pageResponse = Invoke-MgGraphRequest -Method GET -Uri $nextLink -ErrorAction Stop
+                        $allResults += $pageResponse.value
+                        $nextLink = $pageResponse.'@odata.nextLink'
+                        Write-Host "  Retrieved $($allResults.Count) total records..." -ForegroundColor Gray
+                    }
+                    $result = $allResults
+                    Write-Host "  ✓ Retrieved $($result.Count) total rows (paginated)" -ForegroundColor Green
+                }
+                else {
+                    $result = $response.value
+                    if ($result) {
+                        Write-Host "  ✓ Retrieved $($result.Count) rows" -ForegroundColor Green
+                    }
+                    else {
+                        Write-Host "  ✓ Query completed (no data returned)" -ForegroundColor Yellow
+                        $result = @()
+                    }
+                }
+            }
+            
+            $success = $true
+        }
+        catch {
+            $retryCount++
+            $errorMessage = $_.Exception.Message
+            
+            # Check for specific error types
+            if ($errorMessage -like "*429*" -or $errorMessage -like "*throttle*") {
+                Write-Host "  ⚠ Throttled by API (429), retrying..." -ForegroundColor Yellow
+            }
+            elseif ($errorMessage -like "*401*" -or $errorMessage -like "*403*") {
+                Write-Host "  ✗ Authorization failed: $errorMessage" -ForegroundColor Red
+                Write-Host "    Check that your account has the required permissions" -ForegroundColor Yellow
+                return $null
+            }
+            elseif ($errorMessage -like "*404*") {
+                Write-Host "  ✗ Endpoint not found (404): $errorMessage" -ForegroundColor Red
+                return $null
+            }
+            else {
+                Write-Host "  ✗ Error: $errorMessage" -ForegroundColor Red
+                if ($retryCount -ge $maxRetries) {
+                    Write-Host "    Max retries exceeded, skipping endpoint" -ForegroundColor Red
+                    return $null
+                }
+            }
+        }
+    }
+    
+    # Apply throttling if configured
+    if ($ThrottleMs -gt 0 -and $success) {
+        Start-Sleep -Milliseconds $ThrottleMs
+    }
+    
+    return $result
+}
+
+# ==============================================
+# PLACEHOLDER: Multi-Endpoint Processing
+# ==============================================
+# TODO Phase 4: Implement multi-endpoint processing loop
 # TODO Phase 5: Implement Entra user enrichment
 # TODO Phase 6: Implement JSON to CSV explosion
 # TODO Phase 7: Implement combined output with full outer join
 # TODO Phase 8: Implement output file management
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Phase 2 Complete: Authentication Ready" -ForegroundColor Cyan
+Write-Host "Phase 3 Complete: Query Logic Ready" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 Write-Host "Next Steps:" -ForegroundColor Yellow
-Write-Host "  Phase 3: Single endpoint query logic" -ForegroundColor White
 Write-Host "  Phase 4: Multi-endpoint processing loop" -ForegroundColor White
-Write-Host "  Phase 5: Entra user enrichment" -ForegroundColor White
-Write-Host "  Phase 6-8: Data transformation & output" -ForegroundColor White
+Write-Host "  Phase 5: Entra user enrichment with $select" -ForegroundColor White
+Write-Host "  Phase 6: JSON to CSV explosion" -ForegroundColor White
+Write-Host "  Phase 7-8: Combined output & file management" -ForegroundColor White
 Write-Host ""
 
-# Disconnect from Graph (cleanup for Phase 2 testing)
+# Test the query function with one endpoint
+Write-Host "Testing single endpoint query (Copilot)..." -ForegroundColor Cyan
+$testEndpoint = $Endpoints | Where-Object { $_.Name -eq 'CopilotUsage' }
+$testResult = Invoke-GraphEndpointQuery -Endpoint $testEndpoint -QueryPeriod 'D7' -ThrottleMs $PacingMs
+
+if ($testResult) {
+    Write-Host "`n✓ Query test successful! Retrieved $($testResult.Count) rows" -ForegroundColor Green
+    Write-Host "  Sample columns: $($testResult[0].PSObject.Properties.Name[0..4] -join ', ')..." -ForegroundColor Gray
+}
+else {
+    Write-Host "`n⚠ Query test returned no data (this may be normal if no usage data exists)" -ForegroundColor Yellow
+}
+Write-Host ""
+
+# Disconnect from Graph (cleanup for Phase 3 testing)
 Disconnect-MgGraph | Out-Null
-Write-Host "Disconnected from Microsoft Graph (Phase 2 testing complete)" -ForegroundColor Gray
+Write-Host "Disconnected from Microsoft Graph (Phase 3 testing complete)" -ForegroundColor Gray
 Write-Host ""
 
-# Exit successfully (Phase 2 validation)
+# Exit successfully (Phase 3 validation)
 exit 0
