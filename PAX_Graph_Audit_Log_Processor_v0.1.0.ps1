@@ -1,0 +1,441 @@
+# Portable Audit eXporter (PAX) - Graph Audit Log Processor - v0.1.0
+<#
+.SYNOPSIS
+    Export Microsoft 365 and Copilot usage reports from Microsoft Graph API with optional Entra user enrichment.
+
+.DESCRIPTION
+    Queries Microsoft Graph API for usage reports across 15 endpoints:
+    - 14 usage report endpoints (Microsoft 365, Teams, Email, SharePoint, OneDrive, Yammer, Copilot, etc.)
+    - 1 Entra Users endpoint (comprehensive user properties with manager expansion)
+    
+    Copilot Usage Report Limitation:
+        The getMicrosoft365CopilotUsageUserDetail endpoint only supports period-based queries (D7/D30/D90/D180/ALL).
+        Daily date queries are NOT supported by this endpoint.
+        
+        Auto-Fallback Behavior:
+        - When -DaysBack is specified (requesting daily data), all other 13 endpoints will query daily data
+        - Copilot endpoint automatically falls back to period='D7' (last 7 days aggregated)
+        - Script displays informational message about this limitation
+        - File naming uses clean "CopilotUsage_D7" format (no "fallback" text)
+    
+    Output Management:
+        -OutputPath <string>     : Directory for output files (default: C:\Temp\MS_Graph)
+        -OutputFileName <string> : Custom filename for combined output (optional, only with -CombineOutput)
+            • If specified: Used exactly as provided (no timestamp added)
+            • If .csv extension missing: Automatically appended
+            • If omitted: Auto-generated name with timestamp
+        
+        File Naming:
+            • Individual files: Auto-generated with timestamps (e.g., "CopilotUsage_D7_20251017_143022.csv")
+            • Combined output with custom name: Exact name used (e.g., "MyReport.csv")
+            • Combined output auto-name: Includes timestamp (e.g., "CombinedUsage_20251017_143022.csv")
+            • No timestamped subfolders created
+            • No overwrite protection (existing files will be overwritten)
+    
+    Entra User Enrichment:
+        By default, script includes comprehensive Entra user properties (35 core fields) with manager expansion.
+        Use -ExcludeEntraUsers switch to skip Entra enrichment entirely.
+        
+        35 Core Entra Properties:
+            Identity (6): userPrincipalName, displayName, id, mail, givenName, surname
+            Job (5): jobTitle, department, employeeType, employeeId, employeeHireDate
+            Location (6): officeLocation, city, state, country, postalCode, companyName
+            Organization (1): employeeOrgData (division, costCenter nested)
+            Status (3): accountEnabled, userType, createdDateTime
+            Usage (2): usageLocation, preferredLanguage
+            Manager (4): manager_displayName, manager_userPrincipalName, manager_mail, manager_id
+            Administrative (7): additional fields for tenant admins
+    
+    Authentication Methods:
+        -Auth WebLogin    : Interactive browser authentication (default)
+        -Auth DeviceCode  : Device code flow for limited browsers
+        -Auth Credential  : Client secret credential (requires environment variables)
+        -Auth Silent      : Managed identity or existing token
+    
+    PowerShell 5.1 & 7+ supported.
+
+.EXAMPLE
+    # Query last 7 days of Copilot usage (period-based, default output path)
+    pwsh -File .\PAX_Graph_Audit_Log_Processor_v0.1.0.ps1 -Period D7
+    
+.EXAMPLE
+    # Query last 30 days with custom output path
+    pwsh -File .\PAX_Graph_Audit_Log_Processor_v0.1.0.ps1 -Period D30 -OutputPath C:\Reports
+    
+.EXAMPLE
+    # Query specific date range (30-day limit, Copilot auto-falls back to D7)
+    pwsh -File .\PAX_Graph_Audit_Log_Processor_v0.1.0.ps1 -DaysBack 14 -OutputPath C:\Reports
+    
+.EXAMPLE
+    # Combined output with custom filename
+    pwsh -File .\PAX_Graph_Audit_Log_Processor_v0.1.0.ps1 -Period D7 -CombineOutput -OutputFileName "Weekly_Report.csv"
+    
+.EXAMPLE
+    # Exclude Entra user enrichment (usage reports only)
+    pwsh -File .\PAX_Graph_Audit_Log_Processor_v0.1.0.ps1 -Period D30 -ExcludeEntraUsers
+    
+.EXAMPLE
+    # Device code authentication with array explosion
+    pwsh -File .\PAX_Graph_Audit_Log_Processor_v0.1.0.ps1 -Period D7 -Auth DeviceCode -ExplodeArrays
+    
+.EXAMPLE
+    # Query specific date with custom throttling (100ms delay between requests)
+    pwsh -File .\PAX_Graph_Audit_Log_Processor_v0.1.0.ps1 -DaysBack 7 -PacingMs 100 -OutputPath C:\Reports
+    
+.EXAMPLE
+    # Combined output with auto-generated filename (includes timestamp)
+    pwsh -File .\PAX_Graph_Audit_Log_Processor_v0.1.0.ps1 -DaysBack 14 -CombineOutput
+
+.NOTES
+    Version: 0.1.0
+    Author: PAX Development Team
+    Requires: Microsoft.Graph PowerShell SDK
+    Graph API Permissions: Reports.Read.All, User.Read.All, Directory.Read.All
+#>
+
+param(
+    [Parameter(Mandatory = $false, ParameterSetName = 'Period')]
+    [ValidateSet('D7', 'D30', 'D90', 'D180', 'ALL')]
+    [string]$Period,
+
+    [Parameter(Mandatory = $false, ParameterSetName = 'DaysBack')]
+    [ValidateRange(1, 30)]
+    [int]$DaysBack,
+
+    [Parameter(Mandatory = $false)]
+    [string]$OutputPath = "C:\Temp\MS_Graph",
+
+    [Parameter(Mandatory = $false)]
+    [string]$OutputFileName,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateSet('WebLogin', 'DeviceCode', 'Credential', 'Silent')]
+    [string]$Auth = 'WebLogin',
+
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(0, 10000)]
+    [int]$PacingMs = 0,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$ExplodeArrays,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$CombineOutput,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$ExcludeEntraUsers,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Help
+)
+
+# Display help if -Help switch is provided
+if ($Help) {
+    Get-Help $PSCommandPath -Full
+    exit 0
+}
+
+# Script version
+$ScriptVersion = "0.1.0"
+
+Write-Host "`n========================================" -ForegroundColor Cyan
+Write-Host "  PAX - Graph Audit Log Processor v$ScriptVersion" -ForegroundColor Cyan
+Write-Host "========================================`n" -ForegroundColor Cyan
+
+# --- Parameter Validation ---
+
+# Ensure at least one query mode is specified
+if (-not $Period -and -not $DaysBack) {
+    Write-Host "ERROR: Must specify either -Period (D7/D30/D90/D180/ALL) or -DaysBack (1-30)." -ForegroundColor Red
+    Write-Host "Examples:" -ForegroundColor Yellow
+    Write-Host "  -Period D7          : Last 7 days (period-based query)" -ForegroundColor Yellow
+    Write-Host "  -DaysBack 14        : Last 14 days (daily queries, 30-day limit)" -ForegroundColor Yellow
+    exit 1
+}
+
+# OutputFileName only valid with CombineOutput
+if ($OutputFileName -and -not $CombineOutput) {
+    Write-Host "ERROR: -OutputFileName can only be used with -CombineOutput switch." -ForegroundColor Red
+    Write-Host "Use -CombineOutput to merge all usage reports into a single file." -ForegroundColor Yellow
+    exit 1
+}
+
+# Ensure OutputPath exists
+if (-not (Test-Path $OutputPath)) {
+    Write-Host "Creating output directory: $OutputPath" -ForegroundColor Yellow
+    try {
+        New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
+    }
+    catch {
+        Write-Host "ERROR: Failed to create output directory: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
+    }
+}
+
+# --- Date Range Calculation ---
+
+Write-Host "Calculating date range..." -ForegroundColor Cyan
+
+if ($DaysBack) {
+    # Daily query mode: Calculate date range with 30-day API limit and 3-day buffer
+    $EndDate = (Get-Date).ToUniversalTime().Date.AddDays(-3)  # Default: 3 days ago
+    $StartDate = $EndDate.AddDays(-$DaysBack + 1)  # Inclusive range
+    
+    # Validate 30-day API limit
+    $requestedDays = ($EndDate - $StartDate).Days + 1
+    if ($requestedDays -gt 30) {
+        Write-Host "WARNING: Microsoft Graph API enforces a 30-day maximum query window." -ForegroundColor Yellow
+        Write-Host "         Requested: $requestedDays days | Maximum: 30 days" -ForegroundColor Yellow
+        Write-Host "         Auto-adjusting StartDate to maintain 30-day limit..." -ForegroundColor Yellow
+        $StartDate = $EndDate.AddDays(-29)  # Adjust to exactly 30 days
+        $DaysBack = 30
+        Write-Host "         New range: $($StartDate.ToString('yyyy-MM-dd')) to $($EndDate.ToString('yyyy-MM-dd')) (30 days)" -ForegroundColor Green
+    }
+    
+    Write-Host "Query Mode: Daily (date-based queries)" -ForegroundColor Green
+    Write-Host "  Start Date: $($StartDate.ToString('yyyy-MM-dd'))" -ForegroundColor White
+    Write-Host "  End Date:   $($EndDate.ToString('yyyy-MM-dd'))" -ForegroundColor White
+    Write-Host "  Days:       $DaysBack" -ForegroundColor White
+    
+    # Important note about Copilot limitation
+    Write-Host "`nIMPORTANT: Copilot endpoint limitation detected" -ForegroundColor Yellow
+    Write-Host "  The Copilot usage report does NOT support daily queries." -ForegroundColor Yellow
+    Write-Host "  Auto-fallback: Copilot will use period='D7' (last 7 days aggregated)" -ForegroundColor Yellow
+    Write-Host "  All other 13 endpoints will query daily data as requested.`n" -ForegroundColor Yellow
+}
+else {
+    # Period query mode
+    Write-Host "Query Mode: Period (aggregated queries)" -ForegroundColor Green
+    Write-Host "  Period: $Period" -ForegroundColor White
+    
+    # Map period to days for display
+    $periodDays = switch ($Period) {
+        'D7'   { 7 }
+        'D30'  { 30 }
+        'D90'  { 90 }
+        'D180' { 180 }
+        'ALL'  { 'All available data' }
+    }
+    Write-Host "  Coverage: $periodDays days`n" -ForegroundColor White
+}
+
+# --- Endpoint Definitions ---
+
+Write-Host "Initializing Microsoft Graph API endpoints..." -ForegroundColor Cyan
+
+# Define 15 curated endpoints with metadata
+$Endpoints = @(
+    @{
+        Name = "CopilotUsage"
+        DisplayName = "Microsoft 365 Copilot Usage (User Detail)"
+        Url = "/beta/reports/getMicrosoft365CopilotUsageUserDetail"
+        ApiVersion = "Beta"
+        SupportsPeriod = $true
+        SupportsDate = $false  # LIMITATION: Copilot endpoint does NOT support date queries
+        CsvCapable = $true
+        Description = "Per-user Copilot activity across apps (period-based only, no daily queries)"
+    },
+    @{
+        Name = "M365Activations"
+        DisplayName = "Microsoft 365 Activations (User Detail)"
+        Url = "/v1.0/reports/getOffice365ActivationsUserDetail"
+        ApiVersion = "v1.0"
+        SupportsPeriod = $false
+        SupportsDate = $false  # Snapshot endpoint (no period/date)
+        CsvCapable = $true
+        Description = "Office activation counts per user"
+    },
+    @{
+        Name = "M365ActiveUsers"
+        DisplayName = "Microsoft 365 Active Users (User Detail)"
+        Url = "/v1.0/reports/getOffice365ActiveUserDetail"
+        ApiVersion = "v1.0"
+        SupportsPeriod = $true
+        SupportsDate = $true
+        CsvCapable = $true
+        Description = "Active users across M365 services"
+    },
+    @{
+        Name = "TeamsUserActivity"
+        DisplayName = "Teams User Activity (User Detail)"
+        Url = "/v1.0/reports/getTeamsUserActivityUserDetail"
+        ApiVersion = "v1.0"
+        SupportsPeriod = $true
+        SupportsDate = $true
+        CsvCapable = $true
+        Description = "Per-user Teams usage metrics"
+    },
+    @{
+        Name = "EmailActivity"
+        DisplayName = "Email Activity (User Detail)"
+        Url = "/v1.0/reports/getEmailActivityUserDetail"
+        ApiVersion = "v1.0"
+        SupportsPeriod = $true
+        SupportsDate = $true
+        CsvCapable = $true
+        Description = "Email send/receive/read activity"
+    },
+    @{
+        Name = "EmailAppUsage"
+        DisplayName = "Email App Usage (User Detail)"
+        Url = "/v1.0/reports/getEmailAppUsageUserDetail"
+        ApiVersion = "v1.0"
+        SupportsPeriod = $true
+        SupportsDate = $true
+        CsvCapable = $true
+        Description = "Email client usage breakdown"
+    },
+    @{
+        Name = "OneDriveActivity"
+        DisplayName = "OneDrive Activity (User Detail)"
+        Url = "/v1.0/reports/getOneDriveActivityUserDetail"
+        ApiVersion = "v1.0"
+        SupportsPeriod = $true
+        SupportsDate = $true
+        CsvCapable = $true
+        Description = "OneDrive file activity and sync"
+    },
+    @{
+        Name = "OneDriveUsage"
+        DisplayName = "OneDrive Usage (Account Detail)"
+        Url = "/v1.0/reports/getOneDriveUsageAccountDetail"
+        ApiVersion = "v1.0"
+        SupportsPeriod = $true
+        SupportsDate = $true
+        CsvCapable = $true
+        Description = "OneDrive storage and file counts"
+    },
+    @{
+        Name = "SharePointActivity"
+        DisplayName = "SharePoint Activity (User Detail)"
+        Url = "/v1.0/reports/getSharePointActivityUserDetail"
+        ApiVersion = "v1.0"
+        SupportsPeriod = $true
+        SupportsDate = $true
+        CsvCapable = $true
+        Description = "SharePoint file activity and sharing"
+    },
+    @{
+        Name = "SharePointSiteUsage"
+        DisplayName = "SharePoint Site Usage (Site Detail)"
+        Url = "/v1.0/reports/getSharePointSiteUsageDetail"
+        ApiVersion = "v1.0"
+        SupportsPeriod = $true
+        SupportsDate = $true
+        CsvCapable = $true
+        Description = "Per-site storage and activity metrics"
+    },
+    @{
+        Name = "YammerActivity"
+        DisplayName = "Yammer Activity (User Detail)"
+        Url = "/v1.0/reports/getYammerActivityUserDetail"
+        ApiVersion = "v1.0"
+        SupportsPeriod = $true
+        SupportsDate = $true
+        CsvCapable = $true
+        Description = "Yammer posts, reads, and likes"
+    },
+    @{
+        Name = "YammerDeviceUsage"
+        DisplayName = "Yammer Device Usage (User Detail)"
+        Url = "/v1.0/reports/getYammerDeviceUsageUserDetail"
+        ApiVersion = "v1.0"
+        SupportsPeriod = $true
+        SupportsDate = $true
+        CsvCapable = $true
+        Description = "Yammer usage by device type"
+    },
+    @{
+        Name = "YammerGroupsActivity"
+        DisplayName = "Yammer Groups Activity (Group Detail)"
+        Url = "/v1.0/reports/getYammerGroupsActivityDetail"
+        ApiVersion = "v1.0"
+        SupportsPeriod = $true
+        SupportsDate = $true
+        CsvCapable = $true
+        Description = "Per-group Yammer activity metrics"
+    },
+    @{
+        Name = "M365AppUserDetail"
+        DisplayName = "Microsoft 365 Apps User Detail"
+        Url = "/v1.0/reports/getM365AppUserDetail"
+        ApiVersion = "v1.0"
+        SupportsPeriod = $true
+        SupportsDate = $true
+        CsvCapable = $true
+        Description = "Per-user app usage across M365 apps"
+    },
+    @{
+        Name = "EntraUsers"
+        DisplayName = "Entra Users (Comprehensive Properties)"
+        Url = "/v1.0/users"
+        ApiVersion = "v1.0"
+        SupportsPeriod = $false
+        SupportsDate = $false
+        CsvCapable = $false  # JSON only, requires transformation
+        Description = "User directory with 35 core properties + manager expansion"
+    }
+)
+
+Write-Host "Loaded $($Endpoints.Count) endpoints:" -ForegroundColor Green
+foreach ($ep in $Endpoints) {
+    $apiLabel = if ($ep.ApiVersion -eq 'Beta') { "[BETA]" } else { "[v1.0]" }
+    Write-Host "  $apiLabel $($ep.DisplayName)" -ForegroundColor White
+}
+Write-Host ""
+
+# --- Entra User Properties Definition (35 Core Fields) ---
+
+$EntraUserProperties = @(
+    # Identity (6)
+    'userPrincipalName', 'displayName', 'id', 'mail', 'givenName', 'surname',
+    
+    # Job (5)
+    'jobTitle', 'department', 'employeeType', 'employeeId', 'employeeHireDate',
+    
+    # Location (6)
+    'officeLocation', 'city', 'state', 'country', 'postalCode', 'companyName',
+    
+    # Organization (1 - nested object)
+    'employeeOrgData',
+    
+    # Status (3)
+    'accountEnabled', 'userType', 'createdDateTime',
+    
+    # Usage (2)
+    'usageLocation', 'preferredLanguage',
+    
+    # Administrative (7 - optional advanced fields)
+    'onPremisesSyncEnabled', 'onPremisesImmutableId', 'proxyAddresses',
+    'assignedLicenses', 'assignedPlans', 'provisionedPlans', 'externalUserState'
+)
+
+Write-Host "Entra User Properties: $($EntraUserProperties.Count) core fields configured" -ForegroundColor Green
+Write-Host "  Manager expansion: Enabled (displayName, userPrincipalName, mail, id)" -ForegroundColor White
+Write-Host ""
+
+# ==============================================
+# PLACEHOLDER: Authentication & Query Logic
+# ==============================================
+# TODO Phase 2: Implement Graph authentication
+# TODO Phase 3: Implement single endpoint query
+# TODO Phase 4: Implement multi-endpoint processing
+# TODO Phase 5: Implement Entra user enrichment
+# TODO Phase 6: Implement JSON to CSV explosion
+# TODO Phase 7: Implement combined output with full outer join
+# TODO Phase 8: Implement output file management
+
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "Phase 0 Complete: Script Foundation Ready" -ForegroundColor Cyan
+Write-Host "========================================`n" -ForegroundColor Cyan
+Write-Host "Next Steps:" -ForegroundColor Yellow
+Write-Host "  Phase 1: Date range logic (30-day enforcement)" -ForegroundColor White
+Write-Host "  Phase 2: Graph authentication" -ForegroundColor White
+Write-Host "  Phase 3: Single endpoint query" -ForegroundColor White
+Write-Host "  Phase 4: Multi-endpoint processing" -ForegroundColor White
+Write-Host "  Phase 5: Entra enrichment" -ForegroundColor White
+Write-Host "  Phase 6-8: Data transformation & output" -ForegroundColor White
+Write-Host ""
+
+# Exit successfully (Phase 0 validation)
+exit 0
