@@ -1021,29 +1021,35 @@ if ($CombineOutput) {
         $userIdColumn = $null
         $firstRow = $data[0]
         
-        # Try different possible user identifier columns
-        $possibleUserColumns = @('User Principal Name', 'userPrincipalName', 'Owner Principal Name', 'Site URL')
+        # Try different possible user identifier columns (order matters - try most common first)
+        $possibleUserColumns = @('User Principal Name', 'userPrincipalName', 'Owner Principal Name')
         foreach ($col in $possibleUserColumns) {
-            if ($firstRow.PSObject.Properties.Name -contains $col) {
-                $userIdColumn = $col
+            $matchingProp = $firstRow.PSObject.Properties | Where-Object { $_.Name -eq $col }
+            if ($matchingProp) {
+                $userIdColumn = $matchingProp.Name
                 break
             }
         }
         
-        if (-not $userIdColumn) {
-            Write-Host "    ⚠ No user identifier column found, using row index" -ForegroundColor Yellow
-            # For non-user reports (like SharePoint sites), use a placeholder key
-            $userIdColumn = '_NoUserKey_'
+        # For Entra Users, use userPrincipalName directly
+        if ($endpointName -eq 'EntraUsers' -and -not $userIdColumn) {
+            if ($firstRow.userPrincipalName) {
+                $userIdColumn = 'userPrincipalName'
+            }
         }
         
+        if (-not $userIdColumn) {
+            # Skip non-user reports (like SharePoint sites, Yammer groups)
+            Write-Host "    ⊘ Skipping (no user identifier column)" -ForegroundColor Gray
+            Write-Host "      Available columns: $($firstRow.PSObject.Properties.Name -join ', ')" -ForegroundColor Gray
+            continue
+        }
+        
+        Write-Host "    Join column: $userIdColumn" -ForegroundColor Gray
+        
         # Add endpoint data to user records
+        $userCount = 0
         foreach ($row in $data) {
-            # Get user identifier
-            if ($userIdColumn -eq '_NoUserKey_') {
-                # Non-user data - skip for combined output or handle specially
-                continue
-            }
-            
             $userId = $row.$userIdColumn
             if (-not $userId) {
                 continue
@@ -1070,7 +1076,9 @@ if ($CombineOutput) {
                 $prefixedName = "$endpointName`_$($prop.Name)"
                 $allUsers[$normalizedUserId][$prefixedName] = $prop.Value
             }
+            $userCount++
         }
+        Write-Host "    Added $userCount user records" -ForegroundColor Gray
     }
     
     Write-Host "`n  Collected $($allUsers.Count) unique users" -ForegroundColor Green
