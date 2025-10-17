@@ -967,18 +967,142 @@ if ($filesSaved.Count -gt 0) {
 }
 
 # ==============================================
-# PLACEHOLDER: Combined Output & Advanced Features
+# Phase 7: Combined Output (Full Outer Join)
 # ==============================================
-# TODO Phase 7: Implement combined output with full outer join
 
 if ($CombineOutput) {
-    Write-Host "⚠ Combined output (-CombineOutput) not yet implemented (Phase 7)" -ForegroundColor Yellow
-    Write-Host "  Individual files have been queried but not merged." -ForegroundColor Yellow
-    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host "Phase 7: Creating Combined Output" -ForegroundColor Cyan
+    Write-Host "========================================`n" -ForegroundColor Cyan
+    
+    # Determine output filename
+    $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+    
+    if ($OutputFileName) {
+        # Use custom filename exactly as specified
+        $combinedFileName = $OutputFileName
+        # Ensure .csv extension
+        if (-not $combinedFileName.EndsWith('.csv')) {
+            $combinedFileName += '.csv'
+        }
+    }
+    else {
+        # Auto-generate filename with timestamp
+        if ($DaysBack) {
+            $dateStr = $StartDate.ToString('yyyyMMdd')
+            $combinedFileName = "CombinedUsage_$dateStr`_$timestamp.csv"
+        }
+        else {
+            $combinedFileName = "CombinedUsage_$Period`_$timestamp.csv"
+        }
+    }
+    
+    $combinedFilePath = Join-Path $OutputPath $combinedFileName
+    
+    Write-Host "Combining all endpoint data into single file..." -ForegroundColor Cyan
+    Write-Host "  Target: $combinedFileName`n" -ForegroundColor White
+    
+    # Collect all unique users across all endpoints
+    $allUsers = @{}
+    $endpointColumnPrefix = @{}
+    
+    # Process each endpoint's data
+    foreach ($endpointName in $endpointResults.Keys) {
+        $data = $endpointResults[$endpointName]
+        
+        if (-not $data -or $data.Count -eq 0) {
+            Write-Host "  ⊘ Skipping $endpointName (no data)" -ForegroundColor Gray
+            continue
+        }
+        
+        Write-Host "  Processing $endpointName ($($data.Count) rows)..." -ForegroundColor White
+        
+        # Determine the user identifier column for this endpoint
+        $userIdColumn = $null
+        $firstRow = $data[0]
+        
+        # Try different possible user identifier columns
+        $possibleUserColumns = @('User Principal Name', 'userPrincipalName', 'Owner Principal Name', 'Site URL')
+        foreach ($col in $possibleUserColumns) {
+            if ($firstRow.PSObject.Properties.Name -contains $col) {
+                $userIdColumn = $col
+                break
+            }
+        }
+        
+        if (-not $userIdColumn) {
+            Write-Host "    ⚠ No user identifier column found, using row index" -ForegroundColor Yellow
+            # For non-user reports (like SharePoint sites), use a placeholder key
+            $userIdColumn = '_NoUserKey_'
+        }
+        
+        # Add endpoint data to user records
+        foreach ($row in $data) {
+            # Get user identifier
+            if ($userIdColumn -eq '_NoUserKey_') {
+                # Non-user data - skip for combined output or handle specially
+                continue
+            }
+            
+            $userId = $row.$userIdColumn
+            if (-not $userId) {
+                continue
+            }
+            
+            # Normalize user ID (remove spaces, lowercase for matching)
+            $normalizedUserId = $userId.Trim().ToLower()
+            
+            # Initialize user record if not exists
+            if (-not $allUsers.ContainsKey($normalizedUserId)) {
+                $allUsers[$normalizedUserId] = [ordered]@{
+                    'UserPrincipalName' = $userId
+                }
+            }
+            
+            # Add all columns from this endpoint with prefix
+            foreach ($prop in $row.PSObject.Properties) {
+                if ($prop.Name -eq $userIdColumn) {
+                    # Skip the join column
+                    continue
+                }
+                
+                # Add prefixed column
+                $prefixedName = "$endpointName`_$($prop.Name)"
+                $allUsers[$normalizedUserId][$prefixedName] = $prop.Value
+            }
+        }
+    }
+    
+    Write-Host "`n  Collected $($allUsers.Count) unique users" -ForegroundColor Green
+    
+    # Convert to array of PSCustomObjects
+    Write-Host "  Building combined dataset..." -ForegroundColor White
+    $combinedData = @()
+    foreach ($userId in $allUsers.Keys) {
+        $combinedData += [PSCustomObject]$allUsers[$userId]
+    }
+    
+    # Export combined file
+    try {
+        Write-Host "  Exporting to CSV..." -ForegroundColor White
+        $combinedData | Export-Csv -Path $combinedFilePath -NoTypeInformation -Force
+        
+        $columnCount = $combinedData[0].PSObject.Properties.Count
+        Write-Host "`n  ✓ Combined file saved!" -ForegroundColor Green
+        Write-Host "    File: $combinedFileName" -ForegroundColor White
+        Write-Host "    Rows: $($combinedData.Count)" -ForegroundColor White
+        Write-Host "    Columns: $columnCount" -ForegroundColor White
+        Write-Host "    Location: $OutputPath" -ForegroundColor Gray
+        Write-Host ""
+    }
+    catch {
+        Write-Host "  ✗ Error saving combined file: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host ""
+    }
 }
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Phase 5 Complete: Entra Users Enrichment" -ForegroundColor Cyan
+Write-Host "All Phases Complete!" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 
 # Disconnect from Graph
