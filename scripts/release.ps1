@@ -136,6 +136,9 @@ function Get-FilesForScriptType {
             $file = $line.Substring(3).Trim()
         }
         
+        # Normalize path separators to forward slashes for consistent matching
+        $file = $file -replace '\\', '/'
+        
         $isRelevant = $false
         
         switch ($ScriptType) {
