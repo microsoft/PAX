@@ -125,15 +125,16 @@ function Get-FilesForScriptType {
     
     foreach ($change in $allChanges) {
         # Parse git status format: "XY filename" or "XY oldname -> newname"
-        $line = $change.Trim()
+        # Format is: " M filename" or "MM filename" (2 status chars + space + filename)
+        $line = $change
         $file = ""
         
         if ($line -match '->') {
             # Rename: "R  old -> new"
             $file = ($line -split '->')[1].Trim()
         } else {
-            # Regular change: "M  filename" or "A  filename"
-            $file = $line.Substring(3).Trim()
+            # Regular change: "XY filename" - skip first 3 characters (status + space)
+            $file = $line.Substring(3)
         }
         
         # Normalize path separators to forward slashes for consistent matching
@@ -1858,20 +1859,19 @@ function New-CommitAndTag {
     # Stage only the relevant files based on ScriptType
     Write-Status "Staging $ScriptType files for commit..."
     foreach ($fileStatus in $FileCategories.Relevant) {
-        # Parse git status format to get actual filename
-        $line = $fileStatus.Trim()
+        # Parse git status format: "XY filename" (2 status chars + space + filename)
         $file = ""
         
-        if ($line -match '->') {
+        if ($fileStatus -match '->') {
             # Rename: "R  old -> new" - stage both old and new
-            $parts = $line -split '->'
-            $oldFile = ($parts[0] -replace '^.\s+', '').Trim()
+            $parts = $fileStatus -split '->'
+            $oldFile = ($parts[0].Substring(3)).Trim()
             $newFile = $parts[1].Trim()
             git add $oldFile $newFile 2>$null
             Write-Status "Staged rename: $oldFile -> $newFile"
         } else {
-            # Regular change: "M  filename" or "A  filename" or "D  filename"
-            $file = $line.Substring(3).Trim()
+            # Regular change: " M filename" - skip first 3 chars (space + status + space)
+            $file = $fileStatus.Substring(3)
             git add $file 2>$null
             Write-Status "Staged: $file"
         }
