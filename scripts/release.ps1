@@ -1,8 +1,13 @@
 # PAX Version Bump and Release Script (PowerShell)
 # Automatically updates version numbers in package.json, tauri.conf.json, and Cargo.toml
 # Commits changes and triggers GitHub release workflow
+# Supports Umbrella, Purview, and Graph script types for selective file syncing
 
 param(
+    [Parameter(Mandatory=$true)]
+    [ValidateSet('Umbrella', 'Purview', 'Graph')]
+    [string]$ScriptType,
+    
     [switch]$Patch,
     [switch]$Minor, 
     [switch]$Major,
@@ -19,6 +24,7 @@ $ScriptName = "PAX Release Script"
 $ScriptRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $ScriptRoot
 
+$VersionsManifest = "versions.json"
 $PackageJson = "package.json"
 $TauriConf = "src-tauri/tauri.conf.json"
 $CargoToml = "src-tauri/Cargo.toml"
@@ -101,9 +107,155 @@ function Write-Header {
     Write-Host ""
 }
 
+# Function to categorize files by ScriptType
+function Get-FilesForScriptType {
+    param([string]$ScriptType)
+    
+    # Get all changed files
+    $allChanges = git status --porcelain
+    if (-not $allChanges) {
+        return @{
+            Relevant = @()
+            Other = @()
+        }
+    }
+    
+    $relevantFiles = @()
+    $otherFiles = @()
+    
+    foreach ($change in $allChanges) {
+        # Parse git status format: "XY filename" or "XY oldname -> newname"
+        $line = $change.Trim()
+        $file = ""
+        
+        if ($line -match '->') {
+            # Rename: "R  old -> new"
+            $file = ($line -split '->')[1].Trim()
+        } else {
+            # Regular change: "M  filename" or "A  filename"
+            $file = $line.Substring(3).Trim()
+        }
+        
+        $isRelevant = $false
+        
+        switch ($ScriptType) {
+            "Umbrella" {
+                # Umbrella includes core root files and shared parent folders
+                # NOTE: scripts/ folder is DEV-ONLY (PAX branch) and NOT synced to release
+                $isRelevant = ($file -match '^\.gitattributes$') -or
+                              ($file -match '^CODE_OF_CONDUCT\.md$') -or
+                              ($file -match '^CONTRIBUTORS\.md$') -or
+                              ($file -match '^LICENSE$') -or
+                              ($file -match '^README\.md$') -or
+                              ($file -match '^SECURITY\.md$') -or
+                              ($file -match '^\.github/') -or
+                              # Parent folders but NOT Purview/Graph subfolders
+                              (($file -match '^release_documentation/') -and ($file -notmatch '/(Purview|Graph)_Audit_Log_Processor/')) -or
+                              (($file -match '^release_notes/') -and ($file -notmatch '/(Purview|Graph)_Audit_Log_Processor/')) -or
+                              (($file -match '^script_archive/') -and ($file -notmatch '/(Purview|Graph)_Audit_Log_Processor/'))
+            }
+            "Purview" {
+                # Purview includes Purview-specific files
+                $isRelevant = ($file -match '^PAX_Purview_Audit_Log_Processor_v.*\.ps1$') -or
+                              ($file -match '^PAX_Purview_Documentation_v.*\.pdf$') -or
+                              ($file -match '^README-Purview\.md$') -or
+                              ($file -match '^release_documentation/Purview_Audit_Log_Processor/') -or
+                              ($file -match '^release_notes/Purview_Audit_Log_Processor/') -or
+                              ($file -match '^script_archive/Purview_Audit_Log_Processor/')
+            }
+            "Graph" {
+                # Graph includes Graph-specific files
+                $isRelevant = ($file -match '^PAX_Graph_Audit_Log_Processor_v.*\.ps1$') -or
+                              ($file -match '^PAX_Graph_Documentation_v.*\.pdf$') -or
+                              ($file -match '^README-Graph\.md$') -or
+                              ($file -match '^release_documentation/Graph_Audit_Log_Processor/') -or
+                              ($file -match '^release_notes/Graph_Audit_Log_Processor/') -or
+                              ($file -match '^script_archive/Graph_Audit_Log_Processor/')
+            }
+        }
+        
+        if ($isRelevant) {
+            $relevantFiles += $line
+        } else {
+            $otherFiles += $line
+        }
+    }
+    
+    return @{
+        Relevant = $relevantFiles
+        Other = $otherFiles
+    }
+}
+
+# Function to clean up old temporary branches
+function Remove-OldTempBranches {
+    Write-Status "Checking for old temporary branches to clean up..."
+    
+    $gh = Get-GitHubCLI
+    if (-not $gh) {
+        Write-Warning "GitHub CLI not found - skipping temp branch cleanup"
+        return
+    }
+    
+    # Get all temp branches from microsoft/PAX
+    Write-Status "Checking microsoft/PAX for merged/closed temp branches..."
+    $remoteBranches = git ls-remote --heads origin 2>$null | Where-Object { $_ -match "release-sync-" }
+    
+    $deletedCount = 0
+    foreach ($branchLine in $remoteBranches) {
+        if ($branchLine -match "refs/heads/(.+)$") {
+            $branchName = $matches[1]
+            
+            # Check if there's a PR for this branch
+            $prInfo = & $gh pr list --repo microsoft/PAX --head $branchName --state all --json state,number --jq '.[0] | "\(.state)|\(.number)"' 2>$null
+            
+            if ($prInfo) {
+                $state, $prNum = $prInfo -split '\|'
+                
+                if ($state -eq "MERGED" -or $state -eq "CLOSED") {
+                    Write-Status "Deleting merged/closed temp branch: $branchName (PR #$prNum - $state)"
+                    git push origin --delete $branchName 2>$null
+                    if ($LASTEXITCODE -eq 0) {
+                        $deletedCount++
+                    }
+                }
+            }
+        }
+    }
+    
+    # Clean up Rance9/PAX by pruning stale branches
+    Write-Status "Pruning stale remote tracking branches from Rance9/PAX..."
+    git remote prune backup 2>$null | Out-Null
+    
+    # Delete local temp branches that no longer have remotes
+    Write-Status "Cleaning up local temp branches..."
+    $localBranches = git branch | Where-Object { $_ -match "release-sync-" }
+    foreach ($branchLine in $localBranches) {
+        $branchName = $branchLine.Trim().TrimStart('* ')
+        
+        # Check if remote branch still exists on either repo
+        $originExists = git ls-remote --heads origin "refs/heads/$branchName" 2>$null
+        $backupExists = git ls-remote --heads backup "refs/heads/$branchName" 2>$null
+        
+        if (-not $originExists -and -not $backupExists) {
+            Write-Status "Deleting local branch with no remote: $branchName"
+            git branch -D $branchName 2>$null | Out-Null
+        }
+    }
+    
+    if ($deletedCount -gt 0) {
+        Write-Success "Cleaned up $deletedCount temp branch(es)"
+    } else {
+        Write-Status "No temp branches to clean up"
+    }
+}
+
 # Function to show usage
 function Show-Usage {
-    Write-Host "Usage: .\release.ps1 [OPTIONS]"
+    Write-Host "Usage: .\release.ps1 -ScriptType <Umbrella|Purview|Graph> [OPTIONS]"
+    Write-Host ""
+    Write-Host "Parameters:"
+    Write-Host "  -ScriptType     Type of changes (Umbrella, Purview, or Graph) [REQUIRED]"
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  -Patch          Increment patch version (1.0.21 → 1.0.22) [DEFAULT]"
@@ -114,25 +266,124 @@ function Show-Usage {
     Write-Host "  -Help           Show this help message"
     Write-Host ""
     Write-Host "Examples:"
-    Write-Host "  .\release.ps1 -Patch -ReleaseNotes 'Bug fixes for export script'"
-    Write-Host "  .\release.ps1 -Minor -ReleaseNotes 'Added agent filtering feature'"
-    Write-Host "  .\release.ps1 -Major -ReleaseNotes 'Major UI overhaul and new features'"
+    Write-Host "  .\release.ps1 -ScriptType Umbrella -Patch -ReleaseNotes 'Updated core documentation'"
+    Write-Host "  .\release.ps1 -ScriptType Purview -Minor -ReleaseNotes 'Added agent filtering feature'"
+    Write-Host "  .\release.ps1 -ScriptType Graph -Major -ReleaseNotes 'Initial Graph processor release'"
+    Write-Host ""
+    Write-Host "Commit Message Format:"
+    Write-Host "  Umbrella: PAX-v1.0.0"
+    Write-Host "  Purview:  purview-v1.7.0"
+    Write-Host "  Graph:    graph-v0.1.0"
+    Write-Host ""
+    Write-Host "File Categories & Release Branch Sync:"
+    Write-Host "  Umbrella - Root governance files (LICENSE, README.md, CODE_OF_CONDUCT, etc.)"
+    Write-Host "             Plus parent folder .gitkeep files (release_documentation/, release_notes/, script_archive/)"
+    Write-Host "             Does NOT sync product subfolders (those use product-specific commits)"
+    Write-Host "             Excludes: Product scripts in root, scripts/ folder (dev-only)"
+    Write-Host ""
+    Write-Host "  Purview  - Purview script in root + Purview subfolders ONLY"
+    Write-Host "             (release_documentation/Purview_Audit_Log_Processor/, etc.)"
+    Write-Host "             Does NOT sync root governance files or parent folders"
+    Write-Host ""
+    Write-Host "  Graph    - Graph script in root + Graph subfolders ONLY"
+    Write-Host "             (release_documentation/Graph_Audit_Log_Processor/, etc.)"
+    Write-Host "             Does NOT sync root governance files or parent folders"
     Write-Host ""
 }
 
-# Function to get current version from package.json
+# Function to get current version from versions.json manifest (Single Source of Truth)
 function Get-CurrentVersion {
-    if (-not (Test-Path $PackageJson)) {
-        Write-Error "package.json not found!"
+    param([string]$ScriptType)
+    
+    if (-not (Test-Path $VersionsManifest)) {
+        Write-Error "Version manifest not found: $VersionsManifest"
+        Write-Host "Please ensure versions.json exists in the repository root." -ForegroundColor Yellow
         exit 1
     }
     
     try {
-        $packageContent = Get-Content $PackageJson -Raw | ConvertFrom-Json
-        return $packageContent.version
+        $manifest = Get-Content $VersionsManifest -Raw | ConvertFrom-Json
+        
+        switch ($ScriptType) {
+            "Umbrella" {
+                $version = $manifest.products.pax.version
+                if (-not $version) {
+                    Write-Error "PAX version not found in $VersionsManifest"
+                    exit 1
+                }
+                return $version
+            }
+            "Purview" {
+                $version = $manifest.products.purview.version
+                if (-not $version) {
+                    Write-Error "Purview version not found in $VersionsManifest"
+                    exit 1
+                }
+                return $version
+            }
+            "Graph" {
+                $version = $manifest.products.graph.version
+                if (-not $version) {
+                    Write-Error "Graph version not found in $VersionsManifest"
+                    exit 1
+                }
+                return $version
+            }
+        }
     }
     catch {
-        Write-Error "Failed to read version from $PackageJson"
+        Write-Error "Failed to read version manifest: $($_.Exception.Message)"
+        exit 1
+    }
+}
+
+# Function to update version in versions.json manifest
+function Update-VersionsManifest {
+    param(
+        [string]$ScriptType,
+        [string]$NewVersion
+    )
+    
+    if (-not (Test-Path $VersionsManifest)) {
+        Write-Error "Version manifest not found: $VersionsManifest"
+        exit 1
+    }
+    
+    try {
+        $manifest = Get-Content $VersionsManifest -Raw | ConvertFrom-Json
+        
+        # Update version based on ScriptType
+        switch ($ScriptType) {
+            "Umbrella" {
+                $manifest.products.pax.version = $NewVersion
+                Write-Status "Updated PAX version in manifest: $NewVersion"
+            }
+            "Purview" {
+                $manifest.products.purview.version = $NewVersion
+                $manifest.products.purview.releaseDate = (Get-Date).ToString("yyyy-MM-dd")
+                Write-Status "Updated Purview version in manifest: $NewVersion"
+            }
+            "Graph" {
+                $manifest.products.graph.version = $NewVersion
+                $manifest.products.graph.releaseDate = (Get-Date).ToString("yyyy-MM-dd")
+                Write-Status "Updated Graph version in manifest: $NewVersion"
+            }
+        }
+        
+        # Update lastUpdated timestamp
+        $manifest.lastUpdated = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+        
+        # Save back to file with proper formatting
+        $jsonOutput = $manifest | ConvertTo-Json -Depth 20
+        $jsonOutput | Set-Content $VersionsManifest -Encoding UTF8
+        Write-Success "Updated version manifest: $VersionsManifest"
+        
+        # Stage the manifest file for commit
+        git add $VersionsManifest 2>$null
+        Write-Success "Staged version manifest for commit"
+    }
+    catch {
+        Write-Error "Failed to update version manifest: $($_.Exception.Message)"
         exit 1
     }
 }
@@ -247,11 +498,38 @@ function Update-CargoVersion {
 # Function to update version in the audit export PowerShell script (both static header and dynamic variable)
 function Update-ExportScriptVersion {
     param(
-        [string]$NewVersion
+        [string]$NewVersion,
+        [string]$ScriptType
     )
 
+    # Umbrella commits don't have scripts to version
+    if ($ScriptType -eq "Umbrella") {
+        Write-Status "Umbrella commit - no script versioning needed"
+        return
+    }
+
+    # Determine script pattern, filenames, and paths based on ScriptType
+    $scriptPattern = switch ($ScriptType) {
+        "Purview" { "PAX_Purview_Audit_Log_Processor_v*.ps1" }
+        "Graph"   { "PAX_Graph_Audit_Log_Processor_v*.ps1" }
+    }
+    
+    $scriptPrefix = switch ($ScriptType) {
+        "Purview" { "PAX_Purview_Audit_Log_Processor" }
+        "Graph"   { "PAX_Graph_Audit_Log_Processor" }
+    }
+    
+    $processorType = switch ($ScriptType) {
+        "Purview" { "Purview Audit Log Processor" }
+        "Graph"   { "Graph Audit Log Processor" }
+    }
+    
+    $archiveFolder = switch ($ScriptType) {
+        "Purview" { "script_archive/Purview_Audit_Log_Processor" }
+        "Graph"   { "script_archive/Graph_Audit_Log_Processor" }
+    }
+
     # Find existing versioned script file in root
-    $scriptPattern = "PAX_Purview_Audit_Log_Processor_v*.ps1"
     $existingScript = Get-ChildItem -Path $scriptPattern -ErrorAction SilentlyContinue | Select-Object -First 1
     
     if (-not $existingScript) {
@@ -261,24 +539,23 @@ function Update-ExportScriptVersion {
 
     $oldPath = $existingScript.FullName
     $oldFilename = $existingScript.Name
-    $newFilename = "PAX_Purview_Audit_Log_Processor_v$NewVersion.ps1"
+    $newFilename = "${scriptPrefix}_v$NewVersion.ps1"
     $newPath = Join-Path (Get-Location) $newFilename
     
     # Extract old version from filename for verification
     if ($oldFilename -match "v([\d\.]+)\.ps1$") {
         $oldVersion = $matches[1]
-        Write-Status "Current script version: v$oldVersion"
+        Write-Status "Current $ScriptType script version: v$oldVersion"
     }
     
-    Write-Status "Updating export script: $oldFilename -> $newFilename"
+    Write-Status "Updating $ScriptType export script: $oldFilename -> $newFilename"
 
     try {
-        # STEP 1: Archive old version to script_archive/Purview_Audit_Log_Processor folder (PAX branch only)
+        # STEP 1: Archive old version to script_archive folder (PAX branch only)
         if ($oldPath -ne $newPath) {
-            $archiveFolder = "script_archive/Purview_Audit_Log_Processor"
             if (-not (Test-Path $archiveFolder)) {
                 New-Item -Path $archiveFolder -ItemType Directory -Force | Out-Null
-                Write-Success "Created script archive folder"
+                Write-Success "Created script archive folder: $archiveFolder"
             }
             
             $archivePath = Join-Path $archiveFolder $oldFilename
@@ -291,10 +568,10 @@ function Update-ExportScriptVersion {
         $updated = $false
         
         # Update static version comment at top of file (line 1)
-        # Pattern: # Portable Audit eXporter (PAX) - Purview Audit Log Processor - vX.X.X
-        $staticPattern = "(?m)^#\s*Portable Audit eXporter \(PAX\) - Purview Audit Log Processor - v[\d\.]+\s*$"
+        # Pattern: # Portable Audit eXporter (PAX) - [Purview|Graph] Audit Log Processor - vX.X.X
+        $staticPattern = "(?m)^#\s*Portable Audit eXporter \(PAX\) - $processorType - v[\d\.]+\s*$"
         if ($content -match $staticPattern) {
-            $staticReplacement = "# Portable Audit eXporter (PAX) - Purview Audit Log Processor - v$NewVersion"
+            $staticReplacement = "# Portable Audit eXporter (PAX) - $processorType - v$NewVersion"
             $content = [regex]::Replace($content, $staticPattern, $staticReplacement, 1)
             $updated = $true
             Write-Success "Updated static version header to v$NewVersion"
@@ -314,8 +591,8 @@ function Update-ExportScriptVersion {
         }
         
         # Update all example command references in the script help section
-        # Replace PAX_Purview_Audit_Log_Processor_vX.X.X.ps1 with new version
-        $scriptNamePattern = "PAX_Purview_Audit_Log_Processor_v[\d\.]+\.ps1"
+        # Replace [PAX_Purview|PAX_Graph]_Audit_Log_Processor_vX.X.X.ps1 with new version
+        $scriptNamePattern = "${scriptPrefix}_v[\d\.]+\.ps1"
         if ($content -match $scriptNamePattern) {
             $content = [regex]::Replace($content, $scriptNamePattern, $newFilename)
             Write-Success "Updated script filename references in help examples"
@@ -326,10 +603,10 @@ function Update-ExportScriptVersion {
             $content | Set-Content -Path $newPath -Encoding UTF8 -NoNewline
             Write-Success "Saved updated script to: $newFilename"
             
-            # Remove old file from root (already archived in script_archive/Purview_Audit_Log_Processor)
+            # Remove old file from root (already archived)
             if ($oldPath -ne $newPath) {
                 Remove-Item -Path $oldPath -Force
-                Write-Success "Removed old script from root: $oldFilename (archived in script_archive/Purview_Audit_Log_Processor)"
+                Write-Success "Removed old script from root: $oldFilename (archived in $archiveFolder)"
             }
         }
         else {
@@ -386,7 +663,7 @@ function Update-ReadmeVersion {
         }
         
         # Update Quick Start download link version (keeps full URL structure)
-        $quickStartPattern = "(\[``PAX_Purview_Audit_Log_Processor_v)[\d\.]+\.ps1``\]\(https://github\.com/microsoft/PAX/blob/release/script_archive/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_v)[\d\.]+\.ps1\)"
+        $quickStartPattern = "(\[``PAX_Purview_Audit_Log_Processor_v)[\d\.]+\.ps1``\]\(https://github\.com/microsoft/PAX/blob/release/script_archive/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_v[\d\.]+\.ps1\)"
         if ($content -match $quickStartPattern) {
             $newQuickStartLink = "`${1}$NewVersion.ps1``](https://github.com/microsoft/PAX/blob/release/script_archive/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_v$NewVersion.ps1)"
             $content = [regex]::Replace($content, $quickStartPattern, $newQuickStartLink)
@@ -413,16 +690,35 @@ function Update-ReadmeVersion {
 function New-ReleaseNotesFile {
     param(
         [string]$NewVersion,
-        [string]$ReleaseDescription
+        [string]$ReleaseDescription,
+        [string]$ScriptType
     )
     
-    Write-Status "Generating release notes for v$NewVersion..."
+    Write-Status "Generating release notes for $ScriptType v$NewVersion..."
+    
+    # Determine folder and paths based on ScriptType
+    $releaseNotesFolder = switch ($ScriptType) {
+        "Purview"  { "release_notes\Purview_Audit_Log_Processor" }
+        "Graph"    { "release_notes\Graph_Audit_Log_Processor" }
+        "Umbrella" { "release_notes" }
+    }
+    
+    $scriptPrefix = switch ($ScriptType) {
+        "Purview"  { "PAX_Purview_Audit_Log_Processor" }
+        "Graph"    { "PAX_Graph_Audit_Log_Processor" }
+        "Umbrella" { $null }
+    }
+    
+    $processorPath = switch ($ScriptType) {
+        "Purview"  { "Purview_Audit_Log_Processor" }
+        "Graph"    { "Graph_Audit_Log_Processor" }
+        "Umbrella" { $null }
+    }
     
     # Create release_notes folder if it doesn't exist
-    $releaseNotesFolder = "release_notes\Purview_Audit_Log_Processor"
     if (-not (Test-Path $releaseNotesFolder)) {
         New-Item -Path $releaseNotesFolder -ItemType Directory -Force | Out-Null
-        Write-Success "Created release_notes\Purview_Audit_Log_Processor folder"
+        Write-Success "Created $releaseNotesFolder folder"
     }
     
     # Get GitHub username from git config
@@ -547,31 +843,63 @@ $($commits -join "`n")
 
 ---
 
+"@
+    
+    # Add Installation and Support sections based on ScriptType
+    if ($ScriptType -eq "Umbrella") {
+        # Umbrella releases are for core files, not scripts
+        $releaseNotesContent += @"
 ## Installation
 
-### Download v$NewVersion (This Version)
-This release note documents **version $NewVersion**. Use the direct download links below to obtain this specific version:
+This is an **Umbrella release** for core PAX repository files (governance, documentation structure, workflows, etc.).
 
-- **Script v$NewVersion**: [PAX_Purview_Audit_Log_Processor_v$NewVersion.ps1](https://github.com/microsoft/PAX/blob/release/script_archive/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_v$NewVersion.ps1)
-- **Documentation v$NewVersion**: [PAX_Documentation_v$NewVersion.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PDF/PAX_Documentation_v$NewVersion.pdf)
-
-### Get Latest Version
-For the most recent release, visit:
-- **Latest Script Archive**: [Microsoft PAX Repository - Script Archive](https://github.com/microsoft/PAX/tree/release/script_archive/Purview_Audit_Log_Processor)
-- **All Release Notes**: [Microsoft PAX Repository - Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
+For the latest scripts, visit:
+- **Purview Script Archive**: [Microsoft PAX Repository - Purview Scripts](https://github.com/microsoft/PAX/tree/release/script_archive/Purview_Audit_Log_Processor)
+- **Graph Script Archive**: [Microsoft PAX Repository - Graph Scripts](https://github.com/microsoft/PAX/tree/release/script_archive/Graph_Audit_Log_Processor)
+- **All Release Notes**: [Microsoft PAX Repository - Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes)
 
 ---
 
 ## Support
 
 For questions or issues, refer to the documentation:
-- **Documentation v$NewVersion (PDF)**: [PAX_Documentation_v$NewVersion.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PDF/PAX_Documentation_v$NewVersion.pdf)
-- **Documentation v$NewVersion (Markdown)**: [PAX_Documentation_v$NewVersion.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v$NewVersion.md)
+- **Purview Documentation**: [Microsoft PAX Repository - Purview Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
+- **Graph Documentation**: [Microsoft PAX Repository - Graph Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Graph_Audit_Log_Processor)
 
 ---
 
-*Managed and released by the Microsoft Copilot Growth ROI Advisory Team. Please reach out to [Brian Middendorf](mailto:bmiddendorf@microsoft.com?subject=Microsoft%20PAX%3A%20Purview%20Audit%20Log%20Processor%20v$NewVersion%20Feedback) with any feedback.*
+*Managed and released by the Microsoft Copilot Growth ROI Advisory Team. Please reach out to [Brian Middendorf](mailto:bmiddendorf@microsoft.com?subject=Microsoft%20PAX%3A%20Umbrella%20Release%20v$NewVersion%20Feedback) with any feedback.*
 "@
+    }
+    else {
+        # Purview or Graph releases
+        $releaseNotesContent += @"
+## Installation
+
+### Download v$NewVersion (This Version)
+This release note documents **version $NewVersion**. Use the direct download links below to obtain this specific version:
+
+- **Script v$NewVersion**: [${scriptPrefix}_v$NewVersion.ps1](https://github.com/microsoft/PAX/blob/release/script_archive/$processorPath/${scriptPrefix}_v$NewVersion.ps1)
+- **Documentation v$NewVersion**: [PAX_Documentation_v$NewVersion.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/$processorPath/PDF/PAX_Documentation_v$NewVersion.pdf)
+
+### Get Latest Version
+For the most recent release, visit:
+- **Latest Script Archive**: [Microsoft PAX Repository - Script Archive](https://github.com/microsoft/PAX/tree/release/script_archive/$processorPath)
+- **All Release Notes**: [Microsoft PAX Repository - Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/$processorPath)
+
+---
+
+## Support
+
+For questions or issues, refer to the documentation:
+- **Documentation v$NewVersion (PDF)**: [PAX_Documentation_v$NewVersion.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/$processorPath/PDF/PAX_Documentation_v$NewVersion.pdf)
+- **Documentation v$NewVersion (Markdown)**: [PAX_Documentation_v$NewVersion.md](https://github.com/microsoft/PAX/blob/release/release_documentation/$processorPath/MD/PAX_Documentation_v$NewVersion.md)
+
+---
+
+*Managed and released by the Microsoft Copilot Growth ROI Advisory Team. Please reach out to [Brian Middendorf](mailto:bmiddendorf@microsoft.com?subject=Microsoft%20PAX%3A%20$ScriptType%20Audit%20Log%20Processor%20v$NewVersion%20Feedback) with any feedback.*
+"@
+    }
     
     # Save release notes file
     $releaseNotesFile = Join-Path $releaseNotesFolder "v$NewVersion.md"
@@ -586,7 +914,10 @@ For questions or issues, refer to the documentation:
 }
 
 # Function to validate git status
+# Function to validate git status
 function Test-GitStatus {
+    param([string]$ScriptType)
+    
     try {
         git rev-parse --git-dir | Out-Null
     }
@@ -595,30 +926,429 @@ function Test-GitStatus {
         exit 1
     }
     
-    # Check for uncommitted changes and show what will be included in the release
+    # Check current branch
+    $currentBranch = git rev-parse --abbrev-ref HEAD
+    if ($currentBranch -ne "PAX") {
+        Write-Error "Must be on PAX branch. Current branch: $currentBranch"
+        Write-Host "Switch to PAX branch: git checkout PAX" -ForegroundColor Yellow
+        exit 1
+    }
+    
+    # Check for uncommitted changes
     $status = git status --porcelain
     
-    if ($status) {
-        Write-Warning "You have uncommitted changes other than version files."
-        Write-Host "Files that will be included in this release:" -ForegroundColor Yellow
+    if (-not $status) {
+        Write-Error "No changes detected. Nothing to commit."
+        exit 1
+    }
+    
+    # Smart file filtering
+    Write-Status "Analyzing changed files for ScriptType: $ScriptType"
+    $fileCategories = Get-FilesForScriptType -ScriptType $ScriptType
+    
+    if ($fileCategories.Relevant.Count -eq 0) {
+        Write-Error "No $ScriptType-related files have changed."
+        Write-Host ""
+        Write-Host "Changed files detected:" -ForegroundColor Yellow
         $status | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
         Write-Host ""
-        $response = Read-Host "Do you want to continue? [y/N]"
-        if ($response -notmatch "^[Yy]$") {
-            Write-Error "Aborting due to uncommitted changes"
-            exit 1
-        }
-        Write-Status "Will commit all changes as part of this release"
+        Write-Host "These files do not match the -ScriptType $ScriptType category." -ForegroundColor Yellow
+        Write-Host "Please specify the correct -ScriptType for these files." -ForegroundColor Yellow
+        exit 1
     }
-    else {
-        Write-Status "Git working directory is clean"
+    
+    Write-Host ""
+    Write-Host "Files to commit for ${ScriptType}:" -ForegroundColor Green
+    $fileCategories.Relevant | ForEach-Object { Write-Host "  $_" -ForegroundColor Green }
+    
+    if ($fileCategories.Other.Count -gt 0) {
+        Write-Host ""
+        Write-Host "⚠️  WARNING: Other uncommitted files NOT included in this commit:" -ForegroundColor Yellow
+        $fileCategories.Other | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+        Write-Host ""
+        Write-Host "These files will require separate commits with appropriate -ScriptType:" -ForegroundColor Yellow
+        
+        # Suggest appropriate ScriptType for other files
+        $hasUmbrella = $fileCategories.Other | Where-Object { $_ -match '(README\.md|LICENSE|CODE_OF_CONDUCT|SECURITY|CONTRIBUTORS|\.gitattributes|\.github/)' }
+        $hasPurview = $fileCategories.Other | Where-Object { $_ -match 'Purview|purview' }
+        $hasGraph = $fileCategories.Other | Where-Object { $_ -match 'Graph|graph' }
+        $hasDevOnly = $fileCategories.Other | Where-Object { $_ -match '^scripts/' }
+        
+        if ($hasUmbrella) {
+            Write-Host "  → Run with -ScriptType Umbrella for core files" -ForegroundColor Cyan
+        }
+        if ($hasPurview) {
+            Write-Host "  → Run with -ScriptType Purview for Purview files" -ForegroundColor Cyan
+        }
+        if ($hasGraph) {
+            Write-Host "  → Run with -ScriptType Graph for Graph files" -ForegroundColor Cyan
+        }
+        if ($hasDevOnly) {
+            Write-Host "  → scripts/ folder changes stay on PAX branch only (not synced to release)" -ForegroundColor Magenta
+        }
+        Write-Host ""
+    }
+    
+    $response = Read-Host "Continue and commit ONLY the $ScriptType files listed above? [y/N]"
+    if ($response -notmatch "^[Yy]$") {
+        Write-Error "Aborting - no files committed"
+        exit 1
+    }
+    
+    return $fileCategories
+}
+
+# Function to sync files from PAX branch to release worktree based on ScriptType
+function Sync-ReleaseWorktreeFiles {
+    param(
+        [string]$ReleaseWorktreePath,
+        [string]$ScriptType,
+        [string]$NewVersion
+    )
+    
+    Write-Status "Syncing files to release worktree (ScriptType: $ScriptType)..."
+    
+    # Core root files (governance) - ONLY for Umbrella releases
+    $coreFiles = @{
+        ".gitattributes" = ".gitattributes"
+        ".github/workflows/build-release.yml" = ".github/workflows/build-release.yml"
+        "CODE_OF_CONDUCT.md" = "CODE_OF_CONDUCT.md"
+        "CONTRIBUTORS.md" = "CONTRIBUTORS.md"
+        "LICENSE" = "LICENSE"
+        "README.md" = "README.md"
+        "SECURITY.md" = "SECURITY.md"
+    }
+    
+    $filesToSync = @{}
+    
+    # Add core files ONLY for Umbrella (root governance files = PAX branding only)
+    if ($ScriptType -eq "Umbrella") {
+        $coreFiles.GetEnumerator() | ForEach-Object { $filesToSync[$_.Key] = $_.Value }
+    }
+    
+    # Add script-specific files (scripts in root = product branding)
+    if ($ScriptType -eq "Purview") {
+        # Find the current versioned Purview script file
+        $scriptPattern = "PAX_Purview_Audit_Log_Processor_v*.ps1"
+        $currentScript = Get-ChildItem -Path $scriptPattern -ErrorAction SilentlyContinue | Select-Object -First 1
+        
+        if ($currentScript) {
+            $filesToSync[$currentScript.Name] = $currentScript.Name
+            Write-Status "Found Purview script: $($currentScript.Name)"
+        }
+        
+        # Add versioned PDF
+        $pdfFilename = "PAX_Documentation_v${NewVersion}.pdf"
+        $filesToSync[$pdfFilename] = $pdfFilename
+        Write-Status "PDF file to sync: $pdfFilename"
+    }
+    elseif ($ScriptType -eq "Graph") {
+        # Find the current versioned Graph script file
+        $scriptPattern = "PAX_Graph_Audit_Log_Processor_v*.ps1"
+        $currentScript = Get-ChildItem -Path $scriptPattern -ErrorAction SilentlyContinue | Select-Object -First 1
+        
+        if ($currentScript) {
+            $filesToSync[$currentScript.Name] = $currentScript.Name
+            Write-Status "Found Graph script: $($currentScript.Name)"
+        }
+        
+        # Add versioned PDF if it exists
+        $pdfFilename = "PAX_Documentation_v${NewVersion}.pdf"
+        if (Test-Path $pdfFilename) {
+            $filesToSync[$pdfFilename] = $pdfFilename
+            Write-Status "PDF file to sync: $pdfFilename"
+        }
+    }
+    # Umbrella type only syncs core files (already added above)
+    
+    # Copy individual files
+    foreach ($sourceFile in $filesToSync.Keys) {
+        $destFile = $filesToSync[$sourceFile]
+        $sourcePath = Join-Path (Get-Location) $sourceFile
+        $destPath = Join-Path $ReleaseWorktreePath $destFile
+        
+        if (Test-Path $sourcePath) {
+            $destDir = Split-Path $destPath -Parent
+            if (-not (Test-Path $destDir)) {
+                New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+            }
+            Copy-Item -Path $sourcePath -Destination $destPath -Force
+            Write-Success "✓ Synced $destFile"
+        }
+        else {
+            Write-Warning "Source file not found: $sourceFile (skipping)"
+        }
+    }
+    
+    # Sync product subfolders based on script type
+    # Umbrella does NOT sync product subfolders (only parent .gitkeep files via Add-VersionMarkers)
+    # Purview syncs Purview subfolders only
+    # Graph syncs Graph subfolders only
+    
+    if ($ScriptType -eq "Purview") {
+        # Sync Purview documentation folder
+        $sourceDocFolder = "release_documentation\Purview_Audit_Log_Processor"
+        $destDocFolder = Join-Path $ReleaseWorktreePath $sourceDocFolder
+        if (Test-Path $sourceDocFolder) {
+            if (-not (Test-Path $destDocFolder)) {
+                New-Item -ItemType Directory -Path $destDocFolder -Recurse -Force | Out-Null
+            }
+            # Copy entire folder structure (MD and PDF subfolders)
+            Get-ChildItem -Path $sourceDocFolder -Recurse -File | ForEach-Object {
+                $relativePath = $_.FullName.Substring((Get-Location).Path.Length + 1)
+                $destPath = Join-Path $ReleaseWorktreePath $relativePath
+                $destDir = Split-Path $destPath -Parent
+                if (-not (Test-Path $destDir)) {
+                    New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+                }
+                Copy-Item -Path $_.FullName -Destination $destPath -Force
+                Write-Success "✓ Synced $relativePath"
+            }
+        }
+        
+        # Sync Purview release notes folder
+        $sourceNotesFolder = "release_notes\Purview_Audit_Log_Processor"
+        $destNotesFolder = Join-Path $ReleaseWorktreePath $sourceNotesFolder
+        if (Test-Path $sourceNotesFolder) {
+            if (-not (Test-Path $destNotesFolder)) {
+                New-Item -ItemType Directory -Path $destNotesFolder -Force | Out-Null
+            }
+            Get-ChildItem -Path $sourceNotesFolder -File | ForEach-Object {
+                $relativePath = $_.FullName.Substring((Get-Location).Path.Length + 1)
+                $destPath = Join-Path $ReleaseWorktreePath $relativePath
+                Copy-Item -Path $_.FullName -Destination $destPath -Force
+                Write-Success "✓ Synced $relativePath"
+            }
+        }
+        
+        # Sync Purview script archive folder
+        $sourceArchiveFolder = "script_archive\Purview_Audit_Log_Processor"
+        $destArchiveFolder = Join-Path $ReleaseWorktreePath $sourceArchiveFolder
+        if (Test-Path $sourceArchiveFolder) {
+            if (-not (Test-Path $destArchiveFolder)) {
+                New-Item -ItemType Directory -Path $destArchiveFolder -Force | Out-Null
+            }
+            Get-ChildItem -Path $sourceArchiveFolder -File | ForEach-Object {
+                $relativePath = $_.FullName.Substring((Get-Location).Path.Length + 1)
+                $destPath = Join-Path $ReleaseWorktreePath $relativePath
+                Copy-Item -Path $_.FullName -Destination $destPath -Force
+                Write-Success "✓ Synced $relativePath"
+            }
+        }
+    }
+    
+    if ($ScriptType -eq "Graph") {
+        # Sync Graph documentation folder
+        $sourceDocFolder = "release_documentation\Graph_Audit_Log_Processor"
+        $destDocFolder = Join-Path $ReleaseWorktreePath $sourceDocFolder
+        if (Test-Path $sourceDocFolder) {
+            if (-not (Test-Path $destDocFolder)) {
+                New-Item -ItemType Directory -Path $destDocFolder -Recurse -Force | Out-Null
+            }
+            Get-ChildItem -Path $sourceDocFolder -Recurse -File | ForEach-Object {
+                $relativePath = $_.FullName.Substring((Get-Location).Path.Length + 1)
+                $destPath = Join-Path $ReleaseWorktreePath $relativePath
+                $destDir = Split-Path $destPath -Parent
+                if (-not (Test-Path $destDir)) {
+                    New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+                }
+                Copy-Item -Path $_.FullName -Destination $destPath -Force
+                Write-Success "✓ Synced $relativePath"
+            }
+        }
+        
+        # Sync Graph release notes folder
+        $sourceNotesFolder = "release_notes\Graph_Audit_Log_Processor"
+        $destNotesFolder = Join-Path $ReleaseWorktreePath $sourceNotesFolder
+        if (Test-Path $sourceNotesFolder) {
+            if (-not (Test-Path $destNotesFolder)) {
+                New-Item -ItemType Directory -Path $destNotesFolder -Force | Out-Null
+            }
+            Get-ChildItem -Path $sourceNotesFolder -File | ForEach-Object {
+                $relativePath = $_.FullName.Substring((Get-Location).Path.Length + 1)
+                $destPath = Join-Path $ReleaseWorktreePath $relativePath
+                Copy-Item -Path $_.FullName -Destination $destPath -Force
+                Write-Success "✓ Synced $relativePath"
+            }
+        }
+        
+        # Sync Graph script archive folder
+        $sourceArchiveFolder = "script_archive\Graph_Audit_Log_Processor"
+        $destArchiveFolder = Join-Path $ReleaseWorktreePath $sourceArchiveFolder
+        if (Test-Path $sourceArchiveFolder) {
+            if (-not (Test-Path $destArchiveFolder)) {
+                New-Item -ItemType Directory -Path $destArchiveFolder -Force | Out-Null
+            }
+            Get-ChildItem -Path $sourceArchiveFolder -File | ForEach-Object {
+                $relativePath = $_.FullName.Substring((Get-Location).Path.Length + 1)
+                $destPath = Join-Path $ReleaseWorktreePath $relativePath
+                Copy-Item -Path $_.FullName -Destination $destPath -Force
+                Write-Success "✓ Synced $relativePath"
+            }
+        }
+    }
+    
+    # Clean up old versioned files in release worktree root (keep only current version)
+    if ($ScriptType -eq "Purview") {
+        # Clean up old Purview scripts
+        $scriptFilename = (Get-ChildItem -Path "PAX_Purview_Audit_Log_Processor_v*.ps1" -ErrorAction SilentlyContinue | Select-Object -First 1).Name
+        if ($scriptFilename) {
+            Get-ChildItem -Path "$ReleaseWorktreePath/PAX_Purview_Audit_Log_Processor_v*.ps1" -ErrorAction SilentlyContinue | 
+                Where-Object { $_.Name -ne $scriptFilename } | 
+                ForEach-Object {
+                    Remove-Item $_.FullName -Force
+                    Write-Status "Removed old Purview script version: $($_.Name)"
+                }
+        }
+        
+        # Clean up old PDFs
+        $pdfFilename = "PAX_Documentation_v${NewVersion}.pdf"
+        Get-ChildItem -Path "$ReleaseWorktreePath/PAX_Documentation_v*.pdf" -ErrorAction SilentlyContinue | 
+            Where-Object { $_.Name -ne $pdfFilename } | 
+            ForEach-Object {
+                Remove-Item $_.FullName -Force
+                Write-Status "Removed old PDF version: $($_.Name)"
+            }
+    }
+    elseif ($ScriptType -eq "Graph") {
+        # Clean up old Graph scripts
+        $scriptFilename = (Get-ChildItem -Path "PAX_Graph_Audit_Log_Processor_v*.ps1" -ErrorAction SilentlyContinue | Select-Object -First 1).Name
+        if ($scriptFilename) {
+            Get-ChildItem -Path "$ReleaseWorktreePath/PAX_Graph_Audit_Log_Processor_v*.ps1" -ErrorAction SilentlyContinue | 
+                Where-Object { $_.Name -ne $scriptFilename } | 
+                ForEach-Object {
+                    Remove-Item $_.FullName -Force
+                    Write-Status "Removed old Graph script version: $($_.Name)"
+                }
+        }
+        
+        # Clean up old PDFs if applicable
+        if (Test-Path "PAX_Documentation_v${NewVersion}.pdf") {
+            $pdfFilename = "PAX_Documentation_v${NewVersion}.pdf"
+            Get-ChildItem -Path "$ReleaseWorktreePath/PAX_Documentation_v*.pdf" -ErrorAction SilentlyContinue | 
+                Where-Object { $_.Name -ne $pdfFilename } | 
+                ForEach-Object {
+                    Remove-Item $_.FullName -Force
+                    Write-Status "Removed old PDF version: $($_.Name)"
+                }
+        }
+    }
+    # Umbrella type doesn't have versioned scripts to clean up
+    
+    return $true
+}
+
+# Function to add version markers to files to ensure they're included in commits
+function Add-VersionMarkers {
+    param(
+        [string]$CommitMessage,
+        [string]$ReleaseWorktreePath
+    )
+    
+    Write-Status "Adding version markers to ensure files are committed..."
+    
+    Push-Location $ReleaseWorktreePath
+    try {
+        # Determine commit type from commit message
+        $isUmbrellaCommit = $CommitMessage -match "^PAX-v"
+        $isPurviewCommit = $CommitMessage -match "^purview-v"
+        $isGraphCommit = $CommitMessage -match "^graph-v"
+        
+        # ALWAYS update parent folder .gitkeep files with "PAX Solution Set" headers
+        # This ensures parent folders always show PAX commit messages, regardless of ScriptType
+        if (Test-Path "release_documentation\.gitkeep") {
+            "# PAX Solution Set - Release Documentation`n" | Out-File -FilePath "release_documentation\.gitkeep" -Encoding utf8
+        }
+        
+        if (Test-Path "release_notes\.gitkeep") {
+            "# PAX Solution Set - Release Notes`n" | Out-File -FilePath "release_notes\.gitkeep" -Encoding utf8
+        }
+        
+        if (Test-Path "script_archive\.gitkeep") {
+            "# PAX Script Archive`n" | Out-File -FilePath "script_archive\.gitkeep" -Encoding utf8
+        }
+        
+        # Add markers to governance files ONLY for Umbrella commits
+        if ($isUmbrellaCommit) {
+            $governanceFiles = @("CODE_OF_CONDUCT.md", "CONTRIBUTORS.md", "SECURITY.md")
+            foreach ($file in $governanceFiles) {
+                if (Test-Path $file) {
+                    "`n<!-- $CommitMessage -->" | Out-File -FilePath $file -Encoding utf8 -Append
+                }
+            }
+            
+            # Add marker to LICENSE (uses # comment)
+            if (Test-Path "LICENSE") {
+                "`n# $CommitMessage" | Out-File -FilePath "LICENSE" -Encoding utf8 -Append
+            }
+            
+            # Add marker to .gitattributes
+            if (Test-Path ".gitattributes") {
+                # Check if header already exists
+                $content = Get-Content ".gitattributes" -Raw
+                if ($content -notmatch "^# PAX Solution Set") {
+                    "# PAX Solution Set - Git Attributes`n$content" | Out-File -FilePath ".gitattributes" -Encoding utf8 -NoNewline
+                }
+            }
+        }
+        
+        # For Purview commits, add version comment to script and update subfolder .gitkeep files
+        if ($isPurviewCommit) {
+            $purviewScript = Get-ChildItem -Path "PAX_Purview_Audit_Log_Processor_v*.ps1" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($purviewScript) {
+                $version = if ($CommitMessage -match "purview-v([\d\.]+)") { $matches[1] }
+                if ($version) {
+                    "`n# Updated: v$version" | Out-File -FilePath $purviewScript.Name -Encoding utf8 -Append
+                }
+            }
+            
+            # Update Purview subfolder .gitkeep files to show purview-vx.x.x
+            if (Test-Path "release_documentation\Purview_Audit_Log_Processor\.gitkeep") {
+                "# Purview Audit Log Processor - Release Documentation`n" | Out-File -FilePath "release_documentation\Purview_Audit_Log_Processor\.gitkeep" -Encoding utf8
+            }
+            if (Test-Path "release_notes\Purview_Audit_Log_Processor\.gitkeep") {
+                "# Purview Audit Log Processor - Release Notes`n" | Out-File -FilePath "release_notes\Purview_Audit_Log_Processor\.gitkeep" -Encoding utf8
+            }
+            if (Test-Path "script_archive\Purview_Audit_Log_Processor\.gitkeep") {
+                "# Purview Audit Log Processor - Script Archive`n" | Out-File -FilePath "script_archive\Purview_Audit_Log_Processor\.gitkeep" -Encoding utf8
+            }
+        }
+        
+        # For Graph commits, add version comment to script and update subfolder .gitkeep files
+        if ($isGraphCommit) {
+            $graphScript = Get-ChildItem -Path "PAX_Graph_Audit_Log_Processor_v*.ps1" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($graphScript) {
+                $version = if ($CommitMessage -match "graph-v([\d\.]+)") { $matches[1] }
+                if ($version) {
+                    "`n# Updated: v$version" | Out-File -FilePath $graphScript.Name -Encoding utf8 -Append
+                }
+            }
+            
+            # Update Graph subfolder .gitkeep files to show graph-vx.x.x
+            if (Test-Path "release_documentation\Graph_Audit_Log_Processor\.gitkeep") {
+                "# Graph Audit Log Processor - Release Documentation`n" | Out-File -FilePath "release_documentation\Graph_Audit_Log_Processor\.gitkeep" -Encoding utf8
+            }
+            if (Test-Path "release_notes\Graph_Audit_Log_Processor\.gitkeep") {
+                "# Graph Audit Log Processor - Release Notes`n" | Out-File -FilePath "release_notes\Graph_Audit_Log_Processor\.gitkeep" -Encoding utf8
+            }
+            if (Test-Path "script_archive\Graph_Audit_Log_Processor\.gitkeep") {
+                "# Graph Audit Log Processor - Script Archive`n" | Out-File -FilePath "script_archive\Graph_Audit_Log_Processor\.gitkeep" -Encoding utf8
+            }
+        }
+        
+        Write-Success "Version markers added"
+    }
+    finally {
+        Pop-Location
     }
 }
 
 # Function to sync release branch with customer-facing files
 function Sync-ReleaseBranch {
     param(
-        [string]$NewVersion
+        [string]$NewVersion,
+        [string]$ScriptType,
+        [string]$CommitMessage
     )
     
     Write-Status "Generating PAX_Documentation_v${NewVersion}.pdf from README.md..."
@@ -795,139 +1525,17 @@ function Sync-ReleaseBranch {
         
         Write-Status "Release worktree location: $releaseWorktreePath"
         
-        # Find the current versioned script file dynamically in root
-        $scriptPattern = "PAX_Purview_Audit_Log_Processor_v*.ps1"
-        $currentScript = Get-ChildItem -Path $scriptPattern -ErrorAction SilentlyContinue | Select-Object -First 1
-        
-        if (-not $currentScript) {
-            Write-Error "Could not find export script matching pattern: $scriptPattern"
-            throw "Export script not found"
-        }
-        
-        $scriptFilename = $currentScript.Name
-        Write-Status "Found script to sync: $scriptFilename"
-        
-        # Set versioned PDF filename
-        $pdfFilename = "PAX_Documentation_v${NewVersion}.pdf"
-        Write-Status "PDF file to sync: $pdfFilename"
-        
-        # Define customer-facing files to sync (excluding scripts/ folder entirely)
-        $filesToSync = @{
-            ".gitattributes" = ".gitattributes"
-            ".github/workflows/build-release.yml" = ".github/workflows/build-release.yml"
-            "CODE_OF_CONDUCT.md" = "CODE_OF_CONDUCT.md"
-            "CONTRIBUTORS.md" = "CONTRIBUTORS.md"
-            "LICENSE" = "LICENSE"
-            "README.md" = "README.md"
-            $pdfFilename = $pdfFilename
-            "SECURITY.md" = "SECURITY.md"
-            $scriptFilename = $scriptFilename
-        }
-        
-        # Copy files from PAX to release worktree
-        $copiedFiles = @()
-        foreach ($sourceFile in $filesToSync.Keys) {
-            $destFile = $filesToSync[$sourceFile]
-            $sourcePath = Join-Path (Get-Location) $sourceFile
-            $destPath = Join-Path $releaseWorktreePath $destFile
-            
-            if (Test-Path $sourcePath) {
-                # Create destination directory if needed
-                $destDir = Split-Path $destPath -Parent
-                if (-not (Test-Path $destDir)) {
-                    New-Item -ItemType Directory -Path $destDir -Force | Out-Null
-                }
-                
-                # Copy file
-                Copy-Item -Path $sourcePath -Destination $destPath -Force
-                $copiedFiles += $destFile
-                Write-Success "✓ Synced $destFile"
-            }
-            else {
-                Write-Warning "Source file not found: $sourceFile (skipping)"
-            }
-        }
-        
-        # Sync release_documentation folder (entire directory with all PDFs)
-        Write-Status "Syncing release_documentation\Purview_Audit_Log_Processor folder..."
-        $sourceDocFolder = Join-Path (Get-Location) "release_documentation\Purview_Audit_Log_Processor"
-        $destDocFolder = Join-Path $releaseWorktreePath "release_documentation\Purview_Audit_Log_Processor"
-        if (Test-Path $sourceDocFolder) {
-            if (-not (Test-Path $destDocFolder)) {
-                New-Item -ItemType Directory -Path $destDocFolder -Force | Out-Null
-            }
-            # Copy all files from source to destination
-            Get-ChildItem -Path $sourceDocFolder -File | ForEach-Object {
-                Copy-Item -Path $_.FullName -Destination $destDocFolder -Force
-                Write-Success "✓ Synced release_documentation\Purview_Audit_Log_Processor\$($_.Name)"
-            }
-        }
-        
-        # Sync release_notes folder (entire directory with all release notes)
-        Write-Status "Syncing release_notes\Purview_Audit_Log_Processor folder..."
-        $sourceNotesFolder = Join-Path (Get-Location) "release_notes\Purview_Audit_Log_Processor"
-        $destNotesFolder = Join-Path $releaseWorktreePath "release_notes\Purview_Audit_Log_Processor"
-        if (Test-Path $sourceNotesFolder) {
-            if (-not (Test-Path $destNotesFolder)) {
-                New-Item -ItemType Directory -Path $destNotesFolder -Force | Out-Null
-            }
-            # Copy all files from source to destination
-            Get-ChildItem -Path $sourceNotesFolder -File | ForEach-Object {
-                Copy-Item -Path $_.FullName -Destination $destNotesFolder -Force
-                Write-Success "✓ Synced release_notes\Purview_Audit_Log_Processor\$($_.Name)"
-            }
-        }
-        
-        # Clean up old versioned scripts in release worktree root (keep only current version)
-        $releaseRootPath = $releaseWorktreePath
-        if (Test-Path $releaseRootPath) {
-            Get-ChildItem -Path "$releaseRootPath/PAX_Purview_Audit_Log_Processor_v*.ps1" | 
-                Where-Object { $_.Name -ne $scriptFilename } | 
-                ForEach-Object {
-                    Remove-Item $_.FullName -Force
-                    Write-Status "Removed old script version: $($_.Name)"
-                }
-            
-            # Clean up old versioned PDFs in release worktree root (keep only current version)
-            Get-ChildItem -Path "$releaseRootPath/PAX_Documentation_v*.pdf" | 
-                Where-Object { $_.Name -ne $pdfFilename } | 
-                ForEach-Object {
-                    Remove-Item $_.FullName -Force
-                    Write-Status "Removed old PDF version: $($_.Name)"
-                }
+        # Sync files from PAX to release worktree using ScriptType-aware function
+        if (-not (Sync-ReleaseWorktreeFiles -ReleaseWorktreePath $releaseWorktreePath -ScriptType $ScriptType -NewVersion $NewVersion)) {
+            Write-Error "Failed to sync files to release worktree"
+            return
         }
         
         # Navigate to release worktree and commit changes
         Push-Location $releaseWorktreePath
         try {
-            # Create .gitkeep files in all parent directories to ensure they're tracked with current version
-            Write-Status "Updating parent directory timestamps in release branch..."
-            $parentDirs = @(
-                '.github',
-                '.github\workflows',
-                'release_documentation',
-                'release_documentation\Purview_Audit_Log_Processor',
-                'release_documentation\Purview_Audit_Log_Processor\MD',
-                'release_documentation\Purview_Audit_Log_Processor\PDF',
-                'release_notes',
-                'release_notes\Purview_Audit_Log_Processor',
-                'script_archive',
-                'script_archive\Purview_Audit_Log_Processor'
-            )
-            foreach ($dir in $parentDirs) {
-                $gitkeepPath = Join-Path $dir ".gitkeep"
-                if (Test-Path $dir) {
-                    New-Item -Path $gitkeepPath -ItemType File -Force | Out-Null
-                }
-            }
-            
-            # Touch all root-level files to update their commit timestamp
-            Write-Status "Updating root-level file timestamps in release branch..."
-            Get-ChildItem -File | ForEach-Object {
-                # Add a newline to all root files to force a git change
-                "`n" | Add-Content -Path $_.FullName -NoNewline
-            }
-            Write-Success "✓ Updated directory and file timestamps in release branch"
+            # Add version markers to files based on commit type
+            Add-VersionMarkers -CommitMessage $CommitMessage -ReleaseWorktreePath $releaseWorktreePath
             
             # Check if there are changes
             $changes = git status --porcelain
@@ -935,14 +1543,14 @@ function Sync-ReleaseBranch {
                 Write-Status "Changes detected in release worktree:"
                 $changes | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
                 
-                # Stage and commit changes with version number
+                # Stage and commit changes with formatted commit message
                 git add .
-                git commit -m "v${NewVersion}"
-                Write-Success "Committed changes to release branch"
+                git commit -m $CommitMessage
+                Write-Success "Committed changes to release branch: $CommitMessage"
                 
-                # Push release branch to Rance9/PAX (backup) - no protection
+                # Push release branch to Rance9/PAX (backup) with force - no protection
                 Write-Status "Pushing release branch to Rance9/PAX..."
-                git push backup release 2>$null
+                git push backup release -f 2>$null
                 Write-Success "Pushed release branch to Rance9/PAX"
                 
                 # For microsoft/PAX, create PR due to branch protection
@@ -1107,16 +1715,20 @@ function Sync-ReleaseBranch {
             }
             Write-Success "✓ Updated directory and file timestamps in release branch"
             
+            # Add version markers to files based on commit type
+            $currentPath = Get-Location
+            Add-VersionMarkers -CommitMessage $CommitMessage -ReleaseWorktreePath $currentPath
+            
             # Stage and commit
             git add . 2>$null
             $changes = git diff --cached --name-only
             if ($changes) {
-                git commit -m "v${NewVersion}"
-                Write-Success "Committed changes to release branch"
+                git commit -m $CommitMessage
+                Write-Success "Committed changes to release branch: $CommitMessage"
                 
-                # Push release branch to Rance9/PAX (backup) - no protection
+                # Push release branch to Rance9/PAX (backup) with force - no protection
                 Write-Status "Pushing release branch to Rance9/PAX..."
-                git push backup release 2>$null
+                git push backup release -f 2>$null
                 Write-Success "Pushed release branch to Rance9/PAX"
                 
                 # For microsoft/PAX, create PR due to branch protection
@@ -1192,8 +1804,18 @@ function New-CommitAndTag {
     param(
         [string]$NewVersion,
         [string]$BumpType,
-        [string]$CustomMessage
+        [string]$CustomMessage,
+        [string]$ScriptType,
+        [hashtable]$FileCategories
     )
+    
+    # Generate commit message based on ScriptType
+    $commitMsg = switch ($ScriptType) {
+        "Umbrella" { "PAX-v${NewVersion}" }
+        "Purview"  { "purview-v${NewVersion}" }
+        "Graph"    { "graph-v${NewVersion}" }
+        default    { "v${NewVersion}" }
+    }
     
     # Create .gitkeep files in directories to track them with current version (PAX branch)
     Write-Status "Updating directory timestamps in PAX branch..."
@@ -1230,12 +1852,31 @@ function New-CommitAndTag {
     }
     Write-Success "✓ Updated directory and file timestamps"
     
-    # Add all uncommitted changes to ensure GitHub workflow has access to everything
-    git add .
-    Write-Status "Staged all uncommitted changes for release"
+    # Stage only the relevant files based on ScriptType
+    Write-Status "Staging $ScriptType files for commit..."
+    foreach ($fileStatus in $FileCategories.Relevant) {
+        # Parse git status format to get actual filename
+        $line = $fileStatus.Trim()
+        $file = ""
+        
+        if ($line -match '->') {
+            # Rename: "R  old -> new" - stage both old and new
+            $parts = $line -split '->'
+            $oldFile = ($parts[0] -replace '^.\s+', '').Trim()
+            $newFile = $parts[1].Trim()
+            git add $oldFile $newFile 2>$null
+            Write-Status "Staged rename: $oldFile -> $newFile"
+        } else {
+            # Regular change: "M  filename" or "A  filename" or "D  filename"
+            $file = $line.Substring(3).Trim()
+            git add $file 2>$null
+            Write-Status "Staged: $file"
+        }
+    }
     
-    # Create commit message - simple version number only
-    $commitMsg = "v${NewVersion}"
+    # Also stage .gitkeep files that were just created/updated
+    git add **/.gitkeep 2>$null
+    Write-Status "Staged .gitkeep files"
     
     # Commit the changes
     git commit -m $commitMsg
@@ -1254,7 +1895,7 @@ function New-CommitAndTag {
     Write-Success "Pushed PAX branch and tag to both GitHub repositories"
     
     # Now sync the release branch with customer-facing files
-    Sync-ReleaseBranch -NewVersion $NewVersion
+    Sync-ReleaseBranch -NewVersion $NewVersion -ScriptType $ScriptType -CommitMessage $commitMsg
 }
 
 # Function to show summary
@@ -1319,39 +1960,46 @@ function Main {
     elseif ($Minor) { $bumpType = "minor" }
     elseif ($Patch) { $bumpType = "patch" }
     
-    Write-Status "Starting $bumpType version bump..."
+    Write-Status "Starting $bumpType version bump for $ScriptType..."
     
-    # Validate environment
-    Test-GitStatus
+    # Validate environment and get file categories
+    $fileCategories = Test-GitStatus -ScriptType $ScriptType
     
-    # Get current version
-    $currentVersion = Get-CurrentVersion
+    # Clean up old temporary branches
+    Remove-OldTempBranches
+    
+    # Get current version based on ScriptType
+    $currentVersion = Get-CurrentVersion -ScriptType $ScriptType
     Write-Status "Current version: v$currentVersion"
     
     # Calculate new version
     $newVersion = Step-Version -CurrentVersion $currentVersion -BumpType $bumpType
     Write-Status "New version: v$newVersion"
     
+    # Generate commit message based on ScriptType
+    $commitMsg = switch ($ScriptType) {
+        "Umbrella" { "PAX-v${newVersion}" }
+        "Purview"  { "purview-v${newVersion}" }
+        "Graph"    { "graph-v${newVersion}" }
+    }
+    
     # Prepare commit message
     $finalCommitMsg = if ($Message) {
-        "v${newVersion}: $Message"
+        "${commitMsg}: $Message"
     }
     else {
-        switch ($bumpType) {
-            "major" { "v${newVersion}: Major version release" }
-            "minor" { "v${newVersion}: Minor version release" }
-            default { "v${newVersion}: Patch version release" }
-        }
+        $commitMsg
     }
     
     # Confirm with user
     Write-Host ""
     Write-Host "About to bump version:" -ForegroundColor Yellow
-    Write-Host "  From:  " -NoNewline; Write-Host "v$currentVersion" -ForegroundColor Cyan
-    Write-Host "  To:    " -NoNewline; Write-Host "v$newVersion" -ForegroundColor Cyan
-    Write-Host "  Type:  " -NoNewline; Write-Host "$bumpType" -ForegroundColor Cyan
-    Write-Host "  Msg:   " -NoNewline; Write-Host "$finalCommitMsg" -ForegroundColor Cyan
-    Write-Host "  Notes: " -NoNewline; Write-Host "$ReleaseNotes" -ForegroundColor Cyan
+    Write-Host "  ScriptType: " -NoNewline; Write-Host "$ScriptType" -ForegroundColor Cyan
+    Write-Host "  From:       " -NoNewline; Write-Host "v$currentVersion" -ForegroundColor Cyan
+    Write-Host "  To:         " -NoNewline; Write-Host "v$newVersion" -ForegroundColor Cyan
+    Write-Host "  Type:       " -NoNewline; Write-Host "$bumpType" -ForegroundColor Cyan
+    Write-Host "  Commit Msg: " -NoNewline; Write-Host "$finalCommitMsg" -ForegroundColor Cyan
+    Write-Host "  Notes:      " -NoNewline; Write-Host "$ReleaseNotes" -ForegroundColor Cyan
     Write-Host ""
     $response = Read-Host "Continue? [Y/n]"
     if ($response -match "^[Nn]$") {
@@ -1361,20 +2009,30 @@ function Main {
     
     # Update version files
     Write-Status "Updating version files..."
-    Update-JsonVersion -FilePath $PackageJson -NewVersion $newVersion
-    Update-JsonVersion -FilePath $TauriConf -NewVersion $newVersion
-    Update-CargoVersion -FilePath $CargoToml -NewVersion $newVersion
-    Update-ExportScriptVersion -NewVersion $newVersion
+    
+    # ALWAYS update the versions.json manifest first (Single Source of Truth)
+    Update-VersionsManifest -ScriptType $ScriptType -NewVersion $newVersion
+    
+    # Update package.json, tauri.conf.json, and Cargo.toml ONLY for Umbrella releases
+    # (These are for the PAX Tauri app which is currently on back burner)
+    if ($ScriptType -eq "Umbrella") {
+        Update-JsonVersion -FilePath $PackageJson -NewVersion $newVersion
+        Update-JsonVersion -FilePath $TauriConf -NewVersion $newVersion
+        Update-CargoVersion -FilePath $CargoToml -NewVersion $newVersion
+    }
+    
+    # Update script version and README for Purview/Graph releases
+    Update-ExportScriptVersion -NewVersion $newVersion -ScriptType $ScriptType
     Update-ReadmeVersion -FilePath "README.md" -NewVersion $newVersion
     
     # Generate release notes file
     Write-Status "Generating release notes..."
-    $releaseNotesFile = New-ReleaseNotesFile -NewVersion $newVersion -ReleaseDescription $ReleaseNotes
+    $releaseNotesFile = New-ReleaseNotesFile -NewVersion $newVersion -ReleaseDescription $ReleaseNotes -ScriptType $ScriptType
     Write-Success "Release notes saved to: $releaseNotesFile"
     
     # Commit and tag
     Write-Status "Creating git commit and tag..."
-    New-CommitAndTag -NewVersion $newVersion -BumpType $bumpType -CustomMessage $Message
+    New-CommitAndTag -NewVersion $newVersion -BumpType $bumpType -CustomMessage $Message -ScriptType $ScriptType -FileCategories $fileCategories
     
     # Show summary
     Show-Summary -OldVersion $currentVersion -NewVersion $newVersion -BumpType $bumpType -CommitMessage $finalCommitMsg
