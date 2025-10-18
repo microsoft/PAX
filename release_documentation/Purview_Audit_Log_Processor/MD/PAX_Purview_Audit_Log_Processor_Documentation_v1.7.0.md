@@ -205,6 +205,9 @@ Save the downloaded script to a working directory (e.g., `C:\Scripts\PAX\`).
 
 ### First Run (Quick Start)
 
+<details>
+<summary>💻 Show Quick Start Commands</summary>
+
 ```powershell
 # PowerShell 7+ (recommended)
 pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
@@ -212,6 +215,8 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 
 # Windows PowerShell 5.1
 powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
+
+</details>
 
 **What Happens:**
 
@@ -650,33 +655,53 @@ The script supports four authentication methods for Exchange Online:
 
 Interactive browser-based authentication. Best for ad-hoc queries and interactive sessions.
 
+<details>
+<summary>💻 Show WebLogin Example</summary>
+
 ```powershell
 .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -Auth WebLogin -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
+
+</details>
 
 ### 2. DeviceCode
 
 Device code flow for headless/remote sessions or terminals without browser access.
 
+<details>
+<summary>💻 Show DeviceCode Example</summary>
+
 ```powershell
 .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -Auth DeviceCode -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
+
+</details>
 
 ### 3. Credential
 
 Username/password prompt. Credentials stored in memory only during script execution.
 
+<details>
+<summary>💻 Show Credential Example</summary>
+
 ```powershell
 .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -Auth Credential -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
+
+</details>
 
 ### 4. Silent
 
 Attempts to use cached authentication token. Falls back to WebLogin if no valid token exists.
 
+<details>
+<summary>💻 Show Silent Example</summary>
+
 ```powershell
 .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -Auth Silent -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
+
+</details>
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
@@ -685,6 +710,9 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 ## Usage Examples
 
 ### Basic Queries
+
+<details>
+<summary>💻 Show Basic Query Examples</summary>
 
 ```powershell
 # Standard mode - previous day (auto-default)
@@ -700,7 +728,12 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
 ```
 
+</details>
+
 ### Exploded Schema Queries
+
+<details>
+<summary>💻 Show Exploded Schema Examples</summary>
 
 ```powershell
 # Array explosion (35-column Purview schema)
@@ -710,7 +743,12 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
+</details>
+
 ### Performance Tuning
+
+<details>
+<summary>💻 Show Performance Tuning Examples</summary>
 
 ```powershell
 # Reduce block size for dense data (hitting 10K limit)
@@ -723,7 +761,12 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -PacingMs 250 -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
+</details>
+
 ### Parallel Execution (PowerShell 7+ only)
+
+<details>
+<summary>💻 Show Parallel Execution Examples</summary>
 
 ```powershell
 # Auto-detect parallel benefit
@@ -733,7 +776,12 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ParallelMode On -MaxConcurrency 4 -MaxParallelGroups 2 -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
 ```
 
+</details>
+
 ### Offline Replay
+
+<details>
+<summary>💻 Show Offline Replay Examples</summary>
 
 ```powershell
 # Basic replay (forced explosion)
@@ -752,7 +800,12 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -RAWInputCSV "C:\PreviousExports\Copilot_RAW.csv" -AgentId "CopilotStudio.Declarative.T_4e671777-fa6c-601a-b416-df08b6ae4c14.03dc0b8b-a75a-4b77-86d7-98185a176d1b" -OutputFile "C:\AuditData\Specific_Agent.csv"
 ```
 
+</details>
+
 ### Agent Filtering (Live & Replay)
+
+<details>
+<summary>💻 Show Agent Filtering Examples</summary>
 
 ```powershell
 # Filter for any agent-related records (live query)
@@ -768,7 +821,12 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -RAWInputCSV "C:\PreviousExports\Copilot_RAW.csv" -AgentsOnly -OutputFile "C:\AuditData\All_Agents.csv"
 ```
 
+</details>
+
 ### Authentication Variations
+
+<details>
+<summary>💻 Show Authentication Examples</summary>
 
 ```powershell
 # Device code for headless session
@@ -780,6 +838,8 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 # Silent (cached token)
 .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -Auth Silent -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
+
+</details>
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
@@ -814,6 +874,9 @@ Agent Filtering enables targeted extraction of Copilot agent-specific audit reco
 - Auditing a specific agent's interactions for security review
 
 ### Agent Filtering Examples
+
+<details>
+<summary>💻 Show Detailed Agent Filtering Examples</summary>
 
 ```powershell
 # Export ALL agent-related records from live query
@@ -859,7 +922,12 @@ Agent Filtering enables targeted extraction of Copilot agent-specific audit reco
     -OutputFile "C:\Exports\AgentActivity_DeepAnalysis.csv"
 ```
 
+</details>
+
 ### How Agent Filtering Works
+
+<details>
+<summary>🔍 Show Technical Details</summary>
 
 1. **Pre-Parsing Phase**:
    - In replay mode, JSON audit data is pre-parsed for all records
@@ -876,7 +944,12 @@ Agent Filtering enables targeted extraction of Copilot agent-specific audit reco
    - Summary includes pre/post filter counts and retention rate
    - Log file documents exact filter criteria applied
 
+</details>
+
 ### Agent Filtering Performance
+
+<details>
+<summary>📊 Show Performance Metrics</summary>
 
 **Live Query Mode:**
 - Agent filtering occurs server-side via activity type selection
@@ -892,6 +965,8 @@ Agent Filtering enables targeted extraction of Copilot agent-specific audit reco
 - Low overhead: only filtered records remain in memory
 - Safe for processing multi-million record datasets
 - Ideal for post-processing large audit exports
+
+</details>
 
 ### Agent Field Reference
 
@@ -958,6 +1033,9 @@ User and Group Filtering enables targeted extraction of audit records for specif
 
 ### User and Group Filtering Examples
 
+<details>
+<summary>💻 Show User and Group Filtering Examples</summary>
+
 ```powershell
 # Filter for a single user (live mode)
 .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
@@ -1011,7 +1089,12 @@ User and Group Filtering enables targeted extraction of audit records for specif
     -OutputFile "C:\Exports\PowerUser_Agents.csv"
 ```
 
+</details>
+
 ### How User and Group Filtering Works
+
+<details>
+<summary>🔍 Show Technical Details</summary>
 
 **Live Mode Process:**
 
@@ -1051,7 +1134,12 @@ User and Group Filtering enables targeted extraction of audit records for specif
    - Summary includes pre/post filter counts and retention rate
    - Log file documents exact filter criteria applied
 
+</details>
+
 ### User and Group Filtering Performance
+
+<details>
+<summary>📊 Show Performance Metrics</summary>
 
 **Live Query Mode (Server-Side):**
 - Extremely efficient: filtering happens at Microsoft 365 Purview
@@ -1063,6 +1151,8 @@ User and Group Filtering enables targeted extraction of audit records for specif
 **Replay Mode (Client-Side):**
 - Memory efficient: only filtered records retained
 - Useful for post-processing large exports
+
+</details>
 
 ### User Field Reference
 
@@ -1113,6 +1203,9 @@ Prompt and Response Filtering (`-PromptFilter`) enables targeted extraction of s
 
 ### PromptFilter Examples
 
+<details>
+<summary>💻 Show PromptFilter Examples</summary>
+
 ```powershell
 # Export only user prompts
 .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
@@ -1146,7 +1239,12 @@ Prompt and Response Filtering (`-PromptFilter`) enables targeted extraction of s
     -OutputFile "C:\Exports\PromptsOnly.csv"
 ```
 
+</details>
+
 ### How PromptFilter Works
+
+<details>
+<summary>🔍 Show Two-Stage Filtering Technical Details</summary>
 
 **Two-Stage Filtering for Optimal Performance:**
 
@@ -1172,9 +1270,12 @@ Prompt and Response Filtering (`-PromptFilter`) enables targeted extraction of s
 - **Both**: Stage 1 keeps records with at least one conversation turn having explicit isPrompt value; Stage 2 (if explosion enabled) outputs conversation turns with defined isPrompt values
 - **Null**: Stage 1 keeps records with null isPrompt conversation turns; Stage 2 (if explosion enabled) outputs only conversation turns with null isPrompt
 
+</details>
+
 ### PromptFilter + Agent Filtering Combination
 
-PromptFilter works independently with all agent switches:
+<details>
+<summary>💻 Show PromptFilter + Agent Examples</summary>
 
 ```powershell
 # Agent interactions only, prompts only
@@ -1196,7 +1297,12 @@ PromptFilter works independently with all agent switches:
     -OutputFile "C:\Exports\NonAgentPrompts.csv"
 ```
 
+</details>
+
 ### Performance Metrics
+
+<details>
+<summary>📊 Show PromptFilter Performance Metrics</summary>
 
 The script provides detailed PromptFilter metrics in the summary:
 
@@ -1204,6 +1310,8 @@ The script provides detailed PromptFilter metrics in the summary:
 - **Record type breakdown**: Mixed, Prompt-only, Response-only, No conversation data (with percentages)
 - **Conversation-level**: Conversation turns before/after filter, retention rate
 - **Processing time**: Stage 1 pre-filter execution time
+
+</details>
 
 ### Output Schema
 
@@ -1243,6 +1351,9 @@ Filters are applied in a consistent sequence across both live and replay modes:
 
 **Example Scenario:** "Show me all agent usage by our power users"
 
+<details>
+<summary>💻 Show User + Agent Filtering Examples</summary>
+
 ```powershell
 # Single power user with any agents
 .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
@@ -1261,6 +1372,8 @@ Filters are applied in a consistent sequence across both live and replay modes:
     -OutputFile "C:\Exports\Exec_CustomAgent.csv"
 ```
 
+</details>
+
 **Benefits:**
 - Server-side user filtering reduces data transfer (live mode)
 - Agent filter removes non-agent interactions
@@ -1273,6 +1386,9 @@ Filters are applied in a consistent sequence across both live and replay modes:
 **Use Case:** Focus on conversation patterns (prompts/responses) for specific users
 
 **Example Scenario:** "Show me only the questions asked by the sales team"
+
+<details>
+<summary>💻 Show User + PromptFilter Examples</summary>
 
 ```powershell
 # Sales team prompts only (removes responses and resource-only rows)
@@ -1292,6 +1408,8 @@ Filters are applied in a consistent sequence across both live and replay modes:
     -OutputFile "C:\Exports\Analyst_Conversations.csv"
 ```
 
+</details>
+
 **Benefits:**
 - Removes resource-only explosion rows (cleaner message-focused dataset)
 - Typical reduction: 15-20% smaller file when using `PromptFilter Both`
@@ -1304,6 +1422,9 @@ Filters are applied in a consistent sequence across both live and replay modes:
 **Use Case:** Analyze agent conversation quality and prompt engineering effectiveness
 
 **Example Scenario:** "Show me all prompts sent to our custom sales agent"
+
+<details>
+<summary>💻 Show Agent + PromptFilter Examples</summary>
 
 ```powershell
 # All prompts sent to a specific agent
@@ -1323,6 +1444,8 @@ Filters are applied in a consistent sequence across both live and replay modes:
     -OutputFile "C:\Exports\Agent_Responses.csv"
 ```
 
+</details>
+
 **Benefits:**
 - Focus on agent-specific conversation patterns
 - Analyze prompt engineering effectiveness per agent
@@ -1337,6 +1460,9 @@ Filters are applied in a consistent sequence across both live and replay modes:
 **Use Case:** Deep-dive conversation analysis for specific users with specific agents
 
 **Example Scenario:** "Show me all questions the marketing team asked our content creation agent"
+
+<details>
+<summary>💻 Show Three-Filter Combination Examples</summary>
 
 ```powershell
 # Marketing team prompts to content agent
@@ -1359,6 +1485,8 @@ Filters are applied in a consistent sequence across both live and replay modes:
     -OutputFile "C:\Exports\Exec_Agent_Conversations.csv"
 ```
 
+</details>
+
 **Benefits:**
 - **Maximum precision:** Combines server-side user filtering, agent filtering, and conversation turn filtering
 - **Optimal performance:** Server-side reduces data transfer (live mode)
@@ -1370,6 +1498,9 @@ Filters are applied in a consistent sequence across both live and replay modes:
 ### Replay Mode Combinations
 
 All filter combinations work in replay mode **except `-GroupNames`** (requires authentication).
+
+<details>
+<summary>💻 Show Replay Mode Combination Examples</summary>
 
 ```powershell
 # Replay: User + Agent + PromptFilter
@@ -1388,11 +1519,16 @@ All filter combinations work in replay mode **except `-GroupNames`** (requires a
     -OutputFile "C:\Exports\Replay_Exec_Prompts.csv"
 ```
 
+</details>
+
 **Note:** Use `-UserIds` with explicit email addresses instead of `-GroupNames` in replay mode.
 
 ---
 
 ### Common Use Cases
+
+<details>
+<summary>📊 Show Use Case → Filter Combinations Table</summary>
 
 | Use Case | Filters | Example Output |
 |----------|---------|----------------|
@@ -1402,6 +1538,8 @@ All filter combinations work in replay mode **except `-GroupNames`** (requires a
 | **User conversation focus** | User + PromptFilter | Clean message dataset without resource rows |
 | **Targeted deep-dive** | User + Agent + PromptFilter | Specific users' questions to specific agents |
 | **Executive summary** | Group + Agent + PromptFilter | Leadership team's agent conversations |
+
+</details>
 
 ### Performance Tips
 
@@ -1608,6 +1746,9 @@ Status: Query: 45/100(45%) | Explosion: 12000/25000(48%) | Export: 0/1(0%) :: 42
 
 **Immediate Action:**
 
+<details>
+<summary>💻 Show 10K Limit Fix Examples</summary>
+
 ```powershell
 # Reduce block hours to 15 minutes or less
 pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 `
@@ -1615,6 +1756,8 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 
   -StartDate 2025-10-03 `
   -EndDate 2025-10-03
 ```
+
+</details>
 
 **Progressive Tuning:**
 
@@ -1638,6 +1781,9 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 
 
 **Solutions:**
 
+<details>
+<summary>💻 Show Throttling Solutions</summary>
+
 ```powershell
 # Add inter-page pacing (250ms delay between API calls)
 .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -PacingMs 250 -StartDate 2025-10-01 -EndDate 2025-10-02
@@ -1649,9 +1795,14 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 
 .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ResultSize 5000 -PacingMs 250 -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
+</details>
+
 ### Memory Optimization
 
 **For Deep Flatten with Wide Schemas:**
+
+<details>
+<summary>💻 Show Memory Optimization Examples</summary>
 
 ```powershell
 # Increase schema sample, reduce chunk size
@@ -1673,9 +1824,14 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 
   -EndDate 2025-10-02
 ```
 
+</details>
+
 ### Parallel Execution Tuning
 
 **Conservative Approach (Avoid Throttling):**
+
+<details>
+<summary>💻 Show Parallel Execution Examples</summary>
 
 ```powershell
 .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ParallelMode On `
@@ -1692,6 +1848,8 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 
   -MaxParallelGroups 3 `
   -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
 ```
+
+</details>
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
@@ -1832,6 +1990,9 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 
 
 ## Known Limitations
 
+<details>
+<summary>⚠️ Show Known Limitations Table</summary>
+
 | Area                        | Limitation / Behavior                                                          | Mitigation / Guidance                                                                                        |
 | --------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
 | Unified Audit 10K cap       | Each `Search-UnifiedAuditLog` window tops at 10,000 records                    | Script auto-subdivides; if still saturated, re-run with smaller `-BlockHours` (≤30m)                         |
@@ -1842,6 +2003,8 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 
 | Parallel mode               | Only helps multi-activity sets; single high-volume activity remains serial     | Add more activity types or accept serial path                                                                |
 | Time zones                  | Dates interpreted as UTC; `yyyy-MM-dd` must be UTC                             | Convert local times to UTC prior to invocation to avoid DST drift                                            |
 | Streaming export            | Always on (chunked)                                                            | Adjust sample/chunk sizes for schema width & memory balance                                                  |
+
+</details>
 
 ### Additional Notes
 
