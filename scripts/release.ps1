@@ -1538,9 +1538,6 @@ function Sync-ReleaseBranch {
         # Navigate to release worktree and commit changes
         Push-Location $releaseWorktreePath
         try {
-            # Add version markers to files based on commit type
-            Add-VersionMarkers -CommitMessage $CommitMessage -ReleaseWorktreePath $releaseWorktreePath
-            
             # Check if there are changes
             $changes = git status --porcelain
             if ($changes) {
@@ -1551,6 +1548,23 @@ function Sync-ReleaseBranch {
                 git add .
                 git commit -m $CommitMessage
                 Write-Success "Committed changes to release branch: $CommitMessage"
+                
+                # AFTER product commit, update parent folders with PAX headers in separate commit
+                # This ensures parent folders always show PAX-vX.X.X instead of product version
+                Add-VersionMarkers -CommitMessage $CommitMessage -ReleaseWorktreePath $releaseWorktreePath
+                
+                # Check if version markers created changes
+                $markerChanges = git status --porcelain
+                if ($markerChanges) {
+                    # Get current PAX version for parent folder commit
+                    $paxVersion = Get-CurrentVersion -ScriptType "Umbrella"
+                    $parentCommitMsg = "PAX-v$paxVersion"
+                    
+                    Write-Status "Committing parent folder updates with: $parentCommitMsg"
+                    git add .
+                    git commit -m $parentCommitMsg
+                    Write-Success "Committed parent folder markers: $parentCommitMsg"
+                }
                 
                 # Push release branch to Rance9/PAX (backup) with force - no protection
                 Write-Status "Pushing release branch to Rance9/PAX..."
@@ -1719,16 +1733,29 @@ function Sync-ReleaseBranch {
             }
             Write-Success "✓ Updated directory and file timestamps in release branch"
             
-            # Add version markers to files based on commit type
-            $currentPath = Get-Location
-            Add-VersionMarkers -CommitMessage $CommitMessage -ReleaseWorktreePath $currentPath
-            
-            # Stage and commit
+            # Stage and commit product files first
             git add . 2>$null
             $changes = git diff --cached --name-only
             if ($changes) {
                 git commit -m $CommitMessage
                 Write-Success "Committed changes to release branch: $CommitMessage"
+                
+                # AFTER product commit, update parent folders with PAX headers in separate commit
+                $currentPath = Get-Location
+                Add-VersionMarkers -CommitMessage $CommitMessage -ReleaseWorktreePath $currentPath
+                
+                # Check if version markers created changes
+                $markerChanges = git status --porcelain
+                if ($markerChanges) {
+                    # Get current PAX version for parent folder commit
+                    $paxVersion = Get-CurrentVersion -ScriptType "Umbrella"
+                    $parentCommitMsg = "PAX-v$paxVersion"
+                    
+                    Write-Status "Committing parent folder updates with: $parentCommitMsg"
+                    git add .
+                    git commit -m $parentCommitMsg
+                    Write-Success "Committed parent folder markers: $parentCommitMsg"
+                }
                 
                 # Push release branch to Rance9/PAX (backup) with force - no protection
                 Write-Status "Pushing release branch to Rance9/PAX..."
