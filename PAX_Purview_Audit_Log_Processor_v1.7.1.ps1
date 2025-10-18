@@ -1,4 +1,4 @@
-# Portable Audit eXporter (PAX) - Purview Audit Log Processor - v1.7.0
+# Portable Audit eXporter (PAX) - Purview Audit Log Processor - v1.7.1
 <#
 .SYNOPSIS
     Export Microsoft Purview audit logs for Microsoft 365 Copilot and related activities with optional Purview-aligned row explosion and deep flattening.
@@ -122,77 +122,77 @@
 
 .EXECUTIONPOLICY
     No internal execution policy bypass. Use external host invocation if needed:
-        powershell.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-        pwsh.exe       -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+        powershell.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+        pwsh.exe       -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
 
 .POWERSHELLVERSIONS
     PS 5.1 & 7+. Parallelization requires PS 7+.
 
 .EXAMPLE
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
 .EXAMPLE
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_exploded.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_exploded.csv
 .EXAMPLE
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_deep.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot_deep.csv
 .EXAMPLE
-    powershell -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
+    powershell -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputFile C:\Temp\Copilot.csv
 .EXAMPLE
     # Offline replay (simple forced explosion) of a previously exported raw CSV
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile C:\Temp\Copilot_replay_exploded.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputFile C:\Temp\Copilot_replay_exploded.csv
 .EXAMPLE
     # Offline replay with date & activity filtering + deep flatten
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction -OutputFile C:\Temp\Copilot_replay_deep.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction -OutputFile C:\Temp\Copilot_replay_deep.csv
 .EXAMPLE
     # Deep flatten (wide) with higher schema sample & moderate chunk size (balance column coverage vs memory)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 4000 -StreamingChunkSize 3000 -OutputFile C:\Temp\Copilot_deep_tuned.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 4000 -StreamingChunkSize 3000 -OutputFile C:\Temp\Copilot_deep_tuned.csv
 .EXAMPLE
     # Extremely wide deep flatten: maximize schema sample, reduce chunk size for lower peak memory
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 6000 -StreamingChunkSize 1500 -OutputFile C:\Temp\Copilot_deep_memoryguard.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 6000 -StreamingChunkSize 1500 -OutputFile C:\Temp\Copilot_deep_memoryguard.csv
 .EXAMPLE
     # Fast header freeze (narrow schema expectation) – smaller sample, larger chunk for throughput (risk: late columns ignored)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 800 -StreamingChunkSize 6000 -OutputFile C:\Temp\Copilot_deep_fastfreeze.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 800 -StreamingChunkSize 6000 -OutputFile C:\Temp\Copilot_deep_fastfreeze.csv
 .EXAMPLE
     # Filter to only records with agents present
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -AgentsOnly -OutputFile C:\Temp\Copilot_agents.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -AgentsOnly -OutputFile C:\Temp\Copilot_agents.csv
 .EXAMPLE
     # Filter to only records WITHOUT agents
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -ExcludeAgents -OutputFile C:\Temp\Copilot_no_agents.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -ExcludeAgents -OutputFile C:\Temp\Copilot_no_agents.csv
 .EXAMPLE
     # Filter to only prompt messages (Message_isPrompt = True)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -PromptFilter Prompt -OutputFile C:\Temp\Copilot_prompts.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -PromptFilter Prompt -OutputFile C:\Temp\Copilot_prompts.csv
 .EXAMPLE
     # Filter to only response messages (Message_isPrompt = False)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -PromptFilter Response -OutputFile C:\Temp\Copilot_responses.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -PromptFilter Response -OutputFile C:\Temp\Copilot_responses.csv
 .EXAMPLE
     # Combine filters: agents + prompts only
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -AgentsOnly -PromptFilter Prompt -OutputFile C:\Temp\Copilot_agent_prompts.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02 -AgentsOnly -PromptFilter Prompt -OutputFile C:\Temp\Copilot_agent_prompts.csv
 .EXAMPLE
     # Filter to specific users
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -UserIds "john.doe@contoso.com","jane.smith@contoso.com" -OutputFile C:\Temp\Copilot_users.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -UserIds "john.doe@contoso.com","jane.smith@contoso.com" -OutputFile C:\Temp\Copilot_users.csv
 .EXAMPLE
     # Filter to security group members (automatically expanded)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -GroupNames "Executive Leadership" -OutputFile C:\Temp\Copilot_executives.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -GroupNames "Executive Leadership" -OutputFile C:\Temp\Copilot_executives.csv
 .EXAMPLE
     # Filter to multiple groups
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -GroupNames "Executive Team","Engineering Managers" -OutputFile C:\Temp\Copilot_leadership.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -GroupNames "Executive Team","Engineering Managers" -OutputFile C:\Temp\Copilot_leadership.csv
 .EXAMPLE
     # Combine individual users and groups
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -UserIds "ceo@contoso.com" -GroupNames "Board of Directors" -OutputFile C:\Temp\Copilot_mixed.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -UserIds "ceo@contoso.com" -GroupNames "Board of Directors" -OutputFile C:\Temp\Copilot_mixed.csv
 .EXAMPLE
     # Replay mode with user filtering (client-side filtering from JSON)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -UserIds "john.doe@contoso.com","jane.smith@contoso.com" -OutputFile C:\Temp\Copilot_replay_users.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -UserIds "john.doe@contoso.com","jane.smith@contoso.com" -OutputFile C:\Temp\Copilot_replay_users.csv
 .EXAMPLE
     # COMBINING FILTERS: User + PromptFilter (conversation focus, removes resource-only rows)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -UserIds "poweruser@contoso.com" -PromptFilter Both -OutputFile C:\Temp\User_Conversations.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -UserIds "poweruser@contoso.com" -PromptFilter Both -OutputFile C:\Temp\User_Conversations.csv
 .EXAMPLE
     # COMBINING FILTERS: Group + Agent (team adoption of specific agent)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -GroupNames "Sales Team" -AgentsOnly -OutputFile C:\Temp\Sales_Agent_Usage.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -GroupNames "Sales Team" -AgentsOnly -OutputFile C:\Temp\Sales_Agent_Usage.csv
 .EXAMPLE
     # COMBINING FILTERS: User + Agent + PromptFilter (prompts sent to agents by specific users)
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -UserIds "analyst@contoso.com" -AgentId "DataAnalysis.Agent" -PromptFilter Prompt -OutputFile C:\Temp\Analyst_Agent_Prompts.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -UserIds "analyst@contoso.com" -AgentId "DataAnalysis.Agent" -PromptFilter Prompt -OutputFile C:\Temp\Analyst_Agent_Prompts.csv
 .EXAMPLE
     # COMBINING FILTERS: Replay mode with User + Agent + PromptFilter
-    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.0.ps1 -RAWInputCSV .\data.csv -UserIds "exec@contoso.com" -AgentsOnly -PromptFilter Both -OutputFile C:\Temp\Exec_Agent_Messages.csv
+    pwsh -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -RAWInputCSV .\data.csv -UserIds "exec@contoso.com" -AgentsOnly -PromptFilter Both -OutputFile C:\Temp\Exec_Agent_Messages.csv
 #>
 
 param(
@@ -627,11 +627,130 @@ $script:lowVolumeActivities = @('CreatePlugin', 'UpdatePlugin', 'DeletePlugin', 
 
 function Get-QueryPlan { param([string[]]$RequestedActivities, [int]$MediumBatchSize = 3, [int]$LowBatchSize = 5) $normalized = @(); foreach ($a in $RequestedActivities) { if ($a -and -not ($normalized -contains $a)) { $normalized += $a } } $high = @(); $medium = @(); $low = @(); foreach ($a in $normalized) { $class = Get-ActivityVolumeClassification -ActivityType $a; switch ($class) { 'High' { $high += $a } 'Medium' { $medium += $a } default { $low += $a } } } $plan = @(); foreach ($a in $high) { $plan += @{ Name = "High: $a"; Group = 'High'; Activities = @($a); Concurrency = 1 } } if ($medium.Count -gt 0) { $batches = @(); $current = @(); foreach ($a in $medium) { $current += $a; if ($current.Count -ge $MediumBatchSize) { $batches += , @($current); $current = @() } } if ($current.Count -gt 0) { $batches += , @($current) } $i = 1; foreach ($b in $batches) { $plan += @{ Name = "Medium batch #$i"; Group = 'Medium'; Activities = $b; Concurrency = [Math]::Min(2, $b.Count) }; $i++ } } if ($low.Count -gt 0) { $batches = @(); $current = @(); foreach ($a in $low) { $current += $a; if ($current.Count -ge $LowBatchSize) { $batches += , @($current); $current = @() } } if ($current.Count -gt 0) { $batches += , @($current) } $i = 1; foreach ($b in $batches) { $plan += @{ Name = "Low batch #$i"; Group = 'Low'; Activities = $b; Concurrency = [Math]::Min($MaxConcurrency, [Math]::Max(1, [int]([Math]::Ceiling($b.Count / 2)))) }; $i++ } } if ($plan.Count -eq 0) { $plan += @{ Name = 'Custom'; Group = 'Custom'; Activities = $normalized; Concurrency = 1 } } return $plan }
 function Get-OptimalBlockSize { param([string]$ActivityType) if ($script:learnedActivityBlockSize.ContainsKey($ActivityType)) { return $script:learnedActivityBlockSize[$ActivityType] } elseif ($script:globalLearnedBlockSize -ne $BlockHours) { return $script:globalLearnedBlockSize } else { $classification = Get-ActivityVolumeClassification -ActivityType $ActivityType; switch ($classification) { 'High' { 0.5 } 'Medium' { 2.0 } 'Low' { 8.0 } default { $BlockHours } } } }
-function Update-LearnedBlockSize { param([string]$ActivityType, [double]$BlockHours, [int]$RecordCount, [bool]$Success) if ($Success) { if ($RecordCount -eq $ResultSize) { $newSize = [Math]::Max(0.016667, $BlockHours * 0.7); $script:learnedActivityBlockSize[$ActivityType] = $newSize; $script:globalLearnedBlockSize = [Math]::Min($script:globalLearnedBlockSize, $newSize) } elseif ($RecordCount -lt ($ResultSize * 0.1)) { $newSize = [Math]::Min(24.0, $BlockHours * 1.5); $script:learnedActivityBlockSize[$ActivityType] = $newSize } } else { $newSize = [Math]::Max(0.016667, $BlockHours * 0.5); $script:learnedActivityBlockSize[$ActivityType] = $newSize; $script:globalLearnedBlockSize = [Math]::Min($script:globalLearnedBlockSize, $newSize) } }
+function Update-LearnedBlockSize { 
+    param([string]$ActivityType, [double]$BlockHours, [int]$RecordCount, [bool]$Success) 
+    
+    if ($Success) { 
+        # Hit 10K limit - reduce aggressively
+        if ($RecordCount -eq $ResultSize) { 
+            $newSize = [Math]::Max(0.083333, $BlockHours * 0.5)  # Reduce by 50%, min 5 minutes
+            $script:learnedActivityBlockSize[$ActivityType] = $newSize
+            $script:globalLearnedBlockSize = [Math]::Min($script:globalLearnedBlockSize, $newSize)
+            Write-LogHost "    → Learned: Reducing block size to $([math]::Round($newSize,2))h due to limit hit" -ForegroundColor Magenta
+        } 
+        # Very high volume (>8K records) - proactive reduction
+        elseif ($RecordCount -gt ($ResultSize * 0.8)) {
+            $newSize = [Math]::Max(0.083333, $BlockHours * 0.7)  # Reduce by 30%, min 5 minutes
+            $script:learnedActivityBlockSize[$ActivityType] = $newSize
+            Write-LogHost "    → Learned: Reducing block size to $([math]::Round($newSize,2))h (high volume: $RecordCount records)" -ForegroundColor Magenta
+        }
+        # Low volume (<10% of limit) - increase for efficiency
+        elseif ($RecordCount -lt ($ResultSize * 0.1)) { 
+            $newSize = [Math]::Min(24.0, $BlockHours * 1.5)  # Increase by 50%, max 24 hours
+            $script:learnedActivityBlockSize[$ActivityType] = $newSize
+            Write-LogHost "    → Learned: Increasing block size to $([math]::Round($newSize,2))h (low volume: $RecordCount records)" -ForegroundColor Magenta
+        }
+        # Very low volume (<5% of limit) - increase aggressively
+        elseif ($RecordCount -lt ($ResultSize * 0.05)) {
+            $newSize = [Math]::Min(24.0, $BlockHours * 2.0)  # Double size, max 24 hours
+            $script:learnedActivityBlockSize[$ActivityType] = $newSize
+            Write-LogHost "    → Learned: Increasing block size to $([math]::Round($newSize,2))h (very low volume: $RecordCount records)" -ForegroundColor Magenta
+        }
+    } 
+    else { 
+        # Failure - reduce block size
+        $newSize = [Math]::Max(0.083333, $BlockHours * 0.5)  # Reduce by 50%, min 5 minutes
+        $script:learnedActivityBlockSize[$ActivityType] = $newSize
+        $script:globalLearnedBlockSize = [Math]::Min($script:globalLearnedBlockSize, $newSize)
+        Write-LogHost "    → Learned: Reducing block size to $([math]::Round($newSize,2))h due to failure" -ForegroundColor Magenta
+    } 
+}
 function Get-NextSmallerBlockSize { param([double]$CurrentSize) foreach ($size in $script:subdivisionSequence) { if ($size -lt $CurrentSize) { return $size } } return [Math]::Max(0.016667, $CurrentSize / 2) }
 function Get-ActivityVolumeClassification { param([string]$ActivityType) if ($script:highVolumeActivities -contains $ActivityType) { 'High' } elseif ($script:mediumVolumeActivities -contains $ActivityType) { 'Medium' } else { 'Low' } }
 
-function Invoke-ActivityTimeWindowProcessing { param([Parameter(Mandatory = $true)][string]$ActivityType, [Parameter(Mandatory = $true)][datetime]$StartDate, [Parameter(Mandatory = $true)][datetime]$EndDate) Write-Host "Processing $ActivityType from $($StartDate.ToString('yyyy-MM-dd HH:mm')) to $($EndDate.ToString('yyyy-MM-dd HH:mm'))..." -ForegroundColor White; $blockHours = Get-OptimalBlockSize -ActivityType $ActivityType; Write-Host "  Using learned block size: $blockHours hours" -ForegroundColor DarkCyan; $allResults = New-Object System.Collections.ArrayList; $current = $StartDate; $blockNumber = 1; while ($current -lt $EndDate) { $blockEnd = $current.AddHours($blockHours); if ($blockEnd -gt $EndDate) { $blockEnd = $EndDate } Write-Host "  Block $blockNumber`: $($current.ToString('yyyy-MM-dd HH:mm')) to $($blockEnd.ToString('yyyy-MM-dd HH:mm')) ($([math]::Round(($blockEnd - $current).TotalHours,2))h)" -ForegroundColor Yellow; try { $results = Invoke-SearchUnifiedAuditLogWithRetry -Start $current -End $blockEnd -Operation $ActivityType -ResultSize $ResultSize -UserIds $script:targetUsers -AutoSubdivide $true; if ($results -and $results.Count -gt 0) { $null = $allResults.AddRange($results); Write-Host "    Added $($results.Count) records (total: $($allResults.Count))" -ForegroundColor Green; Update-LearnedBlockSize -ActivityType $ActivityType -BlockHours $blockHours -RecordCount $results.Count -Success $true } else { Write-Host "    No records found in this block" -ForegroundColor Gray } } catch { Write-Host "    Block failed: $($_.Exception.Message)" -ForegroundColor Red; Update-LearnedBlockSize -ActivityType $ActivityType -BlockHours $blockHours -RecordCount 0 -Success $false; if ($blockHours -gt 0.5) { $smallerBlockHours = Get-NextSmallerBlockSize -CurrentSize $blockHours; Write-Host "    Retrying with smaller $smallerBlockHours hour block..." -ForegroundColor Yellow; try { $blockEnd = $current.AddHours($smallerBlockHours); if ($blockEnd -gt $EndDate) { $blockEnd = $EndDate } $results = Invoke-SearchUnifiedAuditLogWithRetry -Start $current -End $blockEnd -Operation $ActivityType -ResultSize $ResultSize -UserIds $script:targetUsers -AutoSubdivide $true; if ($results -and $results.Count -gt 0) { $null = $allResults.AddRange($results); Write-Host "      Smaller block succeeded: $($results.Count) records" -ForegroundColor Green; Update-LearnedBlockSize -ActivityType $ActivityType -BlockHours $smallerBlockHours -RecordCount $results.Count -Success $true; $blockHours = $smallerBlockHours } } catch { Write-Host "      Smaller block also failed: $($_.Exception.Message)" -ForegroundColor Red } } } try { if ($script:progressState.Query.Current -ge $script:progressState.Query.Total) { $script:progressState.Query.Total += 1 } $script:progressState.Query.Current += 1; Update-Progress } catch {} $current = $blockEnd; $blockNumber++ } Write-Host "  Completed $ActivityType`: $($allResults.Count) total records" -ForegroundColor Green; return $allResults.ToArray() }
+function Invoke-ActivityTimeWindowProcessing { 
+    param(
+        [Parameter(Mandatory = $true)][string]$ActivityType, 
+        [Parameter(Mandatory = $true)][datetime]$StartDate, 
+        [Parameter(Mandatory = $true)][datetime]$EndDate
+    ) 
+    
+    Write-Host "Processing $ActivityType from $($StartDate.ToString('yyyy-MM-dd HH:mm')) to $($EndDate.ToString('yyyy-MM-dd HH:mm'))..." -ForegroundColor White
+    $blockHours = Get-OptimalBlockSize -ActivityType $ActivityType
+    Write-Host "  Using initial block size: $blockHours hours" -ForegroundColor DarkCyan
+    
+    $allResults = New-Object System.Collections.ArrayList
+    $current = $StartDate
+    $blockNumber = 1
+    
+    while ($current -lt $EndDate) { 
+        # Apply learned block size dynamically (updates after each query)
+        if ($script:learnedActivityBlockSize.ContainsKey($ActivityType)) {
+            $blockHours = $script:learnedActivityBlockSize[$ActivityType]
+        }
+        
+        $blockEnd = $current.AddHours($blockHours)
+        if ($blockEnd -gt $EndDate) { $blockEnd = $EndDate }
+        
+        $actualBlockHours = [math]::Round(($blockEnd - $current).TotalHours, 2)
+        Write-Host "  Block $blockNumber`: $($current.ToString('yyyy-MM-dd HH:mm')) to $($blockEnd.ToString('yyyy-MM-dd HH:mm')) ($($actualBlockHours)h)" -ForegroundColor Yellow
+        
+        try { 
+            $results = Invoke-SearchUnifiedAuditLogWithRetry -Start $current -End $blockEnd -Operation $ActivityType -ResultSize $ResultSize -UserIds $script:targetUsers -AutoSubdivide $true
+            
+            if ($results -and $results.Count -gt 0) { 
+                $null = $allResults.AddRange($results)
+                Write-Host "    Added $($results.Count) records (total: $($allResults.Count))" -ForegroundColor Green
+                Update-LearnedBlockSize -ActivityType $ActivityType -BlockHours $actualBlockHours -RecordCount $results.Count -Success $true
+            } 
+            else { 
+                Write-Host "    No records found in this block" -ForegroundColor Gray
+            } 
+        } 
+        catch { 
+            Write-Host "    Block failed: $($_.Exception.Message)" -ForegroundColor Red
+            Update-LearnedBlockSize -ActivityType $ActivityType -BlockHours $actualBlockHours -RecordCount 0 -Success $false
+            
+            # Retry with smaller block on failure
+            if ($blockHours -gt 0.5) { 
+                $smallerBlockHours = Get-NextSmallerBlockSize -CurrentSize $blockHours
+                Write-Host "    Retrying with smaller $smallerBlockHours hour block..." -ForegroundColor Yellow
+                
+                try { 
+                    $blockEnd = $current.AddHours($smallerBlockHours)
+                    if ($blockEnd -gt $EndDate) { $blockEnd = $EndDate }
+                    
+                    $results = Invoke-SearchUnifiedAuditLogWithRetry -Start $current -End $blockEnd -Operation $ActivityType -ResultSize $ResultSize -UserIds $script:targetUsers -AutoSubdivide $true
+                    
+                    if ($results -and $results.Count -gt 0) { 
+                        $null = $allResults.AddRange($results)
+                        Write-Host "      Smaller block succeeded: $($results.Count) records" -ForegroundColor Green
+                        Update-LearnedBlockSize -ActivityType $ActivityType -BlockHours $smallerBlockHours -RecordCount $results.Count -Success $true
+                        $blockHours = $smallerBlockHours
+                    } 
+                } 
+                catch { 
+                    Write-Host "      Smaller block also failed: $($_.Exception.Message)" -ForegroundColor Red
+                } 
+            } 
+        } 
+        
+        try { 
+            if ($script:progressState.Query.Current -ge $script:progressState.Query.Total) { 
+                $script:progressState.Query.Total += 1
+            } 
+            $script:progressState.Query.Current += 1
+            Update-Progress
+        } 
+        catch {}
+        
+        $current = $blockEnd
+        $blockNumber++
+    } 
+    
+    Write-Host "  Completed $ActivityType`: $($allResults.Count) total records" -ForegroundColor Green
+    return $allResults.ToArray()
+}
 
 $LogFile = $OutputFile -replace '\.csv$', '.log'
 function Write-Log { param([Parameter(Mandatory = $true)][string]$Message, [string]$Level = "INFO") $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"; $logEntry = "[$timestamp] [$Level] $Message"; Write-Host $Message; try { Add-Content -Path $LogFile -Value $logEntry -Encoding UTF8 -ErrorAction SilentlyContinue } catch {} }
@@ -914,7 +1033,74 @@ function Connect-ToComplianceCenter {
 
 function Invoke-SearchUnifiedAuditLogWithRetry {
     param([Parameter(Mandatory = $true)][datetime]$Start, [Parameter(Mandatory = $true)][datetime]$End, [Parameter(Mandatory = $true)][string]$Operation, [Parameter(Mandatory = $true)][int]$ResultSize, [Parameter(Mandatory = $false)][string[]]$UserIds, [int]$MaxRetries = 3, [bool]$AutoSubdivide = $true) $script:Hit10KLimit = $false; $script:LimitTimeWindow = ""; $allResults = New-Object System.Collections.ArrayList; $totalFetched = 0; $pageNumber = 1; $maxPages = 50; $pageSize = [Math]::Min($ResultSize, 5000); $useSessionPagination = $ResultSize -gt 5000; if ($useSessionPagination) { Write-LogHost "  Using session-based pagination for ResultSize $ResultSize (page size: $pageSize)" -ForegroundColor Cyan; $sessionId = [Guid]::NewGuid().ToString() } else { Write-LogHost "  Using standard pagination for ResultSize $ResultSize (page size: $pageSize)" -ForegroundColor Cyan }
-    try { while ($totalFetched -lt $ResultSize -and $pageNumber -le $maxPages) { $remainingNeeded = $ResultSize - $totalFetched; $currentPageSize = [Math]::Min($pageSize, $remainingNeeded); $pageAttempt = 0; $pageResults = $null; $pageMaxRetries = 3; while ($pageAttempt -le $pageMaxRetries) { try { $params = @{ 'StartDate' = $Start; 'EndDate' = $End; 'Operations' = $Operation; 'ResultSize' = $currentPageSize; 'ErrorAction' = 'Stop' }; if ($UserIds -and $UserIds.Count -gt 0) { $params['UserIds'] = $UserIds }; if ($useSessionPagination) { $params.Add('SessionId', $sessionId); if ($pageNumber -eq 1) { $params.Add('SessionCommand', 'ReturnLargeSet') } else { $params.Add('SessionCommand', 'ReturnNextPreviewPage') } } if ($pageAttempt -eq 0) { if ($useSessionPagination) { if ($pageNumber -eq 1) { Write-LogHost "    Starting session $sessionId, requesting page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan } else { Write-LogHost "    Fetching page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan } } else { Write-LogHost "    Fetching page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan } } else { Write-LogHost "    Retrying page $pageNumber (attempt $($pageAttempt + 1) of $($pageMaxRetries + 1))" -ForegroundColor Yellow } $delayMs = $PacingMs + ($pageAttempt * 2000); if ($delayMs -gt 0) { Start-Sleep -Milliseconds $delayMs } $pageResults = Search-UnifiedAuditLog @params; break } catch { $pageAttempt++; if ($pageAttempt -le $pageMaxRetries) { $msg = $_.Exception.Message; $status = $null; try { $status = $_.Exception.Response.StatusCode.Value__ } catch {}; $isThrottle = ($msg -match '429' -or $msg -match 'Too\s*Many\s*Requests' -or $msg -match 'throttl' -or $msg -match '503' -or $msg -match 'Service\s*Unavailable' -or $status -in 429, 503); if ($isThrottle) { Write-LogHost "    Page $pageNumber throttled (attempt $pageAttempt). Retrying..." -ForegroundColor Yellow; $base = 0.5; $delay = [math]::Min(30.0, $base * [math]::Pow(2, $pageAttempt - 1)); $jitter = (Get-Random -Minimum 0 -Maximum 250) / 1000.0; Start-Sleep -Milliseconds ([int]([math]::Round(($delay + $jitter) * 1000))) } else { Write-LogHost "    Page $pageNumber attempt $pageAttempt failed: $($_.Exception.Message). Retrying..." -ForegroundColor Yellow } if ($useSessionPagination -and $pageAttempt -gt 1) { $sessionId = [Guid]::NewGuid().ToString(); Write-LogHost "    Creating new session ID for retry: $sessionId" -ForegroundColor Yellow } } else { Write-LogHost "    Page $pageNumber failed after $($pageMaxRetries + 1) attempts: $($_.Exception.Message)" -ForegroundColor Red; throw } } } if ($pageResults -and $pageResults.Count -gt 0) { $null = $allResults.AddRange($pageResults); $totalFetched += $pageResults.Count; try { $script:metrics.PagesFetched += 1 } catch {}; Write-LogHost "    Page $pageNumber returned $($pageResults.Count) records (total: $totalFetched)" -ForegroundColor DarkCyan; if ($pageResults.Count -lt $currentPageSize) { Write-LogHost "    Reached end of data (page returned $($pageResults.Count) < $currentPageSize requested)" -ForegroundColor DarkCyan; break } if ($totalFetched -eq 10000 -and $pageResults.Count -eq $currentPageSize) { Write-LogHost "" -ForegroundColor Red; Write-LogHost "      CRITICAL: Exchange Online 10,000 Record Server Limit Reached!" -ForegroundColor Red; Write-LogHost "     Retrieved: 10,000 records" -ForegroundColor Yellow; Write-LogHost "     Missing: Additional records are likely available but CANNOT be accessed" -ForegroundColor Red; Write-LogHost "     Solution: Use smaller time blocks (30 minutes or less) to get complete data" -ForegroundColor Cyan; Write-LogHost "     This is a hard Exchange Online server limitation - pagination cannot bypass it" -ForegroundColor Yellow; Write-LogHost "" -ForegroundColor Red; $script:Hit10KLimit = $true; $script:LimitTimeWindow = "$(($Start).ToString('yyyy-MM-dd HH:mm')) to $(($End).ToString('yyyy-MM-dd HH:mm'))" } } else { Write-LogHost "    Page $pageNumber returned no results - ending pagination" -ForegroundColor DarkCyan; break } $pageNumber++ } if ($pageNumber -gt $maxPages) { Write-LogHost "  WARNING: Reached maximum page limit ($maxPages). There may be more data available." -ForegroundColor Yellow } if ($script:Hit10KLimit) { Write-LogHost "" -ForegroundColor Red; Write-LogHost "   INCOMPLETE DATA WARNING " -ForegroundColor Red; Write-LogHost "  Time window: $($script:LimitTimeWindow)" -ForegroundColor Yellow; Write-LogHost "  Retrieved exactly 10,000 records - Exchange Online server limit reached" -ForegroundColor Red; Write-LogHost "  Additional records exist but are inaccessible with this time window" -ForegroundColor Red; Write-LogHost "  REQUIRED ACTION: Re-run with smaller time blocks (30min recommended)" -ForegroundColor Cyan; Write-LogHost "" -ForegroundColor Red } Write-LogHost "  Pagination done: $($allResults.Count) total records" -ForegroundColor Green; $res = $allResults.ToArray() } catch { Write-LogHost "  Pagination failed: $($_.Exception.Message)" -ForegroundColor Red; throw } if ($AutoSubdivide -and $res -and $res.Count -eq $ResultSize) { $timeSpan = $End - $Start; if ($timeSpan.TotalMinutes -gt 30) { if ($timeSpan.TotalHours -ge 12) { Write-LogHost "  Limit hit. Using aggressive 2hr subdivision..." -ForegroundColor Yellow; $chunkResults = New-Object System.Collections.ArrayList; $current = $Start; while ($current -lt $End) { $chunkEndTicks = [Math]::Min($current.AddHours(2).Ticks, $End.Ticks); $base = Get-Date '0001-01-01Z'; $chunkEnd = $base.AddTicks($chunkEndTicks); $chunk = Invoke-SearchUnifiedAuditLogWithRetry -Start $current -End $chunkEnd -Operation $Operation -ResultSize $ResultSize -UserId $UserIds -MaxRetries $MaxRetries -AutoSubdivide $AutoSubdivide; if ($chunk) { $null = $chunkResults.AddRange($chunk) } $current = $chunkEnd } Write-LogHost "  Aggressive subdivision completed. Total records: $($chunkResults.Count)" -ForegroundColor Green; return $chunkResults.ToArray() } else { Write-LogHost "  Limit hit. Auto-subdividing..." -ForegroundColor Yellow; $midPoint = $Start.AddTicks(($End - $Start).Ticks / 2); $firstHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $Start -End $midPoint -Operation $Operation -ResultSize $ResultSize -UserId $UserIds -MaxRetries $MaxRetries -AutoSubdivide $AutoSubdivide; $secondHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $midPoint -End $End -Operation $Operation -ResultSize $ResultSize -UserId $UserIds -MaxRetries $MaxRetries -AutoSubdivide $AutoSubdivide; $combinedResults = New-Object System.Collections.ArrayList; if ($firstHalf) { $null = $combinedResults.AddRange($firstHalf) } if ($secondHalf) { $null = $combinedResults.AddRange($secondHalf) } Write-LogHost "  Auto-subdivision completed. Total records: $($combinedResults.Count)" -ForegroundColor Green; return $combinedResults.ToArray() } } else { Write-LogHost "  WARNING: Result limit hit but time window too small to subdivide. Possible data loss!" -ForegroundColor Red } } return $res 
+    try { while ($totalFetched -lt $ResultSize -and $pageNumber -le $maxPages) { $remainingNeeded = $ResultSize - $totalFetched; $currentPageSize = [Math]::Min($pageSize, $remainingNeeded); $pageAttempt = 0; $pageResults = $null; $pageMaxRetries = 3; while ($pageAttempt -le $pageMaxRetries) { try { $params = @{ 'StartDate' = $Start; 'EndDate' = $End; 'Operations' = $Operation; 'ResultSize' = $currentPageSize; 'ErrorAction' = 'Stop' }; if ($UserIds -and $UserIds.Count -gt 0) { $params['UserIds'] = $UserIds }; if ($useSessionPagination) { $params.Add('SessionId', $sessionId); if ($pageNumber -eq 1) { $params.Add('SessionCommand', 'ReturnLargeSet') } else { $params.Add('SessionCommand', 'ReturnNextPreviewPage') } } if ($pageAttempt -eq 0) { if ($useSessionPagination) { if ($pageNumber -eq 1) { Write-LogHost "    Starting session $sessionId, requesting page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan } else { Write-LogHost "    Fetching page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan } } else { Write-LogHost "    Fetching page $pageNumber ($currentPageSize records)..." -ForegroundColor DarkCyan } } else { Write-LogHost "    Retrying page $pageNumber (attempt $($pageAttempt + 1) of $($pageMaxRetries + 1))" -ForegroundColor Yellow } $delayMs = $PacingMs + ($pageAttempt * 2000); if ($delayMs -gt 0) { Start-Sleep -Milliseconds $delayMs } $pageResults = Search-UnifiedAuditLog @params; break } catch { $pageAttempt++; if ($pageAttempt -le $pageMaxRetries) { $msg = $_.Exception.Message; $status = $null; try { $status = $_.Exception.Response.StatusCode.Value__ } catch {}; $isThrottle = ($msg -match '429' -or $msg -match 'Too\s*Many\s*Requests' -or $msg -match 'throttl' -or $msg -match '503' -or $msg -match 'Service\s*Unavailable' -or $status -in 429, 503); if ($isThrottle) { Write-LogHost "    Page $pageNumber throttled (attempt $pageAttempt). Retrying..." -ForegroundColor Yellow; $base = 0.5; $delay = [math]::Min(30.0, $base * [math]::Pow(2, $pageAttempt - 1)); $jitter = (Get-Random -Minimum 0 -Maximum 250) / 1000.0; Start-Sleep -Milliseconds ([int]([math]::Round(($delay + $jitter) * 1000))) } else { Write-LogHost "    Page $pageNumber attempt $pageAttempt failed: $($_.Exception.Message). Retrying..." -ForegroundColor Yellow } if ($useSessionPagination -and $pageAttempt -gt 1) { $sessionId = [Guid]::NewGuid().ToString(); Write-LogHost "    Creating new session ID for retry: $sessionId" -ForegroundColor Yellow } } else { Write-LogHost "    Page $pageNumber failed after $($pageMaxRetries + 1) attempts: $($_.Exception.Message)" -ForegroundColor Red; throw } } } if ($pageResults -and $pageResults.Count -gt 0) { $null = $allResults.AddRange($pageResults); $totalFetched += $pageResults.Count; try { $script:metrics.PagesFetched += 1 } catch {}; Write-LogHost "    Page $pageNumber returned $($pageResults.Count) records (total: $totalFetched)" -ForegroundColor DarkCyan; if ($pageResults.Count -lt $currentPageSize) { Write-LogHost "    Reached end of data (page returned $($pageResults.Count) < $currentPageSize requested)" -ForegroundColor DarkCyan; break } if ($totalFetched -eq 10000 -and $pageResults.Count -eq $currentPageSize) { Write-LogHost "" -ForegroundColor Red; Write-LogHost "      CRITICAL: Exchange Online 10,000 Record Server Limit Reached!" -ForegroundColor Red; Write-LogHost "     Retrieved: 10,000 records" -ForegroundColor Yellow; Write-LogHost "     Missing: Additional records are likely available but CANNOT be accessed" -ForegroundColor Red; Write-LogHost "     Solution: Use smaller time blocks (30 minutes or less) to get complete data" -ForegroundColor Cyan; Write-LogHost "     This is a hard Exchange Online server limitation - pagination cannot bypass it" -ForegroundColor Yellow; Write-LogHost "" -ForegroundColor Red; $script:Hit10KLimit = $true; $script:LimitTimeWindow = "$(($Start).ToString('yyyy-MM-dd HH:mm')) to $(($End).ToString('yyyy-MM-dd HH:mm'))" } } else { Write-LogHost "    Page $pageNumber returned no results - ending pagination" -ForegroundColor DarkCyan; break } $pageNumber++ } if ($pageNumber -gt $maxPages) { Write-LogHost "  WARNING: Reached maximum page limit ($maxPages). There may be more data available." -ForegroundColor Yellow } if ($script:Hit10KLimit) { Write-LogHost "" -ForegroundColor Red; Write-LogHost "   INCOMPLETE DATA WARNING " -ForegroundColor Red; Write-LogHost "  Time window: $($script:LimitTimeWindow)" -ForegroundColor Yellow; Write-LogHost "  Retrieved exactly 10,000 records - Exchange Online server limit reached" -ForegroundColor Red; Write-LogHost "  Additional records exist but are inaccessible with this time window" -ForegroundColor Red; Write-LogHost "  REQUIRED ACTION: Re-run with smaller time blocks (30min recommended)" -ForegroundColor Cyan; Write-LogHost "" -ForegroundColor Red } Write-LogHost "  Pagination done: $($allResults.Count) total records" -ForegroundColor Green; $res = $allResults.ToArray() } catch { Write-LogHost "  Pagination failed: $($_.Exception.Message)" -ForegroundColor Red; throw } # Enhanced auto-subdivision with dynamic block sizing - removes 30-minute minimum threshold
+    if ($AutoSubdivide -and $res -and $res.Count -eq $ResultSize) { 
+        $timeSpan = $End - $Start
+        $minMinutes = 5  # Minimum 5-minute blocks (was 30 minutes)
+        
+        if ($timeSpan.TotalMinutes -gt $minMinutes) { 
+            # Calculate optimal subdivision size based on current window
+            if ($timeSpan.TotalHours -ge 12) { 
+                # Very large windows: use 2-hour chunks
+                Write-LogHost "  ⚠ 10K limit hit. Auto-subdividing large window into 2-hour chunks..." -ForegroundColor Yellow
+                $chunkResults = New-Object System.Collections.ArrayList
+                $current = $Start
+                $chunkCount = 0
+                while ($current -lt $End) { 
+                    $chunkEndTicks = [Math]::Min($current.AddHours(2).Ticks, $End.Ticks)
+                    $base = Get-Date '0001-01-01Z'
+                    $chunkEnd = $base.AddTicks($chunkEndTicks)
+                    $chunkCount++
+                    Write-LogHost "    Chunk $chunkCount`: $($current.ToString('HH:mm')) - $($chunkEnd.ToString('HH:mm'))" -ForegroundColor DarkYellow
+                    $chunk = Invoke-SearchUnifiedAuditLogWithRetry -Start $current -End $chunkEnd -Operation $Operation -ResultSize $ResultSize -UserId $UserIds -MaxRetries $MaxRetries -AutoSubdivide $AutoSubdivide
+                    if ($chunk) { $null = $chunkResults.AddRange($chunk) }
+                    $current = $chunkEnd
+                } 
+                Write-LogHost "  ✓ Subdivision completed. Total: $($chunkResults.Count) records from $chunkCount chunks" -ForegroundColor Green
+                return $chunkResults.ToArray()
+            } 
+            elseif ($timeSpan.TotalMinutes -ge 60) {
+                # Medium windows (1+ hours): use 30-minute chunks
+                Write-LogHost "  ⚠ 10K limit hit. Auto-subdividing into 30-minute chunks..." -ForegroundColor Yellow
+                $chunkResults = New-Object System.Collections.ArrayList
+                $current = $Start
+                $chunkCount = 0
+                while ($current -lt $End) { 
+                    $chunkEndTicks = [Math]::Min($current.AddMinutes(30).Ticks, $End.Ticks)
+                    $base = Get-Date '0001-01-01Z'
+                    $chunkEnd = $base.AddTicks($chunkEndTicks)
+                    $chunkCount++
+                    Write-LogHost "    Chunk $chunkCount`: $($current.ToString('HH:mm')) - $($chunkEnd.ToString('HH:mm'))" -ForegroundColor DarkYellow
+                    $chunk = Invoke-SearchUnifiedAuditLogWithRetry -Start $current -End $chunkEnd -Operation $Operation -ResultSize $ResultSize -UserId $UserIds -MaxRetries $MaxRetries -AutoSubdivide $AutoSubdivide
+                    if ($chunk) { $null = $chunkResults.AddRange($chunk) }
+                    $current = $chunkEnd
+                } 
+                Write-LogHost "  ✓ Subdivision completed. Total: $($chunkResults.Count) records from $chunkCount chunks" -ForegroundColor Green
+                return $chunkResults.ToArray()
+            }
+            else { 
+                # Small windows (5-60 minutes): split in half recursively
+                Write-LogHost "  ⚠ 10K limit hit. Auto-subdividing $([math]::Round($timeSpan.TotalMinutes,1))min window in half..." -ForegroundColor Yellow
+                $midPoint = $Start.AddTicks(($End - $Start).Ticks / 2)
+                Write-LogHost "    First half: $($Start.ToString('HH:mm')) - $($midPoint.ToString('HH:mm'))" -ForegroundColor DarkYellow
+                $firstHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $Start -End $midPoint -Operation $Operation -ResultSize $ResultSize -UserId $UserIds -MaxRetries $MaxRetries -AutoSubdivide $AutoSubdivide
+                Write-LogHost "    Second half: $($midPoint.ToString('HH:mm')) - $($End.ToString('HH:mm'))" -ForegroundColor DarkYellow
+                $secondHalf = Invoke-SearchUnifiedAuditLogWithRetry -Start $midPoint -End $End -Operation $Operation -ResultSize $ResultSize -UserId $UserIds -MaxRetries $MaxRetries -AutoSubdivide $AutoSubdivide
+                $combinedResults = New-Object System.Collections.ArrayList
+                if ($firstHalf) { $null = $combinedResults.AddRange($firstHalf) }
+                if ($secondHalf) { $null = $combinedResults.AddRange($secondHalf) }
+                Write-LogHost "  ✓ Subdivision completed. Total: $($combinedResults.Count) records (First: $($firstHalf.Count), Second: $($secondHalf.Count))" -ForegroundColor Green
+                return $combinedResults.ToArray()
+            } 
+        } 
+        else { 
+            # Window is already at minimum (5 minutes) - cannot subdivide further
+            Write-LogHost "  ⚠ CRITICAL: 10K limit hit but time window is already at minimum ($([math]::Round($timeSpan.TotalMinutes,1))min)!" -ForegroundColor Red
+            Write-LogHost "     This represents EXTREMELY high volume (~2000 records/minute)" -ForegroundColor Red
+            Write-LogHost "     Data loss is unavoidable - additional records exist but cannot be retrieved" -ForegroundColor Red
+        } 
+    }
+    return $res 
 }
 
 function Find-AllArrays {
@@ -1610,7 +1796,7 @@ try {
     }
     
     if (-not $RAWInputCSV) {
-        Write-LogHost "Learned block sizes: $(if ($script:learnedActivityBlockSize.Count -gt 0){ ($script:learnedActivityBlockSize.GetEnumerator()|ForEach-Object{\"$($_.Key)=$($_.Value)h\"}) -join ', ' } else {'Using defaults'})" -ForegroundColor Gray
+        Write-LogHost "Learned block sizes: $(if ($script:learnedActivityBlockSize.Count -gt 0){ ($script:learnedActivityBlockSize.GetEnumerator()|ForEach-Object{"{0}={1}h" -f $_.Key,$_.Value}) -join ', ' } else {'Using defaults'})" -ForegroundColor Gray
         Write-LogHost "Global learned size: $($script:globalLearnedBlockSize) hours" -ForegroundColor Gray
     }
 
@@ -2679,6 +2865,7 @@ try {
 }
 catch { Write-LogHost "Script failed: $($_.Exception.Message)" -ForegroundColor Red; Write-LogHost $_.ScriptStackTrace -ForegroundColor Red }
 finally { $endUtc = (Get-Date).ToUniversalTime(); try { if ($script:metrics -and $script:metrics.StartTime) { $startTail = $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss'); Write-Log ("Script execution started at $startTail UTC") } } catch {}; Write-Log "Script execution completed at $($endUtc.ToString('yyyy-MM-dd HH:mm:ss')) UTC"; Write-Log "Script version: v$ScriptVersion"; try { if ($script:metrics -and $script:metrics.StartTime) { $elapsed = $endUtc - $script:metrics.StartTime; $totalHours = [math]::Floor($elapsed.TotalHours); $remainder = $elapsed - [TimeSpan]::FromHours($totalHours); $elapsedFormatted = ("{0}:{1:00}:{2:00}.{3:000}" -f $totalHours, $remainder.Minutes, $remainder.Seconds, $remainder.Milliseconds); Write-Log ("Total elapsed time: {0} (hours:minutes:seconds.milliseconds)" -f $elapsedFormatted) } } catch {}; if ($script:Connected) { try { Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue | Out-Null; Write-LogHost "Disconnected from Exchange Online" -ForegroundColor Gray } catch {} } }
+
 
 
 
