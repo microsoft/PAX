@@ -871,29 +871,34 @@ foreach ($endpoint in $endpointsToQuery) {
         ThrottleMs = $PacingMs
     }
     
-    if ($DaysBack) {
-        # Daily query mode - but Copilot will auto-fallback to period
-        if ($endpoint.Name -eq 'EntraUsers') {
-            # Entra Users doesn't use date/period
-            $data = Invoke-GraphEndpointQuery @queryParams
-        }
-        else {
-            $data = Invoke-GraphEndpointQuery @queryParams -QueryDate $StartDate
-        }
+    # Determine query type based on endpoint capabilities
+    if ($endpoint.Name -eq 'EntraUsers') {
+        # Entra Users: No period/date parameters
+        $data = Invoke-GraphEndpointQuery @queryParams
+    }
+    elseif (-not $endpoint.SupportsPeriod -and -not $endpoint.SupportsDate) {
+        # Snapshot endpoints (e.g., M365Activations): No period/date parameters
+        $data = Invoke-GraphEndpointQuery @queryParams
+    }
+    elseif ($DaysBack) {
+        # Daily query mode: Use date parameter (Copilot will auto-fallback to period if needed)
+        $data = Invoke-GraphEndpointQuery @queryParams -QueryDate $StartDate
     }
     else {
-        # Period query mode
-        if ($endpoint.Name -eq 'EntraUsers') {
-            # Entra Users doesn't use period
-            $data = Invoke-GraphEndpointQuery @queryParams
-        }
-        else {
-            $data = Invoke-GraphEndpointQuery @queryParams -QueryPeriod $Period
-        }
+        # Period query mode: Use period parameter
+        $data = Invoke-GraphEndpointQuery @queryParams -QueryPeriod $Period
     }
     
     # Store results
     $endpointResults[$endpoint.Name] = $data
+    
+    # Flatten Entra Users data (for both individual and combined output)
+    if ($endpoint.Name -eq 'EntraUsers' -and $data -and $data.Count -gt 0) {
+        $flattenedEntraData = ConvertTo-FlatEntraUsers -Users $data -ExplodeArrays:$ExplodeArrays
+        $endpointResults[$endpoint.Name] = $flattenedEntraData
+        $data = $flattenedEntraData  # Use flattened data for individual file save too
+        Write-Host "  Flattened Entra Users to CSV-compatible format ($($flattenedEntraData[0].PSObject.Properties.Count) columns)" -ForegroundColor Gray
+    }
     
     # Save to individual file (unless CombineOutput is specified)
     if (-not $CombineOutput -and $data -and $data.Count -gt 0) {
@@ -917,20 +922,16 @@ foreach ($endpoint in $endpointsToQuery) {
         $outputFilePath = Join-Path $OutputPath $filename
         
         try {
-            # Special handling for Entra Users JSON->CSV conversion
-            if ($endpoint.Name -eq 'EntraUsers') {
-                Write-Host "  Converting JSON to flattened CSV..." -ForegroundColor Yellow
-                $flattenedData = ConvertTo-FlatEntraUsers -Users $data -ExplodeArrays:$ExplodeArrays
-                $flattenedData | Export-Csv -Path $outputFilePath -NoTypeInformation -Force
-                Write-Host "  ✓ Saved: $filename ($($flattenedData.Count) rows, $($flattenedData[0].PSObject.Properties.Count) columns)" -ForegroundColor Green
-                $filesSaved += $outputFilePath
+            # Export to CSV (Entra Users already flattened above)
+            $data | Export-Csv -Path $outputFilePath -NoTypeInformation -Force
+            
+            if ($endpoint.Name -eq 'EntraUsers' -and $data.Count -gt 0) {
+                Write-Host "  ✓ Saved: $filename ($($data.Count) rows, $($data[0].PSObject.Properties.Count) columns)" -ForegroundColor Green
             }
             else {
-                # Standard CSV export
-                $data | Export-Csv -Path $outputFilePath -NoTypeInformation -Force
                 Write-Host "  ✓ Saved: $filename ($($data.Count) rows)" -ForegroundColor Green
-                $filesSaved += $outputFilePath
             }
+            $filesSaved += $outputFilePath
         }
         catch {
             Write-Host "  ✗ Error saving file: $($_.Exception.Message)" -ForegroundColor Red
@@ -1004,7 +1005,6 @@ if ($CombineOutput) {
     
     # Collect all unique users across all endpoints
     $allUsers = @{}
-    $endpointColumnPrefix = @{}
     
     # Process each endpoint's data
     foreach ($endpointName in $endpointResults.Keys) {
@@ -1083,11 +1083,63 @@ if ($CombineOutput) {
     
     Write-Host "`n  Collected $($allUsers.Count) unique users" -ForegroundColor Green
     
-    # Convert to array of PSCustomObjects
+    # Detect obfuscation and provide comprehensive guidance
+    $sampleUserId = $allUsers.Keys | Select-Object -First 1
+    if ($sampleUserId -and $sampleUserId -notmatch '@') {
+        Write-Host "`n  ⚠️  OBFUSCATION DETECTED: Usage report data is hashed (privacy mode enabled)" -ForegroundColor Yellow
+        Write-Host "`n    IMPACT:" -ForegroundColor Cyan
+        Write-Host "      • User identifiers show as hashes (e.g., 8CFD2BC454A8B192B39EB6F4CC85ED1D)" -ForegroundColor Gray
+        Write-Host "      • Cannot join with Entra Users data using standard methods" -ForegroundColor Gray
+        Write-Host "      • Combined output will show separate rows for obfuscated and real data" -ForegroundColor Gray
+        
+        Write-Host "`n    SOLUTION OPTIONS:" -ForegroundColor Cyan
+        Write-Host "`n      ✅ Option 1 - Disable Obfuscation (if privacy policy allows):" -ForegroundColor White
+        Write-Host "        • Microsoft 365 Admin Center → Settings → Org Settings → Reports" -ForegroundColor Gray
+        Write-Host "        • Check 'Display concealed user, group, and site names in all reports'" -ForegroundColor Gray
+        Write-Host "        • Re-run this script after setting takes effect (few minutes)" -ForegroundColor Gray
+        
+        Write-Host "`n      ✅ Option 2 - Use Microsoft 365 Usage Analytics Power BI Template:" -ForegroundColor White
+        Write-Host "        • Microsoft's official solution with PRE-JOINED data (no client-side join needed)" -ForegroundColor Gray
+        Write-Host "        • Bypasses obfuscation via special OData endpoint with server-side joins" -ForegroundColor Gray
+        Write-Host "        • Download template: https://aka.ms/M365UsageAnalytics" -ForegroundColor Gray
+        Write-Host "        • OData Endpoint: https://reports.office.com/pbi/v1.0/<tenantid>" -ForegroundColor DarkGray
+        Write-Host "        • Returns 'UserState' + 'UserActivity' tables with Entra attributes already joined" -ForegroundColor Gray
+        
+        Write-Host "`n      ✅ Option 3 - Query OData Endpoint Directly with PowerShell (Advanced):" -ForegroundColor White
+        Write-Host "        • Requires: Reports.Read.All permission + admin role (Global/Reports Reader)" -ForegroundColor Gray
+        Write-Host "        • Endpoint: https://reports.office.com/pbi/v1.0/{tenantId}/UserState" -ForegroundColor Gray
+        Write-Host "        • Returns pre-joined data: UserId, UPN, DisplayName, Department, Company, etc." -ForegroundColor Gray
+        Write-Host "        • Use OData.Feed() in Power Query or Invoke-RestMethod with OAuth bearer token" -ForegroundColor Gray
+        
+        Write-Host "`n    📚 Documentation: https://learn.microsoft.com/en-us/microsoft-365/admin/usage-analytics/`n" -ForegroundColor DarkCyan
+    }
+    
+    # Collect all unique column names across all users
+    Write-Host "  Collecting all unique columns..." -ForegroundColor White
+    $allColumnNamesHash = @{}
+    foreach ($userId in $allUsers.Keys) {
+        foreach ($colName in $allUsers[$userId].Keys) {
+            $allColumnNamesHash[$colName] = $true
+        }
+    }
+    $allColumnNames = $allColumnNamesHash.Keys | Sort-Object
+    Write-Host "    Found $($allColumnNames.Count) total columns across all endpoints" -ForegroundColor Gray
+    
+    # Convert to array of PSCustomObjects with consistent columns
     Write-Host "  Building combined dataset..." -ForegroundColor White
     $combinedData = @()
     foreach ($userId in $allUsers.Keys) {
-        $combinedData += [PSCustomObject]$allUsers[$userId]
+        # Create object with all columns (defaults to null for missing values)
+        $userObj = [ordered]@{}
+        foreach ($colName in $allColumnNames) {
+            if ($allUsers[$userId].Contains($colName)) {
+                $userObj[$colName] = $allUsers[$userId][$colName]
+            }
+            else {
+                $userObj[$colName] = $null
+            }
+        }
+        $combinedData += [PSCustomObject]$userObj
     }
     
     # Export combined file
