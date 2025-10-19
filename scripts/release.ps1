@@ -1041,10 +1041,7 @@ function Sync-ReleaseWorktreeFiles {
             Write-Status "Found Purview script: $($currentScript.Name)"
         }
         
-        # Add versioned PDF
-        $pdfFilename = "PAX_Documentation_v${NewVersion}.pdf"
-        $filesToSync[$pdfFilename] = $pdfFilename
-        Write-Status "PDF file to sync: $pdfFilename"
+        # PDF is archived to release_documentation folder, NOT synced to root
     }
     elseif ($ScriptType -eq "Graph") {
         # Find the current versioned Graph script file
@@ -1056,12 +1053,7 @@ function Sync-ReleaseWorktreeFiles {
             Write-Status "Found Graph script: $($currentScript.Name)"
         }
         
-        # Add versioned PDF if it exists
-        $pdfFilename = "PAX_Documentation_v${NewVersion}.pdf"
-        if (Test-Path $pdfFilename) {
-            $filesToSync[$pdfFilename] = $pdfFilename
-            Write-Status "PDF file to sync: $pdfFilename"
-        }
+        # PDF is archived to release_documentation folder, NOT synced to root
     }
     # Umbrella type only syncs core files (already added above)
     
@@ -1205,14 +1197,7 @@ function Sync-ReleaseWorktreeFiles {
                 }
         }
         
-        # Clean up old PDFs
-        $pdfFilename = "PAX_Documentation_v${NewVersion}.pdf"
-        Get-ChildItem -Path "$ReleaseWorktreePath/PAX_Documentation_v*.pdf" -ErrorAction SilentlyContinue | 
-            Where-Object { $_.Name -ne $pdfFilename } | 
-            ForEach-Object {
-                Remove-Item $_.FullName -Force
-                Write-Status "Removed old PDF version: $($_.Name)"
-            }
+        # PDFs are in release_documentation folder, not root - no cleanup needed here
     }
     elseif ($ScriptType -eq "Graph") {
         # Clean up old Graph scripts
@@ -1226,16 +1211,7 @@ function Sync-ReleaseWorktreeFiles {
                 }
         }
         
-        # Clean up old PDFs if applicable
-        if (Test-Path "PAX_Documentation_v${NewVersion}.pdf") {
-            $pdfFilename = "PAX_Documentation_v${NewVersion}.pdf"
-            Get-ChildItem -Path "$ReleaseWorktreePath/PAX_Documentation_v*.pdf" -ErrorAction SilentlyContinue | 
-                Where-Object { $_.Name -ne $pdfFilename } | 
-                ForEach-Object {
-                    Remove-Item $_.FullName -Force
-                    Write-Status "Removed old PDF version: $($_.Name)"
-                }
-        }
+        # PDFs are in release_documentation folder, not root - no cleanup needed here
     }
     # Umbrella type doesn't have versioned scripts to clean up
     
