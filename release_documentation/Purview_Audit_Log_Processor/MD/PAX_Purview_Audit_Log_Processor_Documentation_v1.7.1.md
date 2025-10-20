@@ -43,7 +43,7 @@
 ## Overview
 
 <details>
-<summary><h3>What It Does</h3></summary>
+<summary>What It Does</summary>
 
 The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script that exports Microsoft Purview Unified Audit Log events, with specialized support for Microsoft 365 Copilot activities and related operations. It transforms raw audit data into analysis-ready CSV files with enriched metadata, intelligent query optimization, and flexible schema options.
 
@@ -75,7 +75,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 ## Key Features
 
 <details>
-<summary><h3>Intelligent Query Management</h3></summary>
+<summary>Intelligent Query Management</summary>
 
 - **Adaptive Block Sizing:** Automatically adjusts time window sizes based on data density
 - **10K Limit Detection:** Identifies when Microsoft 365 service cap is reached and recommends mitigation
@@ -86,7 +86,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 </details>
 
 <details>
-<summary><h3>Data Processing & Output</h3></summary>
+<summary>Data Processing & Output</summary>
 
 - **Purview Schema Compliance:** Matches Microsoft Purview's canonical exploded schema structure
 - **Deep JSON Flattening:** Optional recursive flattening of nested `CopilotEventData` structures
@@ -99,7 +99,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 </details>
 
 <details>
-<summary><h3>Performance Optimization</h3></summary>
+<summary>Performance Optimization</summary>
 
 - **Parallel Execution (PS7+):** Concurrent processing of multiple activity types with controlled throttling
 - **Learned Block Sizes:** Per-activity and global adaptive sizing based on observed densities
@@ -109,7 +109,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 </details>
 
 <details>
-<summary><h3>Operational Excellence</h3></summary>
+<summary>Operational Excellence</summary>
 
 - **Composite Progress:** Single weighted percentage across Query/Explosion/Export phases
 - **Detailed Logging:** Comprehensive log file with parameters, decisions, warnings, and metrics
@@ -125,7 +125,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 ## Use Cases
 
 <details>
-<summary><h3>Adoption & Usage Analytics</h3></summary>
+<summary>Adoption & Usage Analytics</summary>
 
 - Track Microsoft 365 Copilot adoption across your organization
 - Measure user engagement with AI features (interactions, token consumption, model usage)
@@ -135,7 +135,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 </details>
 
 <details>
-<summary><h3>Compliance & Governance</h3></summary>
+<summary>Compliance & Governance</summary>
 
 - Audit Copilot interactions for regulatory compliance requirements
 - Monitor data access patterns and sensitivity indicators
@@ -146,7 +146,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 </details>
 
 <details>
-<summary><h3>Performance & Capacity Planning</h3></summary>
+<summary>Performance & Capacity Planning</summary>
 
 - Track Copilot usage patterns and peak activity periods
 - Analyze model names and app host distribution across your tenant
@@ -158,7 +158,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 </details>
 
 <details>
-<summary><h3>Data Integration & BI</h3></summary>
+<summary>Data Integration & BI</summary>
 
 - Export enriched data to Power BI, Azure Synapse, or data warehouses
 - Join audit data with licensing information for coverage analysis
@@ -168,7 +168,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 </details>
 
 <details>
-<summary><h3>Development & Testing</h3></summary>
+<summary>Development & Testing</summary>
 
 - Offline replay mode for reproducible transformations
 - Test schema changes against synthetic or sanitized datasets
@@ -194,7 +194,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 **Note:** The script automatically handles ExchangeOnlineManagement module detection, installation, and connection. No manual setup required.
 
 <details>
-<summary><h3>Permission Details</h3></summary>
+<summary>Permission Details</summary>
 
 **Minimum RBAC Requirements:**
 
@@ -205,7 +205,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 </details>
 
 <details>
-<summary><h3>Why PowerShell 7+?</h3></summary>
+<summary>Why PowerShell 7+?</summary>
 
 | Feature              | PowerShell 5.1                | PowerShell 7+                  |
 | -------------------- | ----------------------------- | ------------------------------ |
@@ -227,7 +227,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 ## Installation & Setup
 
 <details>
-<summary><h3>Download the Script</h3></summary>
+<summary>Download the Script</summary>
 
 **Latest Version (v1.7.1):**
 
