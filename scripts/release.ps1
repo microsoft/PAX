@@ -677,8 +677,8 @@ function Update-ReadmeVersion {
         }
         
         # 3. Update release notes link
-        # Pattern: [Latest Release Notes](./release_notes/Purview_Audit_Log_Processor/v1.7.0.md)
-        $notesLinkPattern = "(\[Latest Release Notes\]\(\.\/release_notes\/${productName}\/v)[\d\.]+\.md\)"
+        # Pattern: [Latest Release Notes](./release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.7.0.md)
+        $notesLinkPattern = "(\[Latest Release Notes\]\(\.\/release_notes\/${productName}\/${scriptName}_Release_Note_v)[\d\.]+\.md\)"
         if ($content -match $notesLinkPattern) {
             $newNotesLink = "`${1}$NewVersion.md)"
             $content = [regex]::Replace($content, $notesLinkPattern, $newNotesLink)
