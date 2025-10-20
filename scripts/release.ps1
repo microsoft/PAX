@@ -151,6 +151,7 @@ function Get-FilesForScriptType {
                               ($file -match '^LICENSE$') -or
                               ($file -match '^README\.md$') -or
                               ($file -match '^SECURITY\.md$') -or
+                              ($file -match '^versions\.json$') -or
                               ($file -match '^\.github/') -or
                               # Parent folders but NOT Purview/Graph subfolders
                               (($file -match '^release_documentation/') -and ($file -notmatch '/(Purview|Graph)_Audit_Log_Processor/')) -or
