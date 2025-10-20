@@ -183,6 +183,9 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 
 ## Prerequisites
 
+<details>
+<summary>📋 View Prerequisites (Click to Expand)</summary>
+
 | Requirement                 | Details                                 | Notes                                                        |
 | --------------------------- | --------------------------------------- | ------------------------------------------------------------ |
 | **PowerShell**              | 5.1 or 7+                               | 7+ strongly recommended for parallel execution and UTF-8     |
@@ -217,6 +220,8 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 | Side-by-Side Install | N/A                           | ✅ Does not replace PS 5.1     |
 
 **Download PowerShell 7:** https://aka.ms/powershell
+
+</details>
 
 </details>
 
