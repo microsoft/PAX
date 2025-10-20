@@ -1340,23 +1340,29 @@ function Sync-ReleaseBranch {
         [string]$CommitMessage
     )
     
-    Write-Status "Generating documentation PDF from README.md..."
-    
-    # Generate PDF from README.md using VS Code Markdown PDF extension
-    # Create PDF in TEMP folder to avoid OneDrive security policies
-    $readmePath = Join-Path (Get-Location) "README.md"
-    
-    # Use product-specific naming for PDFs
-    # Purview: PAX_Purview_Audit_Log_Processor_Documentation_v{version}.pdf
-    # Graph: PAX_Graph_Audit_Log_Processor_Documentation_v{version}.pdf
+    # Determine source markdown file and PDF filename based on ScriptType
     if ($ScriptType -eq "Purview") {
+        $mdFilename = "PAX_Purview_Audit_Log_Processor_Documentation_v${NewVersion}.md"
+        $mdPath = "release_documentation\Purview_Audit_Log_Processor\MD\$mdFilename"
         $pdfFilename = "PAX_Purview_Audit_Log_Processor_Documentation_v${NewVersion}.pdf"
+        $docType = "Purview documentation"
     } elseif ($ScriptType -eq "Graph") {
+        $mdFilename = "PAX_Graph_Audit_Log_Processor_Documentation_v${NewVersion}.md"
+        $mdPath = "release_documentation\Graph_Audit_Log_Processor\MD\$mdFilename"
         $pdfFilename = "PAX_Graph_Audit_Log_Processor_Documentation_v${NewVersion}.pdf"
+        $docType = "Graph documentation"
     } else {
-        # Fallback for Umbrella or other types
+        # Umbrella uses README.md
+        $mdPath = "README.md"
         $pdfFilename = "PAX_Documentation_v${NewVersion}.pdf"
+        $docType = "README.md"
     }
+    
+    Write-Status "Generating documentation PDF from $docType..."
+    
+    # Generate PDF from markdown using VS Code Markdown PDF extension
+    # Create PDF in TEMP folder to avoid OneDrive security policies
+    $readmePath = Join-Path (Get-Location) $mdPath
     
     # Use TEMP folder for PDF generation (outside OneDrive)
     $tempFolder = [System.IO.Path]::GetTempPath()
@@ -1366,35 +1372,22 @@ function Sync-ReleaseBranch {
     
     if (Test-Path $readmePath) {
         try {
-            # Remove old versioned PDFs from repo
-            Get-ChildItem -Path "PAX_Documentation_v*.pdf" -ErrorAction SilentlyContinue | ForEach-Object {
-                Remove-Item $_.FullName -Force
-                Write-Status "Removed old PDF: $($_.Name)"
-            }
-            
-            # Also remove README.pdf if it exists (legacy name)
-            $legacyPdfPath = Join-Path (Get-Location) "README.pdf"
-            if (Test-Path $legacyPdfPath) {
-                Remove-Item $legacyPdfPath -Force
-                Write-Status "Removed legacy README.pdf"
-            }
-            
             # Clean up any old temp files
             if (Test-Path $tempReadmePath) { Remove-Item $tempReadmePath -Force }
             if (Test-Path $tempPdfPath) { Remove-Item $tempPdfPath -Force }
             
-            # Copy README to TEMP folder for PDF generation
+            # Copy source markdown to TEMP folder for PDF generation
             Copy-Item $readmePath $tempReadmePath -Force
-            Write-Status "Copied README.md to TEMP folder (avoids OneDrive security policies)"
+            Write-Status "Copied $docType to TEMP folder (avoids OneDrive security policies)"
             
             Write-Status "Attempting to generate PDF using VS Code Markdown PDF extension..."
             
-            # Open README.md in VS Code and wait for user to export
+            # Open markdown file in VS Code and wait for user to export
             Write-Host ""
             Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
             Write-Host "║  PDF GENERATION REQUIRED                                       ║" -ForegroundColor Yellow
             Write-Host "╠════════════════════════════════════════════════════════════════╣" -ForegroundColor Yellow
-            Write-Host "║  Opening README copy in VS Code (TEMP folder)...               ║" -ForegroundColor Yellow
+            Write-Host "║  Opening $docType copy in VS Code (TEMP folder)...             ║" -ForegroundColor Yellow
             Write-Host "║                                                                ║" -ForegroundColor Yellow
             Write-Host "║  Please export to PDF:                                         ║" -ForegroundColor Cyan
             Write-Host "║  1. Right-click in the editor                                  ║" -ForegroundColor White
@@ -1446,9 +1439,26 @@ function Sync-ReleaseBranch {
                 throw "PDF generation incomplete"
             }
             
-            # Archive PDF and README.md to release_documentation folder (before README gets updated)
-            Write-Status "Archiving documentation to release_documentation\Purview_Audit_Log_Processor\..."
-            $releaseDocFolder = Join-Path (Get-Location) "release_documentation\Purview_Audit_Log_Processor"
+            # Archive PDF to appropriate release_documentation folder based on ScriptType
+            if ($ScriptType -eq "Purview") {
+                $productFolder = "Purview_Audit_Log_Processor"
+                $docDescription = "Purview documentation"
+            } elseif ($ScriptType -eq "Graph") {
+                $productFolder = "Graph_Audit_Log_Processor"
+                $docDescription = "Graph documentation"
+            } else {
+                # Umbrella uses root release_documentation folder
+                $productFolder = ""
+                $docDescription = "Umbrella documentation"
+            }
+            
+            Write-Status "Archiving $docDescription to release_documentation\$productFolder..."
+            
+            if ($productFolder) {
+                $releaseDocFolder = Join-Path (Get-Location) "release_documentation\$productFolder"
+            } else {
+                $releaseDocFolder = Join-Path (Get-Location) "release_documentation"
+            }
             $releaseDocPdfFolder = Join-Path $releaseDocFolder "PDF"
             $releaseDocMdFolder = Join-Path $releaseDocFolder "MD"
             
