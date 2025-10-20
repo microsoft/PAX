@@ -877,6 +877,15 @@ For questions or issues, refer to the documentation:
     }
     else {
         # Purview or Graph releases
+        # Set documentation filenames based on product
+        if ($ScriptType -eq "Purview") {
+            $docBaseName = "PAX_Purview_Audit_Log_Processor_Documentation"
+        } elseif ($ScriptType -eq "Graph") {
+            $docBaseName = "PAX_Graph_Audit_Log_Processor_Documentation"
+        } else {
+            $docBaseName = "PAX_Documentation"
+        }
+        
         $releaseNotesContent += @"
 ## Installation
 
@@ -884,7 +893,7 @@ For questions or issues, refer to the documentation:
 This release note documents **version $NewVersion**. Use the direct download links below to obtain this specific version:
 
 - **Script v$NewVersion**: [${scriptPrefix}_v$NewVersion.ps1](https://github.com/microsoft/PAX/blob/release/script_archive/$processorPath/${scriptPrefix}_v$NewVersion.ps1)
-- **Documentation v$NewVersion**: [PAX_Documentation_v$NewVersion.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/$processorPath/PDF/PAX_Documentation_v$NewVersion.pdf)
+- **Documentation v$NewVersion**: [${docBaseName}_v$NewVersion.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/$processorPath/PDF/${docBaseName}_v$NewVersion.pdf)
 
 ### Get Latest Version
 For the most recent release, visit:
@@ -896,8 +905,8 @@ For the most recent release, visit:
 ## Support
 
 For questions or issues, refer to the documentation:
-- **Documentation v$NewVersion (PDF)**: [PAX_Documentation_v$NewVersion.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/$processorPath/PDF/PAX_Documentation_v$NewVersion.pdf)
-- **Documentation v$NewVersion (Markdown)**: [PAX_Documentation_v$NewVersion.md](https://github.com/microsoft/PAX/blob/release/release_documentation/$processorPath/MD/PAX_Documentation_v$NewVersion.md)
+- **Documentation v$NewVersion (PDF)**: [${docBaseName}_v$NewVersion.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/$processorPath/PDF/${docBaseName}_v$NewVersion.pdf)
+- **Documentation v$NewVersion (Markdown)**: [${docBaseName}_v$NewVersion.md](https://github.com/microsoft/PAX/blob/release/release_documentation/$processorPath/MD/${docBaseName}_v$NewVersion.md)
 
 ---
 
@@ -1331,12 +1340,23 @@ function Sync-ReleaseBranch {
         [string]$CommitMessage
     )
     
-    Write-Status "Generating PAX_Documentation_v${NewVersion}.pdf from README.md..."
+    Write-Status "Generating documentation PDF from README.md..."
     
     # Generate PDF from README.md using VS Code Markdown PDF extension
     # Create PDF in TEMP folder to avoid OneDrive security policies
     $readmePath = Join-Path (Get-Location) "README.md"
-    $pdfFilename = "PAX_Documentation_v${NewVersion}.pdf"
+    
+    # Use product-specific naming for PDFs
+    # Purview: PAX_Purview_Audit_Log_Processor_Documentation_v{version}.pdf
+    # Graph: PAX_Graph_Audit_Log_Processor_Documentation_v{version}.pdf
+    if ($ScriptType -eq "Purview") {
+        $pdfFilename = "PAX_Purview_Audit_Log_Processor_Documentation_v${NewVersion}.pdf"
+    } elseif ($ScriptType -eq "Graph") {
+        $pdfFilename = "PAX_Graph_Audit_Log_Processor_Documentation_v${NewVersion}.pdf"
+    } else {
+        # Fallback for Umbrella or other types
+        $pdfFilename = "PAX_Documentation_v${NewVersion}.pdf"
+    }
     
     # Use TEMP folder for PDF generation (outside OneDrive)
     $tempFolder = [System.IO.Path]::GetTempPath()
@@ -1455,8 +1475,18 @@ function Sync-ReleaseBranch {
                 Write-Warning "Could not archive PDF - source file not found"
             }
             
-            # Archive the current README.md (before it gets updated for new version)
-            $readmeMdFilename = "PAX_Documentation_v${NewVersion}.md"
+            # Archive the current README.md with product-specific naming
+            # Purview: PAX_Purview_Audit_Log_Processor_Documentation_v{version}.md
+            # Graph: PAX_Graph_Audit_Log_Processor_Documentation_v{version}.md
+            if ($ScriptType -eq "Purview") {
+                $readmeMdFilename = "PAX_Purview_Audit_Log_Processor_Documentation_v${NewVersion}.md"
+            } elseif ($ScriptType -eq "Graph") {
+                $readmeMdFilename = "PAX_Graph_Audit_Log_Processor_Documentation_v${NewVersion}.md"
+            } else {
+                # Fallback for other types (shouldn't happen for Purview/Graph releases)
+                $readmeMdFilename = "PAX_Documentation_v${NewVersion}.md"
+            }
+            
             $archiveMdPath = Join-Path $releaseDocMdFolder $readmeMdFilename
             if (Test-Path $readmePath) {
                 Copy-Item -Path $readmePath -Destination $archiveMdPath -Force
