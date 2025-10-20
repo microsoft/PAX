@@ -378,7 +378,7 @@ jobs:
                 const baselineBody = '# Weekly Baseline - Week ' + currentWeek + '\\n\\n' +
                   '**Date:** ' + today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) + '\\n' +
                   '**Week Range:** ' + dateRangeStr + '\\n\\n' +
-                  '## Baseline Metrics (for next week\\\\'s comparison):\\n\\n' +
+                  '## Baseline Metrics (for next week\\'s comparison):\\n\\n' +
                   '- **Total Downloads:** ' + allTimeDownloads + '\\n' +
                   '- **Total Views:** ' + (views ? views.count : 0) + '\\n' +
                   '- **Unique Visitors:** ' + (views ? views.uniques : 0) + '\\n' +
@@ -387,7 +387,7 @@ jobs:
                   '## Per-Asset Download Counts:\\n\\n' +
                   '```json\\n' + assetDownloadsJson + '\\n```\\n\\n' +
                   '*Asset downloads are tracked with format: "tag::filename"*\\n\\n' +
-                  '*This baseline will be used to calculate next week\\\\'s activity (Week ' + (currentWeek + 1) + ').*';
+                  '*This baseline will be used to calculate next week\\'s activity (Week ' + (currentWeek + 1) + ').*';
 
                 const { data: baselineIssue } = await github.rest.issues.create({
                   owner: owner,
