@@ -2,11 +2,11 @@
 
 > **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.7.1.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.7.1/PAX_Purview_Audit_Log_Processor_v1.7.1.ps1)
 >
-> **📋 Release Notes:** See what's new → [v1.7.1 Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.7.1.md) | [v1.7.0 Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.7.0.md) | [All Releases](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
+> **📋 Release Notes:** See what's new → [v1.7.1 Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.7.1.md) | [v1.7.0 Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.7.0.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
-> **📜 Previous Script Versions:** [v1.7.0 Script](https://github.com/microsoft/PAX/releases/download/purview-v1.7.0/PAX_Purview_Audit_Log_Processor_v1.7.0.ps1) | [v1.6.0 Script](https://github.com/microsoft/PAX/releases/download/purview-v1.6.0/PAX_Purview_Audit_Log_Processor_v1.6.0.ps1) | [All Releases](https://github.com/microsoft/PAX/releases)
+> **📜 Previous Script Versions:** [v1.7.0 Script](https://github.com/microsoft/PAX/releases/download/purview-v1.7.0/PAX_Purview_Audit_Log_Processor_v1.7.0.ps1) | [v1.6.0 Script](https://github.com/microsoft/PAX/releases/download/purview-v1.6.0/PAX_Purview_Audit_Log_Processor_v1.6.0.ps1) | [All Script Releases](https://github.com/microsoft/PAX/releases?q=purview-v&expanded=true)
 >
-> **📚 Documentation Archive:** [v1.7.1 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.md) | [v1.7.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.0.md) | [All Releases](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor/MD)
+> **📚 Documentation Archive:** [v1.7.1 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.md) | [v1.7.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.0.md) | [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor/MD)
 
 **Script:** `PAX_Purview_Audit_Log_Processor_v1.7.1.ps1`  
 **Version:** 1.7.1  
@@ -239,7 +239,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 
 - v1.7.0: [Script](https://github.com/microsoft/PAX/releases/download/purview-v1.7.0/PAX_Purview_Audit_Log_Processor_v1.7.0.ps1) | [Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.0.md) | [Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.7.0.md)
 - v1.6.0: [Script](https://github.com/microsoft/PAX/releases/download/purview-v1.6.0/PAX_Purview_Audit_Log_Processor_v1.6.0.ps1) | [Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.6.0.md)
-- [All Releases](https://github.com/microsoft/PAX/releases)
+- [All Script Releases](https://github.com/microsoft/PAX/releases?q=purview-v&expanded=true)
 
 Save the downloaded script to a working directory (e.g., `C:\Scripts\PAX\`).
 
@@ -273,9 +273,6 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.
 ---
 
 ## Parameters Reference
-
-<details>
-<summary><h3>📋 View All Parameters</h3></summary>
 
 ### Date & Time Parameters
 
@@ -688,8 +685,6 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.
 **Example:** `.\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -Help`  
 **Use When:** Quick reference without opening documentation
 
-</details>
-
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
@@ -894,9 +889,6 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 
 ## Agent Filtering
 
-<details>
-<summary><h3>🤖 View Agent Filtering Documentation</h3></summary>
-
 ### Overview
 
 Agent Filtering enables targeted extraction of Copilot agent-specific audit records from your audit logs. This feature is essential for enterprises analyzing AI agent usage, ROI metrics, and compliance requirements specific to Copilot agents and declarative agents.
@@ -1033,16 +1025,11 @@ The `AgentId` field appears in Copilot audit records and identifies the specific
 - `AppIdentity` - Application context for the agent
 - Plus all standard Copilot usage fields
 
-</details>
-
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
 ## User and Group Filtering
-
-<details>
-<summary><h3>👥 View User and Group Filtering Documentation</h3></summary>
 
 ### Overview
 
@@ -1229,16 +1216,11 @@ The `UserId` field appears in all Copilot audit records and identifies the user 
 - **Case Sensitivity**: User email matching is case-insensitive
 - **Filter Combinations**: Can combine with `-AgentsOnly`, `-AgentId`, `-ExcludeAgents`, `-PromptFilter`
 
-</details>
-
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
 ## Prompt and Response Filtering
-
-<details>
-<summary><h3>💬 View Prompt and Response Filtering Documentation</h3></summary>
 
 ### Overview
 
@@ -1382,16 +1364,11 @@ When using PromptFilter with `-ExplodeArrays` or `-ExplodeDeep`, the `Message_is
 - **PromptFilter=Both**: Mix of `True` and `False` values
 - **PromptFilter=Null**: All rows have blank `Message_isPrompt` values
 
-</details>
-
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
 ## Combining Filters
-
-<details>
-<summary><h3>🔗 View Combined Filter Documentation</h3></summary>
 
 ### Overview
 
@@ -1613,18 +1590,11 @@ All filter combinations work in replay mode **except `-GroupNames`** (requires a
 - **PromptFilter Impact:** Reduces output rows by 15-20% when using `Both` (removes resource-only rows)
 - **Three-Filter Combo:** Can reduce final output by 95%+ for highly targeted analysis
 
-</details>
-
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
 ## Output Files & Schema
-
-<details>
-<summary><h3>📊 View Output Schema Documentation</h3></summary>
-
-The script generates CSV files with different column structures depending on explosion mode:
 
 ### Output Files
 
@@ -1717,16 +1687,9 @@ Every execution produces two files:
 
 **Warning:** Significantly increases CSV width and processing time. Test with short date range first.
 
-</details>
-
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
-
 ---
 
 ## Activity Types Reference
-
-<details>
-<summary><h3>📝 View Activity Types Reference</h3></summary>
 
 ### Common High-Volume Activities
 
@@ -1792,18 +1755,11 @@ Re-process previously exported raw audit CSV files without querying Exchange Onl
 - **Reproducible Analysis:** Test transformations against known datasets
 - **Development Workflow:** Build pipelines without production access
 
-</details>
+### Progress Tracking System
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
+Real-time progress updates across three phases:
 
----
-
-## Performance Tuning
-
-<details>
-<summary><h3>⚡ View Performance Tuning Guide</h3></summary>
-
-### Block Hour Tuning
+**Display Format:**
 
 ```
 PAX Purview Audit Log Processing
@@ -1937,16 +1893,11 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 
 
 </details>
 
-</details>
-
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
 ## Troubleshooting & FAQ
-
-<details>
-<summary><h3>🔧 View Troubleshooting Guide</h3></summary>
 
 **Common Issues:**
 
@@ -2075,8 +2026,6 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 
 
 **A:** `-ExplodeArrays` creates 35 columns with array elements as separate rows. `-ExplodeDeep` adds all nested `CopilotEventData.*` fields as additional columns (wide schema).
 
-</details>
-
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
@@ -2084,10 +2033,7 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 
 ## Known Limitations
 
 <details>
-<summary><h3>⚠️ View Known Limitations</h3></summary>
-
-<details>
-<summary>📋 Show Known Limitations Table</summary>
+<summary>⚠️ Show Known Limitations Table</summary>
 
 | Area                        | Limitation / Behavior                                                          | Mitigation / Guidance                                                                                        |
 | --------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
@@ -2133,16 +2079,11 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 
 - Dynamic throttle + batch resizing (targets ~0.8s–2.5s batches)
 - Metrics emitted at completion
 
-</details>
-
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
 ## Security & Compliance
-
-<details>
-<summary><h3>🔒 View Security & Compliance Information</h3></summary>
 
 ### Data Handling
 
@@ -2184,8 +2125,6 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 
 5. **Output Protection:** Store CSV files in encrypted volumes or secure file shares
 6. **Access Logging:** Enable filesystem auditing for output directories
 
-</details>
-
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
@@ -2198,7 +2137,9 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 
 
 **Disclaimer:** This script is provided "AS IS" without warranties or official support. Validate fit for purpose before production use. Not endorsed or officially supported by Microsoft Product Groups. Community-driven maintenance model.
 
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)---
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
+
+---
 
 ## Additional Resources
 
