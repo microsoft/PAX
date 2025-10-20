@@ -563,8 +563,36 @@ function Update-ExportScriptVersion {
             }
             
             $archivePath = Join-Path $archiveFolder $oldFilename
-            Copy-Item -Path $oldPath -Destination $archivePath -Force
-            Write-Success "Archived old version to: $archiveFolder/$oldFilename"
+            
+            # Archive the RELEASED version (from git tag), not the working directory version
+            # This ensures post-release changes don't pollute the archive
+            $oldVersionTag = switch ($ScriptType) {
+                "Purview" { "purview-v$oldVersion" }
+                "Graph"   { "graph-v$oldVersion" }
+            }
+            
+            # Check if the tag exists
+            $tagExists = git tag -l $oldVersionTag 2>$null
+            if ($tagExists) {
+                # Extract the file from the git tag (committed/released version)
+                $gitFilePath = $oldFilename
+                $archivedContent = git show "${oldVersionTag}:${gitFilePath}" 2>$null
+                
+                if ($LASTEXITCODE -eq 0 -and $archivedContent) {
+                    $archivedContent | Set-Content -Path $archivePath -Encoding UTF8 -NoNewline
+                    Write-Success "Archived RELEASED version from tag $oldVersionTag to: $archiveFolder/$oldFilename"
+                }
+                else {
+                    # Fallback: If git show fails, copy from working directory (with warning)
+                    Copy-Item -Path $oldPath -Destination $archivePath -Force
+                    Write-Warning "Could not extract from tag $oldVersionTag, archived working directory version (may include post-release changes)"
+                }
+            }
+            else {
+                # Tag doesn't exist (first release or tag missing), copy from working directory
+                Copy-Item -Path $oldPath -Destination $archivePath -Force
+                Write-Warning "Tag $oldVersionTag not found, archived working directory version (may include post-release changes)"
+            }
         }
         
         # STEP 2: Read and update content for new version
