@@ -1954,16 +1954,24 @@ function New-CommitAndTag {
     git commit -m $commitMsg
     Write-Success "Created commit: $commitMsg"
     
-    # Create and push tag
-    git tag "v$NewVersion"
-    Write-Success "Created tag: v$NewVersion"
+    # Create appropriate tag based on script type
+    if ($ScriptType -eq "Purview") {
+        $tagName = "purview-v$NewVersion"
+    } elseif ($ScriptType -eq "Graph") {
+        $tagName = "graph-v$NewVersion"
+    } else {
+        $tagName = "PAX-v$NewVersion"
+    }
+    
+    git tag $tagName
+    Write-Success "Created tag: $tagName"
     
     # Push changes and tag to both repositories (PAX branch)
     Write-Status "Pushing PAX branch and tag to both repositories..."
     git push origin PAX 2>$null
-    git push origin "v$NewVersion" 2>$null
+    git push origin $tagName 2>$null
     git push backup PAX
-    git push backup "v$NewVersion"
+    git push backup $tagName
     Write-Success "Pushed PAX branch and tag to both GitHub repositories"
     
     # Now sync the release branch with customer-facing files
@@ -1976,8 +1984,18 @@ function Show-Summary {
         [string]$OldVersion,
         [string]$NewVersion,
         [string]$BumpType,
-        [string]$CommitMessage
+        [string]$CommitMessage,
+        [string]$ScriptType = "Umbrella"
     )
+    
+    # Determine tag name based on script type
+    if ($ScriptType -eq "Purview") {
+        $tagName = "purview-v$NewVersion"
+    } elseif ($ScriptType -eq "Graph") {
+        $tagName = "graph-v$NewVersion"
+    } else {
+        $tagName = "PAX-v$NewVersion"
+    }
     
     Write-Host ""
     Write-Host "🎉 Release Summary" -ForegroundColor Green
@@ -1985,7 +2003,7 @@ function Show-Summary {
     Write-Host "• Old version: " -NoNewline; Write-Host "v$OldVersion" -ForegroundColor Yellow
     Write-Host "• New version: " -NoNewline; Write-Host "v$NewVersion" -ForegroundColor Yellow
     Write-Host "• Bump type:   " -NoNewline; Write-Host "$BumpType" -ForegroundColor Yellow
-    Write-Host "• Git tag:     " -NoNewline; Write-Host "v$NewVersion" -ForegroundColor Yellow
+    Write-Host "• Git tag:     " -NoNewline; Write-Host "$tagName" -ForegroundColor Yellow
     Write-Host "• Commit msg:  " -NoNewline; Write-Host "$CommitMessage" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "� Branches Updated:" -ForegroundColor Cyan
@@ -2107,7 +2125,7 @@ function Main {
     New-CommitAndTag -NewVersion $newVersion -BumpType $bumpType -CustomMessage $Message -ScriptType $ScriptType -FileCategories $fileCategories
     
     # Show summary
-    Show-Summary -OldVersion $currentVersion -NewVersion $newVersion -BumpType $bumpType -CommitMessage $finalCommitMsg
+    Show-Summary -OldVersion $currentVersion -NewVersion $newVersion -BumpType $bumpType -CommitMessage $finalCommitMsg -ScriptType $ScriptType
     
     Write-Success "Release process completed successfully! 🎉"
 }
