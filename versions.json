@@ -1,0 +1,32 @@
+{
+  "products": {
+    "pax": {
+      "name": "PAX Infrastructure",
+      "version": "1.0.2",
+      "status": "active",
+      "notes": "Core infrastructure, workflows, and governance files"
+    },
+    "paxapp": {
+      "name": "PAX Desktop Application",
+      "version": "0.1.0",
+      "status": "development",
+      "notes": "Tauri-based desktop application with cross-platform UI"
+    },
+    "purview": {
+      "name": "Purview Audit Log Processor",
+      "version": "1.7.1",
+      "status": "active",
+      "releaseDate": "2025-10-18",
+      "notes": "PowerShell script for Microsoft Purview audit logs"
+    },
+    "graph": {
+      "name": "Graph Audit Log Processor",
+      "version": "0.1.0",
+      "status": "beta",
+      "releaseDate": "2024-09-20",
+      "notes": "PowerShell script for Microsoft Graph audit logs"
+    }
+  },
+  "lastUpdated": "2025-01-22T00:00:00Z"
+}
+
