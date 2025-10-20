@@ -1974,6 +1974,53 @@ function New-CommitAndTag {
     git push backup $tagName
     Write-Success "Pushed PAX branch and tag to both GitHub repositories"
     
+    # Create GitHub release for product releases (not umbrella)
+    if ($ScriptType -ne "Umbrella") {
+        Write-Status "Creating GitHub release for $tagName..."
+        
+        # Get GitHub CLI command
+        $gh = Get-GitHubCLI
+        if ($gh) {
+            # Determine script file path for asset
+            if ($ScriptType -eq "Purview") {
+                $scriptFile = "PAX_Purview_Audit_Log_Processor_v${NewVersion}.ps1"
+            } elseif ($ScriptType -eq "Graph") {
+                $scriptFile = "PAX_Graph_Audit_Log_Processor_v${NewVersion}.ps1"
+            }
+            
+            # Get release notes file path
+            $releaseNotesPath = "release_notes\${ScriptType}_Audit_Log_Processor\${scriptName}_Release_Note_v${NewVersion}.md"
+            
+            # Create release with script file as asset
+            if (Test-Path $scriptFile) {
+                $releaseTitle = "${ScriptType} Audit Log Processor v${NewVersion}"
+                $releaseNotes = if (Test-Path $releaseNotesPath) {
+                    Get-Content $releaseNotesPath -Raw
+                } else {
+                    "Release v${NewVersion}"
+                }
+                
+                & $gh release create $tagName $scriptFile `
+                    --repo microsoft/PAX `
+                    --title $releaseTitle `
+                    --notes $releaseNotes `
+                    --target release 2>$null
+                
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Success "✓ Created GitHub release: $releaseTitle"
+                    Write-Success "✓ Attached asset: $scriptFile"
+                } else {
+                    Write-Warning "Failed to create GitHub release (may already exist)"
+                }
+            } else {
+                Write-Warning "Script file not found: $scriptFile (skipping release creation)"
+            }
+        } else {
+            Write-Warning "GitHub CLI not found - skipping GitHub release creation"
+            Write-Host "  To create release manually: gh release create $tagName --repo microsoft/PAX" -ForegroundColor Yellow
+        }
+    }
+    
     # Now sync the release branch with customer-facing files
     Sync-ReleaseBranch -NewVersion $NewVersion -ScriptType $ScriptType -CommitMessage $commitMsg
 }
