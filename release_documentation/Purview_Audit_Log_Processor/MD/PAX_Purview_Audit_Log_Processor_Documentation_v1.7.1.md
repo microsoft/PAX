@@ -42,7 +42,8 @@
 
 ## Overview
 
-### What It Does
+<details>
+<summary><h3>What It Does</h3></summary>
 
 The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script that exports Microsoft Purview Unified Audit Log events, with specialized support for Microsoft 365 Copilot activities and related operations. It transforms raw audit data into analysis-ready CSV files with enriched metadata, intelligent query optimization, and flexible schema options.
 
@@ -65,13 +66,16 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 5. **Agent Filtering Mode** (`-AgentsOnly` or `-AgentId` or `-ExcludeAgents`) - Filter for records based on Copilot agent presence (works with live queries and replay mode)
 6. **Prompt and Response Filtering Mode** (`-PromptFilter`) - Filter Copilot conversation turns by isPrompt property to isolate prompts, responses, or both
 
+</details>
+
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
 ## Key Features
 
-### Intelligent Query Management
+<details>
+<summary><h3>Intelligent Query Management</h3></summary>
 
 - **Adaptive Block Sizing:** Automatically adjusts time window sizes based on data density
 - **10K Limit Detection:** Identifies when Microsoft 365 service cap is reached and recommends mitigation
@@ -79,7 +83,10 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - **Throttle Resilience:** Exponential backoff with jitter for retry operations
 - **Volume Classification:** Smart batching based on activity type (High/Medium/Low volume)
 
-### Data Processing & Output
+</details>
+
+<details>
+<summary><h3>Data Processing & Output</h3></summary>
 
 - **Purview Schema Compliance:** Matches Microsoft Purview's canonical exploded schema structure
 - **Deep JSON Flattening:** Optional recursive flattening of nested `CopilotEventData` structures
@@ -89,19 +96,27 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - **UTF-8 Encoding:** Consistent UTF-8 (no BOM) output for cross-platform compatibility
 - **Header Stability:** Always writes CSV header even when zero records match (ensures schema consistency)
 
-### Performance Optimization
+</details>
+
+<details>
+<summary><h3>Performance Optimization</h3></summary>
 
 - **Parallel Execution (PS7+):** Concurrent processing of multiple activity types with controlled throttling
 - **Learned Block Sizes:** Per-activity and global adaptive sizing based on observed densities
 - **Fast CSV Writer:** Direct `StreamWriter` usage eliminates repeated `Export-Csv` overhead
 - **Schema Sampling:** Configurable initial sampling to optimize column discovery vs. memory usage
 
-### Operational Excellence
+</details>
+
+<details>
+<summary><h3>Operational Excellence</h3></summary>
 
 - **Composite Progress:** Single weighted percentage across Query/Explosion/Export phases
 - **Detailed Logging:** Comprehensive log file with parameters, decisions, warnings, and metrics
 - **Automated Setup:** Detects, installs, and connects ExchangeOnlineManagement module automatically
 - **Offline Replay:** Transform previously exported raw CSVs without Exchange Online connection
+
+</details>
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
@@ -109,14 +124,18 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 
 ## Use Cases
 
-### Adoption & Usage Analytics
+<details>
+<summary><h3>Adoption & Usage Analytics</h3></summary>
 
 - Track Microsoft 365 Copilot adoption across your organization
 - Measure user engagement with AI features (interactions, token consumption, model usage)
 - Identify power users and underutilized licenses
 - Calculate ROI metrics based on time saved and acceptance rates
 
-### Compliance & Governance
+</details>
+
+<details>
+<summary><h3>Compliance & Governance</h3></summary>
 
 - Audit Copilot interactions for regulatory compliance requirements
 - Monitor data access patterns and sensitivity indicators
@@ -124,7 +143,10 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - Generate audit trails for security reviews
 - Filter and analyze specific Copilot Studio declarative agent activity
 
-### Performance & Capacity Planning
+</details>
+
+<details>
+<summary><h3>Performance & Capacity Planning</h3></summary>
 
 - Track Copilot usage patterns and peak activity periods
 - Analyze model names and app host distribution across your tenant
@@ -133,19 +155,27 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 
 **Note:** Advanced metrics like response latencies and token consumption require `-ExplodeDeep` mode to extract nested CopilotEventData fields.
 
-### Data Integration & BI
+</details>
+
+<details>
+<summary><h3>Data Integration & BI</h3></summary>
 
 - Export enriched data to Power BI, Azure Synapse, or data warehouses
 - Join audit data with licensing information for coverage analysis
 - Build custom dashboards with wide-schema flattened data
 - Maintain historical archives with consistent schema over time
 
-### Development & Testing
+</details>
+
+<details>
+<summary><h3>Development & Testing</h3></summary>
 
 - Offline replay mode for reproducible transformations
 - Test schema changes against synthetic or sanitized datasets
 - Validate data pipelines without querying production audit logs
 - Develop downstream analytics without live tenant access
+
+</details>
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
@@ -163,7 +193,8 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 
 **Note:** The script automatically handles ExchangeOnlineManagement module detection, installation, and connection. No manual setup required.
 
-### Permission Details
+<details>
+<summary><h3>Permission Details</h3></summary>
 
 **Minimum RBAC Requirements:**
 
@@ -171,7 +202,10 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - **Audit Logs** role (if write operations needed elsewhere)
 - Member of appropriate role groups in Microsoft Purview compliance portal
 
-### Why PowerShell 7+?
+</details>
+
+<details>
+<summary><h3>Why PowerShell 7+?</h3></summary>
 
 | Feature              | PowerShell 5.1                | PowerShell 7+                  |
 | -------------------- | ----------------------------- | ------------------------------ |
@@ -184,25 +218,32 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 
 **Download PowerShell 7:** https://aka.ms/powershell
 
+</details>
+
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
 ## Installation & Setup
 
-### Download the Script
+<details>
+<summary><h3>Download the Script</h3></summary>
 
 **Latest Version (v1.7.1):**
+
 - Download: [`PAX_Purview_Audit_Log_Processor_v1.7.1.ps1`](https://github.com/microsoft/PAX/releases/download/v1.7.1/PAX_Purview_Audit_Log_Processor_v1.7.1.ps1)
 - Documentation: [Markdown](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.md)
 - Release Notes: [v1.7.1](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/v1.7.1.md)
 
 **Previous Versions:**
+
 - v1.7.0: [Script](https://github.com/microsoft/PAX/releases/download/v1.7.0/PAX_Purview_Audit_Log_Processor_v1.7.1.ps1) | [Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.0.md) | [Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/v1.7.0.md)
 - v1.6.0: [Script](https://github.com/microsoft/PAX/releases/download/v1.6.0/PAX_Purview_Audit_Log_Processor_v1.6.0.ps1) | [Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/v1.6.0.md)
 - [All Releases](https://github.com/microsoft/PAX/releases)
 
 Save the downloaded script to a working directory (e.g., `C:\Scripts\PAX\`).
+
+</details>
 
 ### First Run (Quick Start)
 
