@@ -925,8 +925,13 @@ For questions or issues, refer to the documentation:
 "@
     }
     
-    # Save release notes file
-    $releaseNotesFile = Join-Path $releaseNotesFolder "v$NewVersion.md"
+    # Save release notes file with proper naming convention
+    if ($ScriptType -eq "Umbrella") {
+        $releaseNotesFilename = "PAX_Release_Note_v$NewVersion.md"
+    } else {
+        $releaseNotesFilename = "${scriptPrefix}_Release_Note_v$NewVersion.md"
+    }
+    $releaseNotesFile = Join-Path $releaseNotesFolder $releaseNotesFilename
     $releaseNotesContent | Set-Content -Path $releaseNotesFile -Encoding UTF8
     Write-Success "Created release notes file: $releaseNotesFile"
     
