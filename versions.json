@@ -1,7 +1,13 @@
 {
   "products": {
+    "pax": {
+      "name": "PAX Infrastructure",
+      "version": "1.0.2",
+      "status": "active",
+      "notes": "Core infrastructure, workflows, and governance files"
+    },
     "paxapp": {
-      "name": "PAX (Portable Audit eXporter)",
+      "name": "PAX Desktop Application",
       "version": "0.1.0",
       "status": "development",
       "notes": "Tauri-based desktop application with cross-platform UI"

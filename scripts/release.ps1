@@ -5,7 +5,7 @@
 
 param(
     [Parameter(Mandatory=$true)]
-    [ValidateSet('Umbrella', 'Purview', 'Graph')]
+    [ValidateSet('Umbrella', 'Purview', 'Graph', 'PAXapp')]
     [string]$ScriptType,
     
     [switch]$Patch,
@@ -175,6 +175,18 @@ function Get-FilesForScriptType {
                               ($file -match '^release_notes/Graph_Audit_Log_Processor/') -or
                               ($file -match '^script_archive/Graph_Audit_Log_Processor/')
             }
+            "PAXapp" {
+                # PAXapp includes desktop application files
+                $isRelevant = ($file -match '^package\.json$') -or
+                              ($file -match '^package-lock\.json$') -or
+                              ($file -match '^vite\.config\.ts$') -or
+                              ($file -match '^tsconfig\.json$') -or
+                              ($file -match '^tailwind\.config\.js$') -or
+                              ($file -match '^postcss\.config\.js$') -or
+                              ($file -match '^index\.html$') -or
+                              ($file -match '^src/') -or
+                              ($file -match '^src-tauri/')
+            }
         }
         
         if ($isRelevant) {
@@ -255,10 +267,10 @@ function Remove-OldTempBranches {
 
 # Function to show usage
 function Show-Usage {
-    Write-Host "Usage: .\release.ps1 -ScriptType <Umbrella|Purview|Graph> [OPTIONS]"
+    Write-Host "Usage: .\release.ps1 -ScriptType <Umbrella|Purview|Graph|PAXapp> [OPTIONS]"
     Write-Host ""
     Write-Host "Parameters:"
-    Write-Host "  -ScriptType     Type of changes (Umbrella, Purview, or Graph) [REQUIRED]"
+    Write-Host "  -ScriptType     Type of changes (Umbrella, Purview, Graph, or PAXapp) [REQUIRED]"
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  -Patch          Increment patch version (1.0.21 → 1.0.22) [DEFAULT]"
@@ -292,6 +304,10 @@ function Show-Usage {
     Write-Host "             (release_documentation/Graph_Audit_Log_Processor/, etc.)"
     Write-Host "             Does NOT sync root governance files or parent folders"
     Write-Host ""
+    Write-Host "  PAXapp   - Desktop application source code (src/, src-tauri/, package.json, etc.)"
+    Write-Host "             Tauri-based cross-platform GUI application"
+    Write-Host "             Does NOT sync infrastructure files or scripts"
+    Write-Host ""
 }
 
 # Function to get current version from versions.json manifest (Single Source of Truth)
@@ -312,6 +328,14 @@ function Get-CurrentVersion {
                 $version = $manifest.products.pax.version
                 if (-not $version) {
                     Write-Error "PAX version not found in $VersionsManifest"
+                    exit 1
+                }
+                return $version
+            }
+            "PAXapp" {
+                $version = $manifest.products.paxapp.version
+                if (-not $version) {
+                    Write-Error "PAXapp version not found in $VersionsManifest"
                     exit 1
                 }
                 return $version
@@ -360,6 +384,10 @@ function Update-VersionsManifest {
             "Umbrella" {
                 $manifest.products.pax.version = $NewVersion
                 Write-Status "Updated PAX version in manifest: $NewVersion"
+            }
+            "PAXapp" {
+                $manifest.products.paxapp.version = $NewVersion
+                Write-Status "Updated PAXapp version in manifest: $NewVersion"
             }
             "Purview" {
                 $manifest.products.purview.version = $NewVersion
@@ -1316,6 +1344,7 @@ function Add-VersionMarkers {
         $isUmbrellaCommit = $CommitMessage -match "^PAX-v"
         $isPurviewCommit = $CommitMessage -match "^purview-v"
         $isGraphCommit = $CommitMessage -match "^graph-v"
+        $isPAXappCommit = $CommitMessage -match "^PAXapp-v"
         
         # ALWAYS update parent folder .gitkeep files with "PAX Solution Set" headers
         # This ensures parent folders always show PAX commit messages, regardless of ScriptType
@@ -1944,6 +1973,7 @@ function New-CommitAndTag {
     # Generate commit message based on ScriptType
     $commitMsg = switch ($ScriptType) {
         "Umbrella" { "PAX-v${NewVersion}" }
+        "PAXapp"   { "PAXapp-v${NewVersion}" }
         "Purview"  { "purview-v${NewVersion}" }
         "Graph"    { "graph-v${NewVersion}" }
         default    { "v${NewVersion}" }
@@ -2018,6 +2048,8 @@ function New-CommitAndTag {
         $tagName = "purview-v$NewVersion"
     } elseif ($ScriptType -eq "Graph") {
         $tagName = "graph-v$NewVersion"
+    } elseif ($ScriptType -eq "PAXapp") {
+        $tagName = "PAXapp-v$NewVersion"
     } else {
         $tagName = "PAX-v$NewVersion"
     }
@@ -2175,6 +2207,7 @@ function Main {
     # Generate commit message based on ScriptType
     $commitMsg = switch ($ScriptType) {
         "Umbrella" { "PAX-v${newVersion}" }
+        "PAXapp"   { "PAXapp-v${newVersion}" }
         "Purview"  { "purview-v${newVersion}" }
         "Graph"    { "graph-v${newVersion}" }
     }
