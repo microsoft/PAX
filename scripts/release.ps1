@@ -627,7 +627,8 @@ function Update-ExportScriptVersion {
 function Update-ReadmeVersion {
     param(
         [string]$FilePath,
-        [string]$NewVersion
+        [string]$NewVersion,
+        [string]$ScriptType = "Purview"
     )
 
     if (-not (Test-Path $FilePath)) {
@@ -639,46 +640,56 @@ function Update-ReadmeVersion {
         $content = Get-Content $FilePath -Raw -ErrorAction Stop
         $updated = $false
         
-        # Update the Version field line (e.g., **Version:** 1.4.7)
-        $versionFieldPattern = "\*\*Version:\*\*\s*[\d\.]+"
-        if ($content -match $versionFieldPattern) {
-            $newVersionField = "**Version:** $NewVersion"
-            $content = [regex]::Replace($content, $versionFieldPattern, $newVersionField, 1)
-            $updated = $true
-            Write-Success "Updated README version field to $NewVersion"
+        # Determine product-specific patterns based on ScriptType
+        if ($ScriptType -eq "Purview") {
+            $productName = "Purview_Audit_Log_Processor"
+            $scriptName = "PAX_Purview_Audit_Log_Processor"
+            $releaseTag = "purview"
+            $docName = "PAX_Purview_Audit_Log_Processor_Documentation"
+        } elseif ($ScriptType -eq "Graph") {
+            $productName = "Graph_Audit_Log_Processor"
+            $scriptName = "PAX_Graph_Audit_Log_Processor"
+            $releaseTag = "graph"
+            $docName = "PAX_Graph_Audit_Log_Processor_Documentation"
+        } else {
+            Write-Warning "Update-ReadmeVersion only supports Purview/Graph ScriptTypes"
+            return
         }
         
-        # Update the script reference line (e.g., Script: `PAX_Purview_Audit_Log_Processor_v1.4.2.ps1`)
-        $scriptRefPattern = "Script:\s*``PAX_Purview_Audit_Log_Processor_v[\d\.]+\.ps1``"
-        if ($content -match $scriptRefPattern) {
-            $newScriptRef = "Script: ``PAX_Purview_Audit_Log_Processor_v$NewVersion.ps1``"
-            $content = [regex]::Replace($content, $scriptRefPattern, $newScriptRef, 1)
+        # 1. Update GitHub release download link
+        # Pattern: [`PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.7.0/PAX_Purview_Audit_Log_Processor_v1.7.0.ps1)
+        $downloadLinkPattern = "(\[``${scriptName}_v)[\d\.]+\.ps1``\]\(https://github\.com/microsoft/PAX/releases/download/${releaseTag}-v[\d\.]+/${scriptName}_v[\d\.]+\.ps1\)"
+        if ($content -match $downloadLinkPattern) {
+            $newDownloadLink = "`${1}$NewVersion.ps1``](https://github.com/microsoft/PAX/releases/download/${releaseTag}-v$NewVersion/${scriptName}_v$NewVersion.ps1)"
+            $content = [regex]::Replace($content, $downloadLinkPattern, $newDownloadLink)
             $updated = $true
-            Write-Success "Updated README script reference to v$NewVersion"
+            Write-Success "Updated README GitHub release download link to v$NewVersion"
         }
         
-        # Update all command examples that reference the script
-        $scriptNamePattern = "PAX_Purview_Audit_Log_Processor_v[\d\.]+\.ps1"
-        $newScriptName = "PAX_Purview_Audit_Log_Processor_v$NewVersion.ps1"
-        if ($content -match $scriptNamePattern) {
-            $content = [regex]::Replace($content, $scriptNamePattern, $newScriptName)
+        # 2. Update documentation link
+        # Pattern: [Latest Documentation](./release_documentation/Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.0.md)
+        $docLinkPattern = "(\[Latest Documentation\]\(\.\/release_documentation\/${productName}\/MD\/${docName}_v)[\d\.]+\.md\)"
+        if ($content -match $docLinkPattern) {
+            $newDocLink = "`${1}$NewVersion.md)"
+            $content = [regex]::Replace($content, $docLinkPattern, $newDocLink)
             $updated = $true
-            Write-Success "Updated README command examples to use v$NewVersion"
+            Write-Success "Updated README documentation link to v$NewVersion"
         }
         
-        # Update Quick Start download link version (keeps full URL structure)
-        $quickStartPattern = "(\[``PAX_Purview_Audit_Log_Processor_v)[\d\.]+\.ps1``\]\(https://github\.com/microsoft/PAX/blob/release/script_archive/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_v[\d\.]+\.ps1\)"
-        if ($content -match $quickStartPattern) {
-            $newQuickStartLink = "`${1}$NewVersion.ps1``](https://github.com/microsoft/PAX/blob/release/script_archive/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_v$NewVersion.ps1)"
-            $content = [regex]::Replace($content, $quickStartPattern, $newQuickStartLink)
+        # 3. Update release notes link
+        # Pattern: [Latest Release Notes](./release_notes/Purview_Audit_Log_Processor/v1.7.0.md)
+        $notesLinkPattern = "(\[Latest Release Notes\]\(\.\/release_notes\/${productName}\/v)[\d\.]+\.md\)"
+        if ($content -match $notesLinkPattern) {
+            $newNotesLink = "`${1}$NewVersion.md)"
+            $content = [regex]::Replace($content, $notesLinkPattern, $newNotesLink)
             $updated = $true
-            Write-Success "Updated Quick Start download link to v$NewVersion"
+            Write-Success "Updated README release notes link to v$NewVersion"
         }
         
         # Save changes if any updates were made
         if ($updated) {
             $content | Set-Content -Path $FilePath -Encoding UTF8 -NoNewline
-            Write-Success "Updated README with version $NewVersion"
+            Write-Success "✓ Updated README.md with all v$NewVersion links"
         }
         else {
             Write-Warning "No version patterns found in README to update"
@@ -2079,7 +2090,7 @@ function Main {
     
     # Update script version and README for Purview/Graph releases
     Update-ExportScriptVersion -NewVersion $newVersion -ScriptType $ScriptType
-    Update-ReadmeVersion -FilePath "README.md" -NewVersion $newVersion
+    Update-ReadmeVersion -FilePath "README.md" -NewVersion $newVersion -ScriptType $ScriptType
     
     # Generate release notes file
     Write-Status "Generating release notes..."
