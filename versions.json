@@ -1,10 +1,10 @@
 {
   "products": {
-    "pax": {
+    "paxapp": {
       "name": "PAX (Portable Audit eXporter)",
-      "version": "1.0.2",
+      "version": "0.1.0",
       "status": "development",
-      "notes": "Tauri-based desktop application (on back burner)"
+      "notes": "Tauri-based desktop application with cross-platform UI"
     },
     "purview": {
       "name": "Purview Audit Log Processor",
@@ -21,5 +21,6 @@
       "notes": "PowerShell script for Microsoft Graph audit logs"
     }
   },
-  "lastUpdated": "2025-10-18T23:41:18Z"
+  "lastUpdated": "2025-01-22T00:00:00Z"
 }
+
