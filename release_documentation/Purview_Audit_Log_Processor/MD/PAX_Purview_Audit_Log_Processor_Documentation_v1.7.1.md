@@ -42,7 +42,7 @@
 
 ## Overview
 
-<details>
+<details open>
 <summary>What It Does</summary>
 
 The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script that exports Microsoft Purview Unified Audit Log events, with specialized support for Microsoft 365 Copilot activities and related operations. It transforms raw audit data into analysis-ready CSV files with enriched metadata, intelligent query optimization, and flexible schema options.
@@ -273,6 +273,9 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.
 ---
 
 ## Parameters Reference
+
+<details>
+<summary>📋 View All Parameters (Click to Expand)</summary>
 
 ### Date & Time Parameters
 
@@ -685,6 +688,8 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.
 **Example:** `.\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 -Help`  
 **Use When:** Quick reference without opening documentation
 
+</details>
+
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
@@ -889,6 +894,9 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 
 ## Agent Filtering
 
+<details>
+<summary>🤖 View Agent Filtering Guide (Click to Expand)</summary>
+
 ### Overview
 
 Agent Filtering enables targeted extraction of Copilot agent-specific audit records from your audit logs. This feature is essential for enterprises analyzing AI agent usage, ROI metrics, and compliance requirements specific to Copilot agents and declarative agents.
@@ -1025,11 +1033,16 @@ The `AgentId` field appears in Copilot audit records and identifies the specific
 - `AppIdentity` - Application context for the agent
 - Plus all standard Copilot usage fields
 
+</details>
+
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
 ## User and Group Filtering
+
+<details>
+<summary>👥 View User & Group Filtering Guide (Click to Expand)</summary>
 
 ### Overview
 
@@ -1216,11 +1229,16 @@ The `UserId` field appears in all Copilot audit records and identifies the user 
 - **Case Sensitivity**: User email matching is case-insensitive
 - **Filter Combinations**: Can combine with `-AgentsOnly`, `-AgentId`, `-ExcludeAgents`, `-PromptFilter`
 
+</details>
+
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
 ## Prompt and Response Filtering
+
+<details>
+<summary>💬 View Prompt & Response Filtering Guide (Click to Expand)</summary>
 
 ### Overview
 
@@ -1364,11 +1382,16 @@ When using PromptFilter with `-ExplodeArrays` or `-ExplodeDeep`, the `Message_is
 - **PromptFilter=Both**: Mix of `True` and `False` values
 - **PromptFilter=Null**: All rows have blank `Message_isPrompt` values
 
+</details>
+
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
 ## Combining Filters
+
+<details>
+<summary>🔗 View Combined Filtering Guide (Click to Expand)</summary>
 
 ### Overview
 
@@ -1589,6 +1612,8 @@ All filter combinations work in replay mode **except `-GroupNames`** (requires a
 - **Replay Mode:** All filtering is client-side - expect longer processing times
 - **PromptFilter Impact:** Reduces output rows by 15-20% when using `Both` (removes resource-only rows)
 - **Three-Filter Combo:** Can reduce final output by 95%+ for highly targeted analysis
+
+</details>
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
