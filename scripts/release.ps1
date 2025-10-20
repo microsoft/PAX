@@ -28,7 +28,6 @@ $VersionsManifest = "versions.json"
 $PackageJson = "package.json"
 $TauriConf = "src-tauri/tauri.conf.json"
 $CargoToml = "src-tauri/Cargo.toml"
-$ExportScriptPattern = "PAX_Purview_Audit_Log_Processor_v*.ps1"
 
 # Function to print colored output
 function Write-Status {
@@ -921,7 +920,7 @@ Version $NewVersion is a [maintenance/feature/major] release that [describe prim
 - **Documentation**: [${scriptPrefix}_Documentation_v${NewVersion}.md](https://github.com/microsoft/PAX/blob/release/release_documentation/${processorPath}/MD/${scriptPrefix}_Documentation_v${NewVersion}.md)
 
 ### Previous Versions
-- v$previousVersion: [Script](https://github.com/microsoft/PAX/releases/download/$($ScriptType.ToLower())-v${previousVersion}/${scriptPrefix}_v${previousVersion}.ps1) | [Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/${processorPath}/${scriptPrefix}_Release_Note_v${previousVersion}.md)
+- v${previousVersion}: [Script](https://github.com/microsoft/PAX/releases/download/$($ScriptType.ToLower())-v${previousVersion}/${scriptPrefix}_v${previousVersion}.ps1) | [Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/${processorPath}/${scriptPrefix}_Release_Note_v${previousVersion}.md)
 - [All Purview Releases](https://github.com/microsoft/PAX/releases?q=purview&expanded=true)
 
 ---
@@ -1616,22 +1615,23 @@ function Sync-ReleaseBranch {
         Write-Status "Detected worktree setup - syncing files directly..."
         
         # Find the release worktree path
-        $releaseWorktreePath = $null
+        $ReleaseWorktreePath = $null
         $worktrees | ForEach-Object {
             if ($_ -match "^\s*(.+?)\s+[a-f0-9]+\s+\[release\]") {
-                $releaseWorktreePath = $matches[1].Trim()
+                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '')]
+                $ReleaseWorktreePath = $matches[1].Trim()
             }
         }
         
-        if (-not $releaseWorktreePath -or -not (Test-Path $releaseWorktreePath)) {
+        if (-not $ReleaseWorktreePath -or -not (Test-Path $ReleaseWorktreePath)) {
             Write-Warning "Release worktree not found. Run: git worktree add `"..\PAX App-release`" release"
             return
         }
         
-        Write-Status "Release worktree location: $releaseWorktreePath"
+        Write-Status "Release worktree location: $ReleaseWorktreePath"
         
         # Sync files from PAX to release worktree using ScriptType-aware function
-        if (-not (Sync-ReleaseWorktreeFiles -ReleaseWorktreePath $releaseWorktreePath -ScriptType $ScriptType -NewVersion $NewVersion)) {
+        if (-not (Sync-ReleaseWorktreeFiles -ReleaseWorktreePath $ReleaseWorktreePath -ScriptType $ScriptType -NewVersion $NewVersion)) {
             Write-Error "Failed to sync files to release worktree"
             return
         }
