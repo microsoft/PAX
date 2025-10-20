@@ -738,36 +738,29 @@ function New-ReleaseNotesFile {
     
     # Get GitHub username from git config
     $gitUsername = git config user.name
-    $gitHubHandle = git config user.github
-    if (-not $gitHubHandle) {
-        # Try to get GitHub username from remote URL
-        $remoteUrl = git config --get remote.origin.url
-        if ($remoteUrl -match "github\.com[:/]([^/]+)") {
-            $gitHubHandle = "@" + $matches[1]
-        }
-        else {
-            $gitHubHandle = "Unknown"
-        }
-    }
-    else {
-        $gitHubHandle = "@" + $gitHubHandle
-    }
-    
     if (-not $gitUsername) {
         $gitUsername = "Unknown"
     }
     
-    # Get current timestamp (UTC)
-    $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss UTC")
+    # Get current timestamp
+    $releaseDate = (Get-Date).ToString("yyyy-MM-dd")
     
-    # Get the last tag
+    # Get the last tag for comparison
     $lastTag = git describe --tags --abbrev=0 2>$null
     if (-not $lastTag) {
-        Write-Warning "No previous tag found, using initial commit"
-        $lastTag = git rev-list --max-parents=0 HEAD
+        Write-Warning "No previous tag found, this appears to be first release"
+        $lastTag = "Initial"
+        $previousVersion = "Initial"
+    } else {
+        # Extract version from tag (e.g., "purview-v1.7.0" -> "1.7.0")
+        if ($lastTag -match "v?([\d\.]+)$") {
+            $previousVersion = $matches[1]
+        } else {
+            $previousVersion = $lastTag
+        }
     }
     
-    Write-Status "Comparing changes since $lastTag..."
+    Write-Status "Analyzing changes since $lastTag..."
     
     # Get list of modified files since last tag
     $modifiedFiles = git diff --name-only $lastTag HEAD 2>$null
@@ -778,151 +771,183 @@ function New-ReleaseNotesFile {
         $modifiedFiles = $modifiedFiles -split "`n" | Where-Object { $_ -ne "" }
     }
     
-    # Get commit history since last tag
-    $commits = git log "$lastTag..HEAD" --pretty=format:"%h - %s (%an, %ar)" 2>$null
-    if (-not $commits) {
-        $commits = @("No commits found")
-    }
-    else {
-        $commits = $commits -split "`n" | Where-Object { $_ -ne "" }
-    }
-    
-    # Get detailed file changes with stats
-    $fileStats = git diff --stat $lastTag HEAD 2>$null
-    if (-not $fileStats) {
-        $fileStats = "No file statistics available"
-    }
-    
-    # Generate enhanced overview from git changes
-    $enhancedOverview = ""
-    if ($modifiedFiles) {
-        $categories = @{
-            "PowerShell Scripts" = @($modifiedFiles | Where-Object { $_ -match "\.ps1$" })
-            "Documentation" = @($modifiedFiles | Where-Object { $_ -match "\.(md|pdf)$" })
-            "Configuration Files" = @($modifiedFiles | Where-Object { $_ -match "\.(json|toml|yml|yaml)$" })
-            "Source Code" = @($modifiedFiles | Where-Object { $_ -match "src/|src-tauri/" -and $_ -notmatch "\.(md|json|toml)$" })
-            "GitHub Workflows" = @($modifiedFiles | Where-Object { $_ -match "\.github/" })
-        }
-        
-        $changesSummary = @()
-        foreach ($category in $categories.Keys) {
-            $files = $categories[$category]
-            if ($files.Count -gt 0) {
-                $changesSummary += "- **$category**: $($files.Count) file(s) modified"
+    # Get detailed diff for each modified file
+    $fileDiffs = @()
+    foreach ($file in $modifiedFiles) {
+        if ($file -match "\.(ps1|md)$") {  # Focus on scripts and documentation
+            $diff = git diff $lastTag HEAD -- $file 2>$null
+            if ($diff) {
+                $fileDiffs += @{
+                    File = $file
+                    Diff = $diff
+                }
             }
         }
-        
-        if ($changesSummary.Count -gt 0) {
-            $enhancedOverview = @"
-
-### What Changed
-$($changesSummary -join "`n")
-
-"@
-        }
     }
     
-    # Build release notes content
-    $releaseNotesContent = @"
+    # Categorize changes
+    $scriptChanges = @($modifiedFiles | Where-Object { $_ -match "\.ps1$" -and $_ -notmatch "scripts/" })
+    $docChanges = @($modifiedFiles | Where-Object { $_ -match "release_documentation.*\.md$" })
+    $infraChanges = @($modifiedFiles | Where-Object { $_ -match "(README|LICENSE|SECURITY|scripts/)" })
+    
+    # Get commit messages for context
+    $commits = git log "$lastTag..HEAD" --pretty=format:"%s" 2>$null
+    if ($commits) {
+        $commits = $commits -split "`n" | Where-Object { $_ -ne "" }
+    } else {
+        $commits = @()
+    }
+    
+    # Generate AI prompt for release notes
+    Write-Host ""
+    Write-Host "═══════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
+    Write-Host "  AI RELEASE NOTES GENERATION REQUIRED" -ForegroundColor Yellow
+    Write-Host "═══════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "STEP 1: Copy the prompt below and paste it into GitHub Copilot Chat" -ForegroundColor Green
+    Write-Host "STEP 2: Copilot will generate comprehensive release notes" -ForegroundColor Green  
+    Write-Host "STEP 3: Copy Copilot's response and paste it back here when prompted" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "═══════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
+    Write-Host ""
+    
+    # Build the AI prompt
+    $aiPrompt = @"
+Generate comprehensive, user-friendly release notes for $ScriptType Audit Log Processor v$NewVersion.
+
+**Release Context:**
+- Product: $ScriptType Audit Log Processor
+- New Version: $NewVersion
+- Previous Version: $previousVersion
+- Release Date: $releaseDate
+- Released By: $gitUsername
+
+**Changes Summary:**
+- Script files changed: $($scriptChanges.Count)
+- Documentation changed: $($docChanges.Count)
+- Infrastructure changed: $($infraChanges.Count)
+
+**Modified Files:**
+$($modifiedFiles | ForEach-Object { "- $_" } | Out-String)
+
+**Commit Messages:**
+$($commits | ForEach-Object { "- $_" } | Out-String)
+
+**File Diffs (Key Changes):**
+$($fileDiffs | ForEach-Object {
+    "
+### $($_.File)
+``````diff
+$($_.Diff)
+``````
+"
+} | Out-String)
+
+**Instructions:**
+Please analyze these changes and generate release notes following this structure:
+
 # Release Notes: v$NewVersion
 
 ## Release Information
 - **Version:** $NewVersion
-- **Release Date:** $timestamp
-- **Released By:** $gitUsername ($gitHubHandle)
-- **Previous Version:** $lastTag
+- **Release Date:** $releaseDate (Updated)
+- **Released By:** $gitUsername (@microsoft)
+- **Previous Version:** v$previousVersion
 
 ---
 
-## Overview$enhancedOverview
-$ReleaseDescription
+## Overview
+
+[Write 2-3 sentences explaining what this release accomplishes and why it was created. Focus on USER VALUE, not technical details.]
+
+Version $NewVersion is a [maintenance/feature/major] release that [describe primary purpose]. This release [describe key improvements].
+
+---
+
+## What's New
+
+[List the key changes in user-friendly language. Group by category if needed:]
+
+### Documentation Improvements
+[If documentation was changed, explain what sections were added/improved and why users will benefit]
+
+### Script Enhancements  
+[If script was changed, explain what functionality was improved and what problems it solves]
+
+### Infrastructure Updates
+[If infrastructure was changed, explain how it improves the release process]
 
 ---
 
 ## Detailed Changes
 
-### Modified Files ($($modifiedFiles.Count) files changed)
-``````
-$($modifiedFiles -join "`n")
-``````
-
-### File Statistics
-``````
-$fileStats
-``````
-
-### Commit History
-``````
-$($commits -join "`n")
-``````
+[Provide a detailed section-by-section breakdown of changes. For documentation changes, list which sections were modified and how. For script changes, explain functional improvements.]
 
 ---
 
-"@
-    
-    # Add Installation and Support sections based on ScriptType
-    if ($ScriptType -eq "Umbrella") {
-        # Umbrella releases are for core files, not scripts
-        $releaseNotesContent += @"
-## Installation
-
-This is an **Umbrella release** for core PAX repository files (governance, documentation structure, workflows, etc.).
-
-For the latest scripts, visit:
-- **Purview Script Archive**: [Microsoft PAX Repository - Purview Scripts](https://github.com/microsoft/PAX/tree/release/script_archive/Purview_Audit_Log_Processor)
-- **Graph Script Archive**: [Microsoft PAX Repository - Graph Scripts](https://github.com/microsoft/PAX/tree/release/script_archive/Graph_Audit_Log_Processor)
-- **All Release Notes**: [Microsoft PAX Repository - Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes)
-
----
-
-## Support
-
-For questions or issues, refer to the documentation:
-- **Purview Documentation**: [Microsoft PAX Repository - Purview Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
-- **Graph Documentation**: [Microsoft PAX Repository - Graph Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Graph_Audit_Log_Processor)
-
----
-
-*Managed and released by the Microsoft Copilot Growth ROI Advisory Team. Please reach out to [Brian Middendorf](mailto:bmiddendorf@microsoft.com?subject=Microsoft%20PAX%3A%20Umbrella%20Release%20v$NewVersion%20Feedback) with any feedback.*
-"@
-    }
-    else {
-        # Purview or Graph releases
-        # Set documentation filenames based on product
-        if ($ScriptType -eq "Purview") {
-            $docBaseName = "PAX_Purview_Audit_Log_Processor_Documentation"
-        } elseif ($ScriptType -eq "Graph") {
-            $docBaseName = "PAX_Graph_Audit_Log_Processor_Documentation"
-        } else {
-            $docBaseName = "PAX_Documentation"
-        }
-        
-        $releaseNotesContent += @"
 ## Installation
 
 ### Download v$NewVersion (This Version)
-This release note documents **version $NewVersion**. Use the direct download links below to obtain this specific version:
+- **Script**: [${scriptPrefix}_v${NewVersion}.ps1](https://github.com/microsoft/PAX/releases/download/$($ScriptType.ToLower())-v${NewVersion}/${scriptPrefix}_v${NewVersion}.ps1)
+- **Release Notes**: [This document](https://github.com/microsoft/PAX/blob/release/release_notes/${processorPath}/${scriptPrefix}_Release_Note_v${NewVersion}.md)
+- **Documentation**: [${scriptPrefix}_Documentation_v${NewVersion}.md](https://github.com/microsoft/PAX/blob/release/release_documentation/${processorPath}/MD/${scriptPrefix}_Documentation_v${NewVersion}.md)
 
-- **Script v$NewVersion**: [${scriptPrefix}_v$NewVersion.ps1](https://github.com/microsoft/PAX/blob/release/script_archive/$processorPath/${scriptPrefix}_v$NewVersion.ps1)
-- **Documentation v$NewVersion**: [${docBaseName}_v$NewVersion.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/$processorPath/PDF/${docBaseName}_v$NewVersion.pdf)
-
-### Get Latest Version
-For the most recent release, visit:
-- **Latest Script Archive**: [Microsoft PAX Repository - Script Archive](https://github.com/microsoft/PAX/tree/release/script_archive/$processorPath)
-- **All Release Notes**: [Microsoft PAX Repository - Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/$processorPath)
+### Previous Versions
+- v$previousVersion: [Script](https://github.com/microsoft/PAX/releases/download/$($ScriptType.ToLower())-v${previousVersion}/${scriptPrefix}_v${previousVersion}.ps1) | [Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/${processorPath}/${scriptPrefix}_Release_Note_v${previousVersion}.md)
+- [All Purview Releases](https://github.com/microsoft/PAX/releases?q=purview&expanded=true)
 
 ---
 
-## Support
+*Managed and released by the Microsoft Copilot Growth ROI Advisory Team. Please reach out to [Brian Middendorf](mailto:bmiddendorf@microsoft.com?subject=PAX%20${ScriptType}%20v${NewVersion}%20Feedback) with any feedback.*
 
-For questions or issues, refer to the documentation:
-- **Documentation v$NewVersion (PDF)**: [${docBaseName}_v$NewVersion.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/$processorPath/PDF/${docBaseName}_v$NewVersion.pdf)
-- **Documentation v$NewVersion (Markdown)**: [${docBaseName}_v$NewVersion.md](https://github.com/microsoft/PAX/blob/release/release_documentation/$processorPath/MD/${docBaseName}_v$NewVersion.md)
-
----
-
-*Managed and released by the Microsoft Copilot Growth ROI Advisory Team. Please reach out to [Brian Middendorf](mailto:bmiddendorf@microsoft.com?subject=Microsoft%20PAX%3A%20$ScriptType%20Audit%20Log%20Processor%20v$NewVersion%20Feedback) with any feedback.*
+**IMPORTANT:** Make the release notes comprehensive, user-friendly, and focus on VALUE delivered to users, not just technical file changes.
 "@
+    
+    # Display the prompt
+    Write-Host $aiPrompt -ForegroundColor White
+    Write-Host ""
+    Write-Host "═══════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
+    Write-Host ""
+    
+    # Save prompt to clipboard if possible
+    try {
+        $aiPrompt | Set-Clipboard
+        Write-Success "✓ Prompt copied to clipboard!"
+    } catch {
+        Write-Warning "Could not copy to clipboard. Please manually copy the prompt above."
+    }
+    
+    Write-Host ""
+    Write-Host "Paste this prompt into GitHub Copilot Chat, then press ENTER here..." -ForegroundColor Yellow
+    Read-Host | Out-Null
+    
+    Write-Host ""
+    Write-Host "Now paste Copilot's response below and press ENTER twice when done:" -ForegroundColor Yellow
+    Write-Host "(Paste the ENTIRE markdown response including all sections)" -ForegroundColor Cyan
+    Write-Host ""
+    
+    # Read multi-line input from user
+    $releaseNotesContent = @()
+    $emptyLineCount = 0
+    while ($true) {
+        $line = Read-Host
+        if ($line -eq "") {
+            $emptyLineCount++
+            if ($emptyLineCount -ge 2) {
+                break
+            }
+            $releaseNotesContent += ""
+        } else {
+            $emptyLineCount = 0
+            $releaseNotesContent += $line
+        }
+    }
+    
+    $releaseNotesText = $releaseNotesContent -join "`n"
+    
+    if (-not $releaseNotesText -or $releaseNotesText.Trim().Length -lt 100) {
+        Write-Error "Release notes content too short or empty. Aborting."
+        throw "Invalid release notes content"
     }
     
     # Save release notes file with proper naming convention
@@ -932,12 +957,18 @@ For questions or issues, refer to the documentation:
         $releaseNotesFilename = "${scriptPrefix}_Release_Note_v$NewVersion.md"
     }
     $releaseNotesFile = Join-Path $releaseNotesFolder $releaseNotesFilename
-    $releaseNotesContent | Set-Content -Path $releaseNotesFile -Encoding UTF8
+    $releaseNotesText | Set-Content -Path $releaseNotesFile -Encoding UTF8
     Write-Success "Created release notes file: $releaseNotesFile"
     
     # Add to git
     git add $releaseNotesFile 2>$null
     Write-Success "Staged release notes file for commit"
+    
+    Write-Host ""
+    Write-Host "═══════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
+    Write-Host "  Release notes successfully created!" -ForegroundColor Green
+    Write-Host "═══════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
+    Write-Host ""
     
     return $releaseNotesFile
 }
