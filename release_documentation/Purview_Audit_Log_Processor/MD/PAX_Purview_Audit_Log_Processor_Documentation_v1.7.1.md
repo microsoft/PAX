@@ -1821,6 +1821,9 @@ Status: Query: 45/100(45%) | Explosion: 12000/25000(48%) | Export: 0/1(0%) :: 42
 
 ## Performance Tuning
 
+<details>
+<summary>⚡ View Performance Tuning Guide (Click to Expand)</summary>
+
 ### Hitting the 10K Service Limit
 
 **Symptoms:**
@@ -1932,6 +1935,8 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 
   -MaxParallelGroups 3 `
   -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
 ```
+
+</details>
 
 </details>
 
@@ -2080,6 +2085,9 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 
 ## Known Limitations
 
 <details>
+<summary>⚠️ View Known Limitations (Click to Expand)</summary>
+
+<details>
 <summary>⚠️ Show Known Limitations Table</summary>
 
 | Area                        | Limitation / Behavior                                                          | Mitigation / Guidance                                                                                        |
@@ -2125,6 +2133,8 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 
 - Switches to controlled parallel explosion
 - Dynamic throttle + batch resizing (targets ~0.8s–2.5s batches)
 - Metrics emitted at completion
+
+</details>
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
