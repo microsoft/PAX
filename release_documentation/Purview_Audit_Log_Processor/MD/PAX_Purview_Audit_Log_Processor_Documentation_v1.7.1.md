@@ -1621,6 +1621,9 @@ All filter combinations work in replay mode **except `-GroupNames`** (requires a
 
 ## Output Files & Schema
 
+<details>
+<summary>📄 View Output Files & Schema Details (Click to Expand)</summary>
+
 ### Output Files
 
 Every execution produces two files:
@@ -1712,9 +1715,16 @@ Every execution produces two files:
 
 **Warning:** Significantly increases CSV width and processing time. Test with short date range first.
 
+</details>
+
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
+
 ---
 
 ## Activity Types Reference
+
+<details>
+<summary>📊 View Activity Types Reference (Click to Expand)</summary>
 
 ### Common High-Volume Activities
 
@@ -1745,11 +1755,16 @@ For a complete list of available Purview audit activities and operations, refer 
 
 This comprehensive reference includes all available operations across Microsoft 365 services, including SharePoint, Exchange, Teams, Copilot, and more.
 
+</details>
+
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
 ## Advanced Features
+
+<details>
+<summary>⚙️ View Advanced Features (Click to Expand)</summary>
 
 ### Adaptive Block Sizing
 
@@ -1797,6 +1812,8 @@ Status: Query: 45/100(45%) | Explosion: 12000/25000(48%) | Export: 0/1(0%) :: 42
 - **Phase detail:** Current/Total (percentage) for each active phase
 - **Batch info:** Current batch number, estimated total, percentage range
 - **Record range:** Shows which records currently processing (in batches)
+
+</details>
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
@@ -1923,6 +1940,9 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 
 ---
 
 ## Troubleshooting & FAQ
+
+<details>
+<summary>❓ View Troubleshooting & FAQ (Click to Expand)</summary>
 
 **Common Issues:**
 
@@ -2051,6 +2071,8 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 
 
 **A:** `-ExplodeArrays` creates 35 columns with array elements as separate rows. `-ExplodeDeep` adds all nested `CopilotEventData.*` fields as additional columns (wide schema).
 
+</details>
+
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
@@ -2110,6 +2132,9 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 
 
 ## Security & Compliance
 
+<details>
+<summary>🔒 View Security & Compliance Information (Click to Expand)</summary>
+
 ### Data Handling
 
 - **Read-Only Operations:** Script never modifies audit logs or tenant configuration
@@ -2149,6 +2174,8 @@ pwsh -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.7.1.ps1 
 4. **Network Security:** Ensure TLS 1.2+ for Exchange Online connections
 5. **Output Protection:** Store CSV files in encrypted volumes or secure file shares
 6. **Access Logging:** Enable filesystem auditing for output directories
+
+</details>
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
