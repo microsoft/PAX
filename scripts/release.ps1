@@ -1475,24 +1475,34 @@ function Sync-ReleaseBranch {
                 Write-Warning "Could not archive PDF - source file not found"
             }
             
-            # Archive the current README.md with product-specific naming
-            # Purview: PAX_Purview_Audit_Log_Processor_Documentation_v{version}.md
-            # Graph: PAX_Graph_Audit_Log_Processor_Documentation_v{version}.md
-            if ($ScriptType -eq "Purview") {
-                $readmeMdFilename = "PAX_Purview_Audit_Log_Processor_Documentation_v${NewVersion}.md"
-            } elseif ($ScriptType -eq "Graph") {
-                $readmeMdFilename = "PAX_Graph_Audit_Log_Processor_Documentation_v${NewVersion}.md"
-            } else {
-                # Fallback for other types (shouldn't happen for Purview/Graph releases)
+            # Archive the current README.md as documentation ONLY for Umbrella releases
+            # Purview and Graph have their own product-specific documentation files
+            # that should be manually created/updated before release
+            if ($ScriptType -eq "Umbrella") {
                 $readmeMdFilename = "PAX_Documentation_v${NewVersion}.md"
-            }
-            
-            $archiveMdPath = Join-Path $releaseDocMdFolder $readmeMdFilename
-            if (Test-Path $readmePath) {
-                Copy-Item -Path $readmePath -Destination $archiveMdPath -Force
-                Write-Success "✓ Archived README: MD\$readmeMdFilename"
+                $archiveMdPath = Join-Path $releaseDocMdFolder $readmeMdFilename
+                if (Test-Path $readmePath) {
+                    Copy-Item -Path $readmePath -Destination $archiveMdPath -Force
+                    Write-Success "✓ Archived README as Umbrella documentation: MD\$readmeMdFilename"
+                } else {
+                    Write-Warning "Could not archive README.md - source file not found"
+                }
             } else {
-                Write-Warning "Could not archive README.md - source file not found"
+                # For Purview/Graph, verify product-specific documentation exists
+                if ($ScriptType -eq "Purview") {
+                    $expectedDocFile = "PAX_Purview_Audit_Log_Processor_Documentation_v${NewVersion}.md"
+                } elseif ($ScriptType -eq "Graph") {
+                    $expectedDocFile = "PAX_Graph_Audit_Log_Processor_Documentation_v${NewVersion}.md"
+                }
+                
+                $expectedDocPath = Join-Path $releaseDocMdFolder $expectedDocFile
+                if (Test-Path $expectedDocPath) {
+                    Write-Success "✓ Found product documentation: MD\$expectedDocFile"
+                } else {
+                    Write-Warning "⚠️  Product-specific documentation not found: MD\$expectedDocFile"
+                    Write-Warning "   Please create this file manually before release"
+                    Write-Warning "   README.md is NOT copied for Purview/Graph releases"
+                }
             }
         }
         catch {
