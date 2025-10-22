@@ -58,7 +58,7 @@ This is an experimental script. On occasion, you may notice small deviations fro
 
 ## Overview
 
-<details>
+<details open>
 <summary>What It Does</summary>
 
 The **Portable Audit eXporter (PAX) - Graph Audit Log Processor** is an enterprise-grade PowerShell script that exports Microsoft 365 and Copilot usage analytics from Microsoft Graph API. It retrieves aggregated usage reports and transforms them into analysis-ready CSV files with optional Entra user enrichment.
