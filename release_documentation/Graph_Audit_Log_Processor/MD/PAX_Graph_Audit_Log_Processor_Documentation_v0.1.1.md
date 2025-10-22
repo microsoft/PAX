@@ -58,7 +58,7 @@ This is an experimental script. On occasion, you may notice small deviations fro
 
 ## Overview
 
-<details open>
+<details>
 <summary>What It Does</summary>
 
 The **Portable Audit eXporter (PAX) - Graph Audit Log Processor** is an enterprise-grade PowerShell script that exports Microsoft 365 and Copilot usage analytics from Microsoft Graph API. It retrieves aggregated usage reports and transforms them into analysis-ready CSV files with optional Entra user enrichment.
@@ -305,7 +305,7 @@ The **Portable Audit eXporter (PAX) - Graph Audit Log Processor** is an enterpri
 
 ## Installation & Setup
 
-<details open>
+<details>
 <summary>💻 Show Quick Start Commands</summary>
 
 ### Step 1: Download Script
@@ -602,7 +602,7 @@ Display full help information
 
 ## Authentication Methods
 
-<details open>
+<details>
 <summary>WebLogin (Interactive Browser)</summary>
 
 ### Overview
@@ -717,7 +717,7 @@ Uses existing authentication context (managed identity or cached token).
 
 ## Usage Examples
 
-<details open>
+<details>
 <summary>💻 Show Basic Examples</summary>
 
 ### Default (Last 7 Days)
@@ -844,7 +844,7 @@ $env:GRAPH_CLIENT_SECRET = "your~client~secret"
 
 ## Output Files & Schema
 
-<details open>
+<details>
 <summary>📁 Output File Structure</summary>
 
 ### Individual Endpoint Files
@@ -974,7 +974,7 @@ user@contoso.com,D30,John Doe,Sales,...,1,25,150,...
 
 ## Data Obfuscation Warning
 
-<details open>
+<details>
 <summary>⚠️ Privacy Settings Impact</summary>
 
 ### What It Is
@@ -1025,7 +1025,7 @@ After disabling obfuscation, re-run the script to verify data appears:
 
 ## Endpoint Reference
 
-<details open>
+<details>
 <summary>🔗 15 Microsoft Graph API Endpoints</summary>
 
 ### Copilot Usage (1 Endpoint)
@@ -1348,7 +1348,7 @@ userPrincipalName,reportPeriod,displayName,reportRefreshDate,...
 
 ## Performance Tuning
 
-<details open>
+<details>
 <summary>⚡ Optimization Strategies</summary>
 
 ### For Large Tenants (10,000+ users)
@@ -1446,7 +1446,7 @@ Microsoft Graph API enforces rate limits:
 
 ## Troubleshooting & FAQ
 
-<details open>
+<details>
 <summary>🔧 Common Issues & Solutions</summary>
 
 ### Issue: "All usage data is null/empty"
@@ -1577,7 +1577,7 @@ See [PAX Overview](../../../README.md) for detailed comparison.
 
 ## Known Limitations
 
-<details open>
+<details>
 <summary>🚫 API Limitations</summary>
 
 ### 1. Period-Based Queries Only
@@ -1682,7 +1682,7 @@ See [PAX Overview](../../../README.md) for detailed comparison.
 
 ## Security & Compliance
 
-<details open>
+<details>
 <summary>🔒 Security Considerations</summary>
 
 ### Authentication Security
