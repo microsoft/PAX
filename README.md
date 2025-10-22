@@ -27,9 +27,9 @@ This is an experimental script. On occasion, you may notice small deviations fro
 
 ---
 
-> **📊 Graph Audit Log Processor:** Download the script → [`PAX_Graph_Audit_Log_Processor_v0.1.0.ps1`](https://github.com/microsoft/PAX/releases/download/graph-v0.1.0/PAX_Graph_Audit_Log_Processor_v0.1.0.ps1)
+> **📊 Graph Audit Log Processor:** Download the script → [`PAX_Graph_Audit_Log_Processor_v0.1.1.ps1`](https://github.com/microsoft/PAX/releases/download/graph-v0.1.1/PAX_Graph_Audit_Log_Processor_v0.1.1.ps1)
 >
-> **📖 Resources:** [Latest Documentation](./release_documentation/Graph_Audit_Log_Processor/MD/PAX_Graph_Audit_Log_Processor_Documentation_v0.1.0.md) | [Latest Release Notes](./release_notes/Graph_Audit_Log_Processor/v0.1.0.md)
+> **📖 Resources:** [Latest Documentation](./release_documentation/Graph_Audit_Log_Processor/MD/PAX_Graph_Audit_Log_Processor_Documentation_v0.1.1.md) | [Latest Release Notes](./release_notes/Graph_Audit_Log_Processor/PAX_Graph_Audit_Log_Processor_Release_Note_v0.1.1.md)
 >
 > **📚 Archives:** [All Documentation](./release_documentation/Graph_Audit_Log_Processor/) | [All Release Notes](./release_notes/Graph_Audit_Log_Processor/) | [Previous Versions](./script_archive/Graph_Audit_Log_Processor/)
 

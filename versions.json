@@ -21,11 +21,11 @@
     },
     "graph": {
       "name": "Graph Audit Log Processor",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "status": "beta",
-      "releaseDate": "2024-09-20",
+      "releaseDate": "2025-10-22",
       "notes": "PowerShell script for Microsoft Graph audit logs"
     }
   },
-  "lastUpdated": "2025-10-22T12:36:10Z"
+  "lastUpdated": "2025-10-22T16:31:02Z"
 }
