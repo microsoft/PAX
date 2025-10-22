@@ -254,35 +254,48 @@ The **Portable Audit eXporter (PAX) - Graph Audit Log Processor** is an enterpri
 
 ## Prerequisites
 
-<details open>
-<summary>System Requirements</summary>
+<details>
+<summary>📋 View Prerequisites (Click to Expand)</summary>
 
-### PowerShell Version
-- **PowerShell 7.x** (recommended) - [Download](https://github.com/PowerShell/PowerShell/releases)
-- **PowerShell 5.1** (minimum, Windows only)
+| Requirement                | Details                           | Notes                                                        |
+| -------------------------- | --------------------------------- | ------------------------------------------------------------ |
+| **PowerShell**             | 5.1 or 7+                         | 7+ strongly recommended for parallel execution and UTF-8     |
+| **Microsoft.Graph Module** | Latest version (2.0+)             | Script auto-installs if missing                              |
+| **Permissions**            | Global Reader or Reports Reader   | Or explicit API scopes: `Reports.Read.All`, `User.Read.All`, `Directory.Read.All` |
+| **Network Access**         | Microsoft Graph API               | Ensure firewall allows connections to `graph.microsoft.com`  |
+| **Execution Policy**       | Bypass or RemoteSigned            | See [Installation & Setup](#installation--setup)             |
 
-### Microsoft Graph PowerShell SDK
-- **Auto-installs** if not present (requires internet connectivity)
-- Manual install: `Install-Module Microsoft.Graph -Scope CurrentUser`
-- Version 2.0+ recommended
+**Note:** The script automatically handles Microsoft.Graph module detection, installation, and connection. No manual setup required.
 
-### Network Requirements
-- Internet connectivity to:
-  - `graph.microsoft.com` (Microsoft Graph API)
-  - `login.microsoftonline.com` (Azure AD authentication)
-  - `www.powershellgallery.com` (module installation)
+<details>
+<summary>Permission Details</summary>
 
-### Microsoft 365 Permissions
+**Minimum RBAC Requirements:**
 
-**Required Graph API Scopes:**
-- `Reports.Read.All` - Read usage reports
-- `User.Read.All` - Read user profiles
-- `Directory.Read.All` - Read directory data (for manager expansion)
+- **Global Reader** role (read-only, recommended for production)
+- **Reports Reader** role (minimum for usage reports)
+- Or explicit Graph API permissions:
+  - `Reports.Read.All` - Read usage reports
+  - `User.Read.All` - Read user profiles (for Entra enrichment)
+  - `Directory.Read.All` - Read directory data (for manager expansion)
 
-**Tenant Requirements:**
-- Microsoft 365 E3/E5 or Business Premium
-- Microsoft Copilot for Microsoft 365 license (for Copilot reports)
-- Global Reader, Reports Reader, or Global Administrator role
+</details>
+
+<details>
+<summary>Why PowerShell 7+?</summary>
+
+| Feature              | PowerShell 5.1                | PowerShell 7+                  |
+| -------------------- | ----------------------------- | ------------------------------ |
+| Parallel Execution   | ❌ Not Available              | ✅ `ForEach-Object -Parallel`  |
+| UTF-8 Default        | ❌ Requires explicit encoding | ✅ Native UTF-8                |
+| Performance          | Baseline                      | 🚀 30-50% faster JSON/pipeline |
+| TLS/Cipher Support   | Legacy protocols              | ✅ Modern TLS 1.3              |
+| Cross-Platform       | ❌ Windows only               | ✅ Windows/macOS/Linux         |
+| Side-by-Side Install | N/A                           | ✅ Does not replace PS 5.1     |
+
+**Download PowerShell 7:** https://aka.ms/powershell
+
+</details>
 
 </details>
 
@@ -293,7 +306,7 @@ The **Portable Audit eXporter (PAX) - Graph Audit Log Processor** is an enterpri
 ## Installation & Setup
 
 <details open>
-<summary>Quick Start (5 Minutes)</summary>
+<summary>💻 Show Quick Start Commands</summary>
 
 ### Step 1: Download Script
 
@@ -354,10 +367,12 @@ $env:GRAPH_CLIENT_SECRET = "your-client-secret"
 
 ## Parameters Reference
 
-<details open>
-<summary>Query Parameters</summary>
+<details>
+<summary>📋 View All Parameters (Click to Expand)</summary>
 
-### `-Period <D7|D30|D90|D180|ALL>`
+### Query Parameters
+
+#### `-Period <D7|D30|D90|D180|ALL>`
 Pre-aggregated time periods for usage queries
 
 **Valid Values:**
@@ -381,12 +396,11 @@ Pre-aggregated time periods for usage queries
 .\PAX_Graph_Audit_Log_Processor_v0.1.1.ps1 -Period ALL
 ```
 
-</details>
+---
 
-<details>
-<summary>Output Parameters</summary>
+### Output Parameters
 
-### `-OutputPath <string>`
+#### `-OutputPath <string>`
 Directory for output files (default: `C:\Temp\MS_Graph`)
 
 **Example:**
@@ -568,12 +582,11 @@ Delay between API requests in milliseconds (default: `0`)
 .\PAX_Graph_Audit_Log_Processor_v0.1.1.ps1 -Period D30 -PacingMs 100
 ```
 
-</details>
+---
 
-<details>
-<summary>Utility Parameters</summary>
+### Utility Parameters
 
-### `-Help`
+#### `-Help`
 Display full help information
 
 **Example:**
@@ -705,7 +718,7 @@ Uses existing authentication context (managed identity or cached token).
 ## Usage Examples
 
 <details open>
-<summary>Basic Examples</summary>
+<summary>💻 Show Basic Examples</summary>
 
 ### Default (Last 7 Days)
 ```powershell
@@ -731,7 +744,7 @@ Uses existing authentication context (managed identity or cached token).
 </details>
 
 <details>
-<summary>Long-Term Analysis</summary>
+<summary>💻 Show Long-Term Analysis Examples</summary>
 
 ### Last 180 Days for Trend Analysis
 ```powershell
@@ -752,7 +765,7 @@ Uses existing authentication context (managed identity or cached token).
 </details>
 
 <details>
-<summary>Power BI Integration</summary>
+<summary>💻 Show Power BI Integration Examples</summary>
 
 ### Daily Scheduled Refresh
 ```powershell
@@ -777,7 +790,7 @@ Uses existing authentication context (managed identity or cached token).
 </details>
 
 <details>
-<summary>Advanced Usage</summary>
+<summary>💻 Show Advanced Usage Examples</summary>
 
 ### M365 App Usage Only (Default Behavior)
 ```powershell
@@ -832,7 +845,7 @@ $env:GRAPH_CLIENT_SECRET = "your~client~secret"
 ## Output Files & Schema
 
 <details open>
-<summary>Output File Structure</summary>
+<summary>📁 Output File Structure</summary>
 
 ### Individual Endpoint Files
 When `-CombineOutput` is **not** specified, the script generates one CSV file per endpoint:
@@ -873,7 +886,7 @@ MS_Graph_Export_Log_{Timestamp}.txt
 </details>
 
 <details>
-<summary>CSV Schema Overview</summary>
+<summary>📊 CSV Schema Overview</summary>
 
 ### Common Columns (All Reports)
 - `reportRefreshDate` - Date when report data was last refreshed
@@ -934,7 +947,7 @@ Each endpoint has unique metrics. See [Endpoint Reference](#endpoint-reference) 
 </details>
 
 <details>
-<summary>Combined Output Schema</summary>
+<summary>🔗 Combined Output Schema</summary>
 
 ### Join Logic
 - **Join Key:** `userPrincipalName`
@@ -1013,7 +1026,7 @@ After disabling obfuscation, re-run the script to verify data appears:
 ## Endpoint Reference
 
 <details open>
-<summary>15 Microsoft Graph API Endpoints</summary>
+<summary>🔗 15 Microsoft Graph API Endpoints</summary>
 
 ### Copilot Usage (1 Endpoint)
 
@@ -1336,7 +1349,7 @@ userPrincipalName,reportPeriod,displayName,reportRefreshDate,...
 ## Performance Tuning
 
 <details open>
-<summary>Optimization Strategies</summary>
+<summary>⚡ Optimization Strategies</summary>
 
 ### For Large Tenants (10,000+ users)
 
@@ -1401,7 +1414,7 @@ userPrincipalName,reportPeriod,displayName,reportRefreshDate,...
 </details>
 
 <details>
-<summary>Throttling Prevention</summary>
+<summary>⏱️ Throttling Prevention</summary>
 
 ### Understanding Microsoft Graph Throttling
 Microsoft Graph API enforces rate limits:
@@ -1434,7 +1447,7 @@ Microsoft Graph API enforces rate limits:
 ## Troubleshooting & FAQ
 
 <details open>
-<summary>Common Issues & Solutions</summary>
+<summary>🔧 Common Issues & Solutions</summary>
 
 ### Issue: "All usage data is null/empty"
 **Cause:** Data obfuscation is enabled in tenant settings.
@@ -1488,7 +1501,7 @@ Install-Module Microsoft.Graph -Scope CurrentUser -Force
 </details>
 
 <details>
-<summary>FAQ</summary>
+<summary>❓ Frequently Asked Questions</summary>
 
 ### Q: What time period should I use?
 **A:** Depends on your needs:
@@ -1565,7 +1578,7 @@ See [PAX Overview](../../../README.md) for detailed comparison.
 ## Known Limitations
 
 <details open>
-<summary>API Limitations</summary>
+<summary>🚫 API Limitations</summary>
 
 ### 1. Period-Based Queries Only
 **Limitation:** Microsoft Graph UserDetail report endpoints only support period-based aggregation (D7, D30, D90, D180, ALL).
@@ -1622,7 +1635,7 @@ See [PAX Overview](../../../README.md) for detailed comparison.
 </details>
 
 <details>
-<summary>Script Limitations</summary>
+<summary>⚙️ Script Limitations</summary>
 
 ### 1. CSV Output Only
 **Limitation:** Script only exports to CSV format.
@@ -1670,7 +1683,7 @@ See [PAX Overview](../../../README.md) for detailed comparison.
 ## Security & Compliance
 
 <details open>
-<summary>Security Considerations</summary>
+<summary>🔒 Security Considerations</summary>
 
 ### Authentication Security
 
@@ -1734,7 +1747,7 @@ See [PAX Overview](../../../README.md) for detailed comparison.
 </details>
 
 <details>
-<summary>Permissions Reference</summary>
+<summary>🔑 Permissions Reference</summary>
 
 ### Microsoft Graph API Scopes
 
