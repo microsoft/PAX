@@ -1772,21 +1772,29 @@ See [PAX Overview](../../../README.md) for detailed comparison.
 
 </details>
 
+**Disclaimer:** This script is provided "AS IS" without warranties or official support. Validate fit for purpose before production use. Not endorsed or officially supported by Microsoft Product Groups. Community-driven maintenance model.
+
 [⬆ Back to Top](#portable-audit-exporter-pax---graph-audit-log-processor)
 
 ---
 
 ## Additional Resources
 
-- **📚 PAX Project Overview:** [GitHub Repository](https://github.com/microsoft/PAX)
-- **📝 Purview Script Documentation:** [Purview Processor v1.7.1](../Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.md)
-- **🔗 Microsoft Graph API Docs:** [Reports API Reference](https://learn.microsoft.com/en-us/graph/api/resources/report)
-- **💬 Copilot Adoption Resources:** [Microsoft Adoption](https://adoption.microsoft.com/copilot/)
+### Microsoft Documentation
+
+- **[Microsoft Graph API Reports](https://learn.microsoft.com/en-us/graph/api/resources/report)** - Overview of Graph reporting capabilities
+- **[Microsoft 365 usage reports](https://learn.microsoft.com/en-us/microsoft-365/admin/activity-reports/activity-reports)** - Admin center usage reports
+- **[Copilot Dashboard](https://learn.microsoft.com/en-us/microsoft-365/admin/activity-reports/microsoft-365-copilot-usage)** - Official Copilot usage dashboard
+- **[Microsoft Graph PowerShell](https://learn.microsoft.com/en-us/powershell/microsoftgraph/overview)** - Graph PowerShell module documentation
+
+### Related Tools
+
+- **[Power BI](https://powerbi.microsoft.com/)** - Visualize exported usage data
+- **[Azure Synapse Analytics](https://azure.microsoft.com/en-us/products/synapse-analytics/)** - Data warehousing for large datasets
+- **[Microsoft Adoption](https://adoption.microsoft.com/copilot/)** - Copilot adoption resources and best practices
+
+[⬆ Back to Top](#portable-audit-exporter-pax---graph-audit-log-processor)
 
 ---
 
-**Version:** 0.1.1  
-**Last Updated:** October 21, 2025  
-**Maintained By:** PAX Team (Microsoft)
-
-[⬆ Back to Top](#portable-audit-exporter-pax---graph-audit-log-processor)
+© Microsoft Corporation — MIT Licensed
