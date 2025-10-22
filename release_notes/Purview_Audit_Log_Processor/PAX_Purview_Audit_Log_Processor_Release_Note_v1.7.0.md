@@ -169,7 +169,7 @@ This release note documents **version 1.7.0**. Use the direct download link belo
 
 ### Additional Resources
 - **All Script Releases**: [Microsoft PAX Repository - Releases](https://github.com/microsoft/PAX/releases)
-- **Documentation**: [v1.7.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v1.7.0.md) | [v1.6.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v1.6.0.md) | [All Docs](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor/MD)
+- **Documentation**: [v1.7.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v1.7.0.md) | [v1.6.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v1.6.0.md) | [All Docs](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 - **All Release Notes**: [Release Notes Archive](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 
 ---

@@ -113,7 +113,7 @@ $subdivisionEnd = [datetime]::new([Math]::Min($subdivisionStart.AddHours($subdiv
 ### Modified Files (5 files changed)
 ```
 PAX_Purview_Audit_Log_Processor_v1.7.2.ps1
-release_documentation/Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.2.md
+release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.2.md
 release_documentation/Purview_Audit_Log_Processor/PDF/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.2.pdf
 release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.7.2.md
 script_archive/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_v1.7.2.ps1
@@ -143,7 +143,7 @@ This release note documents **version 1.7.2**. Use the direct download links bel
 
 - **Script v1.7.2**: [PAX_Purview_Audit_Log_Processor_v1.7.2.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.7.2/PAX_Purview_Audit_Log_Processor_v1.7.2.ps1)
 - **Documentation v1.7.2 (PDF)**: [PAX_Purview_Audit_Log_Processor_Documentation_v1.7.2.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PDF/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.2.pdf)
-- **Documentation v1.7.2 (MD)**: [PAX_Purview_Audit_Log_Processor_Documentation_v1.7.2.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.2.md)
+- **Documentation v1.7.2 (MD)**: [PAX_Purview_Audit_Log_Processor_Documentation_v1.7.2.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.2.md)
 
 ### Get Latest Version
 For the most recent release, visit:
@@ -179,7 +179,7 @@ For the most recent release, visit:
 
 For questions or issues, refer to the documentation:
 - **Documentation v1.7.2 (PDF)**: [PAX_Purview_Audit_Log_Processor_Documentation_v1.7.2.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PDF/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.2.pdf)
-- **Documentation v1.7.2 (Markdown)**: [PAX_Purview_Audit_Log_Processor_Documentation_v1.7.2.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.2.md)
+- **Documentation v1.7.2 (Markdown)**: [PAX_Purview_Audit_Log_Processor_Documentation_v1.7.2.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.2.md)
 
 ---
 
