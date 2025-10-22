@@ -1,6 +1,6 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Exporter
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.6.0.ps1`](https://github.com/microsoft/PAX/blob/release/script_archive/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_v1.6.0.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.6.0.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.6.0/PAX_Purview_Audit_Log_Processor_v1.6.0.ps1)
 
 **Script:** `PAX_Purview_Audit_Log_Processor_v1.6.0.ps1`  
 **Version:** 1.6.0  
