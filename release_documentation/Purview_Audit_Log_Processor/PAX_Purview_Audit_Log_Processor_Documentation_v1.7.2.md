@@ -2,11 +2,11 @@
 
 > **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.7.2.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.7.2/PAX_Purview_Audit_Log_Processor_v1.7.2.ps1)
 >
-> **📋 Release Notes:** See what's new → [v1.7.2 Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.7.2.md) | [v1.7.0 Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.7.0.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
+> **📋 Release Notes:** See what's new → [v1.7.2 Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.7.2.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
-> **📜 Previous Script Versions:** [v1.7.0 Script](https://github.com/microsoft/PAX/releases/download/purview-v1.7.0/PAX_Purview_Audit_Log_Processor_v1.7.0.ps1) | [v1.6.0 Script](https://github.com/microsoft/PAX/releases/download/purview-v1.6.0/PAX_Purview_Audit_Log_Processor_v1.6.0.ps1) | [All Purview Releases](https://github.com/microsoft/PAX/releases?q=purview&expanded=true)
+> **📜 Previous Script Versions:** [All Purview Releases](https://github.com/microsoft/PAX/releases?q=purview&expanded=true)
 >
-> **📚 Documentation Archive:** [v1.7.2 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.2.md) | [v1.7.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.0.md) | [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
+> **📚 Documentation Archive:** [v1.7.2 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.2.md) | [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
 **Script:** `PAX_Purview_Audit_Log_Processor_v1.7.2.ps1`  
 **Version:** 1.7.2  
