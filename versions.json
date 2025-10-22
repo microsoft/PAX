@@ -2,7 +2,7 @@
   "products": {
     "pax": {
       "name": "PAX Infrastructure",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "status": "active",
       "notes": "Core infrastructure, workflows, and governance files"
     },
@@ -27,5 +27,5 @@
       "notes": "PowerShell script for Microsoft Graph audit logs"
     }
   },
-  "lastUpdated": "2025-10-22T16:31:02Z"
+  "lastUpdated": "2025-10-22T16:55:15Z"
 }
