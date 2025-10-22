@@ -4,7 +4,7 @@
 >
 > **📋 Release Notes:** See what's new → [v0.1.1 Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Graph_Audit_Log_Processor/PAX_Graph_Audit_Log_Processor_Release_Note_v0.1.1.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Graph_Audit_Log_Processor)
 >
-> **📜 Previous Script Versions:** [All Graph Releases](https://github.com/microsoft/PAX/releases?q=graph&expanded=true)
+> **📜 Previous Script Versions:** [All Graph Releases](https://github.com/microsoft/PAX/releases?q=graph-&expanded=true)
 >
 > **📚 Documentation Archive:** [v0.1.1 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Graph_Audit_Log_Processor/PAX_Graph_Audit_Log_Processor_Documentation_v0.1.1.md) | [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Graph_Audit_Log_Processor)
 
