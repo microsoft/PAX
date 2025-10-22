@@ -1114,6 +1114,88 @@ function Test-GitStatus {
     return $fileCategories
 }
 
+# Helper function to archive old documentation from git tag (pristine release version)
+function Archive-DocumentationFromTag {
+    param(
+        [string]$ScriptType,
+        [string]$OldVersion,
+        [string]$ReleaseWorktreePath
+    )
+    
+    if (-not $OldVersion) {
+        Write-Status "No previous version to archive documentation for"
+        return
+    }
+    
+    # Determine documentation folder and tag based on ScriptType
+    $oldVersionTag = switch ($ScriptType) {
+        "Purview" { "purview-v$OldVersion" }
+        "Graph"   { "graph-v$OldVersion" }
+        default   { return } # Umbrella doesn't archive product docs
+    }
+    
+    # Check if the tag exists
+    $tagExists = git tag -l $oldVersionTag 2>$null
+    if (-not $tagExists) {
+        Write-Warning "Tag $oldVersionTag not found - cannot archive old documentation from release"
+        Write-Warning "Old documentation will not be archived (may be first release or tag missing)"
+        return
+    }
+    
+    Write-Status "Archiving old documentation from release tag: $oldVersionTag"
+    
+    # Determine documentation folder path
+    $docFolderPath = switch ($ScriptType) {
+        "Purview" { "release_documentation/Purview_Audit_Log_Processor" }
+        "Graph"   { "release_documentation/Graph_Audit_Log_Processor" }
+    }
+    
+    # Get list of files in the documentation folder from the git tag
+    $gitLsOutput = git ls-tree -r --name-only "${oldVersionTag}" "${docFolderPath}/" 2>$null
+    
+    if ($LASTEXITCODE -ne 0 -or -not $gitLsOutput) {
+        Write-Warning "Could not list files from tag ${oldVersionTag}:${docFolderPath}/"
+        Write-Warning "Old documentation will not be archived"
+        return
+    }
+    
+    $archivedCount = 0
+    $failedCount = 0
+    
+    # Extract each file from the git tag and write to release worktree
+    $gitLsOutput | Where-Object { $_ -match "^${docFolderPath}/" } | ForEach-Object {
+        $gitFilePath = $_
+        $relativePath = $gitFilePath
+        $destPath = Join-Path $ReleaseWorktreePath $relativePath
+        
+        # Extract file content from git tag
+        $fileContent = git show "${oldVersionTag}:${gitFilePath}" 2>$null
+        
+        if ($LASTEXITCODE -eq 0 -and $fileContent) {
+            # Ensure destination directory exists
+            $destDir = Split-Path $destPath -Parent
+            if (-not (Test-Path $destDir)) {
+                New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+            }
+            
+            # Write the pristine content from git tag
+            $fileContent | Set-Content -Path $destPath -Encoding UTF8 -NoNewline
+            $archivedCount++
+        }
+        else {
+            Write-Warning "Failed to extract from tag: ${gitFilePath}"
+            $failedCount++
+        }
+    }
+    
+    if ($archivedCount -gt 0) {
+        Write-Success "✓ Archived $archivedCount documentation file(s) from release tag $oldVersionTag"
+    }
+    if ($failedCount -gt 0) {
+        Write-Warning "⚠ Failed to archive $failedCount file(s) from tag"
+    }
+}
+
 # Function to sync files from PAX branch to release worktree based on ScriptType
 function Sync-ReleaseWorktreeFiles {
     param(
@@ -1192,6 +1274,36 @@ function Sync-ReleaseWorktreeFiles {
     # Umbrella does NOT sync product subfolders (only parent .gitkeep files via Add-VersionMarkers)
     # Purview syncs Purview subfolders only
     # Graph syncs Graph subfolders only
+    
+    # BEFORE syncing new documentation, archive old documentation from git tag (pristine release version)
+    # This ensures archived docs don't include post-release changes from working directory
+    if ($ScriptType -eq "Purview" -or $ScriptType -eq "Graph") {
+        # Determine old version by finding existing documentation file
+        $docPattern = switch ($ScriptType) {
+            "Purview" { "release_documentation\Purview_Audit_Log_Processor\MD\PAX_Purview_Audit_Log_Processor_Documentation_v*.md" }
+            "Graph"   { "release_documentation\Graph_Audit_Log_Processor\MD\PAX_Graph_Audit_Log_Processor_Documentation_v*.md" }
+        }
+        
+        $existingDoc = Get-ChildItem -Path $docPattern -ErrorAction SilentlyContinue | 
+                       Sort-Object Name -Descending | 
+                       Select-Object -First 1
+        
+        if ($existingDoc -and $existingDoc.Name -match "v([\d\.]+)\.md$") {
+            $oldDocVersion = $matches[1]
+            
+            # Only archive if old version is different from new version
+            if ($oldDocVersion -ne $NewVersion) {
+                Write-Status "Found old documentation version: v$oldDocVersion (archiving from git tag before sync)"
+                Archive-DocumentationFromTag -ScriptType $ScriptType -OldVersion $oldDocVersion -ReleaseWorktreePath $ReleaseWorktreePath
+            }
+            else {
+                Write-Status "Documentation version matches new version (v$NewVersion) - no archiving needed"
+            }
+        }
+        else {
+            Write-Status "No previous documentation found - skipping archive (may be first release)"
+        }
+    }
     
     if ($ScriptType -eq "Purview") {
         # Sync Purview documentation folder
@@ -1450,16 +1562,19 @@ function Sync-ReleaseBranch {
         $mdPath = "release_documentation\Purview_Audit_Log_Processor\MD\$mdFilename"
         $pdfFilename = "PAX_Purview_Audit_Log_Processor_Documentation_v${NewVersion}.pdf"
         $docType = "Purview documentation"
+        $productFolder = "Purview_Audit_Log_Processor"
     } elseif ($ScriptType -eq "Graph") {
         $mdFilename = "PAX_Graph_Audit_Log_Processor_Documentation_v${NewVersion}.md"
         $mdPath = "release_documentation\Graph_Audit_Log_Processor\MD\$mdFilename"
         $pdfFilename = "PAX_Graph_Audit_Log_Processor_Documentation_v${NewVersion}.pdf"
         $docType = "Graph documentation"
+        $productFolder = "Graph_Audit_Log_Processor"
     } else {
         # Umbrella uses README.md
         $mdPath = "README.md"
         $pdfFilename = "PAX_Documentation_v${NewVersion}.pdf"
         $docType = "README.md"
+        $productFolder = $null
     }
     
     Write-Status "Generating documentation PDF from $docType..."
@@ -1467,6 +1582,40 @@ function Sync-ReleaseBranch {
     # Generate PDF from markdown using VS Code Markdown PDF extension
     # Create PDF in TEMP folder to avoid OneDrive security policies
     $readmePath = Join-Path (Get-Location) $mdPath
+    
+    # For Purview/Graph: If new version documentation doesn't exist, copy from previous version
+    if ($productFolder -and -not (Test-Path $readmePath)) {
+        Write-Warning "Documentation file not found: $mdPath"
+        Write-Status "Attempting to copy from previous version..."
+        
+        # Find the most recent documentation file for this product
+        $docFolder = Join-Path (Get-Location) "release_documentation\$productFolder\MD"
+        $existingDocs = Get-ChildItem -Path $docFolder -Filter "*.md" -ErrorAction SilentlyContinue | 
+                        Where-Object { $_.Name -match "v([\d\.]+)\.md$" } |
+                        Sort-Object { 
+                            if ($_.Name -match "v([\d\.]+)\.md$") { 
+                                [version]$matches[1] 
+                            } 
+                        } -Descending
+        
+        if ($existingDocs -and $existingDocs.Count -gt 0) {
+            $latestDoc = $existingDocs[0]
+            Write-Status "Found previous version: $($latestDoc.Name)"
+            Copy-Item -Path $latestDoc.FullName -Destination $readmePath -Force
+            Write-Success "✓ Copied $($latestDoc.Name) to $mdFilename"
+            Write-Warning "⚠️  IMPORTANT: Review and update the documentation content for version $NewVersion!"
+        }
+        else {
+            Write-Error "No previous documentation found in $docFolder"
+            Write-Error "Cannot auto-create documentation - please create manually: $mdPath"
+            Write-Host ""
+            Write-Host "To fix this issue:" -ForegroundColor Yellow
+            Write-Host "  1. Create or copy the documentation file to: $mdPath" -ForegroundColor White
+            Write-Host "  2. Update the documentation content for version $NewVersion" -ForegroundColor White
+            Write-Host "  3. Re-run the release script" -ForegroundColor White
+            throw "Documentation file missing and no previous version found to copy"
+        }
+    }
     
     # Use TEMP folder for PDF generation (outside OneDrive)
     $tempFolder = [System.IO.Path]::GetTempPath()
@@ -1630,8 +1779,10 @@ function Sync-ReleaseBranch {
         }
     }
     else {
-        Write-Error "README.md not found - cannot generate PDF"
-        throw "README.md missing"
+        Write-Error "$docType not found at: $readmePath"
+        Write-Error "Expected file: $mdPath"
+        Write-Error "Current location: $(Get-Location)"
+        throw "$docType missing - cannot generate PDF"
     }
     
     Write-Status "Syncing release branch with customer-facing files..."
