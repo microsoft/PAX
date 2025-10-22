@@ -137,7 +137,7 @@ v1.7.1 introduces **progressive disclosure** through collapsible sections:
 ### Modified Files (6 files changed)
 ```
 README.md
-release_documentation/Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.md
+release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.md
 release_documentation/Purview_Audit_Log_Processor/PDF/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.pdf
 release_documentation/Graph_Audit_Log_Processor/PDF/.gitkeep (created)
 release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.7.1.md
@@ -172,7 +172,7 @@ This release note documents **version 1.7.1**. Use the direct download links bel
 
 - **Script v1.7.1**: [PAX_Purview_Audit_Log_Processor_v1.7.1.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.7.1/PAX_Purview_Audit_Log_Processor_v1.7.1.ps1)
 - **Documentation v1.7.1 (PDF)**: [PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PDF/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.pdf)
-- **Documentation v1.7.1 (MD)**: [PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.md)
+- **Documentation v1.7.1 (MD)**: [PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.md)
 
 ### Get Latest Version
 For the most recent release, visit:
@@ -201,7 +201,7 @@ For the most recent release, visit:
 
 For questions or issues, refer to the documentation:
 - **Documentation v1.7.1 (PDF)**: [PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.pdf](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PDF/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.pdf)
-- **Documentation v1.7.1 (Markdown)**: [PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.md)
+- **Documentation v1.7.1 (Markdown)**: [PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.1.md)
 
 ---
 

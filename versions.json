@@ -2,7 +2,7 @@
   "products": {
     "pax": {
       "name": "PAX Infrastructure",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "status": "active",
       "notes": "Core infrastructure, workflows, and governance files"
     },
@@ -14,19 +14,18 @@
     },
     "purview": {
       "name": "Purview Audit Log Processor",
-      "version": "1.7.1",
+      "version": "1.7.2",
       "status": "active",
-      "releaseDate": "2025-10-18",
+      "releaseDate": "2025-10-22",
       "notes": "PowerShell script for Microsoft Purview audit logs"
     },
     "graph": {
       "name": "Graph Audit Log Processor",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "status": "beta",
-      "releaseDate": "2024-09-20",
+      "releaseDate": "2025-10-22",
       "notes": "PowerShell script for Microsoft Graph audit logs"
     }
   },
-  "lastUpdated": "2025-01-22T00:00:00Z"
+  "lastUpdated": "2025-10-22T16:55:15Z"
 }
-
