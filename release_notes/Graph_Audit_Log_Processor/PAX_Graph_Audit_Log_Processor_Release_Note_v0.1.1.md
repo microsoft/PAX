@@ -137,7 +137,7 @@ Install-Module -Name Microsoft.Graph.Reports -Force
 ## Getting Help
 
 ### Documentation
-- **Full Documentation:** [PAX_Graph_Audit_Log_Processor_Documentation_v0.1.1.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Graph_Audit_Log_Processor/MD/PAX_Graph_Audit_Log_Processor_Documentation_v0.1.1.md)
+- **Full Documentation:** [PAX_Graph_Audit_Log_Processor_Documentation_v0.1.1.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Graph_Audit_Log_Processor/PAX_Graph_Audit_Log_Processor_Documentation_v0.1.1.md)
 - **Inline Help:** Run `Get-Help .\PAX_Graph_Audit_Log_Processor_v0.1.1.ps1 -Full`
 
 ### Support Channels
