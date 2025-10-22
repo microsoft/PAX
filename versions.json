@@ -14,9 +14,9 @@
     },
     "purview": {
       "name": "Purview Audit Log Processor",
-      "version": "1.7.1",
+      "version": "1.7.2",
       "status": "active",
-      "releaseDate": "2025-10-18",
+      "releaseDate": "2025-10-22",
       "notes": "PowerShell script for Microsoft Purview audit logs"
     },
     "graph": {
@@ -27,6 +27,5 @@
       "notes": "PowerShell script for Microsoft Graph audit logs"
     }
   },
-  "lastUpdated": "2025-01-22T00:00:00Z"
+  "lastUpdated": "2025-10-22T12:36:10Z"
 }
-
