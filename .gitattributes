@@ -1,5 +1,7 @@
-# PAX Solution Set - Git Attributes
-# https://github.com/microsoft/PAX
-
 # Prevent git from trying to normalize line endings in Cargo.lock
 src-tauri/Cargo.lock -text
+
+
+
+
+# PAX-v1.0.4
