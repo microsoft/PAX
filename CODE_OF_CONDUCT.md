@@ -14,5 +14,3 @@ For security or vulnerability reports, please follow the guidance in `SECURITY.m
 
 
 
-
-<!-- PAX-v1.0.2 -->

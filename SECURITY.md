@@ -71,5 +71,3 @@ Thank you for helping keep this project and its users secure.
 
 
 
-
-<!-- PAX-v1.0.2 -->
