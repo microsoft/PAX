@@ -2,7 +2,7 @@
   "products": {
     "pax": {
       "name": "PAX Infrastructure",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "status": "active",
       "notes": "Core infrastructure, workflows, and governance files"
     },
@@ -14,9 +14,9 @@
     },
     "purview": {
       "name": "Purview Audit Log Processor",
-      "version": "1.7.2",
+      "version": "1.7.3",
       "status": "active",
-      "releaseDate": "2025-10-22",
+      "releaseDate": "2025-10-26",
       "notes": "PowerShell script for Microsoft Purview audit logs"
     },
     "graph": {
