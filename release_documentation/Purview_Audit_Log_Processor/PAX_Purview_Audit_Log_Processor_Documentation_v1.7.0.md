@@ -6,7 +6,7 @@
 >
 > **📜 Previous Script Versions:** [v1.6.0 Script](https://github.com/microsoft/PAX/releases/download/v1.6.0/PAX_Purview_Audit_Log_Processor_v1.6.0.ps1) | [All Releases](https://github.com/microsoft/PAX/releases)
 >
-> **📚 Documentation Archive:** [v1.7.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v1.7.0.md) | [v1.6.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v1.6.0.md) | [All Releases](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor/MD)
+> **📚 Documentation Archive:** [v1.7.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v1.7.0.md) | [v1.6.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/MD/PAX_Documentation_v1.6.0.md) | [All Releases](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
 **Script:** `PAX_Purview_Audit_Log_Processor_v1.7.0.ps1`  
 **Version:** 1.7.0  
