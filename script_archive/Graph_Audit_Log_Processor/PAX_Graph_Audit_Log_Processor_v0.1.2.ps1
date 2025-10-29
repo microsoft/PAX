@@ -1,5 +1,5 @@
 # Portable Audit eXporter (PAX) - Graph Audit Log Processor
-# Version: v0.1.1
+# Version: v0.1.2
 <#
 .SYNOPSIS
     Export Microsoft 365 usage analytics from Microsoft Graph API.
@@ -233,7 +233,7 @@ if ($Help) {
 }
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = "0.1.1"
+$ScriptVersion = "0.1.2"
 
 # Suppress verbose progress messages from Invoke-MgGraphRequest
 $ProgressPreference = 'SilentlyContinue'
