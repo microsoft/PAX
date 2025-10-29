@@ -1,5 +1,5 @@
 # Portable Audit eXporter (PAX) Solution Set
-<!-- v1.0.4 -->
+<!-- v1.0.5 -->
 <details>
 <summary>⚠️ Important Usage & Compliance Disclaimer</summary>
 
@@ -19,17 +19,17 @@ This is an experimental script. On occasion, you may notice small deviations fro
 
 ---
 
-> **🔍 Purview Audit Log Processor:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.7.3.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.7.3/PAX_Purview_Audit_Log_Processor_v1.7.3.ps1)
+> **🔍 Purview Audit Log Processor:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.7.4.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.7.4/PAX_Purview_Audit_Log_Processor_v1.7.4.ps1)
 >
-> **📖 Resources:** [Latest Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.3.md) | [Latest Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.7.3.md)
+> **📖 Resources:** [Latest Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.7.4.md) | [Latest Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.7.4.md)
 >
 > **📚 Archives:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor) | [Previous Versions](https://github.com/microsoft/PAX/tree/release/script_archive/Purview_Audit_Log_Processor)
 
 ---
 
-> **📊 Graph Audit Log Processor:** Download the script → [`PAX_Graph_Audit_Log_Processor_v0.1.1.ps1`](https://github.com/microsoft/PAX/releases/download/graph-v0.1.1/PAX_Graph_Audit_Log_Processor_v0.1.1.ps1)
+> **📊 Graph Audit Log Processor:** Download the script → [`PAX_Graph_Audit_Log_Processor_v0.1.2.ps1`](https://github.com/microsoft/PAX/releases/download/graph-v0.1.2/PAX_Graph_Audit_Log_Processor_v0.1.2.ps1)
 >
-> **📖 Resources:** [Latest Documentation](./release_documentation/Graph_Audit_Log_Processor/PAX_Graph_Audit_Log_Processor_Documentation_v0.1.1.md) | [Latest Release Notes](./release_notes/Graph_Audit_Log_Processor/PAX_Graph_Audit_Log_Processor_Release_Note_v0.1.1.md)
+> **📖 Resources:** [Latest Documentation](./release_documentation/Graph_Audit_Log_Processor/PAX_Graph_Audit_Log_Processor_Documentation_v0.1.2.md) | [Latest Release Notes](./release_notes/Graph_Audit_Log_Processor/PAX_Graph_Audit_Log_Processor_Release_Note_v0.1.2.md)
 >
 > **📚 Archives:** [All Documentation](./release_documentation/Graph_Audit_Log_Processor/) | [All Release Notes](./release_notes/Graph_Audit_Log_Processor/) | [Previous Versions](./script_archive/Graph_Audit_Log_Processor/)
 

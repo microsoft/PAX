@@ -1,4 +1,5 @@
 # PAX Solution Set - Script Archive
-# Historical versions of released PowerShell scripts
-# Last updated: 2025-10-26 (PAX v1.0.4, Purview v1.7.3)
-# Archive includes all released script versions for version control and rollback capability
+# Purpose: authoritative retention of every released script binary/source for reproducibility & rollback.
+# Contents: Graph & Purview processor PowerShell scripts per version; NEVER remove prior versions.
+# Last updated: 2025-10-29 (PAX v1.0.5, Graph v0.1.2, Purview v1.7.4)
+# Change rationale: umbrella alignment commit PAX-v1.0.5 refreshes version metadata & clarifies policy.
