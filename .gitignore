@@ -65,5 +65,8 @@ tests/
 tests/**
 !tests/README.md
 
+# Rust/Tauri lock file (binary reproducibility managed outside repo)
+src-tauri/Cargo.lock
+
 
 
