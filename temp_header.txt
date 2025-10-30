@@ -1,2 +1,0 @@
-RecordId,CreationDate,RecordType,Operation,AuditData,AssociatedAdminUnits,AssociatedAdminUnitsNames
-
