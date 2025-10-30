@@ -1,5 +1,5 @@
 # Portable Audit eXporter (PAX) Solution Set
-<!-- v1.0.5 -->
+<!-- v1.0.6 -->
 <details>
 <summary>⚠️ Important Usage & Compliance Disclaimer</summary>
 
@@ -27,9 +27,9 @@ This is an experimental script. On occasion, you may notice small deviations fro
 
 ---
 
-> **📊 Graph Audit Log Processor:** Download the script → [`PAX_Graph_Audit_Log_Processor_v0.1.2.ps1`](https://github.com/microsoft/PAX/releases/download/graph-v0.1.2/PAX_Graph_Audit_Log_Processor_v0.1.2.ps1)
+> **📊 Graph Audit Log Processor:** Download the script → [`PAX_Graph_Audit_Log_Processor_v1.0.1.ps1`](https://github.com/microsoft/PAX/releases/download/graph-v1.0.1/PAX_Graph_Audit_Log_Processor_v1.0.1.ps1)
 >
-> **📖 Resources:** [Latest Documentation](./release_documentation/Graph_Audit_Log_Processor/PAX_Graph_Audit_Log_Processor_Documentation_v0.1.2.md) | [Latest Release Notes](./release_notes/Graph_Audit_Log_Processor/PAX_Graph_Audit_Log_Processor_Release_Note_v0.1.2.md)
+> **📖 Resources:** [Latest Documentation](https://github.com/microsoft/PAX/blob/main/release_documentation/Graph_Audit_Log_Processor/PAX_Graph_Audit_Log_Processor_Documentation_v1.0.1.md) | [Latest Release Notes](https://github.com/microsoft/PAX/blob/main/release_notes/Graph_Audit_Log_Processor/PAX_Graph_Audit_Log_Processor_Release_Note_v1.0.1.md)
 >
-> **📚 Archives:** [All Documentation](./release_documentation/Graph_Audit_Log_Processor/) | [All Release Notes](./release_notes/Graph_Audit_Log_Processor/) | [Previous Versions](./script_archive/Graph_Audit_Log_Processor/)
+> **📚 Archives:** [All Documentation](https://github.com/microsoft/PAX/tree/main/release_documentation/Graph_Audit_Log_Processor) | [All Release Notes](https://github.com/microsoft/PAX/tree/main/release_notes/Graph_Audit_Log_Processor) | [Previous Versions](https://github.com/microsoft/PAX/tree/main/script_archive/Graph_Audit_Log_Processor)
 
