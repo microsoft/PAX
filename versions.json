@@ -6,7 +6,7 @@
   "products": {
     "pax": {
       "name": "PAX Infrastructure",
-      "version": "1.0.5",
+      "version": "1.0.6",
       "status": "development",
       "notes": "Core infrastructure, workflows, governance (iterating beyond last tagged release)"
     },
@@ -24,11 +24,11 @@
     },
     "graph": {
       "name": "Graph Audit Log Processor",
-      "version": "0.1.2",
-      "status": "beta-dev",
+      "version": "1.0.1",
+      "status": "development",
       "notes": "Canonical root script; prior versions in script_archive/Graph_Audit_Log_Processor."
     }
   },
-  "lastUpdated": "2025-10-29T00:00:00Z"
+  "lastUpdated": "2025-10-30T00:00:00Z"
 }
 { "comment": "PAX-v1.0.4" }
