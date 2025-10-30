@@ -1,32 +1,34 @@
 {
+  "meta": {
+    "disclaimer": "Version numbers are provisional; trust integrity hashes over semantic versions until next tagged release.",
+    "canonicalPolicy": "Latest operational scripts live at repo root; historical versions reside under script_archive/."
+  },
   "products": {
     "pax": {
       "name": "PAX Infrastructure",
-      "version": "1.0.4",
-      "status": "active",
-      "notes": "Core infrastructure, workflows, and governance files"
+      "version": "1.0.5",
+      "status": "development",
+      "notes": "Core infrastructure, workflows, governance (iterating beyond last tagged release)"
     },
     "paxapp": {
       "name": "PAX Desktop Application",
       "version": "0.1.0",
       "status": "development",
-      "notes": "Tauri-based desktop application with cross-platform UI"
+      "notes": "Tauri desktop (multiple untagged iterations)"
     },
     "purview": {
       "name": "Purview Audit Log Processor",
-      "version": "1.7.3",
-      "status": "active",
-      "releaseDate": "2025-10-26",
-      "notes": "PowerShell script for Microsoft Purview audit logs"
+      "version": "1.7.4",
+      "status": "development",
+      "notes": "Canonical root script; prior versions in script_archive/Purview_Audit_Log_Processor."
     },
     "graph": {
       "name": "Graph Audit Log Processor",
-      "version": "0.1.1",
-      "status": "beta",
-      "releaseDate": "2025-10-22",
-      "notes": "PowerShell script for Microsoft Graph audit logs"
+      "version": "0.1.2",
+      "status": "beta-dev",
+      "notes": "Canonical root script; prior versions in script_archive/Graph_Audit_Log_Processor."
     }
   },
-  "lastUpdated": "2025-10-22T16:55:15Z"
+  "lastUpdated": "2025-10-29T00:00:00Z"
 }
 { "comment": "PAX-v1.0.4" }

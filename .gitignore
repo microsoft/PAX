@@ -60,6 +60,11 @@ releases/
 # Internal documents (not for public repo)
 PAX_One_Pager_CVP.md
 
+# Ignore test suite (retain ability to run locally; prevent committing)
+tests/
+tests/**
+!tests/README.md
+
 
 
 

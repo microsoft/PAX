@@ -1,2 +1,5 @@
 # Release notes archive folder for PAX product releases
-# Last updated: 2025-10-26 (PAX v1.0.4, Purview v1.7.3)
+# Purpose: snapshot narrative of each component's release (scope, changes, rationale) for compliance.
+# Retention: never rewrite past notes; append new versioned note files only.
+# Last updated: 2025-10-29 (PAX v1.0.5, Graph v0.1.2, Purview v1.7.4)
+# Change rationale: umbrella alignment commit PAX-v1.0.5 adds purpose clarity & updated version stamp.
