@@ -1,5 +1,1 @@
-# Documentation archive folder for PAX product releases
-# Purpose: holds immutable per-version component documentation (Graph, Purview)
-# Retention: keep all historical docs for audit & diff provenance; do NOT delete old versions.
-# Last updated: 2025-10-30 (PAX v1.0.6, Graph v1.0.1, Purview v1.7.4)
-# Change rationale: umbrella alignment commit PAX-v1.0.6 coordinates Graph v1.0.1 major feature release (Excel export, MAC licensing, granular endpoints).
+# Last updated: 2025-11-10 (PAX v1.0.7, Graph v1.0.1, Purview v1.8.0)

@@ -1,5 +1,1 @@
-# PAX Solution Set - Script Archive
-# Purpose: authoritative retention of every released script binary/source for reproducibility & rollback.
-# Contents: Graph & Purview processor PowerShell scripts per version; NEVER remove prior versions.
-# Last updated: 2025-10-30 (PAX v1.0.6, Graph v1.0.1, Purview v1.7.4)
-# Change rationale: umbrella alignment commit PAX-v1.0.6 archives Graph v1.0.1 production release with major feature expansion (3182 lines, Excel export, MAC licensing).
+# Last updated: 2025-11-10 (PAX v1.0.7, Graph v1.0.1, Purview v1.8.0)
