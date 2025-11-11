@@ -1153,7 +1153,7 @@ If you see partitions listed as "Sent but Incomplete" or "Never Sent" in the sum
 
 For questions or issues, refer to the documentation:
 
-- **Documentation v1.8.0 (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.8.0.md](https://github.com/microsoft/PAX/releases/download/purview-v1.8.0/PAX_Purview_Audit_Log_Processor_Documentation_v1.8.0.md)
+- **Documentation v1.8.0 (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.8.0.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.8.0.md)
 
 *Managed and released by the Microsoft Copilot Growth ROI Advisory Team. Please reach out to [copilot-roi-advisory-team-gh@microsoft.com](mailto:copilot-roi-advisory-team-gh@microsoft.com) with any feedback.*
 
