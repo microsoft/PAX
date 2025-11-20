@@ -583,7 +583,7 @@ param(
     [switch]$UseWatermark,
     
     [Parameter(Mandatory=$false)]
-    [string]$WatermarkFile = "copilot-watermarks.json",
+    [string]$WatermarkFile = "C:\Temp\copilot-watermarks.json",
     
     [Parameter(Mandatory=$false)]
     [switch]$ExportWorkbook,
@@ -1363,7 +1363,6 @@ function Update-UserWatermark {
     
     if (-not $existing -or $NewTimestamp -gt $existing) {
         $WatermarkStore[$UserUpn] = $NewTimestamp
-        Write-Log "Updated watermark for $UserUpn : $($NewTimestamp.ToString('o'))"
         return $true
     }
     
@@ -1395,8 +1394,11 @@ function Export-WatermarkStore {
     try {
         # Convert to JSON-friendly object
         $exportObj = @{}
-        foreach ($key in $WatermarkStore.Keys) {
-            $exportObj[$key] = $WatermarkStore[$key].ToString('o')  # ISO 8601 format
+        foreach ($user in $WatermarkStore.Keys) {
+            $timestamp = $WatermarkStore[$user]
+            if ($timestamp -is [DateTime]) {
+                $exportObj[$user] = $timestamp.ToString('o')  # ISO 8601 format
+            }
         }
         
         # Write to temporary file
@@ -1419,7 +1421,6 @@ function Export-WatermarkStore {
         # Atomic replace: move temp file to actual file
         Move-Item $tempFile $WatermarkFile -Force -ErrorAction Stop
         
-        Write-Log "Exported watermarks for $($WatermarkStore.Count) users to $WatermarkFile"
         return $true
     }
     catch {
@@ -2850,7 +2851,19 @@ try {
                 # Get watermark
                 $watermark = $null
                 if ($UseWatermark -and $watermarkStore.ContainsKey($upn)) {
-                    $watermark = $watermarkStore[$upn]
+                    $wmValue = $watermarkStore[$upn]
+                    # Validate it's a DateTime, or try parsing if it's a string
+                    if ($wmValue -is [DateTime]) {
+                        $watermark = $wmValue
+                    }
+                    elseif ($wmValue -is [string]) {
+                        try {
+                            $watermark = [DateTime]::Parse($wmValue)
+                        }
+                        catch {
+                            # Invalid string format, skip watermark for this user
+                        }
+                    }
                 }
                 
                 # Build relative URL with server-side filters (if supported)
@@ -2864,8 +2877,8 @@ try {
                     $filterParts += "createdDateTime ge $startIso and createdDateTime le $endIso"
                 }
                 
-                # Watermark filter takes precedence over date filter
-                if ($watermark) {
+                # Watermark filter takes precedence over date filter (only if server-side date filtering supported)
+                if ($watermark -and $serverSideDateFilterSupported) {
                     $watermarkIso = $watermark.ToString('yyyy-MM-ddTHH:mm:ssZ')
                     $filterParts += "createdDateTime gt $watermarkIso"
                 }
@@ -2941,9 +2954,27 @@ try {
                             
                             # Apply client-side date filtering if server-side not supported
                             if (-not $serverSideDateFilterSupported -and $interactions.Count -gt 0) {
+                                # Get watermark for this user
+                                $userWatermark = $null
+                                if ($UseWatermark -and $watermarkStore.ContainsKey($upn)) {
+                                    $wmValue = $watermarkStore[$upn]
+                                    if ($wmValue -is [DateTime]) {
+                                        $userWatermark = $wmValue
+                                    }
+                                    elseif ($wmValue -is [string]) {
+                                        try { $userWatermark = [DateTime]::Parse($wmValue) } catch { }
+                                    }
+                                }
+                                
                                 $interactions = $interactions | Where-Object {
                                     $created = [DateTime]::Parse($_.createdDateTime)
-                                    $created -ge $StartDate -and $created -le $EndDate
+                                    # If watermark exists, only get interactions after it; otherwise use date range
+                                    if ($userWatermark) {
+                                        $created -gt $userWatermark
+                                    }
+                                    else {
+                                        $created -ge $StartDate -and $created -le $EndDate
+                                    }
                                 }
                             }
                             
@@ -3014,7 +3045,7 @@ try {
                     # Update watermark (in-memory only - will save after successful export)
                     if ($UseWatermark -and $result.Interactions.Count -gt 0) {
                         $latestTimestamp = ($result.Interactions | Sort-Object -Property @{Expression={[DateTime]$_.createdDateTime}} -Descending | Select-Object -First 1).createdDateTime
-                        Update-UserWatermark -WatermarkStore $script:watermarkStore -UserPrincipalName $result.User -LastTimestamp ([DateTime]::Parse($latestTimestamp))
+                        Update-UserWatermark -WatermarkStore $script:watermarkStore -UserUpn $result.User -NewTimestamp ([DateTime]::Parse($latestTimestamp)) | Out-Null
                     }
                     
                     $successCount++
@@ -3084,7 +3115,19 @@ try {
                 # Get watermark for this user if enabled
                 $watermark = $null
                 if ($UseWatermark) {
-                    $watermark = Get-UserWatermark -WatermarkStore $script:watermarkStore -UserPrincipalName $upn
+                    $wmValue = Get-UserWatermark -WatermarkStore $script:watermarkStore -UserPrincipalName $upn
+                    # Validate it's a DateTime, or try parsing if it's a string
+                    if ($wmValue -and $wmValue -is [DateTime]) {
+                        $watermark = $wmValue
+                    }
+                    elseif ($wmValue -and $wmValue -is [string]) {
+                        try {
+                            $watermark = [DateTime]::Parse($wmValue)
+                        }
+                        catch {
+                            # Invalid string format, skip watermark for this user
+                        }
+                    }
                 }
                 
                 # Build URI with server-side filters (if supported)
@@ -3098,8 +3141,8 @@ try {
                     $filterParts += "createdDateTime ge $startIso and createdDateTime le $endIso"
                 }
                 
-                # Watermark filter takes precedence over date filter
-                if ($watermark) {
+                # Watermark filter takes precedence over date filter (only if server-side date filtering supported)
+                if ($watermark -and $script:serverSideDateFilterSupported) {
                     $watermarkIso = $watermark.ToString('yyyy-MM-ddTHH:mm:ssZ')
                     $filterParts += "createdDateTime gt $watermarkIso"
                 }
@@ -3138,7 +3181,13 @@ try {
                 if (-not $script:serverSideDateFilterSupported -and $userInteractions.Count -gt 0) {
                     $userInteractions = $userInteractions | Where-Object {
                         $created = [DateTime]::Parse($_.createdDateTime)
-                        $created -ge $StartDate -and $created -le $EndDate
+                        # If watermark exists, only get interactions after it; otherwise use date range
+                        if ($watermark) {
+                            $created -gt $watermark
+                        }
+                        else {
+                            $created -ge $StartDate -and $created -le $EndDate
+                        }
                     }
                 }
                 
@@ -3211,13 +3260,59 @@ try {
     Write-Log "Errors: $errorCount" -Level $(if ($errorCount -gt 0) { 'Error' } else { 'Metric' })
     Write-Log "Total interactions collected: $($allInteractions.Count)" -Level Highlight
     
+    # Display watermark information if used (show even when no data collected)
+    if ($UseWatermark -and $script:watermarkStore -and $script:watermarkStore.Count -gt 0) {
+        Write-Log "═══════════════════════════════════════════════════════════════" -Level Header
+        Write-Log "Watermark Information:" -Level Highlight
+        
+        # Check if watermark file existed before this run (indicates filtering was active)
+        $watermarkFileExistedBefore = $false
+        if (Test-Path $WatermarkFile) {
+            $watermarkFileAge = (Get-Date) - (Get-Item $WatermarkFile).LastWriteTime
+            # If file was written more than 10 seconds ago, it existed before this run
+            if ($watermarkFileAge.TotalSeconds -gt 10) {
+                $watermarkFileExistedBefore = $true
+            }
+        }
+        
+        if ($watermarkFileExistedBefore) {
+            Write-Log "  Watermark filtering: ACTIVE (incremental data retrieval)" -Level Metric
+        }
+        else {
+            Write-Log "  Watermark tracking: ENABLED (first run - full data retrieval)" -Level Metric
+        }
+        
+        Write-Log "  Users tracked: $($script:watermarkStore.Count)" -Level Metric
+        
+        # Find earliest and latest watermark timestamps
+        $timestamps = $script:watermarkStore.Values | Where-Object { $_ -is [DateTime] }
+        if ($timestamps) {
+            $earliestWatermark = ($timestamps | Measure-Object -Minimum).Minimum
+            $latestWatermark = ($timestamps | Measure-Object -Maximum).Maximum
+            Write-Log "  Earliest watermark: $($earliestWatermark.ToString('yyyy-MM-dd HH:mm:ss'))" -Level Metric
+            Write-Log "  Latest watermark: $($latestWatermark.ToString('yyyy-MM-dd HH:mm:ss'))" -Level Metric
+            
+            if ($watermarkFileExistedBefore) {
+                Write-Log "  → Data retrieved: Records AFTER each user's watermark timestamp" -Level Info
+            }
+            else {
+                Write-Log "  → Next run will retrieve only records AFTER these timestamps" -Level Info
+            }
+        }
+    }
+    
     if ($allInteractions.Count -eq 0) {
-        Write-Log "No interactions found. Exiting." -Level Warning
+        if ($UseWatermark) {
+            Write-Log "No new interactions found beyond existing watermark timestamps. All data is up to date." -Level Info
+        } else {
+            Write-Log "No interactions found for the specified date range and users." -Level Info
+        }
+        Write-Log "Exiting (no data to export)." -Level Info
         return
     }
     
-    # Check if oldest returned data is newer than requested StartDate
-    if ($allInteractions.Count -gt 0) {
+    # Check if oldest returned data is newer than requested StartDate (skip when using watermarks)
+    if ($allInteractions.Count -gt 0 -and -not $UseWatermark) {
         $oldestInteraction = ($allInteractions | Sort-Object { [DateTime]$_.createdDateTime } | Select-Object -First 1).createdDateTime
         $oldestDate = [DateTime]$oldestInteraction
         
@@ -3312,7 +3407,7 @@ try {
             if ($script:EntraCache) {
                 $exportParams['EntraCache'] = $script:EntraCache
             }
-            Export-ResultsToExcel @exportParams
+            Export-ResultsToExcel @exportParams | Out-Null
             
             # Step 4: Clean up temporary CSV
             Remove-Item -Path $tempCsvFile -Force -ErrorAction SilentlyContinue
@@ -3397,7 +3492,6 @@ try {
                 }
                 $userStatsFile = Join-Path $OutputPath "CopilotInteractions_StatsByUser_$timestamp.csv"
                 $userStats | Export-Csv -Path $userStatsFile -NoTypeInformation -Encoding UTF8
-                Write-Log "✓ User stats: $userStatsFile" -Level Success
                 
                 # Stats by App
                 $appStats = $transformedData | Group-Object AppClass | ForEach-Object {
@@ -3411,7 +3505,6 @@ try {
                 }
                 $appStatsFile = Join-Path $OutputPath "CopilotInteractions_StatsByApp_$timestamp.csv"
                 $appStats | Export-Csv -Path $appStatsFile -NoTypeInformation -Encoding UTF8
-                Write-Log "✓ App stats: $appStatsFile" -Level Success
                 
                 # Stats by Date
                 $dateStats = $transformedData | Where-Object { $_.CreationDate } | ForEach-Object {
@@ -3427,7 +3520,6 @@ try {
                 }
                 $dateStatsFile = Join-Path $OutputPath "CopilotInteractions_StatsByDate_$timestamp.csv"
                 $dateStats | Export-Csv -Path $dateStatsFile -NoTypeInformation -Encoding UTF8
-                Write-Log "✓ Date stats: $dateStatsFile" -Level Success
             }
             
             # Export EntraUsers_MAClicensing CSV if -IncludeUserInfo was used
@@ -3437,7 +3529,6 @@ try {
                 if ($entraData) {
                     $entraUsersFile = Join-Path $OutputPath "EntraUsers_MAClicensing_$timestamp.csv"
                     $entraData | Export-Csv -Path $entraUsersFile -NoTypeInformation -Encoding UTF8
-                    Write-Log "✓ Entra users: $entraUsersFile" -Level Success
                 }
             }
         }
@@ -3445,12 +3536,11 @@ try {
             Write-Log "✗ CSV export failed: $($_.Exception.Message)" -Level Error
             throw
         }
-        
-        if ($UseWatermark) {
-            Write-Log "Saving watermark store (all data successfully exported)..." -Level Info
-            Export-WatermarkStore -WatermarkStore $script:watermarkStore -WatermarkFile $WatermarkFile
-            Write-Log "✓ Watermark store saved to disk" -Level Success
-        }
+    }
+    
+    # Save watermark store (after successful export, regardless of CSV or Excel)
+    if ($UseWatermark) {
+        Export-WatermarkStore -WatermarkStore $script:watermarkStore -WatermarkFile $WatermarkFile | Out-Null
     }
     
     # Emit metrics JSON if requested
@@ -3567,6 +3657,12 @@ try {
     if ($userStatusFile -and (Test-Path $userStatusFile)) {
         $userStatusSize = [math]::Round((Get-Item $userStatusFile).Length / 1KB, 2)
         Write-Log "  User Status CSV: $userStatusFile ($userStatusSize KB)" -Level Highlight
+    }
+    
+    # List watermark file if -UseWatermark was used
+    if ($UseWatermark -and $WatermarkFile -and (Test-Path $WatermarkFile)) {
+        $watermarkSize = [math]::Round((Get-Item $WatermarkFile).Length / 1KB, 2)
+        Write-Log "  Watermark File: $WatermarkFile ($watermarkSize KB)" -Level Highlight
     }
     
     # List log file
