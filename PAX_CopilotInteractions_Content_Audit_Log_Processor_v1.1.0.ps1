@@ -43,9 +43,9 @@
     • Watermark pattern: Stores last seen timestamp per user for incremental processing
     
     The output provides:
-    - Full interaction content (body with prompt/response text)
-    - Core identifiers, timestamps, user and app context
-    - Interaction metadata including contexts, links, mentions, attachments
+    - Base interaction metadata (12 columns) with core identifiers, timestamps, user/app context
+    - Optional body content when `-IncludeBody` is specified (adds PromptBody/ResponseBody)
+    - Optional extended metadata when `-IncludeExtended` is specified (locale, identity sets, contexts, attachments, links, mentions, history summaries)
     - All fields suitable for compliance and analytics with composite keys for deduplication
 
     PREREQUISITES - APP REGISTRATION:
@@ -190,6 +190,19 @@
     • Length Control: Use -MaxBodyLength to limit text size (default 10000 characters)
     
     Example: -IncludeBody -MaxBodyLength 5000
+
+.PARAMETER IncludeExtended
+        Surface extended metadata that is hidden by default to minimize PII exposure.
+        When enabled, the export includes:
+            • Top-level metadata: Locale, ETag, and the `from` identity (user/application/device fields)
+            • Summary columns: Boolean + counts for contexts, attachments, links, mentions, and history
+            • Child datasets: Separate CSV files (or Excel tabs) for contexts, attachments, links, and mentions, keyed by `RecordId`
+
+        Output details:
+            • CSV mode emits `CopilotInteractions_Contexts_<timestamp>.csv`, `..._Attachments_`, `..._Links_`, `..._Mentions_`
+            • Excel mode adds `Contexts`, `Attachments`, `Links`, and `Mentions` tabs to the workbook
+            • Extended metadata never includes prompt/response bodies unless `-IncludeBody` is also specified
+            • Designed for analytics scenarios that require full Copilot interaction lineage
 
 .PARAMETER MaxBodyLength
     Maximum character length for body content before truncation.
@@ -558,6 +571,9 @@ param(
     
     [Parameter(Mandatory=$false)]
     [switch]$IncludeBody,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$IncludeExtended,
     
     [Parameter(Mandatory=$false)]
     [int]$MaxBodyLength = 10000,
@@ -1946,6 +1962,18 @@ function Export-ResultsToExcel {
         
         [Parameter(Mandatory=$false)]
         [hashtable]$EntraCache,
+
+        [Parameter(Mandatory=$false)]
+        [array]$ContextRows,
+
+        [Parameter(Mandatory=$false)]
+        [array]$AttachmentRows,
+
+        [Parameter(Mandatory=$false)]
+        [array]$LinkRows,
+
+        [Parameter(Mandatory=$false)]
+        [array]$MentionRows,
         
         [Parameter(Mandatory=$false)]
         [bool]$AppendMode = $false
@@ -2099,6 +2127,19 @@ function Export-ResultsToExcel {
             if ($dateStats) {
                 Export-ExcelTab -ExcelPath $OutputFile -TabName "StatsByDate" -Data $dateStats -IsAppendMode $AppendMode -ExistingSheets $existingSheets -Timestamp $timestamp
             }
+        }
+        
+        if ($ContextRows -and $ContextRows.Count -gt 0) {
+            Export-ExcelTab -ExcelPath $OutputFile -TabName "Contexts" -Data $ContextRows -IsAppendMode $AppendMode -ExistingSheets $existingSheets -Timestamp $timestamp
+        }
+        if ($AttachmentRows -and $AttachmentRows.Count -gt 0) {
+            Export-ExcelTab -ExcelPath $OutputFile -TabName "Attachments" -Data $AttachmentRows -IsAppendMode $AppendMode -ExistingSheets $existingSheets -Timestamp $timestamp
+        }
+        if ($LinkRows -and $LinkRows.Count -gt 0) {
+            Export-ExcelTab -ExcelPath $OutputFile -TabName "Links" -Data $LinkRows -IsAppendMode $AppendMode -ExistingSheets $existingSheets -Timestamp $timestamp
+        }
+        if ($MentionRows -and $MentionRows.Count -gt 0) {
+            Export-ExcelTab -ExcelPath $OutputFile -TabName "Mentions" -Data $MentionRows -IsAppendMode $AppendMode -ExistingSheets $existingSheets -Timestamp $timestamp
         }
         
         # Tab 5 (or 2 if no stats): EntraUsers_MAClicensing (if -IncludeUserInfo was used)
@@ -3325,10 +3366,20 @@ try {
     # Transform JSON to output schema
     Write-Log "Transforming data to output schema..." -Level Processing
     Write-Log "  Exploding body content into ContentType and Content columns" -Level Info
+    if ($IncludeExtended) {
+        Write-Log "  Capturing extended metadata (contexts, attachments, links, mentions, identity, history summaries)" -Level Info
+    }
+
     $transformedData = @()
+    if ($IncludeExtended) {
+        $contextRows = [System.Collections.Generic.List[object]]::new()
+        $attachmentRows = [System.Collections.Generic.List[object]]::new()
+        $linkRows = [System.Collections.Generic.List[object]]::new()
+        $mentionRows = [System.Collections.Generic.List[object]]::new()
+    }
     
     foreach ($interaction in $allInteractions) {
-        $paxRecord = [PSCustomObject]@{
+        $record = [ordered]@{
             # Core identifiers
             RecordId = $interaction.id
             SessionId = $interaction.sessionId
@@ -3361,22 +3412,174 @@ try {
                 ""
             }
             
-            # Contexts (joined as string)
-            Contexts = if ($interaction.contexts) {
-                ($interaction.contexts | ForEach-Object { "$($_.contextType): $($_.contextReference)" }) -join "; "
-            } else {
-                ""
-            }
-            
             # Metadata
             Operation = 'CopilotInteraction'
             AppClass = $interaction.appClass
         }
-        
-        $transformedData += $paxRecord
+
+        if ($IncludeExtended) {
+            $locale = if ($interaction.PSObject.Properties['locale']) { $interaction.locale } else { $null }
+            $etag = if ($interaction.PSObject.Properties['etag']) { $interaction.etag } else { $null }
+
+            $fromUser = $null
+            $fromApplication = $null
+            $fromDevice = $null
+            if ($interaction.PSObject.Properties['from'] -and $interaction.from) {
+                if ($interaction.from.PSObject.Properties['user']) { $fromUser = $interaction.from.user }
+                if ($interaction.from.PSObject.Properties['application']) { $fromApplication = $interaction.from.application }
+                if ($interaction.from.PSObject.Properties['device']) { $fromDevice = $interaction.from.device }
+            }
+
+            $localeValue = if ($locale) { $locale } else { "" }
+            $etagValue = if ($etag) { $etag } else { "" }
+
+            $fromUserId = if ($fromUser -and $fromUser.PSObject.Properties['id']) { $fromUser.id } else { "" }
+            $fromUserDisplay = if ($fromUser -and $fromUser.PSObject.Properties['displayName']) { $fromUser.displayName } else { "" }
+            $fromUserUpn = if ($fromUser -and $fromUser.PSObject.Properties['userPrincipalName']) { $fromUser.userPrincipalName } else { "" }
+
+            $fromAppId = if ($fromApplication -and $fromApplication.PSObject.Properties['id']) { $fromApplication.id } else { "" }
+            $fromAppDisplay = if ($fromApplication -and $fromApplication.PSObject.Properties['displayName']) { $fromApplication.displayName } else { "" }
+
+            $fromDeviceId = if ($fromDevice -and $fromDevice.PSObject.Properties['id']) { $fromDevice.id } else { "" }
+            $fromDeviceDisplay = if ($fromDevice -and $fromDevice.PSObject.Properties['displayName']) { $fromDevice.displayName } else { "" }
+
+            $contextCount = 0
+            if ($interaction.PSObject.Properties['contexts'] -and $interaction.contexts) {
+                $index = 0
+                foreach ($contextItem in @($interaction.contexts)) {
+                    if (-not $contextItem) { continue }
+                    $index++
+                    $contextRows.Add([PSCustomObject]@{
+                        RecordId = $interaction.id
+                        ContextIndex = $index
+                        ContextType = if ($contextItem.PSObject.Properties['contextType']) { $contextItem.contextType } else { "" }
+                        ContextReference = if ($contextItem.PSObject.Properties['contextReference']) { $contextItem.contextReference } else { "" }
+                    })
+                }
+                $contextCount = $index
+            }
+
+            $attachmentCount = 0
+            if ($interaction.PSObject.Properties['attachments'] -and $interaction.attachments) {
+                $index = 0
+                foreach ($attachment in @($interaction.attachments)) {
+                    if (-not $attachment) { continue }
+                    $index++
+                    $attachmentRows.Add([PSCustomObject]@{
+                        RecordId = $interaction.id
+                        AttachmentIndex = $index
+                        Name = if ($attachment.PSObject.Properties['displayName']) { $attachment.displayName } else { "" }
+                        ContentType = if ($attachment.PSObject.Properties['contentType']) { $attachment.contentType } else { "" }
+                        SourceLocation = if ($attachment.PSObject.Properties['sourceLocation']) { $attachment.sourceLocation } else { "" }
+                        Size = if ($attachment.PSObject.Properties['size']) { $attachment.size } else { $null }
+                        AttachmentType = if ($attachment.PSObject.Properties['type']) { $attachment.type } else { "" }
+                    })
+                }
+                $attachmentCount = $index
+            }
+
+            $linkCount = 0
+            if ($interaction.PSObject.Properties['links'] -and $interaction.links) {
+                $index = 0
+                foreach ($link in @($interaction.links)) {
+                    if (-not $link) { continue }
+                    $index++
+                    $linkRows.Add([PSCustomObject]@{
+                        RecordId = $interaction.id
+                        LinkIndex = $index
+                        Url = if ($link.PSObject.Properties['url']) { $link.url } else { "" }
+                        DisplayText = if ($link.PSObject.Properties['displayText']) { $link.displayText } else { "" }
+                        Source = if ($link.PSObject.Properties['source']) { $link.source } else { "" }
+                    })
+                }
+                $linkCount = $index
+            }
+
+            $mentionCount = 0
+            if ($interaction.PSObject.Properties['mentions'] -and $interaction.mentions) {
+                $index = 0
+                foreach ($mention in @($interaction.mentions)) {
+                    if (-not $mention) { continue }
+                    $index++
+
+                    $mentionedUser = $null
+                    if ($mention.PSObject.Properties['mentioned'] -and $mention.mentioned -and $mention.mentioned.PSObject.Properties['user']) {
+                        $mentionedUser = $mention.mentioned.user
+                    }
+
+                    $mentionRows.Add([PSCustomObject]@{
+                        RecordId = $interaction.id
+                        MentionIndex = $index
+                        MentionType = if ($mention.PSObject.Properties['mentionType']) { $mention.mentionType } else { "" }
+                        DisplayName = if ($mention.PSObject.Properties['displayName']) { $mention.displayName } elseif ($mentionedUser -and $mentionedUser.PSObject.Properties['displayName']) { $mentionedUser.displayName } else { "" }
+                        MentionedUserId = if ($mentionedUser -and $mentionedUser.PSObject.Properties['id']) { $mentionedUser.id } else { "" }
+                        MentionedUserPrincipalName = if ($mentionedUser -and $mentionedUser.PSObject.Properties['userPrincipalName']) { $mentionedUser.userPrincipalName } else { "" }
+                    })
+                }
+                $mentionCount = $index
+            }
+
+            $historyCount = 0
+            $historyFirst = ""
+            $historyLast = ""
+            if ($interaction.PSObject.Properties['history'] -and $interaction.history) {
+                $historyItems = @($interaction.history)
+                $historyCount = $historyItems.Count
+                if ($historyCount -gt 0) {
+                    $historyTimestamps = $historyItems | ForEach-Object {
+                        if ($_ -and $_.PSObject.Properties['createdDateTime'] -and $_.createdDateTime) {
+                            try { [DateTime]::Parse($_.createdDateTime) } catch { $null }
+                        } else {
+                            $null
+                        }
+                    } | Where-Object { $_ }
+                    if ($historyTimestamps -and $historyTimestamps.Count -gt 0) {
+                        $historyOrdered = $historyTimestamps | Sort-Object
+                        $historyFirst = $historyOrdered[0].ToString('o')
+                        $historyLast = $historyOrdered[$historyOrdered.Count - 1].ToString('o')
+                    }
+                }
+            }
+
+            $record['Locale'] = $localeValue
+            $record['ETag'] = $etagValue
+            $record['FromUserId'] = $fromUserId
+            $record['FromUserDisplayName'] = $fromUserDisplay
+            $record['FromUserPrincipalName'] = $fromUserUpn
+            $record['FromAppId'] = $fromAppId
+            $record['FromAppDisplayName'] = $fromAppDisplay
+            $record['FromDeviceId'] = $fromDeviceId
+            $record['FromDeviceDisplayName'] = $fromDeviceDisplay
+            $record['HasContexts'] = [bool]($contextCount -gt 0)
+            $record['ContextCount'] = $contextCount
+            $record['HasAttachments'] = [bool]($attachmentCount -gt 0)
+            $record['AttachmentCount'] = $attachmentCount
+            $record['HasLinks'] = [bool]($linkCount -gt 0)
+            $record['LinkCount'] = $linkCount
+            $record['HasMentions'] = [bool]($mentionCount -gt 0)
+            $record['MentionCount'] = $mentionCount
+            $record['HasHistory'] = [bool]($historyCount -gt 0)
+            $record['HistoryCount'] = $historyCount
+            $record['HistoryFirstTimestamp'] = $historyFirst
+            $record['HistoryLastTimestamp'] = $historyLast
+        }
+
+        $transformedData += [PSCustomObject]$record
     }
     
     Write-Log "✓ Transformed $($transformedData.Count) record(s)" -Level Success
+
+    if ($IncludeExtended) {
+        $contextData = if ($contextRows.Count -gt 0) { $contextRows.ToArray() } else { @() }
+        $attachmentData = if ($attachmentRows.Count -gt 0) { $attachmentRows.ToArray() } else { @() }
+        $linkData = if ($linkRows.Count -gt 0) { $linkRows.ToArray() } else { @() }
+        $mentionData = if ($mentionRows.Count -gt 0) { $mentionRows.ToArray() } else { @() }
+    } else {
+        $contextData = @()
+        $attachmentData = @()
+        $linkData = @()
+        $mentionData = @()
+    }
     
     # Export results (unified path for CSV and Excel)
     $timestamp = $ScriptTimestamp
@@ -3407,12 +3610,30 @@ try {
             if ($script:EntraCache) {
                 $exportParams['EntraCache'] = $script:EntraCache
             }
+            if ($IncludeExtended) {
+                $exportParams['ContextRows'] = $contextData
+                $exportParams['AttachmentRows'] = $attachmentData
+                $exportParams['LinkRows'] = $linkData
+                $exportParams['MentionRows'] = $mentionData
+            }
             Export-ResultsToExcel @exportParams | Out-Null
             
             # Step 4: Clean up temporary CSV
             Remove-Item -Path $tempCsvFile -Force -ErrorAction SilentlyContinue
             
             $fileSize = [math]::Round((Get-Item $outputFile).Length / 1MB, 2)
+            if ($IncludeExtended -and $script:EntraCache) {
+                Write-Log "✓ Excel export complete ($fileSize MB) with tabs: CopilotInteractions_Content, Contexts, Attachments, Links, Mentions, EntraUsers_MAClicensing" -Level Success
+            }
+            elseif ($IncludeExtended) {
+                Write-Log "✓ Excel export complete ($fileSize MB) with tabs: CopilotInteractions_Content, Contexts, Attachments, Links, Mentions" -Level Success
+            }
+            elseif ($script:EntraCache) {
+                Write-Log "✓ Excel export complete ($fileSize MB) with tabs: CopilotInteractions_Content, EntraUsers_MAClicensing" -Level Success
+            }
+            else {
+                Write-Log "✓ Excel export complete ($fileSize MB)" -Level Success
+            }
         }
         catch {
             Write-Log "✗ Excel export failed: $($_.Exception.Message)" -Level Error
@@ -3469,7 +3690,39 @@ try {
             }
             
             $fileSize = [math]::Round((Get-Item $outputFile).Length / 1MB, 2)
-            Write-Log "✓ CSV export complete ($fileSize MB)" -Level Success
+            if ($IncludeExtended) {
+                Write-Log "✓ CSV export complete ($fileSize MB) with extended datasets (Contexts/Attachments/Links/Mentions)" -Level Success
+            } else {
+                Write-Log "✓ CSV export complete ($fileSize MB)" -Level Success
+            }
+
+            if ($IncludeExtended) {
+                Write-Log "Exporting extended metadata CSV datasets..." -Level Processing
+
+                if ($contextData -and $contextData.Count -gt 0) {
+                    $contextsFile = Join-Path $OutputPath "CopilotInteractions_Contexts_$timestamp.csv"
+                    $contextData | Export-Csv -Path $contextsFile -NoTypeInformation -Encoding UTF8
+                    Write-Log "  ✓ Contexts dataset exported -> $contextsFile ($($contextData.Count) rows)" -Level Success
+                }
+
+                if ($attachmentData -and $attachmentData.Count -gt 0) {
+                    $attachmentsFile = Join-Path $OutputPath "CopilotInteractions_Attachments_$timestamp.csv"
+                    $attachmentData | Export-Csv -Path $attachmentsFile -NoTypeInformation -Encoding UTF8
+                    Write-Log "  ✓ Attachments dataset exported -> $attachmentsFile ($($attachmentData.Count) rows)" -Level Success
+                }
+
+                if ($linkData -and $linkData.Count -gt 0) {
+                    $linksFile = Join-Path $OutputPath "CopilotInteractions_Links_$timestamp.csv"
+                    $linkData | Export-Csv -Path $linksFile -NoTypeInformation -Encoding UTF8
+                    Write-Log "  ✓ Links dataset exported -> $linksFile ($($linkData.Count) rows)" -Level Success
+                }
+
+                if ($mentionData -and $mentionData.Count -gt 0) {
+                    $mentionsFile = Join-Path $OutputPath "CopilotInteractions_Mentions_$timestamp.csv"
+                    $mentionData | Export-Csv -Path $mentionsFile -NoTypeInformation -Encoding UTF8
+                    Write-Log "  ✓ Mentions dataset exported -> $mentionsFile ($($mentionData.Count) rows)" -Level Success
+                }
+            }
             
             # Generate CSV stats files if requested
             if ($IncludeStats) {
