@@ -666,7 +666,7 @@ if ($env:PAX_SUPPRESS_LOG -eq '1') {
 }
 
 # Script version and metadata
-$ScriptVersion = "1.0.0"
+$ScriptVersion = "1.1.0"
 $ScriptName = "PAX CopilotInteractions Content Audit Log Processor"
 $ScriptStartTime = Get-Date
 $ScriptTimestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
@@ -1995,6 +1995,7 @@ function Export-ResultsToExcel {
         Import-Module ImportExcel -ErrorAction Stop
         
         $timestamp = $ScriptTimestamp
+        $mentionHeaderColumns = @('RecordId', 'MentionIndex', 'MentionType', 'DisplayName', 'MentionedUserId', 'MentionedUserPrincipalName')
         
         # Get existing sheets if AppendMode
         $existingSheets = @()
@@ -2051,11 +2052,41 @@ function Export-ResultsToExcel {
                 [array]$Data,
                 [bool]$IsAppendMode,
                 [array]$ExistingSheets,
-                [string]$Timestamp
+                [string]$Timestamp,
+                [string[]]$Headers
             )
             
-            if (-not $Data -or $Data.Count -eq 0) {
-                return  # Skip empty tabs
+            $dataCount = 0
+            $headersOnly = $false
+            if ($null -eq $Data) {
+                $dataCount = 0
+            }
+            elseif ($Data -is [System.Data.DataTable]) {
+                $dataCount = $Data.Rows.Count
+            }
+            elseif ($Data -is [System.Collections.ICollection]) {
+                $dataCount = $Data.Count
+            }
+            else {
+                $dataCount = 1
+            }
+
+            if ($dataCount -eq 0) {
+                if ($IsAppendMode -and $ExistingSheets -and ($ExistingSheets -contains $TabName)) {
+                    return
+                }
+
+                if ($Headers -and $Headers.Count -gt 0) {
+                    $emptyTable = New-Object System.Data.DataTable
+                    foreach ($header in $Headers) {
+                        $null = $emptyTable.Columns.Add($header)
+                    }
+                    $Data = $emptyTable
+                    $headersOnly = $true
+                }
+                else {
+                    return
+                }
             }
             
             if ($IsAppendMode -and $ExistingSheets -contains $TabName) {
@@ -2070,7 +2101,26 @@ function Export-ResultsToExcel {
                     $Data | Export-Excel -Path $ExcelPath -WorksheetName $TabName -Append -FreezeTopRow -BoldTopRow -NoNumberConversion '*' -ErrorAction Stop
                 }
             } else {
-                $Data | Export-Excel -Path $ExcelPath -WorksheetName $TabName -FreezeTopRow -BoldTopRow -NoNumberConversion '*' -ErrorAction Stop
+                $Data | Export-Excel -Path $ExcelPath -WorksheetName $TabName -FreezeTopRow:$false -BoldTopRow:$false -NoNumberConversion '*' -ErrorAction Stop
+            }
+
+            if ($headersOnly -and $Headers -and $Headers.Count -gt 0) {
+                $excelPackage = Open-ExcelPackage -Path $ExcelPath
+                try {
+                    $worksheet = $excelPackage.Workbook.Worksheets[$TabName]
+                    if ($worksheet) {
+                        for ($col = 0; $col -lt $Headers.Count; $col++) {
+                            $worksheet.SetValue(1, $col + 1, $Headers[$col])
+                        }
+                        $headerRange = $worksheet.Cells[1, 1, 1, $Headers.Count]
+                        $headerRange.Style.Font.Bold = $true
+                        $headerRange.AutoFilter = $false
+                    }
+                    $excelPackage.Save()
+                }
+                finally {
+                    Close-ExcelPackage -ExcelPackage $excelPackage | Out-Null
+                }
             }
         }
         
@@ -2129,18 +2179,10 @@ function Export-ResultsToExcel {
             }
         }
         
-        if ($ContextRows -and $ContextRows.Count -gt 0) {
-            Export-ExcelTab -ExcelPath $OutputFile -TabName "Contexts" -Data $ContextRows -IsAppendMode $AppendMode -ExistingSheets $existingSheets -Timestamp $timestamp
-        }
-        if ($AttachmentRows -and $AttachmentRows.Count -gt 0) {
-            Export-ExcelTab -ExcelPath $OutputFile -TabName "Attachments" -Data $AttachmentRows -IsAppendMode $AppendMode -ExistingSheets $existingSheets -Timestamp $timestamp
-        }
-        if ($LinkRows -and $LinkRows.Count -gt 0) {
-            Export-ExcelTab -ExcelPath $OutputFile -TabName "Links" -Data $LinkRows -IsAppendMode $AppendMode -ExistingSheets $existingSheets -Timestamp $timestamp
-        }
-        if ($MentionRows -and $MentionRows.Count -gt 0) {
-            Export-ExcelTab -ExcelPath $OutputFile -TabName "Mentions" -Data $MentionRows -IsAppendMode $AppendMode -ExistingSheets $existingSheets -Timestamp $timestamp
-        }
+        Export-ExcelTab -ExcelPath $OutputFile -TabName "Contexts" -Data $ContextRows -IsAppendMode $AppendMode -ExistingSheets $existingSheets -Timestamp $timestamp
+        Export-ExcelTab -ExcelPath $OutputFile -TabName "Attachments" -Data $AttachmentRows -IsAppendMode $AppendMode -ExistingSheets $existingSheets -Timestamp $timestamp
+        Export-ExcelTab -ExcelPath $OutputFile -TabName "Links" -Data $LinkRows -IsAppendMode $AppendMode -ExistingSheets $existingSheets -Timestamp $timestamp
+        Export-ExcelTab -ExcelPath $OutputFile -TabName "Mentions" -Data $MentionRows -IsAppendMode $AppendMode -ExistingSheets $existingSheets -Timestamp $timestamp -Headers $mentionHeaderColumns
         
         # Tab 5 (or 2 if no stats): EntraUsers_MAClicensing (if -IncludeUserInfo was used)
         # NOTE: EntraUsers tab is ALWAYS replaced, never appended (point-in-time snapshot)
@@ -3367,7 +3409,7 @@ try {
     Write-Log "Transforming data to output schema..." -Level Processing
     Write-Log "  Exploding body content into ContentType and Content columns" -Level Info
     if ($IncludeExtended) {
-        Write-Log "  Capturing extended metadata (contexts, attachments, links, mentions, identity, history summaries)" -Level Info
+        Write-Log "  Capturing extended metadata" -Level Info
     }
 
     $transformedData = @()
@@ -3496,28 +3538,73 @@ try {
             }
 
             $mentionCount = 0
-            if ($interaction.PSObject.Properties['mentions'] -and $interaction.mentions) {
-                $index = 0
-                foreach ($mention in @($interaction.mentions)) {
+            $mentionIndex = 0
+
+            if ($interaction.PSObject.Properties['mentions']) {
+                $mentionCollection = @()
+                if ($interaction.mentions -is [System.Array]) {
+                    $mentionCollection = @($interaction.mentions | Where-Object { $_ })
+                }
+                elseif ($interaction.mentions) {
+                    $mentionCollection = @($interaction.mentions)
+                }
+
+                foreach ($mention in $mentionCollection) {
                     if (-not $mention) { continue }
-                    $index++
 
                     $mentionedUser = $null
                     if ($mention.PSObject.Properties['mentioned'] -and $mention.mentioned -and $mention.mentioned.PSObject.Properties['user']) {
                         $mentionedUser = $mention.mentioned.user
                     }
 
+                    $mentionIndex++
                     $mentionRows.Add([PSCustomObject]@{
                         RecordId = $interaction.id
-                        MentionIndex = $index
+                        MentionIndex = $mentionIndex
                         MentionType = if ($mention.PSObject.Properties['mentionType']) { $mention.mentionType } else { "" }
                         DisplayName = if ($mention.PSObject.Properties['displayName']) { $mention.displayName } elseif ($mentionedUser -and $mentionedUser.PSObject.Properties['displayName']) { $mentionedUser.displayName } else { "" }
                         MentionedUserId = if ($mentionedUser -and $mentionedUser.PSObject.Properties['id']) { $mentionedUser.id } else { "" }
                         MentionedUserPrincipalName = if ($mentionedUser -and $mentionedUser.PSObject.Properties['userPrincipalName']) { $mentionedUser.userPrincipalName } else { "" }
                     })
                 }
-                $mentionCount = $index
             }
+
+            if ($interaction.PSObject.Properties['history'] -and $interaction.history) {
+                foreach ($historyItem in @($interaction.history)) {
+                    if (-not $historyItem) { continue }
+
+                    if ($historyItem.PSObject.Properties['mentions']) {
+                        $historyMentions = @()
+                        if ($historyItem.mentions -is [System.Array]) {
+                            $historyMentions = @($historyItem.mentions | Where-Object { $_ })
+                        }
+                        elseif ($historyItem.mentions) {
+                            $historyMentions = @($historyItem.mentions)
+                        }
+
+                        foreach ($mention in $historyMentions) {
+                            if (-not $mention) { continue }
+
+                            $mentionedUser = $null
+                            if ($mention.PSObject.Properties['mentioned'] -and $mention.mentioned -and $mention.mentioned.PSObject.Properties['user']) {
+                                $mentionedUser = $mention.mentioned.user
+                            }
+
+                            $mentionIndex++
+                            $mentionRows.Add([PSCustomObject]@{
+                                RecordId = $interaction.id
+                                MentionIndex = $mentionIndex
+                                MentionType = if ($mention.PSObject.Properties['mentionType']) { $mention.mentionType } else { "" }
+                                DisplayName = if ($mention.PSObject.Properties['displayName']) { $mention.displayName } elseif ($mentionedUser -and $mentionedUser.PSObject.Properties['displayName']) { $mentionedUser.displayName } else { "" }
+                                MentionedUserId = if ($mentionedUser -and $mentionedUser.PSObject.Properties['id']) { $mentionedUser.id } else { "" }
+                                MentionedUserPrincipalName = if ($mentionedUser -and $mentionedUser.PSObject.Properties['userPrincipalName']) { $mentionedUser.userPrincipalName } else { "" }
+                            })
+                        }
+                    }
+                }
+            }
+
+            $mentionCount = $mentionIndex
 
             $historyCount = 0
             $historyFirst = ""
@@ -3573,13 +3660,18 @@ try {
         $contextData = if ($contextRows.Count -gt 0) { $contextRows.ToArray() } else { @() }
         $attachmentData = if ($attachmentRows.Count -gt 0) { $attachmentRows.ToArray() } else { @() }
         $linkData = if ($linkRows.Count -gt 0) { $linkRows.ToArray() } else { @() }
-        $mentionData = if ($mentionRows.Count -gt 0) { $mentionRows.ToArray() } else { @() }
+        $mentionData = $mentionRows.ToArray()
     } else {
         $contextData = @()
         $attachmentData = @()
         $linkData = @()
         $mentionData = @()
     }
+
+    $hasContextDataset = ($IncludeExtended -and $contextData -and $contextData.Count -gt 0)
+    $hasAttachmentDataset = ($IncludeExtended -and $attachmentData -and $attachmentData.Count -gt 0)
+    $hasLinkDataset = ($IncludeExtended -and $linkData -and $linkData.Count -gt 0)
+    $hasMentionDataset = ($IncludeExtended -and (($mentionData -and $mentionData.Count -gt 0) -or $ExportWorkbook))
     
     # Export results (unified path for CSV and Excel)
     $timestamp = $ScriptTimestamp
@@ -3622,18 +3714,7 @@ try {
             Remove-Item -Path $tempCsvFile -Force -ErrorAction SilentlyContinue
             
             $fileSize = [math]::Round((Get-Item $outputFile).Length / 1MB, 2)
-            if ($IncludeExtended -and $script:EntraCache) {
-                Write-Log "✓ Excel export complete ($fileSize MB) with tabs: CopilotInteractions_Content, Contexts, Attachments, Links, Mentions, EntraUsers_MAClicensing" -Level Success
-            }
-            elseif ($IncludeExtended) {
-                Write-Log "✓ Excel export complete ($fileSize MB) with tabs: CopilotInteractions_Content, Contexts, Attachments, Links, Mentions" -Level Success
-            }
-            elseif ($script:EntraCache) {
-                Write-Log "✓ Excel export complete ($fileSize MB) with tabs: CopilotInteractions_Content, EntraUsers_MAClicensing" -Level Success
-            }
-            else {
-                Write-Log "✓ Excel export complete ($fileSize MB)" -Level Success
-            }
+            Write-Log "✓ Excel export complete ($fileSize MB)" -Level Success
         }
         catch {
             Write-Log "✗ Excel export failed: $($_.Exception.Message)" -Level Error
@@ -3696,31 +3777,61 @@ try {
                 Write-Log "✓ CSV export complete ($fileSize MB)" -Level Success
             }
 
+            $extendedDatasetExports = @()
+
             if ($IncludeExtended) {
+                $mentionHeaderColumns = @('RecordId', 'MentionIndex', 'MentionType', 'DisplayName', 'MentionedUserId', 'MentionedUserPrincipalName')
                 Write-Log "Exporting extended metadata CSV datasets..." -Level Processing
 
                 if ($contextData -and $contextData.Count -gt 0) {
                     $contextsFile = Join-Path $OutputPath "CopilotInteractions_Contexts_$timestamp.csv"
                     $contextData | Export-Csv -Path $contextsFile -NoTypeInformation -Encoding UTF8
-                    Write-Log "  ✓ Contexts dataset exported -> $contextsFile ($($contextData.Count) rows)" -Level Success
+                    $extendedDatasetExports += [PSCustomObject]@{
+                        Label = 'Contexts'
+                        Path  = $contextsFile
+                        Rows  = $contextData.Count
+                    }
                 }
 
                 if ($attachmentData -and $attachmentData.Count -gt 0) {
                     $attachmentsFile = Join-Path $OutputPath "CopilotInteractions_Attachments_$timestamp.csv"
                     $attachmentData | Export-Csv -Path $attachmentsFile -NoTypeInformation -Encoding UTF8
-                    Write-Log "  ✓ Attachments dataset exported -> $attachmentsFile ($($attachmentData.Count) rows)" -Level Success
+                    $extendedDatasetExports += [PSCustomObject]@{
+                        Label = 'Attachments'
+                        Path  = $attachmentsFile
+                        Rows  = $attachmentData.Count
+                    }
                 }
 
                 if ($linkData -and $linkData.Count -gt 0) {
                     $linksFile = Join-Path $OutputPath "CopilotInteractions_Links_$timestamp.csv"
                     $linkData | Export-Csv -Path $linksFile -NoTypeInformation -Encoding UTF8
-                    Write-Log "  ✓ Links dataset exported -> $linksFile ($($linkData.Count) rows)" -Level Success
+                    $extendedDatasetExports += [PSCustomObject]@{
+                        Label = 'Links'
+                        Path  = $linksFile
+                        Rows  = $linkData.Count
+                    }
                 }
 
-                if ($mentionData -and $mentionData.Count -gt 0) {
-                    $mentionsFile = Join-Path $OutputPath "CopilotInteractions_Mentions_$timestamp.csv"
+                $mentionsFile = Join-Path $OutputPath "CopilotInteractions_Mentions_$timestamp.csv"
+                $mentionRowsExported = if ($mentionData -is [System.Array]) { $mentionData.Count } elseif ($null -ne $mentionData) { 1 } else { 0 }
+
+                if ($mentionRowsExported -gt 0) {
                     $mentionData | Export-Csv -Path $mentionsFile -NoTypeInformation -Encoding UTF8
-                    Write-Log "  ✓ Mentions dataset exported -> $mentionsFile ($($mentionData.Count) rows)" -Level Success
+                }
+                else {
+                    $headerLine = ($mentionHeaderColumns -join ',')
+                    Set-Content -Path $mentionsFile -Value $headerLine -Encoding UTF8
+                }
+
+                $extendedDatasetExports += [PSCustomObject]@{
+                    Label = 'Mentions'
+                    Path  = $mentionsFile
+                    Rows  = $mentionRowsExported
+                }
+
+                if (-not $extendedDatasetExports -or $extendedDatasetExports.Count -eq 0) {
+                    Write-Log "  No extended metadata records detected for export." -Level Info
                 }
             }
             
@@ -3875,9 +3986,33 @@ try {
             if ($IncludeUserInfo -and $EntraCache -and $EntraCache.Count -gt 0) {
                 Write-Log "      - EntraUsers_MAClicensing" -Level Highlight
             }
+            if ($hasContextDataset) {
+                Write-Log "      - Contexts" -Level Highlight
+            }
+            if ($hasAttachmentDataset) {
+                Write-Log "      - Attachments" -Level Highlight
+            }
+            if ($hasLinkDataset) {
+                Write-Log "      - Links" -Level Highlight
+            }
+            if ($hasMentionDataset) {
+                Write-Log "      - Mentions" -Level Highlight
+            }
         }
     }
     
+    if ($IncludeExtended -and -not $ExportWorkbook) {
+        if ($extendedDatasetExports -and $extendedDatasetExports.Count -gt 0) {
+            Write-Log "  Extended Metadata Datasets:" -Level Highlight
+            foreach ($dataset in $extendedDatasetExports) {
+                if ($dataset.Path -and (Test-Path $dataset.Path)) {
+                    $datasetSize = [math]::Round((Get-Item $dataset.Path).Length / 1KB, 2)
+                    Write-Log "    - $($dataset.Label): $($dataset.Path) ($datasetSize KB, $($dataset.Rows) rows)" -Level Highlight
+                }
+            }
+        }
+    }
+
     # List stats files if generated
     if ($IncludeStats) {
         if ($userStatsFile -and (Test-Path $userStatsFile)) {
