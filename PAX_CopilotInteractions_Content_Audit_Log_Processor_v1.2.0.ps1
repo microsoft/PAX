@@ -156,6 +156,23 @@
     -CopilotApps Teams
     -CopilotApps Word,Excel,PowerPoint
 
+.PARAMETER CountryCodes
+    Optional ISO 3166-1 alpha-2 country code filter. When provided, only users whose
+    Entra ID `usageLocation` value matches one of the supplied codes are processed.
+    A per-run text file containing the filtered user list is written
+    to the output directory and automatically used for interaction export as well as
+    `-OnlyUserInfo` runs.
+
+    Use comma-separated ISO alpha-2 codes (no quotes required). Common aliases such as
+    `UK` are automatically remapped to their canonical codes (`GB`). The filter normalizes
+    the `usageLocation` setting, so it accepts either two-letter codes or values that
+    can be resolved via .NET region metadata (for example "United Kingdom"). Users with
+    a blank `usageLocation` are skipped to maintain compliance boundaries.
+
+    Examples:
+      -CountryCodes US
+      -CountryCodes DE,FR,IT
+
 .PARAMETER OutputPath
     Directory path where all output files will be created with auto-generated timestamped filenames.
     Default: C:\Temp\
@@ -565,6 +582,9 @@ param(
     [Parameter(Mandatory=$false)]
     [ValidateSet('All', 'Word', 'Excel', 'PowerPoint', 'Outlook', 'Teams', 'BizChat', 'OneNote', 'Loop', 'Whiteboard', 'Forms', 'Planner', 'SharePoint', 'Stream')]
     [string[]]$CopilotApps = @('All'),
+
+    [Parameter(Mandatory=$false)]
+    [string[]]$CountryCodes,
     
     [Parameter(Mandatory=$false)]
     [string]$OutputPath = "C:\Temp",
@@ -651,6 +671,57 @@ $validModes = @('Auto', 'On', 'Off')
 $ParallelMode = $validModes | Where-Object { $_ -eq $ParallelMode } | Select-Object -First 1
 if (-not $ParallelMode) {
     $ParallelMode = 'Auto'
+}
+
+$CountryCodeAliasMap = @{
+    'UK' = 'GB'  # Exceptionally reserved alias for United Kingdom
+    'EL' = 'GR'  # Alternative Greek alias (Ellás)
+    'FX' = 'FR'  # Metropolitan France legacy code
+    'AC' = 'AC'  # Ascension Island (exceptionally reserved)
+    'CP' = 'CP'  # Clipperton Island (exceptionally reserved)
+    'DG' = 'DG'  # Diego Garcia (Chagos Archipelago) reserved
+    'EA' = 'EA'  # Ceuta & Melilla reserved
+    'EU' = 'EU'  # European Union reserved
+    'IC' = 'IC'  # Canary Islands reserved
+    'XK' = 'XK'  # Kosovo temporary code widely used
+}
+
+$CountryAliasMessages = @()
+
+$CountryCodesNormalized = @()
+$CountryFilterActive = $false
+$CountryFilterOutputFile = $null
+
+if ($CountryCodes) {
+    foreach ($code in $CountryCodes) {
+        if ([string]::IsNullOrWhiteSpace($code)) { continue }
+        $trimmed = $code.Trim()
+        if ($trimmed.Length -eq 0) { continue }
+        $upper = $trimmed.ToUpperInvariant()
+        if ($upper -notmatch '^[A-Z]{2}$') {
+            Write-Warning "Ignoring invalid CountryCodes entry '$code'. Expected ISO alpha-2 code (e.g., US, DE)."
+            continue
+        }
+        $canonical = if ($CountryCodeAliasMap.ContainsKey($upper)) { $CountryCodeAliasMap[$upper] } else { $upper }
+
+        if ($canonical -notmatch '^[A-Z]{2}$') {
+            Write-Warning "Ignoring CountryCodes entry '$code' after alias normalization."
+            continue
+        }
+
+        if ($CountryCodesNormalized -notcontains $canonical) {
+            $CountryCodesNormalized += $canonical
+            if ($canonical -ne $upper) {
+                $CountryAliasMessages += "Country code alias '$upper' mapped to '$canonical'"
+            }
+        }
+    }
+
+    if ($CountryCodesNormalized.Count -eq 0) {
+        throw "No valid ISO country codes provided to -CountryCodes."
+    }
+
+    $CountryFilterActive = $true
 }
 
 # Optional global logging suppression for test scenarios
@@ -1754,6 +1825,53 @@ function ConvertTo-FlatEntraUsers {
     return $flattenedUsers
 }
 
+function Resolve-IsoCountryCode {
+    <#
+    .SYNOPSIS
+        Normalizes usageLocation values to ISO alpha-2 codes.
+    .PARAMETER UsageLocation
+        The Entra usageLocation value.
+    #>
+    param(
+        [string]$UsageLocation
+    )
+
+    if ([string]::IsNullOrWhiteSpace($UsageLocation)) {
+        return $null
+    }
+
+    $trimmed = $UsageLocation.Trim()
+
+    if ($trimmed.Length -eq 2 -and $trimmed -match '^[A-Za-z]{2}$') {
+        return $trimmed.ToUpperInvariant()
+    }
+
+    try {
+        $region = New-Object System.Globalization.RegionInfo($trimmed)
+        if ($region) {
+            return $region.TwoLetterISORegionName.ToUpperInvariant()
+        }
+    }
+    catch {
+        try {
+            $cultureMatch = [System.Globalization.CultureInfo]::GetCultures([System.Globalization.CultureTypes]::SpecificCultures) |
+                Where-Object { $_.EnglishName -eq $trimmed -or $_.NativeName -eq $trimmed -or $_.DisplayName -eq $trimmed } |
+                Select-Object -First 1
+            if ($cultureMatch) {
+                $regionFromCulture = New-Object System.Globalization.RegionInfo($cultureMatch.Name)
+                if ($regionFromCulture) {
+                    return $regionFromCulture.TwoLetterISORegionName.ToUpperInvariant()
+                }
+            }
+        }
+        catch {
+            # Ignore and return null below
+        }
+    }
+
+    return $null
+}
+
 function Get-EntraUsers {
     <#
     .SYNOPSIS
@@ -2642,6 +2760,62 @@ try {
         } else {
             Write-Log "✓ Retrieved $($entraUsers.Count) Entra ID users in $([math]::Round((Get-Date).Subtract($entraStartTime).TotalSeconds, 2)) seconds" -Level Success
         }
+
+        if ($CountryFilterActive) {
+            if ($CountryAliasMessages -and $CountryAliasMessages.Count -gt 0) {
+                foreach ($aliasMsg in $CountryAliasMessages) {
+                    Write-Log $aliasMsg -Level Info
+                }
+                $CountryAliasMessages = @()
+            }
+
+            Write-Log "Applying country filter to Entra directory (CountryCodes: $([string]::Join(', ', $CountryCodesNormalized)))" -Level Highlight
+
+            $matchedEntraUsers = @()
+            $skippedNoMatch = @()
+            $skippedMissing = @()
+
+            foreach ($user in $entraUsers) {
+                $isoCode = Resolve-IsoCountryCode -UsageLocation $user.usageLocation
+                if (-not $isoCode) {
+                    $skippedMissing += $user.userPrincipalName
+                    continue
+                }
+
+                if ($CountryCodesNormalized -contains $isoCode) {
+                    $matchedEntraUsers += $user
+                } else {
+                    $skippedNoMatch += $user.userPrincipalName
+                }
+            }
+
+            if ($matchedEntraUsers.Count -gt 0) {
+                $CountryFilterOutputFile = Join-Path $OutputPath "CountryFilter_Users_$ScriptTimestamp.txt"
+                ($matchedEntraUsers | Select-Object -ExpandProperty userPrincipalName | Sort-Object -Unique) |
+                    Out-File -FilePath $CountryFilterOutputFile -Encoding UTF8
+
+                Write-Log "  Country filter matched $($matchedEntraUsers.Count) user(s); output written to $CountryFilterOutputFile" -Level Info
+            }
+
+            if ($skippedNoMatch.Count -gt 0) {
+                Write-Log "  Skipped $($skippedNoMatch.Count) user(s) outside allowed regions" -Level Warning
+            }
+
+            if ($skippedMissing.Count -gt 0) {
+                Write-Log "  Skipped $($skippedMissing.Count) user(s) missing usageLocation metadata" -Level Warning
+            }
+
+            if ($matchedEntraUsers.Count -eq 0) {
+                $friendlyMessage = "Country filter blocked execution: no Entra users matched CountryCodes ($([string]::Join(', ', $CountryCodesNormalized)))."
+                Write-Log $friendlyMessage -Level Error
+                $countryException = New-Object System.Exception($friendlyMessage)
+                $countryException.Data['PaxFriendlyError'] = 'CountryFilterNoMatch'
+                $countryException.Data['PaxCountryCodes'] = ($CountryCodesNormalized -join ', ')
+                throw $countryException
+            }
+
+            $entraUsers = $matchedEntraUsers
+        }
         
         # Export to file
         $timestamp = $ScriptTimestamp
@@ -2696,6 +2870,11 @@ try {
         if ($outputFile -and (Test-Path $outputFile)) {
             $outputFileSize = [math]::Round((Get-Item $outputFile).Length / 1MB, 2)
             Write-Log "  Entra Users: $outputFile ($outputFileSize MB)" -Level Info
+        }
+
+        if ($CountryFilterActive -and $CountryFilterOutputFile -and (Test-Path $CountryFilterOutputFile)) {
+            $countryFileSize = [math]::Round((Get-Item $CountryFilterOutputFile).Length / 1KB, 2)
+            Write-Log "  Country Filter List: $CountryFilterOutputFile ($countryFileSize KB)" -Level Info
         }
         
         # List log file
@@ -2817,6 +2996,97 @@ try {
         $originalCount = $targetUsers.Count
         $targetUsers = $licensedTargets
         Write-Log "✓ License validation complete: $($targetUsers.Count) licensed user(s) (filtered $($originalCount - $targetUsers.Count) unlicensed)" -Level Success
+    }
+
+    if ($CountryFilterActive) {
+        if (-not $entraUsers -or $entraUsers.Count -eq 0) {
+            Write-Log "Country filter requires Entra directory lookup. Retrieving Entra users..." -Level Info
+            $entraUsers = Get-EntraUsers
+        }
+
+        $entraLookup = @{}
+        foreach ($user in $entraUsers) {
+            if ($user.userPrincipalName) {
+                $entraLookup[$user.userPrincipalName.ToLowerInvariant()] = $user
+            }
+        }
+
+        $matchedUpns = @()
+        $matchedUsers = @()
+        $matchedLookup = @{}
+        $skippedNoMatch = @()
+        $skippedMissing = @()
+        $missingDirectory = @()
+
+        foreach ($upn in $targetUsers) {
+            $lookupKey = $upn.ToLowerInvariant()
+            if (-not $entraLookup.ContainsKey($lookupKey)) {
+                $missingDirectory += $upn
+                continue
+            }
+
+            $userRecord = $entraLookup[$lookupKey]
+            $isoCode = Resolve-IsoCountryCode -UsageLocation $userRecord.usageLocation
+
+            if (-not $isoCode) {
+                $skippedMissing += $upn
+                continue
+            }
+
+            if ($CountryCodesNormalized -contains $isoCode) {
+                if (-not $matchedLookup.ContainsKey($lookupKey)) {
+                    $matchedLookup[$lookupKey] = $true
+                    $matchedUpns += $upn
+                    $matchedUsers += $userRecord
+                }
+            } else {
+                $skippedNoMatch += $upn
+            }
+        }
+
+        $CountryFilterOutputFile = $null
+        $matchedUpnSet = $matchedUpns | Sort-Object -Unique
+
+        if ($matchedUpnSet.Count -gt 0) {
+            $CountryFilterOutputFile = Join-Path $OutputPath "CountryFilter_Users_$ScriptTimestamp.txt"
+            $matchedUpnSet | Out-File -FilePath $CountryFilterOutputFile -Encoding UTF8
+        }
+
+        if ($CountryAliasMessages -and $CountryAliasMessages.Count -gt 0) {
+            foreach ($aliasMsg in $CountryAliasMessages) {
+                Write-Log $aliasMsg -Level Info
+            }
+            $CountryAliasMessages = @()
+        }
+
+        Write-Log "Country filter applied (Codes: $([string]::Join(', ', $CountryCodesNormalized))): Matched $($matchedUpns.Count) user(s)." -Level Highlight
+        if ($CountryFilterOutputFile) {
+            Write-Log "  Filtered user list saved to $CountryFilterOutputFile" -Level Info
+        }
+
+        if ($skippedNoMatch.Count -gt 0) {
+            Write-Log "  Skipped $($skippedNoMatch.Count) user(s) outside allowed regions" -Level Warning
+        }
+
+        if ($skippedMissing.Count -gt 0) {
+            Write-Log "  Skipped $($skippedMissing.Count) user(s) missing usageLocation metadata" -Level Warning
+        }
+
+        if ($missingDirectory.Count -gt 0) {
+            Write-Log "  Skipped $($missingDirectory.Count) user(s) not found in Entra directory snapshot" -Level Warning
+        }
+
+        if ($matchedUpns.Count -eq 0) {
+            $friendlyMessage = "Country filter blocked execution: no users matched CountryCodes ($([string]::Join(', ', $CountryCodesNormalized)))."
+            Write-Log $friendlyMessage -Level Error
+            $countryException = New-Object System.Exception($friendlyMessage)
+            $countryException.Data['PaxFriendlyError'] = 'CountryFilterNoMatch'
+            $countryException.Data['PaxCountryCodes'] = ($CountryCodesNormalized -join ', ')
+            throw $countryException
+        }
+
+        $targetUsers = $matchedUpnSet
+        $entraUsers = $matchedUsers
     }
     
     # Initialize Entra cache if -IncludeUserInfo is specified
@@ -4013,6 +4283,11 @@ try {
         }
     }
 
+    if ($CountryFilterActive -and $CountryFilterOutputFile -and (Test-Path $CountryFilterOutputFile)) {
+        $countryFileSizeMb = [math]::Round((Get-Item $CountryFilterOutputFile).Length / 1KB, 2)
+        Write-Log "  Country Filter List: $CountryFilterOutputFile ($countryFileSizeMb KB)" -Level Highlight
+    }
+
     # List stats files if generated
     if ($IncludeStats) {
         if ($userStatsFile -and (Test-Path $userStatsFile)) {
@@ -4062,6 +4337,34 @@ try {
     Write-Log "═══════════════════════════════════════════════════════════════" -Level Header
 }
 catch {
+    $friendlyErrorId = $_.Exception.Data['PaxFriendlyError']
+    if ($friendlyErrorId -eq 'CountryFilterNoMatch') {
+        $codeSummary = $_.Exception.Data['PaxCountryCodes']
+        if (-not $codeSummary) { $codeSummary = 'n/a' }
+        Write-Log "Country filter enforcement: no eligible users for codes [$codeSummary]." -Level Error
+        Write-Log "Execution stopped before any Copilot data retrieval." -Level Error
+
+        try {
+            if ($script:AppendFileTempCsv -and (Test-Path $script:AppendFileTempCsv -ErrorAction SilentlyContinue)) {
+                Remove-Item -Path $script:AppendFileTempCsv -Force -ErrorAction SilentlyContinue
+            }
+            if ($WatermarkFile -and (Test-Path "$WatermarkFile.tmp" -ErrorAction SilentlyContinue)) {
+                Remove-Item -Path "$WatermarkFile.tmp" -Force -ErrorAction SilentlyContinue
+            }
+        }
+        catch {}
+
+        try {
+            $context = Get-MgContext -ErrorAction SilentlyContinue
+            if ($context) {
+                Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+            }
+        }
+        catch {}
+
+        exit 2
+    }
+
     Write-Log "═══════════════════════════════════════════════════════════════" -Level Error
     Write-Log "FATAL ERROR" -Level Error
     Write-Log "═══════════════════════════════════════════════════════════════" -Level Error
