@@ -92,6 +92,8 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 
 </details>
 
+</details>
+
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
@@ -274,14 +276,14 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 ## Installation & Setup
 
 <details>
-<summary>Download the Script</summary>
- 
+<summary>Show Installation & Setup steps</summary>
+
+### Download the Script
+
 - **Script:** [PAX_Purview_Audit_Log_Processor_v1.8.0.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.8.0/PAX_Purview_Audit_Log_Processor_v1.8.0.ps1)
 - **Release Notes:** [v1.8.0](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.8.0.md)
 
 Save the downloaded script to a working directory (e.g., `C:\Scripts\PAX\`).
-
-</details>
 
 ### First Run (Quick Start)
 
@@ -308,6 +310,8 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.8.
 
 **Note:** For legacy Exchange Online Management (EOM) mode, add `-UseEOM` parameter. Graph API mode is recommended for better performance and Entra ID enrichment support.
 
+</details>
+
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
@@ -315,7 +319,7 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.8.
 ## Parameters Reference
 
 <details>
-<summary>📋 View All Parameters (Click to Expand)</summary>
+<summary>📋 Show All Parameters</summary>
 
 ### Date & Time Parameters
 
@@ -362,12 +366,29 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.8.
 - `Purview_DSPM_Export_20251110_143022.csv` (with `-IncludeDSPMForAI`)
 
 **Use When:** Specifying custom output directory location  
-**Example:** `-OutputPath "D:\AuditData\2025\\"` → Uses `-OutputPath` directory
-- **Full path:** `-AppendFile "C:\Data\\" -OutputPath "C:\Reports\"
+**Example:** `-OutputPath "D:\AuditData\2025\\"`
 
-# Append to CSV with full path
--AppendFile "C:\Data\Audit\\\" -ExportWorkbook -CombineOutput -OutputPath "C:\Reports\\" -ActivityTypes CopilotInteraction
-```
+#### `-AppendFile` (string)
+
+**Purpose:** Append new audit records to an existing output file (CSV or Excel) instead of creating new timestamped files  
+**Default:** Not set (creates new timestamped files)  
+**Use When:**
+
+- Building continuous audit trails spanning multiple time periods
+- Incremental dataset updates for scheduled exports
+- Combining offline replay transformations into single output
+
+**Examples:**
+
+- Filename only: `-AppendFile "Report.xlsx"` (uses `-OutputPath` directory)
+- Full path: `-AppendFile "C:\Data\\"`
+
+**Notes:**
+
+- See [Incremental Data Collection (AppendFile)](#incremental-data-collection-appendfile) section for complete documentation
+- Validates header compatibility before appending
+- Works with both live query and offline replay modes
+- NOT compatible with `-IncludeUserInfo` or `-OnlyUserInfo`
 
 ---
 
@@ -375,7 +396,7 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.8.
 
 #### `-Auth` (string)
 
-**Purpose:** Authentication method for Exchange Online connection  
+**Purpose:** Authentication method for connecting to Microsoft services  
 **Valid Values:** `WebLogin`, `DeviceCode`, `Credential`, `Silent`  
 **Default:** `WebLogin`  
 **Use When:** Automating scripts, using headless terminals, or SSO scenarios  
@@ -386,7 +407,11 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor_v1.8.
 - `-Auth Credential` - Prompt for username/password (stored in memory only)
 - `-Auth Silent` - Attempt cached token (fails if no valid token)
 
-**Not applicable in replay mode** (authentication skipped when using `-RAWInputCSV`)
+**Notes:**
+
+- Available in both Graph API and EOM modes
+- See [Authentication Methods](#authentication-methods) section for detailed guidance
+- Not applicable in replay mode (authentication skipped when using `-RAWInputCSV`)
 
 ---
 
@@ -937,7 +962,10 @@ All audit-related parameters are incompatible and will trigger validation errors
 .\PAX_Purview_Audit_Log_Processor_v1.8.0.ps1 -OnlyUserInfo -OutputPath "D:\LicenseAudits\"
 
 # Device code auth for automation/headless scenarios
-.\\" -StartDate 2025-10-03 -EndDate 2025-10-04`
+./PAX_Purview_Audit_Log_Processor_v1.8.0.ps1 -OnlyUserInfo -Auth DeviceCode
+```
+
+---
 
 **CSV Mode Behavior:**
 
@@ -1049,6 +1077,9 @@ When both `-AppendFile` and `-OutputPath` are specified:
 
 ## Authentication Methods
 
+<details>
+<summary>🔐 View Authentication Methods (click to expand)</summary>
+
 **Starting in version 1.8.0**, the script uses **Microsoft Graph API by default** for audit log retrieval, providing enhanced performance and feature support including Entra ID enrichment and M365 Copilot (MAC) licensing.
 
 **Dual-Mode Architecture:**
@@ -1072,7 +1103,7 @@ When both `-AppendFile` and `-OutputPath` are specified:
 
 The script supports four authentication methods (available in both Graph API and EOM modes):
 
-### 1. WebLogin (Default)
+**WebLogin (Default)**
 
 Interactive browser-based authentication. Best for ad-hoc queries and interactive sessions.
 
@@ -1085,7 +1116,9 @@ Interactive browser-based authentication. Best for ad-hoc queries and interactiv
 
 </details>
 
-### 2. DeviceCode
+<br />
+
+**DeviceCode**
 
 Device code flow for headless/remote sessions or terminals without browser access.
 
@@ -1098,7 +1131,9 @@ Device code flow for headless/remote sessions or terminals without browser acces
 
 </details>
 
-### 3. Credential
+<br />
+
+**Credential**
 
 Username/password prompt. Credentials stored in memory only during script execution.
 
@@ -1111,7 +1146,9 @@ Username/password prompt. Credentials stored in memory only during script execut
 
 </details>
 
-### 4. Silent
+<br />
+
+**Silent**
 
 Attempts to use cached authentication token. Falls back to WebLogin if no valid token exists.
 
@@ -1124,11 +1161,16 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 
 </details>
 
+</details>
+
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
 ---
 
 ## Usage Examples
+
+<details>
+<summary>📚 View Usage Examples (click to expand)</summary>
 
 ### Basic Queries
 
@@ -1148,6 +1190,9 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 # Multiple activity types
 ./PAX_Purview_Audit_Log_Processor_v1.8.0.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
 ```
+
+</details>
+
 ### Metrics & Completeness Examples
 
 <details>
@@ -1171,9 +1216,6 @@ pwsh -File ./PAX_Purview_Audit_Log_Processor_v1.8.0.ps1 -StartDate 2025-10-07 -E
 if ($LASTEXITCODE -eq 10) { Write-Host 'Incomplete export detected – re-run with -AutoCompleteness' -ForegroundColor Yellow }
 elseif ($LASTEXITCODE -eq 20) { Write-Host 'Circuit breaker tripped – investigate throttling or reduce concurrency' -ForegroundColor Red }
 ```
-
-</details>
-
 
 </details>
 
@@ -1327,6 +1369,8 @@ elseif ($LASTEXITCODE -eq 20) { Write-Host 'Circuit breaker tripped – investig
 # Silent (cached token)
 ./PAX_Purview_Audit_Log_Processor_v1.8.0.ps1 -Auth Silent -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
+
+</details>
 
 </details>
 
@@ -2629,8 +2673,10 @@ This naming convention helps you:
 
 ## Incremental Data Collection (AppendFile)
 
-<details open>
-<summary>Overview</summary>
+<details>
+<summary>📂 View Incremental Data Collection guidance (click to expand)</summary>
+
+### Overview
 
 The **`-AppendFile` parameter** enables incremental dataset building across multiple script executions. This enterprise-critical feature allows organizations to:
 
@@ -2644,8 +2690,6 @@ The **`-AppendFile` parameter** enables incremental dataset building across mult
 - **Flexible workflows:** Works with CSV and Excel, live queries and offline replay
 - **Enterprise-ready:** Supports large-scale audit collection strategies used by Fortune 500 organizations
 - **Time-saving:** Eliminates manual copy/paste operations across multiple exports
-
-</details>
 
 ---
 
@@ -3084,6 +3128,8 @@ Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Us
 - Appending adds minimal overhead (< 5 seconds for header validation)
 - Large Excel files (>500MB) may take longer to open/validate
 - Consider CSV for extremely large datasets (faster append, smaller files)
+
+</details>
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 
