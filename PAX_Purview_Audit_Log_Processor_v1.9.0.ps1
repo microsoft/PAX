@@ -1,6 +1,6 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.8.0
-# Release Date: November 5, 2025
+# Version: v1.9.0
+# Release Date: December 10, 2025
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI: Microsoft Purview Data Security Posture Management integration
 #              MIXED FREE/PAYG Activity Types: AIInteraction (currently Microsoft platforms only), ConnectedAIAppInteraction (Microsoft + third-party)
@@ -355,7 +355,42 @@
 	      Use -AppendFile parameter to specify a custom filename for appending to existing files.
 
 .PARAMETER Auth
-	Authentication method for Exchange Online connection.
+	Authentication method. Options:
+	  • WebLogin       – Interactive browser authentication
+	  • DeviceCode     – Device code flow for headless scenarios
+	  • Credential     – Legacy username/password prompt or GRAPH_* env vars
+	  • Silent         – Managed identity or pre-cached token
+	  • AppRegistration – Service principal using client secret or certificate
+
+.PARAMETER TenantId
+	Azure AD tenant ID (GUID). Required for -Auth AppRegistration unless GRAPH_TENANT_ID
+	environment variable is set.
+
+.PARAMETER ClientId
+	Azure AD app registration client ID (GUID). Required for -Auth AppRegistration unless
+	GRAPH_CLIENT_ID environment variable is set.
+
+.PARAMETER ClientSecret
+	Client secret value for app registration authentication. You can pass it directly,
+	convert from a secure string, or set it through GRAPH_CLIENT_SECRET.
+
+.PARAMETER ClientCertificateThumbprint
+	Thumbprint of a certificate located in the CurrentUser or LocalMachine "My" store.
+	Used when -Auth AppRegistration should authenticate with a certificate instead of a
+	client secret. Optional environment variable: GRAPH_CLIENT_CERT_THUMBPRINT.
+
+.PARAMETER ClientCertificateStoreLocation
+	Certificate store to search when using ClientCertificateThumbprint. Valid values:
+	CurrentUser (default) or LocalMachine.
+
+.PARAMETER ClientCertificatePath
+	Path to a PFX file containing the certificate for app registration auth. Optional
+	environment variable: GRAPH_CLIENT_CERT_PATH.
+
+.PARAMETER ClientCertificatePassword
+	Password for the PFX file specified by ClientCertificatePath. Accepts secure string or
+	plain text (converted internally). Optional environment variable:
+	GRAPH_CLIENT_CERT_PASSWORD.
 	Options: WebLogin (default), DeviceCode, Credential, Silent
 
 .PARAMETER BlockHours
@@ -718,6 +753,12 @@
 	  
 	  # Use device code auth (for automation/headless scenarios)
 	  .\PAX_Purview_Audit_Log_Processor_v1.8.0.ps1 -OnlyUserInfo -Auth DeviceCode
+	  
+	  # App registration auth (client secret)
+	  .\PAX_Purview_Audit_Log_Processor_v1.8.0.ps1 -Auth AppRegistration -TenantId "<tenant-id>" -ClientId "<app-id>" -ClientSecret (ConvertTo-SecureString "<secret>" -AsPlainText -Force)
+	  
+	  # App registration auth (certificate thumbprint)
+	  .\PAX_Purview_Audit_Log_Processor_v1.8.0.ps1 -Auth AppRegistration -TenantId "<tenant-id>" -ClientId "<app-id>" -ClientCertificateThumbprint "<thumbprint>"
 	
 	PERFORMANCE:
 	  Typical execution time: 5-15 seconds (vs. minutes/hours for audit log queries)
@@ -747,8 +788,30 @@ param(
 	[string]$OutputPath = "C:\Temp\",
 
 	[Parameter(Mandatory = $false)]
-	[ValidateSet('WebLogin', 'DeviceCode', 'Credential', 'Silent')]
+	[ValidateSet('WebLogin', 'DeviceCode', 'Credential', 'Silent', 'AppRegistration')]
 	[string]$Auth = 'WebLogin',
+
+	[Parameter(Mandatory = $false)]
+	[string]$TenantId,
+
+	[Parameter(Mandatory = $false)]
+	[string]$ClientId,
+
+	[Parameter(Mandatory = $false)]
+	[string]$ClientSecret,
+
+	[Parameter(Mandatory = $false)]
+	[string]$ClientCertificateThumbprint,
+
+	[Parameter(Mandatory = $false)]
+	[ValidateSet('CurrentUser','LocalMachine')]
+	[string]$ClientCertificateStoreLocation = 'CurrentUser',
+
+	[Parameter(Mandatory = $false)]
+	[string]$ClientCertificatePath,
+
+	[Parameter(Mandatory = $false)]
+	[System.Security.SecureString]$ClientCertificatePassword,
 
 	[Parameter(Mandatory = $false)]
 	[ValidateRange(0.016667, 24)]
@@ -1033,7 +1096,7 @@ if ($OnlyUserInfo) {
 }
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.8.0'
+$ScriptVersion = '1.9.0'
 
 # --- Initialize/Clear persistent script variables to prevent cross-run contamination ---
 # Note: Script-scoped variables persist across multiple script invocations in the same PowerShell session
@@ -2006,7 +2069,7 @@ function Connect-PurviewAudit {
 		  - Supports parallel processing
 	
 	.PARAMETER AuthMethod
-		Authentication method: WebLogin, DeviceCode, Credential, Silent
+		Authentication method: WebLogin, DeviceCode, Credential, Silent, AppRegistration
 	
 	.PARAMETER UseEOMMode
 		If true, use EOM mode. If false, use Graph API mode.
@@ -2014,7 +2077,7 @@ function Connect-PurviewAudit {
 	
 	param(
 		[Parameter(Mandatory = $true)]
-		[ValidateSet('WebLogin', 'DeviceCode', 'Credential', 'Silent')]
+		[ValidateSet('WebLogin', 'DeviceCode', 'Credential', 'Silent', 'AppRegistration')]
 		[string]$AuthMethod,
 		
 		[Parameter(Mandatory = $false)]
@@ -2053,6 +2116,10 @@ function Connect-PurviewAudit {
 		# Authenticate based on method
 		try {
 			switch ($AuthMethod.ToLower()) {
+				'appregistration' {
+					Write-LogHost "AppRegistration authentication is not supported with -UseEOM. Remove -UseEOM to use Graph mode." -ForegroundColor Yellow
+					throw "AppRegistration authentication is only available in Graph API mode"
+				}
 				'weblogin' {
 					$exoCmd = Get-Command Connect-ExchangeOnline -ErrorAction Stop
 					$hasUseWeb = $exoCmd.Parameters.ContainsKey('UseWebLogin')
@@ -2190,6 +2257,97 @@ function Connect-PurviewAudit {
 				'silent' {
 					Write-LogHost "Using managed identity or existing token..." -ForegroundColor Gray
 					Connect-MgGraph -Identity -NoWelcome -ErrorAction Stop
+				}
+				'appregistration' {
+					Write-LogHost "Using app registration authentication..." -ForegroundColor Gray
+
+					$appTenantId = $TenantId
+					if ([string]::IsNullOrWhiteSpace($appTenantId)) { $appTenantId = $env:GRAPH_TENANT_ID }
+					if ([string]::IsNullOrWhiteSpace($appTenantId)) {
+						Write-LogHost "ERROR: -TenantId or GRAPH_TENANT_ID is required for AppRegistration auth." -ForegroundColor Red
+						throw "Missing TenantId for AppRegistration authentication"
+					}
+
+					$appClientId = $ClientId
+					if ([string]::IsNullOrWhiteSpace($appClientId)) { $appClientId = $env:GRAPH_CLIENT_ID }
+					if ([string]::IsNullOrWhiteSpace($appClientId)) {
+						Write-LogHost "ERROR: -ClientId or GRAPH_CLIENT_ID is required for AppRegistration auth." -ForegroundColor Red
+						throw "Missing ClientId for AppRegistration authentication"
+					}
+
+					$secretValue = $ClientSecret
+					if ([string]::IsNullOrWhiteSpace($secretValue)) { $secretValue = $env:GRAPH_CLIENT_SECRET }
+
+					$certThumbprint = $ClientCertificateThumbprint
+					if ([string]::IsNullOrWhiteSpace($certThumbprint)) { $certThumbprint = $env:GRAPH_CLIENT_CERT_THUMBPRINT }
+
+					$certPath = $ClientCertificatePath
+					if ([string]::IsNullOrWhiteSpace($certPath)) { $certPath = $env:GRAPH_CLIENT_CERT_PATH }
+
+					$certPasswordSecure = $ClientCertificatePassword
+					if (-not $certPasswordSecure -and $env:GRAPH_CLIENT_CERT_PASSWORD) {
+						$certPasswordSecure = ConvertTo-SecureString $env:GRAPH_CLIENT_CERT_PASSWORD -AsPlainText -Force
+					}
+
+					$certPasswordPlain = $null
+					if ($certPasswordSecure) {
+						$certPasswordPlain = [System.Net.NetworkCredential]::new('', $certPasswordSecure).Password
+					}
+
+					if (-not [string]::IsNullOrWhiteSpace($secretValue)) {
+						Write-LogHost "  -> Authenticating with client secret" -ForegroundColor Gray
+						$secureSecret = ConvertTo-SecureString -String $secretValue -AsPlainText -Force
+						$credential = New-Object System.Management.Automation.PSCredential($appClientId, $secureSecret)
+						Clear-Variable -Name secretValue -Force -ErrorAction SilentlyContinue
+						Connect-MgGraph -TenantId $appTenantId -ClientId $appClientId -ClientSecretCredential $credential -NoWelcome -ErrorAction Stop
+						Clear-Variable -Name secureSecret -Force -ErrorAction SilentlyContinue
+						Clear-Variable -Name credential -Force -ErrorAction SilentlyContinue
+					}
+					elseif (-not [string]::IsNullOrWhiteSpace($certThumbprint)) {
+						Write-LogHost "  -> Authenticating with certificate thumbprint $certThumbprint" -ForegroundColor Gray
+						$storeLocation = [System.Security.Cryptography.X509Certificates.StoreLocation]::$ClientCertificateStoreLocation
+						$store = New-Object System.Security.Cryptography.X509Certificates.X509Store("My", $storeLocation)
+						$store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
+						try {
+							$certificate = $store.Certificates | Where-Object { $_.Thumbprint -eq $certThumbprint }
+							if (-not $certificate) {
+								Write-LogHost "ERROR: Certificate with thumbprint '$certThumbprint' not found in $ClientCertificateStoreLocation store." -ForegroundColor Red
+								throw "Certificate not found"
+							}
+							Connect-MgGraph -TenantId $appTenantId -ClientId $appClientId -CertificateThumbprint $certThumbprint -NoWelcome -ErrorAction Stop
+						}
+						finally {
+							$store.Close()
+						}
+					}
+					elseif (-not [string]::IsNullOrWhiteSpace($certPath)) {
+						Write-LogHost "  -> Authenticating with certificate file $certPath" -ForegroundColor Gray
+						$flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
+						$cert = $null
+						try {
+							if ($certPasswordPlain) {
+								$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certPath, $certPasswordPlain, $flags)
+							}
+							else {
+								$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certPath)
+							}
+							Connect-MgGraph -TenantId $appTenantId -ClientId $appClientId -Certificate $cert -NoWelcome -ErrorAction Stop
+						}
+						finally {
+							if ($cert) { $cert.Dispose() }
+							if ($certPasswordPlain) {
+								Clear-Variable -Name certPasswordPlain -Force -ErrorAction SilentlyContinue
+							}
+						}
+					}
+					else {
+						Write-LogHost "ERROR: Provide either -ClientSecret, -ClientCertificateThumbprint, or -ClientCertificatePath for AppRegistration auth." -ForegroundColor Red
+						throw "No credential material supplied for AppRegistration"
+					}
+
+					if ($certPasswordSecure) {
+						Clear-Variable -Name certPasswordSecure -Force -ErrorAction SilentlyContinue
+					}
 				}
 			}
 			
