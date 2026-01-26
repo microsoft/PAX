@@ -1,15 +1,15 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.0.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.0/PAX_Purview_Audit_Log_Processor_v1.10.0.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.1.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.1/PAX_Purview_Audit_Log_Processor_v1.10.1.ps1)
 >
-> **📋 Release Notes:** See what's new → [v1.10.0 Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.10.0.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
+> **📋 Release Notes:** See what's new → [v1.10.X Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.10.0.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
 > **📜 Previous Script Versions:** [All Purview Releases](https://github.com/microsoft/PAX/releases?q=purview-&expanded=true)
 >
-> **📚 Documentation Archive:** [v1.10.0 MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md) | [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
+> **📚 Documentation Archive:** [v1.10.X MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md) | [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
-**Script:** `PAX_Purview_Audit_Log_Processor_v1.10.0.ps1`  
-**Version:** 1.10.0  
+**Script:** `PAX_Purview_Audit_Log_Processor_v1.10.1.ps1`  
+**Version:** 1.10.X  
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 5.1 (compatible) / PowerShell 7+ (recommended)  
 **License:** MIT
@@ -5474,7 +5474,7 @@ Most transient issues (network hiccups, temporary service throttling) are resolv
 
 For questions or issues, refer to the documentation:
 
-- **Documentation v1.10.0 (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation.md](https://github.com/microsoft/PAX/blob/main/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md)
+- **Documentation v1.10.X (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation.md](https://github.com/microsoft/PAX/blob/main/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md)
 
 *Managed and released by the Microsoft Copilot Growth ROI Advisory Team. Please reach out to [copilot-roi-advisory-team-gh@microsoft.com](mailto:copilot-roi-advisory-team-gh@microsoft.com) with any feedback.*
 

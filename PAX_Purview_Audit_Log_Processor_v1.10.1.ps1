@@ -1,5 +1,5 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.10.0
+# Version: v1.10.1
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI: Microsoft Purview Data Security Posture Management integration
 #              MIXED FREE/PAYG Activity Types: AIInteraction (currently Microsoft platforms only), ConnectedAIAppInteraction (Microsoft + third-party)
@@ -1732,7 +1732,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.10.0'
+$ScriptVersion = '1.10.1'
 
 # --- Initialize/Clear persistent script variables to prevent cross-run contamination ---
 # Note: Script-scoped variables persist across multiple script invocations in the same PowerShell session
@@ -7924,10 +7924,20 @@ function ConvertTo-FlatColumns {
 		if ($null -eq $n) { if ($p) { $cols[$p.TrimEnd('.')] = $null }; return }
 		if (Test-ScalarValue $n) { if ($p) { $cols[$p.TrimEnd('.')] = $n }; return }
 		if ($n -is [System.Collections.IEnumerable] -and -not ($n -is [string]) -and -not ($n -is [System.Collections.IDictionary])) {
-			# Convert arrays to JSON string instead of indexed columns for predictable Power BI column names
-			if ($p) { 
-				try { $cols[$p.TrimEnd('.')] = ($n | ConvertTo-Json -Depth 10 -Compress -ErrorAction SilentlyContinue) } 
-				catch { $cols[$p.TrimEnd('.')] = '' }
+			# Smart array handling: single-element arrays recurse without index, multi-element become JSON
+			$arr = @($n)
+			if ($arr.Count -eq 1) {
+				# Single element: recurse into it without adding index to path (clean column names)
+				Recurse -n $arr[0] -p $p -d ($d + 1)
+			} elseif ($arr.Count -gt 1) {
+				# Multiple elements: serialize to JSON (row explosion handles important arrays separately)
+				if ($p) { 
+					try { $cols[$p.TrimEnd('.')] = ($n | ConvertTo-Json -Depth 10 -Compress -ErrorAction SilentlyContinue) } 
+					catch { $cols[$p.TrimEnd('.')] = '' }
+				}
+			} else {
+				# Empty array
+				if ($p) { $cols[$p.TrimEnd('.')] = '' }
 			}
 			return
 		}
@@ -7968,8 +7978,8 @@ function Invoke-ReplayInlineExport {
 	)
 	Write-LogHost "Replay inline export starting..." -ForegroundColor Magenta
 	$exportTemp = Join-Path ([System.IO.Path]::GetTempPath()) ("pax_export_" + [guid]::NewGuid().ToString() + ".tmp")
-	# Column order: Purview header for Copilot; M365UsageWideHeader when IncludeM365Usage (live or replay)
-	$columnOrder = if ($IncludeM365Usage) { Get-M365UsageWideHeader -RawCsvPath $RAWInputCSV -BaseHeader $M365UsageBaseHeader } else { $PurviewExplodedHeader }
+	# Unified header: auto-detect all activity types from input CSV (no switch required)
+	$columnOrder = Get-UnifiedReplayHeader -RawCsvPath $RAWInputCSV
 	Open-CsvWriter -Path $exportTemp -Columns $columnOrder
 	$total = 0
 	$idx = 0
@@ -8045,19 +8055,24 @@ $M365UsageBaseHeader = @(
 	'AppAccessContext.ClientAppId','AppAccessContext.ClientAppName','AppAccessContext.CorrelationId','AppAccessContext.AADSessionId','AppAccessContext.UniqueTokenId','AppAccessContext.AuthTime','AppAccessContext.TokenIssuedAtTime','AppAccessContext.UserObjectId','AppAccessContext.DeviceId'
 )
 
-# --- M365 Usage Wide Header (override for replay) ---
-function Get-M365UsageWideHeader {
+# --- Unified Replay Header (auto-detects all activity types) ---
+# Scans input CSV to detect columns from any record type, merges with PurviewExplodedHeader for Copilot
+# Skips CopilotEventData.* paths since explosion produces flat column names
+function Get-UnifiedReplayHeader {
 	param(
-		[string]$RawCsvPath,
+		[Parameter(Mandatory)][string]$RawCsvPath,
 		[int]$Sample = 500
 	)
+	# Base columns common to all activity types
 	$base = @('RecordId','CreationDate','RecordType','Operation','UserId','AuditData','AssociatedAdminUnits','AssociatedAdminUnitsNames','CreationTime','Id','OrganizationId','ResultStatus','UserKey','UserType','Version','Workload','ClientIP','ObjectId','AzureActiveDirectoryEventType','ExtendedProperties','ExtendedProperties.ResultStatusDetail','ExtendedProperties.Name','ExtendedProperties.Value','ExtendedProperties.UserAgent','ExtendedProperties.RequestType','ModifiedProperties','Actor','Actor.ID','Actor.Type','ActorContextId','ActorIpAddress','InterSystemsId','IntraSystemId','SupportTicketId','Target','Target.ID','Target.Type','TargetContextId','ApplicationId','DeviceProperties','DeviceProperties.OS','DeviceProperties.Name','DeviceProperties.Value','DeviceProperties.BrowserType','DeviceProperties.SessionId','ErrorNumber','ExtendedProperties.KeepMeSignedIn','DeviceProperties.Id','DeviceProperties.DisplayName','DeviceProperties.TrustType','ExtendedProperties.UserAuthenticationMethod','DeviceProperties.IsCompliant','DeviceProperties.IsCompliantAndManaged')
 	$aug = @(
 		'SiteUrl','SourceRelativeUrl','SourceFileName','SourceFileExtension','ListId','ListItemUniqueId','WebId','ApplicationDisplayName','EventSource','ItemType','SiteSensitivityLabelId','GeoLocation','IsManagedDevice','DeviceDisplayName','ListBaseType','ListServerTemplate','AuthenticationType','Site','DoNotDistributeEvent','HighPriorityMediaProcessing',
-		'AppAccessContext.ClientAppId','AppAccessContext.ClientAppName','AppAccessContext.CorrelationId','AppAccessContext.AADSessionId','AppAccessContext.UniqueTokenId','AppAccessContext.AuthTime','AppAccessContext.TokenIssuedAtTime','AppAccessContext.UserObjectId','AppAccessContext.DeviceId'
+		'AppAccessContext.ClientAppId','AppAccessContext.ClientAppName','AppAccessContext.CorrelationId','AppAccessContext.AADSessionId','AppAccessContext.UniqueTokenId','AppAccessContext.AuthTime','AppAccessContext.TokenIssuedAtTime','AppAccessContext.UserObjectId','AppAccessContext.DeviceId','AppAccessContext.@odata.type','AppAccessContext.APIId','AppAccessContext.IssuedAtTime'
 	)
 	$detected = New-Object System.Collections.Generic.List[string]
+	$hasCopilot = $false
 
+	# Recursively detect column paths from JSON, skipping CopilotEventData (handled by explosion with flat names)
 	function Add-Paths([object]$node, [string]$prefix, [System.Collections.Generic.List[string]]$collector) {
 	    if ($null -eq $node) { return }
 	    if (Test-ScalarValue $node) { if ($prefix) { $collector.Add($prefix) | Out-Null }; return }
@@ -8069,6 +8084,9 @@ function Get-M365UsageWideHeader {
 	        foreach ($prop in $node.PSObject.Properties) {
 	            $pn = $prop.Name; $pv = $prop.Value
 	            $path = if ($prefix) { "$prefix.$pn" } else { $pn }
+	            # SKIP CopilotEventData - explosion handles these with flat column names
+	            if ($pn -eq 'CopilotEventData') { continue }
+	            # Special handling for Name/Value arrays (pivot into columns)
 	            if ($pn -eq 'ExtendedProperties' -and $pv -is [System.Collections.IEnumerable]) {
 	                foreach ($item in $pv) { try { if ($item.Name) { $collector.Add("ExtendedProperties.$($item.Name)") | Out-Null } } catch {} }
 	                continue
@@ -8087,19 +8105,39 @@ function Get-M365UsageWideHeader {
 			foreach ($r in $rows) {
 				try {
 					$audit = $r.AuditData | ConvertFrom-Json -ErrorAction Stop
-					if ($audit) { Add-Paths $audit '' $detected }
+					if ($audit) {
+						# Detect if any Copilot records exist
+						if ($audit.CopilotEventData) { $hasCopilot = $true }
+						Add-Paths $audit '' $detected
+					}
 				} catch {}
 			}
 		} catch {}
 	}
-	$header = ($base + $aug + $detected) | Select-Object -Unique
+	# Build unified header: base + augmented + detected (non-Copilot) + PurviewExplodedHeader (flat Copilot columns)
+	$header = New-Object System.Collections.Generic.List[string]
+	foreach ($c in $base) { if (-not $header.Contains($c)) { $header.Add($c) } }
+	foreach ($c in $aug) { if (-not $header.Contains($c)) { $header.Add($c) } }
+	foreach ($c in $detected) { if (-not $header.Contains($c)) { $header.Add($c) } }
+	# Always include flat Copilot columns from PurviewExplodedHeader (supports all activity types)
+	foreach ($c in $PurviewExplodedHeader) { if (-not $header.Contains($c)) { $header.Add($c) } }
 	try {
 		if ($RawCsvPath) {
-			$hdrPath = Join-Path (Split-Path $RawCsvPath -Parent) 'M365UsageWideHeader.txt'
+			$hdrPath = Join-Path (Split-Path $RawCsvPath -Parent) 'UnifiedReplayHeader.txt'
 			$header | Set-Content -Path $hdrPath -Encoding utf8
 		}
 	} catch {}
 	return $header
+}
+
+# --- Legacy M365 Usage Wide Header (kept for backward compatibility) ---
+function Get-M365UsageWideHeader {
+	param(
+		[string]$RawCsvPath,
+		[int]$Sample = 500
+	)
+	# Delegate to unified header function
+	return Get-UnifiedReplayHeader -RawCsvPath $RawCsvPath -Sample $Sample
 }
 
 # --- Entra Users Schema (37 columns) ---
@@ -8410,8 +8448,8 @@ function Convert-ToPurviewExplodedRecords {
 		}
 		
 		if ($PromptFilterValue) { $rowCount = [Math]::Max(1, $messages.Count) } else { 
-			# DSPM for AI: Include all arrays in row count calculation
-			$arrayCounts = @(1, $messages.Count, $contexts.Count, $resources.Count, $sensitivityLabels.Count)
+			# DSPM for AI: Include all arrays in row count calculation (including AISystemPlugin and ModelTransparencyDetails)
+			$arrayCounts = @(1, $messages.Count, $contexts.Count, $resources.Count, $sensitivityLabels.Count, $pluginsRaw.Count, $modelDetRaw.Count)
 			
 			# Full explosion: include 2nd-level arrays in row count
 			if (-not $PartialExplode) {
@@ -8422,8 +8460,7 @@ function Convert-ToPurviewExplodedRecords {
 			
 			$rowCount = ($arrayCounts | Measure-Object -Maximum).Maximum 
 		}
-		$plugin0 = if ($pluginsRaw.Count -gt 0) { $pluginsRaw[0] } else { $null }
-		$model0 = if ($modelDetRaw.Count -gt 0) { $modelDetRaw[0] } else { $null }
+		# Removed $plugin0 and $model0 - now using indexed access in row loop for full explosion
 		$creationDate = script:Format-DatePurviewFast $Record.CreationDate
 		$creationTime = try { script:Format-DatePurviewFast $auditData.CreationTime } catch { '' }
 		$appIdentityRaw = (Select-FirstNonNull -Values @((Get-SafeProperty $auditData 'AppIdentity'), (Get-SafeProperty $ced 'AppIdentity')))
@@ -8458,7 +8495,7 @@ function Convert-ToPurviewExplodedRecords {
 	$appName = (Select-FirstNonNull -Values @((Get-SafeProperty $auditData 'ApplicationName'), (Get-SafeProperty $ced 'HostAppName'), (Get-SafeProperty $ced 'ClientAppName')))
 		$threadId = (Get-SafeProperty $ced 'ThreadId')
 		$auditUserKey = try { $auditData.UserKey } catch { $null }
-		$modelName = Get-SafeProperty $model0 'ModelName'
+		# $modelName moved to row loop for indexed access
 		$clientIP = (Get-SafeProperty $auditData 'ClientIP')
 		$organizationId = (Get-SafeProperty $auditData 'OrganizationId')
 		$version = (Get-SafeProperty $auditData 'Version')
@@ -8558,9 +8595,11 @@ function Convert-ToPurviewExplodedRecords {
 				AccessedResource_Name = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'Name' } catch { '' } } else { '' })
 				AccessedResource_SensitivityLabel = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'SensitivityLabel' } catch { '' } } else { '' })
 				AccessedResource_ResourceType = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'ResourceType' } catch { '' } } else { '' })
-				AISystemPlugin_Id = $(if ($plugin0) { try { Get-SafeProperty $plugin0 'Id' } catch { '' } } else { '' })
-				AISystemPlugin_Name = $(if ($plugin0) { try { Get-SafeProperty $plugin0 'Name' } catch { '' } } else { '' })
-				ModelTransparencyDetails_ModelName = $(if ($model0) { $modelName } else { '' })
+				# Row explosion for AISystemPlugin array
+				AISystemPlugin_Id = $(if ($i -lt $pluginsRaw.Count -and $pluginsRaw[$i]) { try { Get-SafeProperty $pluginsRaw[$i] 'Id' } catch { '' } } else { '' })
+				AISystemPlugin_Name = $(if ($i -lt $pluginsRaw.Count -and $pluginsRaw[$i]) { try { Get-SafeProperty $pluginsRaw[$i] 'Name' } catch { '' } } else { '' })
+				# Row explosion for ModelTransparencyDetails array
+				ModelTransparencyDetails_ModelName = $(if ($i -lt $modelDetRaw.Count -and $modelDetRaw[$i]) { try { Get-SafeProperty $modelDetRaw[$i] 'ModelName' } catch { '' } } else { '' })
 				MessageIds = $(if ($messageIds.Count -gt 0) { $messageIds -join ';' } else { '' })
 				# DSPM for AI: SensitivityLabels array explosion
 				SensitivityLabel = $(if ($i -lt $sensitivityLabels.Count) { try { [string]$sensitivityLabels[$i] } catch { '' } } else { '' })
@@ -9134,7 +9173,7 @@ try {
 		$OutputFile = $script:PartialOutputPath
 		$script:CsvOutputFile = $script:PartialOutputPath
 		
-		# Check for incremental data files (v1.10.0+ saves to .pax_incremental/*.jsonl)
+		# Check for incremental data files
 		$incrementalDir = Join-Path $checkpointDir ".pax_incremental"
 		$hasIncrementalData = (Test-Path $incrementalDir) -and @(Get-ChildItem -Path $incrementalDir -Filter "*.jsonl" -ErrorAction SilentlyContinue).Count -gt 0
 		
@@ -13447,6 +13486,9 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 		$processedCount = 0
 		$lastProgressTime = Get-Date
 		
+		# Track per-activity export counts for metrics (fast path)
+		$fastPathActivityCounts = @{}
+		
 		foreach ($log in $allLogs) {
 			$processedCount++
 			
@@ -13454,6 +13496,11 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 			$auditData = $log.AuditData
 			$parsedAudit = if ($log.PSObject.Properties['_ParsedAuditData']) { $log._ParsedAuditData } else { try { $auditData | ConvertFrom-Json -ErrorAction SilentlyContinue } catch { $null } }
 			$opValue = if ($parsedAudit -and $parsedAudit.Operation) { $parsedAudit.Operation } else { $log.Operations }
+			
+			# Track per-activity counts
+			$opKey = if ($opValue) { [string]$opValue } else { 'Unknown' }
+			if (-not $fastPathActivityCounts.ContainsKey($opKey)) { $fastPathActivityCounts[$opKey] = 0 }
+			$fastPathActivityCounts[$opKey]++
 			
 			$fastRecord = [pscustomobject]@{
 				RecordId                  = if ($log.RecordId) { $log.RecordId } elseif ($log.Identity) { $log.Identity } elseif ($log.Id) { $log.Id } elseif ($parsedAudit -and $parsedAudit.Id) { $parsedAudit.Id } else { $null }
@@ -13506,6 +13553,16 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 		$processedRecordCount = $allLogs.Count
 		$columnOrder = $fastPathColumns
 		$schemaFrozen = $true
+		
+		# Merge fast path activity counts into script:metrics.Activities (for Activity Type Breakdown)
+		# In fast path (non-explosion), Retrieved and Structured are equal (1:1 mapping)
+		foreach ($opKey in $fastPathActivityCounts.Keys) {
+			if (-not $script:metrics.Activities.ContainsKey($opKey)) {
+				$script:metrics.Activities[$opKey] = @{ Retrieved = 0; Structured = 0 }
+			}
+			$script:metrics.Activities[$opKey].Retrieved += $fastPathActivityCounts[$opKey]
+			$script:metrics.Activities[$opKey].Structured += $fastPathActivityCounts[$opKey]
+		}
 		
 		# Skip to post-processing (bypass parallel and serial paths)
 		$skipToPostProcessing = $true
@@ -13736,7 +13793,15 @@ function ConvertTo-FlatColumns {
 		if ($null -eq $n) { if ($p) { $cols[$p.TrimEnd('.')] = $null }; return }
 		if (Test-ScalarValue $n) { if ($p) { $cols[$p.TrimEnd('.')] = $n }; return }
 		if ($n -is [System.Collections.IEnumerable] -and -not ($n -is [string]) -and -not ($n -is [System.Collections.IDictionary])) {
-			if ($p) { try { $cols[$p.TrimEnd('.')] = ($n | ConvertTo-Json -Depth 10 -Compress -ErrorAction SilentlyContinue) } catch { $cols[$p.TrimEnd('.')] = '' } }
+			# Smart array handling: single-element arrays recurse without index, multi-element become JSON
+			$arr = @($n)
+			if ($arr.Count -eq 1) {
+				Recurse -n $arr[0] -p $p -d ($d + 1)
+			} elseif ($arr.Count -gt 1) {
+				if ($p) { try { $cols[$p.TrimEnd('.')] = ($n | ConvertTo-Json -Depth 10 -Compress -ErrorAction SilentlyContinue) } catch { $cols[$p.TrimEnd('.')] = '' } }
+			} else {
+				if ($p) { $cols[$p.TrimEnd('.')] = '' }
+			}
 			return
 		}
 		$props = $null; try { $props = $n.PSObject.Properties } catch {}
@@ -14776,7 +14841,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				}
 			}
 			
-			# Show explosion details ONLY if exploding mode is enabled AND ratio > 1
+			# Show explosion details if exploding mode is enabled AND ratio > 1
 			if (($ExplodeArrays -or $ExplodeDeep) -and $ratio -gt 1 -and -not $ExcelOutput) {
 				Write-LogHost "    Exported:  $structured rows (${ratio}x expansion)" -ForegroundColor Gray
 				if ($script:metrics.ExplosionEvents -gt 0) {
@@ -14788,8 +14853,8 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 						Write-LogHost "      - Max expansion: $($script:metrics.ExplosionMaxPerRecord)x (single record)" -ForegroundColor DarkGray
 					}
 				}
-			} elseif ($retrieved -ne $structured) {
-				# Non-explode mode: just show exported count without expansion ratio
+			} else {
+				# Always show exported count for consistency
 				Write-LogHost "    Exported:  $structured rows" -ForegroundColor Gray
 			}
 		}
