@@ -12,7 +12,7 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.10.1:** [PAX_Purview_Audit_Log_Processor_v1.10.1.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.1/PAX_Purview_Audit_Log_Processor_v1.10.1.ps1)
+- **PAX Purview Audit Log Processor Script v1.10.2:** [PAX_Purview_Audit_Log_Processor_v1.10.2.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.2/PAX_Purview_Audit_Log_Processor_v1.10.2.ps1)
 - **Documentation v1.10.X (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.10.X.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md)
 
 ---
@@ -431,6 +431,10 @@ If minimum window reached:
 - **(v1.10.1) Non-explosion fast path metrics:** Fixed an issue where the "Activity Type Breakdown" section showed "Exported: 0 rows" for all activity types when running in standard 1:1 (non-explosion) mode. The fast path now properly tracks both "Retrieved" and "Exported" per-activity counts.
 
 - **(v1.10.1) Activity Type Breakdown display consistency:** Fixed inconsistent formatting in the Activity Type Breakdown section where some activities showed "Retrieved/Filtered/Exported" lines while others only showed "Retrieved". The "Exported" line now always displays for every activity type.
+
+- **(v1.10.2) AppRegistration auth parameter scoping:** Fixed an issue where `-TenantId`, `-ClientId`, `-ClientSecret`, and certificate parameters were not accessible within the `Connect-PurviewAudit` function when using `-Auth AppRegistration`. Script-level parameters are now properly promoted to script scope for function access.
+
+- **(v1.10.2) Connect-MgGraph parameter set conflict:** Fixed "Parameter set cannot be resolved" error when authenticating with client secret. The `-ClientId` parameter was incorrectly passed alongside `-ClientSecretCredential`, but the Graph SDK expects the ClientId to be embedded in the PSCredential username field only.
 
 ---
 

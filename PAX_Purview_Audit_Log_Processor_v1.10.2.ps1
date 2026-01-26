@@ -1,5 +1,5 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.10.1
+# Version: v1.10.2
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI: Microsoft Purview Data Security Posture Management integration
 #              MIXED FREE/PAYG Activity Types: AIInteraction (currently Microsoft platforms only), ConnectedAIAppInteraction (Microsoft + third-party)
@@ -1310,6 +1310,20 @@ if ($RemainingArgs -and $RemainingArgs.Count -gt 0) {
 	}
 }
 
+# ============================================================
+# PROMOTE AUTH PARAMETERS TO SCRIPT SCOPE
+# Enables access from within functions (e.g., Connect-PurviewAudit)
+# ============================================================
+Write-Host "DEBUG: Local TenantId = '$TenantId'" -ForegroundColor Magenta
+$script:TenantId = $TenantId
+$script:ClientId = $ClientId
+$script:ClientSecret = $ClientSecret
+$script:ClientCertificateThumbprint = $ClientCertificateThumbprint
+$script:ClientCertificateStoreLocation = $ClientCertificateStoreLocation
+$script:ClientCertificatePath = $ClientCertificatePath
+$script:ClientCertificatePassword = $ClientCertificatePassword
+Write-Host "DEBUG: Script TenantId = '$script:TenantId'" -ForegroundColor Magenta
+
 	function Resolve-CommaSeparatedValues {
 		param([string[]]$Values)
 
@@ -1732,7 +1746,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.10.1'
+$ScriptVersion = '1.10.2'
 
 # --- Initialize/Clear persistent script variables to prevent cross-run contamination ---
 # Note: Script-scoped variables persist across multiple script invocations in the same PowerShell session
@@ -3172,14 +3186,14 @@ function Connect-PurviewAudit {
 				'appregistration' {
 					Write-LogHost "Using app registration authentication..." -ForegroundColor Gray
 
-					$appTenantId = $TenantId
+					$appTenantId = $script:TenantId
 					if ([string]::IsNullOrWhiteSpace($appTenantId)) { $appTenantId = $env:GRAPH_TENANT_ID }
 					if ([string]::IsNullOrWhiteSpace($appTenantId)) {
 						Write-LogHost "ERROR: -TenantId or GRAPH_TENANT_ID is required for AppRegistration auth." -ForegroundColor Red
 						throw "Missing TenantId for AppRegistration authentication"
 					}
 
-					$appClientId = $ClientId
+					$appClientId = $script:ClientId
 					if ([string]::IsNullOrWhiteSpace($appClientId)) { $appClientId = $env:GRAPH_CLIENT_ID }
 					if ([string]::IsNullOrWhiteSpace($appClientId)) {
 						Write-LogHost "ERROR: -ClientId or GRAPH_CLIENT_ID is required for AppRegistration auth." -ForegroundColor Red
@@ -3190,18 +3204,18 @@ function Connect-PurviewAudit {
 					$script:AuthConfig.Method = 'AppRegistration'
 					$script:AuthConfig.TenantId = $appTenantId
 					$script:AuthConfig.ClientId = $appClientId
-					$script:AuthConfig.CertStoreLocation = $ClientCertificateStoreLocation
+					$script:AuthConfig.CertStoreLocation = $script:ClientCertificateStoreLocation
 
-					$secretValue = $ClientSecret
+					$secretValue = $script:ClientSecret
 					if ([string]::IsNullOrWhiteSpace($secretValue)) { $secretValue = $env:GRAPH_CLIENT_SECRET }
 
-					$certThumbprint = $ClientCertificateThumbprint
+					$certThumbprint = $script:ClientCertificateThumbprint
 					if ([string]::IsNullOrWhiteSpace($certThumbprint)) { $certThumbprint = $env:GRAPH_CLIENT_CERT_THUMBPRINT }
 
-					$certPath = $ClientCertificatePath
+					$certPath = $script:ClientCertificatePath
 					if ([string]::IsNullOrWhiteSpace($certPath)) { $certPath = $env:GRAPH_CLIENT_CERT_PATH }
 
-					$certPasswordSecure = $ClientCertificatePassword
+					$certPasswordSecure = $script:ClientCertificatePassword
 					if (-not $certPasswordSecure -and $env:GRAPH_CLIENT_CERT_PASSWORD) {
 						$certPasswordSecure = ConvertTo-SecureString $env:GRAPH_CLIENT_CERT_PASSWORD -AsPlainText -Force
 					}
@@ -3219,19 +3233,19 @@ function Connect-PurviewAudit {
 						$script:AuthConfig.ClientSecret = $secureSecret.Copy()
 						$script:AuthConfig.CanReauthenticate = $true
 						Clear-Variable -Name secretValue -Force -ErrorAction SilentlyContinue
-						Connect-MgGraph -TenantId $appTenantId -ClientId $appClientId -ClientSecretCredential $credential -NoWelcome -ErrorAction Stop
+						Connect-MgGraph -TenantId $appTenantId -ClientSecretCredential $credential -NoWelcome -ErrorAction Stop
 						Clear-Variable -Name secureSecret -Force -ErrorAction SilentlyContinue
 						Clear-Variable -Name credential -Force -ErrorAction SilentlyContinue
 					}
 					elseif (-not [string]::IsNullOrWhiteSpace($certThumbprint)) {
 						Write-LogHost "  -> Authenticating with certificate thumbprint $certThumbprint" -ForegroundColor Gray
-						$storeLocation = [System.Security.Cryptography.X509Certificates.StoreLocation]::$ClientCertificateStoreLocation
+						$storeLocation = [System.Security.Cryptography.X509Certificates.StoreLocation]::$script:ClientCertificateStoreLocation
 						$store = New-Object System.Security.Cryptography.X509Certificates.X509Store("My", $storeLocation)
 						$store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
 						try {
 							$certificate = $store.Certificates | Where-Object { $_.Thumbprint -eq $certThumbprint }
 							if (-not $certificate) {
-								Write-LogHost "ERROR: Certificate with thumbprint '$certThumbprint' not found in $ClientCertificateStoreLocation store." -ForegroundColor Red
+								Write-LogHost "ERROR: Certificate with thumbprint '$certThumbprint' not found in $script:ClientCertificateStoreLocation store." -ForegroundColor Red
 								throw "Certificate not found"
 							}
 							# Store cert thumbprint for re-authentication
@@ -6465,7 +6479,7 @@ $FlatDepthStandard = 6
 $FlatDepthDeep = 120
 $ExplosionPerRecordRowCap = 1000
 $script:TenantPrimaryDomain = $null
-$script:TenantId = $null
+if (-not $script:TenantId) { $script:TenantId = $null }
 $script:TenantIndicators = @()
 $ForcedRawInputCsvExplosion = $false
 
