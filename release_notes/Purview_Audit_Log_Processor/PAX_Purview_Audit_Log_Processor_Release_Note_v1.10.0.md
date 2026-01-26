@@ -1,9 +1,9 @@
-# Release Notes: v1.10.0
+# Release Notes: v1.10.X
 
 ## Release Information
 
-- **Version:** 1.10.0
-- **Release Date:** 2026-01-22
+- **Version:** 1.10.X
+- **Release Date:** 2026-01-26
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,14 +12,14 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.10.0:** [PAX_Purview_Audit_Log_Processor_v1.10.0.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.0/PAX_Purview_Audit_Log_Processor_v1.10.0.ps1)
-- **Documentation v1.10.0 (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md)
+- **PAX Purview Audit Log Processor Script v1.10.1:** [PAX_Purview_Audit_Log_Processor_v1.10.1.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.1/PAX_Purview_Audit_Log_Processor_v1.10.1.ps1)
+- **Documentation v1.10.X (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.10.X.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md)
 
 ---
 
 ## Overview
 
-Version 1.10.0 introduces two major capabilities: the **Microsoft 365 Usage Bundle** and **Checkpoint & Resume** for long-running exports.
+Version 1.10.X introduces two major capabilities: the **Microsoft 365 Usage Bundle** and **Checkpoint & Resume** for long-running exports.
 
 The **Microsoft 365 Usage Bundle** (`-IncludeM365Usage`) is a single-switch activation that captures productivity activity across Outlook, Teams, SharePoint, OneDrive, Word, Excel, PowerPoint, OneNote, Forms, Stream, Planner, and PowerApps alongside Copilot data. This enables organizations to correlate Copilot adoption with broader Microsoft 365 usage patterns for ROI analysis and productivity benchmarking.
 
@@ -422,7 +422,15 @@ If minimum window reached:
 
 ## Bug Fixes
 
-- **Activity Type Breakdown metrics:** Fixed an issue where "Retrieved" counts showed 0 in the Activity Type Breakdown and Pipeline Summary sections. Per-activity retrieved counts now display correctly in all code paths.
+- **(v1.10.0) Activity Type Breakdown metrics:** Fixed an issue where "Retrieved" counts showed 0 in the Activity Type Breakdown and Pipeline Summary sections. Per-activity retrieved counts now display correctly in all code paths.
+
+- **(v1.10.1) CopilotEventData explosion regression:** Fixed a critical regression where CopilotInteraction records were not being properly exploded in replay mode. The `ConvertTo-FlatColumns` function was incorrectly serializing all arrays to JSON strings instead of recursively expanding them. Smart array handling now recursively expands single-element arrays while JSON-serializing multi-element arrays (Messages, Contexts, AccessedResources, AISystemPlugin, ModelTransparencyDetails are row-exploded separately).
+
+- **(v1.10.1) Unified replay header for all activity types:** Refactored replay mode to use a new `Get-UnifiedReplayHeader` function that auto-detects all activity types from the input CSV. This eliminates the need for `-IncludeM365Usage` in replay mode and ensures flat column names (e.g., `AppHost`, `ThreadId`, `Message_Id`) instead of prefixed names (e.g., `CopilotEventData.AppHost`). The function skips `CopilotEventData.*` paths during JSON schema detection since explosion already produces flat column names.
+
+- **(v1.10.1) Non-explosion fast path metrics:** Fixed an issue where the "Activity Type Breakdown" section showed "Exported: 0 rows" for all activity types when running in standard 1:1 (non-explosion) mode. The fast path now properly tracks both "Retrieved" and "Exported" per-activity counts.
+
+- **(v1.10.1) Activity Type Breakdown display consistency:** Fixed inconsistent formatting in the Activity Type Breakdown section where some activities showed "Retrieved/Filtered/Exported" lines while others only showed "Retrieved". The "Exported" line now always displays for every activity type.
 
 ---
 
