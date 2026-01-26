@@ -1,6 +1,6 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.1.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.1/PAX_Purview_Audit_Log_Processor_v1.10.1.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.2.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.2/PAX_Purview_Audit_Log_Processor_v1.10.2.ps1)
 >
 > **📋 Release Notes:** See what's new → [v1.10.X Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.10.0.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
@@ -8,8 +8,8 @@
 >
 > **📚 Documentation Archive:** [v1.10.X MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md) | [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
-**Script:** `PAX_Purview_Audit_Log_Processor_v1.10.1.ps1`  
-**Version:** 1.10.X  
+**Script:** `PAX_Purview_Audit_Log_Processor_v1.10.2.ps1`  
+**Documentation Version:** 1.10.X  
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 5.1 (compatible) / PowerShell 7+ (recommended)  
 **License:** MIT
@@ -323,8 +323,8 @@ When using **application-only authentication** (`-Auth AppRegistration`), audit 
 
 ### Download the Script
 
-- **Script:** [PAX_Purview_Audit_Log_Processor_v1.10.0.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.0/PAX_Purview_Audit_Log_Processor_v1.10.0.ps1)
-- **Release Notes:** [v1.10.0](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.10.0.md)
+- **Script:** [PAX_Purview_Audit_Log_Processor_v1.10.2.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.2/PAX_Purview_Audit_Log_Processor_v1.10.2.ps1)
+- **Release Notes:** [v1.10.X](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.10.0.md)
 
 Save the downloaded script to a working directory (e.g., `C:\Scripts\PAX\`).
 
