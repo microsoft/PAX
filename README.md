@@ -67,7 +67,7 @@ This is an experimental script. On occasion, you may notice small deviations fro
 
 ---
 
-> **🔍 Purview Audit Log Processor:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.2.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.2/PAX_Purview_Audit_Log_Processor_v1.10.2.ps1)
+> **🔍 Purview Audit Log Processor:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.3.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.3/PAX_Purview_Audit_Log_Processor_v1.10.3.ps1)
 >
 > **📖 Resources:** [Latest Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md) | [Latest Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.10.0.md)
 >
@@ -88,6 +88,22 @@ This is an experimental script. On occasion, you may notice small deviations fro
 > **📖 Resources:** [Latest Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Graph_Audit_Log_Processor/PAX_Graph_Audit_Log_Processor_Documentation_v1.0.1.md) | [Latest Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Graph_Audit_Log_Processor/PAX_Graph_Audit_Log_Processor_Release_Note_v1.0.1.md)
 >
 > **📚 Archives:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Graph_Audit_Log_Processor) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Graph_Audit_Log_Processor) | [Previous Versions](https://github.com/microsoft/PAX/tree/release/script_archive/Graph_Audit_Log_Processor)
+
+---
+
+### Copilot ROI Analytics Power BI Templates
+
+The Microsoft Copilot ROI Analytics team provides the following Power BI templates for Copilot usage analysis:
+
+**Compatible with PAX output (Purview-based):**
+
+- **[AI-in-One Dashboard](https://github.com/microsoft/AI-in-One-Dashboard)** - Comprehensive Copilot usage analysis using Purview audit logs
+- **[Copilot Chat & Agent Intelligence Dashboards](https://github.com/microsoft/CopilotChatAnalytics)** - Copilot chat and agent activity analysis using Purview audit logs
+- **[Portable Audit eXporter (PAX)](https://github.com/microsoft/PAX)** - This repository: audit log processor scripts that generate input files for the above templates
+
+**Viva Insights-based (does not use PAX output):**
+
+- **[Super Usage Analysis Dashboard](https://github.com/microsoft/DecodingSuperUsage)** - Copilot usage analysis using Viva Insights organizational data (separate data source)
 
 ---
 
