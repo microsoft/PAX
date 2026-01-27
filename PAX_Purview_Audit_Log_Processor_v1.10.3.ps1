@@ -1,5 +1,5 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.10.2
+# Version: v1.10.3
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI: Microsoft Purview Data Security Posture Management integration
 #              MIXED FREE/PAYG Activity Types: AIInteraction (currently Microsoft platforms only), ConnectedAIAppInteraction (Microsoft + third-party)
@@ -1314,7 +1314,6 @@ if ($RemainingArgs -and $RemainingArgs.Count -gt 0) {
 # PROMOTE AUTH PARAMETERS TO SCRIPT SCOPE
 # Enables access from within functions (e.g., Connect-PurviewAudit)
 # ============================================================
-Write-Host "DEBUG: Local TenantId = '$TenantId'" -ForegroundColor Magenta
 $script:TenantId = $TenantId
 $script:ClientId = $ClientId
 $script:ClientSecret = $ClientSecret
@@ -1322,7 +1321,6 @@ $script:ClientCertificateThumbprint = $ClientCertificateThumbprint
 $script:ClientCertificateStoreLocation = $ClientCertificateStoreLocation
 $script:ClientCertificatePath = $ClientCertificatePath
 $script:ClientCertificatePassword = $ClientCertificatePassword
-Write-Host "DEBUG: Script TenantId = '$script:TenantId'" -ForegroundColor Magenta
 
 	function Resolve-CommaSeparatedValues {
 		param([string[]]$Values)
@@ -1746,7 +1744,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.10.2'
+$ScriptVersion = '1.10.3'
 
 # --- Initialize/Clear persistent script variables to prevent cross-run contamination ---
 # Note: Script-scoped variables persist across multiple script invocations in the same PowerShell session
@@ -2751,15 +2749,19 @@ $script:EarlyExit = $false
 # This works even when Ctrl+C is pressed before the try block (e.g., during module loading)
 # Uses environment variable for cross-runspace communication since Register-EngineEvent runs in isolated scope
 $env:PAX_GRACEFUL_EXIT_DONE = $null
+$env:PAX_REPLAY_MODE = $null  # Will be set to "1" when RAWInputCSV is used
 Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
 	if (-not $env:PAX_GRACEFUL_EXIT_DONE) {
-		Write-Host ""
-		Write-Host "============================================================================================================" -ForegroundColor Yellow
-		Write-Host "  Script Interrupted - Performing Graceful Cleanup" -ForegroundColor Yellow
-		Write-Host "============================================================================================================" -ForegroundColor Yellow
-		Write-Host ""
-		Write-Host "  Cleanup complete. Exiting..." -ForegroundColor Green
-		Write-Host ""
+		# Skip interrupt messaging in replay mode - no Graph connection to disconnect
+		if (-not $env:PAX_REPLAY_MODE) {
+			Write-Host ""
+			Write-Host "============================================================================================================" -ForegroundColor Yellow
+			Write-Host "  Script Interrupted - Performing Graceful Cleanup" -ForegroundColor Yellow
+			Write-Host "============================================================================================================" -ForegroundColor Yellow
+			Write-Host ""
+			Write-Host "  Cleanup complete. Exiting..." -ForegroundColor Green
+			Write-Host ""
+		}
 	}
 } | Out-Null
 
@@ -2772,6 +2774,11 @@ function Invoke-GracefulExit {
 	
 	# Signal to engine event handler that graceful exit is handling this
 	$env:PAX_GRACEFUL_EXIT_DONE = "1"
+	
+	# Skip interrupt messaging and Graph disconnect in replay mode - no connections to clean up
+	if ($env:PAX_REPLAY_MODE) {
+		exit 0
+	}
 	
 	Write-Host ""
 	Write-Host "============================================================================================================" -ForegroundColor Yellow
@@ -2842,6 +2849,8 @@ trap {
 # Load required modules based on mode selection (-UseEOM vs Graph API default)
 
 if ($RAWInputCSV) {
+	# Set replay mode flag for graceful exit handling (skip Graph disconnect messaging)
+	$env:PAX_REPLAY_MODE = "1"
 	Write-LogHost "`nReplay mode: Skipping module loading`n" -ForegroundColor Cyan
 }
 elseif (-not $UseEOM) {
@@ -4837,14 +4846,14 @@ function ConvertTo-FlatEntraUsers {
 		
 		# Core Identity Properties (simple strings)
 		$flatUser['userPrincipalName'] = $user.userPrincipalName
-		$flatUser['displayName'] = $user.displayName
+		$flatUser['DisplayName'] = $user.displayName
 		$flatUser['id'] = $user.id
-		$flatUser['mail'] = $user.mail
+		$flatUser['Email'] = $user.mail
 		$flatUser['givenName'] = $user.givenName
 		$flatUser['surname'] = $user.surname
 		
 		# Job Properties
-		$flatUser['jobTitle'] = $user.jobTitle
+		$flatUser['JobTitle'] = $user.jobTitle
 		$flatUser['department'] = $user.department
 		$flatUser['employeeType'] = $user.employeeType
 		$flatUser['employeeId'] = $user.employeeId
@@ -4854,7 +4863,7 @@ function ConvertTo-FlatEntraUsers {
 		$flatUser['officeLocation'] = $user.officeLocation
 		$flatUser['city'] = $user.city
 		$flatUser['state'] = $user.state
-		$flatUser['country'] = $user.country
+		$flatUser['Country'] = $user.country
 		$flatUser['postalCode'] = $user.postalCode
 		$flatUser['companyName'] = $user.companyName
 		
@@ -4909,6 +4918,24 @@ function ConvertTo-FlatEntraUsers {
 		# using Get-UserLicenseData() to provide MAC-format columns:
 		# - assignedLicenses (semicolon-separated SKU names)
 		# - hasLicense (Copilot detection boolean)
+		
+		# =====================================================================
+		# Power BI AI-in-One Dashboard 2701 Template Compatibility Columns
+		# These alias columns map existing Graph API data to 2701 template column names
+		# =====================================================================
+		$flatUser['ManagerID'] = $flatUser['manager_id']
+		$flatUser['BusinessAreaLabel'] = $flatUser['employeeOrgData_division']
+		$flatUser['CountryofEmployment'] = $flatUser['Country']
+		$flatUser['CompanyCodeLabel'] = $flatUser['companyName']
+		$flatUser['CostCentreLabel'] = $flatUser['employeeOrgData_costCenter']
+		$flatUser['UserName'] = $flatUser['DisplayName']
+		
+		# Viva Insights-specific columns (not available from Microsoft Graph API)
+		# These are placeholders for template compatibility - data must come from HR systems
+		$flatUser['EffectiveDate'] = $null
+		$flatUser['FunctionType'] = $null
+		$flatUser['BusinessAreaCode'] = $null
+		$flatUser['OrgLevel_3Label'] = $null
 		
 		# Convert ordered hashtable to PSCustomObject for proper CSV export
 		$flattenedUsers += [PSCustomObject]$flatUser
@@ -4993,7 +5020,7 @@ function Get-EntraUsersData {
 				}
 			}
 			Add-Member -InputObject $u -NotePropertyName 'assignedLicenses' -NotePropertyValue $assignedNames -Force
-			Add-Member -InputObject $u -NotePropertyName 'hasLicense' -NotePropertyValue $hasCopilot -Force
+			Add-Member -InputObject $u -NotePropertyName 'HasLicense' -NotePropertyValue $hasCopilot -Force
 		}
 		$entraUsers = $flattened
 		# Validate schema (non-fatal)
@@ -8154,15 +8181,19 @@ function Get-M365UsageWideHeader {
 	return Get-UnifiedReplayHeader -RawCsvPath $RawCsvPath -Sample $Sample
 }
 
-# --- Entra Users Schema (37 columns) ---
-# 30 core + 5 manager + 2 license columns (assignedLicenses, hasLicense)
+# --- Entra Users Schema (47 columns) ---
+# 30 core + 5 manager + 2 license columns + 10 Power BI template compatibility columns
 $EntraUsersHeader = @(
-	'userPrincipalName','displayName','id','mail','givenName','surname','jobTitle','department','employeeType','employeeId','employeeHireDate',
-	'officeLocation','city','state','country','postalCode','companyName','employeeOrgData_division','employeeOrgData_costCenter',
+	'userPrincipalName','DisplayName','id','Email','givenName','surname','JobTitle','department','employeeType','employeeId','employeeHireDate',
+	'officeLocation','city','state','Country','postalCode','companyName','employeeOrgData_division','employeeOrgData_costCenter',
 	'accountEnabled','userType','createdDateTime','usageLocation','preferredLanguage','onPremisesSyncEnabled','onPremisesImmutableId','externalUserState',
 	'proxyAddresses_Primary','proxyAddresses_Count','proxyAddresses_All',
 	'manager_id','manager_displayName','manager_userPrincipalName','manager_mail','manager_jobTitle',
-	'assignedLicenses','hasLicense'
+	'assignedLicenses','HasLicense',
+	# Power BI template compatibility columns (alias mappings)
+	'ManagerID','BusinessAreaLabel','CountryofEmployment','CompanyCodeLabel','CostCentreLabel','UserName',
+	# Power BI template compatibility columns (null placeholders for Viva Insights fields)
+	'EffectiveDate','FunctionType','BusinessAreaCode','OrgLevel_3Label'
 )
 
 function Test-EntraUsersSchema {
@@ -15072,7 +15103,8 @@ finally {
 	}
 	
 	# Show graceful exit message if interrupted (and not already shown by engine event handler)
-	if ($script:CtrlCPressed -and -not $env:PAX_GRACEFUL_EXIT_DONE) {
+	# Skip in replay mode - no Graph connection to disconnect
+	if ($script:CtrlCPressed -and -not $env:PAX_GRACEFUL_EXIT_DONE -and -not $env:PAX_REPLAY_MODE) {
 		$env:PAX_GRACEFUL_EXIT_DONE = "1"  # Prevent engine event handler from also showing message
 		Write-Host ""
 		Write-Host "============================================================================================================" -ForegroundColor Yellow

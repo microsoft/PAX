@@ -1,15 +1,15 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.2.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.2/PAX_Purview_Audit_Log_Processor_v1.10.2.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.3.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.3/PAX_Purview_Audit_Log_Processor_v1.10.3.ps1)
 >
-> **📋 Release Notes:** See what's new → [v1.10.X Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.10.0.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
+> **📋 Release Notes:** See what's new → [v1.10.x Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.10.0.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
 > **📜 Previous Script Versions:** [All Purview Releases](https://github.com/microsoft/PAX/releases?q=purview-&expanded=true)
 >
-> **📚 Documentation Archive:** [v1.10.X MD](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md) | [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
+> **📚 Documentation Archive:** [v1.10.x Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md) | [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
-**Script:** `PAX_Purview_Audit_Log_Processor_v1.10.2.ps1`  
-**Documentation Version:** 1.10.X  
+**Script:** `PAX_Purview_Audit_Log_Processor_v1.10.3.ps1`  
+**Documentation Version:** 1.10.x  
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 5.1 (compatible) / PowerShell 7+ (recommended)  
 **License:** MIT
@@ -323,7 +323,7 @@ When using **application-only authentication** (`-Auth AppRegistration`), audit 
 
 ### Download the Script
 
-- **Script:** [PAX_Purview_Audit_Log_Processor_v1.10.2.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.2/PAX_Purview_Audit_Log_Processor_v1.10.2.ps1)
+- **Script:** [PAX_Purview_Audit_Log_Processor_v1.10.3.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.3/PAX_Purview_Audit_Log_Processor_v1.10.3.ps1)
 - **Release Notes:** [v1.10.X](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.10.0.md)
 
 Save the downloaded script to a working directory (e.g., `C:\Scripts\PAX\`).
@@ -1378,7 +1378,7 @@ Any other parameter (dates, activities, explosion settings, M365 bundles, etc.).
 - **Permissions:** User.Read.All (includes user profiles and license data), Organization.Read.All (least privilege)
 - **Output:** Adds `EntraUsers_MAClicensing_<timestamp>.csv` file (CSV mode) or `EntraUsers_MAClicensing` tab (Excel mode)
 
-**Schema:** Comprehensive schema including UserPrincipalName, DisplayName, Department, JobTitle, Manager, AssignedLicenses (all M365 licenses), HasCopilotLicense (boolean), CopilotLicenseSkus (detected SKUs), AccountEnabled, and more
+**Schema:** Comprehensive schema including UserPrincipalName, DisplayName, Email, Department, JobTitle, Manager, AssignedLicenses (semicolon-separated M365 licenses), HasLicense (boolean), AccountEnabled, and more
 
 **Notes:**
 
@@ -1387,6 +1387,7 @@ Any other parameter (dates, activities, explosion settings, M365 bundles, etc.).
 - User data cached for session duration
 - **License data:** Retrieved via User.Read.All scope from Microsoft Graph - includes all assigned licenses
 - **License detection:** Automatically identifies M365 Copilot entitlements from AssignedLicenses using SKU pattern matching (O365_PREMIUM, M365_F1_COMM, etc.)
+- **Power BI Templates:** When importing into Copilot ROI Analytics team Power BI templates, use the same PAX-generated EntraUsers file for both the "User/Org Data" and "Licensing Data" import prompts
 
 ---
 
@@ -1443,6 +1444,7 @@ All audit-related parameters are incompatible and will trigger validation errors
 2. **Adoption Planning:** Identify licensed vs. unlicensed users before detailed usage analysis
 3. **User Directory Exports:** Standalone Entra data for HR/IT system integration
 4. **Rapid Licensing Audits:** Quick compliance checks without audit log overhead
+5. **Power BI Templates:** Export user/org/licensing data for Copilot ROI Analytics team templates—use the same output file for both "User/Org Data" and "Licensing Data" import prompts
 
 **Performance:**
 
@@ -4090,7 +4092,7 @@ Comprehensive user profile data per user, automatically deduplicated by UserPrin
 | `DisplayName` | Full name | `Jane Smith` |
 | `GivenName` | First name | `Jane` |
 | `Surname` | Last name | `Smith` |
-| `Mail` | Email address | `jane.smith@contoso.com` |
+| `Email` | Email address | `jane.smith@contoso.com` |
 | `JobTitle` | Job title | `Senior Product Manager` |
 | `Department` | Department name | `Product Management` |
 | `OfficeLocation` | Office/location | `Seattle` |
@@ -4109,11 +4111,20 @@ Comprehensive user profile data per user, automatically deduplicated by UserPrin
 | `CreationType` | Account creation | `Invitation`, `LocalAccount` |
 | `CreatedDateTime` | Account created | `2023-01-15T08:30:00Z` |
 | `LastSignInDateTime` | Last sign-in | `2025-11-06T14:22:00Z` |
-| `AssignedLicenses` | All licenses (JSON array) | `[{...}, {...}]` |
-| `HasCopilotLicense` | M365 Copilot license | `True` or `False` |
-| `CopilotLicenseSkus` | Detected Copilot SKUs | `O365_PREMIUM` or empty |
+| `AssignedLicenses` | All licenses (semicolon-separated) | `Office 365 E5;Microsoft 365 Copilot` |
+| `HasLicense` | M365 Copilot license | `True` or `False` |
 | `LicenseCount` | Total licenses | `5` |
-| ... (11 more extended attributes) | ... | ... |
+| `ManagerID` | Manager Entra ID | `a1b2c3d4-...` |
+| `BusinessAreaLabel` | Business area/division | `Engineering` |
+| `CountryofEmployment` | Country of employment | `United States` |
+| `CompanyCodeLabel` | Company code/name | `Contoso Corporation` |
+| `CostCentreLabel` | Cost center | `CC1234` |
+| `UserName` | User display name | `Jane Smith` |
+| `EffectiveDate` | Effective date (HR systems) | (null) |
+| `FunctionType` | Function type (HR systems) | (null) |
+| `BusinessAreaCode` | Business area code (HR systems) | (null) |
+| `OrgLevel_3Label` | Org level 3 (HR systems) | (null) |
+| ... (additional extended attributes) | ... | ... |
 
 **License Detection Logic:**
 
@@ -4123,7 +4134,7 @@ The script automatically detects Microsoft 365 Copilot licenses using SKU patter
 - `O365_PREMIUM`, `M365_F1_COMM`, `M365_F3_COMM` - Commercial licenses with Copilot entitlements
 - Additional SKUs: `MICROSOFT_BUSINESS_CENTER`, `TEAMS_COMMERCIAL_TRIAL`, etc.
 
-`HasCopilotLicense` column: `True` if any matching SKU detected, `False` otherwise
+`HasLicense` column: `True` if any matching SKU detected, `False` otherwise
 
 ---
 
@@ -4205,7 +4216,7 @@ ORDER BY InteractionCount DESC
 
 **Workflow:**
 1. Export with `-IncludeUserInfo`
-2. Filter EntraUsers by `HasCopilotLicense`
+2. Filter EntraUsers by `HasLicense`
 3. Calculate usage metrics per cohort
 
 **Use Case:** Identify license optimization opportunities (unused licenses, high-value unlicensed users)
@@ -4252,13 +4263,14 @@ ORDER BY InteractionCount DESC
 1. **Use with Excel:** Embed EntraUsers tab for easy pivot tables and Power Query joins
 2. **Cache Reuse:** Run multiple audit queries in same session to reuse cached user data
 3. **Selective Filtering:** Use `-UserIds` or `-GroupNames` to reduce audit dataset size before enrichment
-4. **License Auditing:** Export EntraUsers separately and audit `HasCopilotLicense` against actual license assignments
+4. **License Auditing:** Export EntraUsers separately and audit `HasLicense` against actual license assignments
+5. **Power BI Templates:** When importing into Copilot ROI Analytics team Power BI templates, use the same PAX-generated EntraUsers file for both the "User/Org Data" and "Licensing Data" import prompts—the file contains all required columns for both
 
 **Troubleshooting:**
 
 - **Error: "Entra enrichment requires Graph API mode"** → Remove `-UseEOM` parameter
 - **Error: "Insufficient privileges to complete the operation"** → Grant `User.Read.All` and `Organization.Read.All` Graph API permissions
-- **Empty HasCopilotLicense:** Update SKU detection list in script if new Copilot SKUs released
+- **Empty HasLicense:** Update SKU detection list in script if new Copilot SKUs released
 
 ---
 
@@ -5460,6 +5472,20 @@ Most transient issues (network hiccups, temporary service throttling) are resolv
 - **[Search the audit log](https://learn.microsoft.com/en-us/purview/audit-log-search)** - Audit log search basics
 - **[Exchange Online PowerShell](https://learn.microsoft.com/en-us/powershell/exchange/exchange-online-powershell)** - Exchange Online module documentation (for EOM mode)
 
+### Copilot ROI Analytics Power BI Templates
+
+The Microsoft Copilot ROI Analytics team provides the following Power BI templates for Copilot usage analysis:
+
+**Compatible with PAX output (Purview-based):**
+
+- **[AI-in-One Dashboard](https://github.com/microsoft/AI-in-One-Dashboard)** - Comprehensive Copilot usage analysis using Purview audit logs
+- **[Copilot Chat & Agent Intelligence Dashboards](https://github.com/microsoft/CopilotChatAnalytics)** - Copilot chat and agent activity analysis using Purview audit logs
+- **[Portable Audit eXporter (PAX)](https://github.com/microsoft/PAX)** - This repository: audit log processor scripts that generate input files for the above templates
+
+**Viva Insights-based (does not use PAX output):**
+
+- **[Super Usage Analysis Dashboard](https://github.com/microsoft/DecodingSuperUsage)** - Copilot usage analysis using Viva Insights organizational data (separate data source)
+
 ### Related Tools
 
 - **[Power BI](https://powerbi.microsoft.com/)** - Visualize exported audit data
@@ -5474,7 +5500,7 @@ Most transient issues (network hiccups, temporary service throttling) are resolv
 
 For questions or issues, refer to the documentation:
 
-- **Documentation v1.10.X (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation.md](https://github.com/microsoft/PAX/blob/main/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md)
+- **Documentation v1.10.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation.md](https://github.com/microsoft/PAX/blob/main/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md)
 
 *Managed and released by the Microsoft Copilot Growth ROI Advisory Team. Please reach out to [copilot-roi-advisory-team-gh@microsoft.com](mailto:copilot-roi-advisory-team-gh@microsoft.com) with any feedback.*
 
