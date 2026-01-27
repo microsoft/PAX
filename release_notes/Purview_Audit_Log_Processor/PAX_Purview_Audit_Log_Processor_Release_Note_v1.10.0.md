@@ -1,9 +1,9 @@
-# Release Notes: v1.10.X
+# Release Notes: v1.10.x
 
 ## Release Information
 
-- **Version:** 1.10.X
-- **Release Date:** 2026-01-26
+- **Version:** 1.10.x
+- **Release Date:** 2026-01-27
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,8 +12,8 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.10.2:** [PAX_Purview_Audit_Log_Processor_v1.10.2.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.2/PAX_Purview_Audit_Log_Processor_v1.10.2.ps1)
-- **Documentation v1.10.X (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.10.X.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md)
+- **PAX Purview Audit Log Processor Script v1.10.3:** [PAX_Purview_Audit_Log_Processor_v1.10.3.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.3/PAX_Purview_Audit_Log_Processor_v1.10.3.ps1)
+- **Documentation v1.10.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.10.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md)
 
 ---
 
@@ -435,6 +435,8 @@ If minimum window reached:
 - **(v1.10.2) AppRegistration auth parameter scoping:** Fixed an issue where `-TenantId`, `-ClientId`, `-ClientSecret`, and certificate parameters were not accessible within the `Connect-PurviewAudit` function when using `-Auth AppRegistration`. Script-level parameters are now properly promoted to script scope for function access.
 
 - **(v1.10.2) Connect-MgGraph parameter set conflict:** Fixed "Parameter set cannot be resolved" error when authenticating with client secret. The `-ClientId` parameter was incorrectly passed alongside `-ClientSecretCredential`, but the Graph SDK expects the ClientId to be embedded in the PSCredential username field only.
+
+- **(v1.10.3) Power BI template compatibility:** Enhanced Entra user export column names and structure to support seamless import into all of the Copilot ROI Analytics team's Power BI templates.
 
 ---
 
