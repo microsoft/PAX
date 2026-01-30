@@ -3,7 +3,7 @@
 ## Release Information
 
 - **Version:** 1.10.x
-- **Release Date:** 2026-01-27
+- **Release Date:** 2026-01-30
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,14 +12,14 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.10.3:** [PAX_Purview_Audit_Log_Processor_v1.10.3.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.3/PAX_Purview_Audit_Log_Processor_v1.10.3.ps1)
+- **PAX Purview Audit Log Processor Script v1.10.4:** [PAX_Purview_Audit_Log_Processor_v1.10.4.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.4/PAX_Purview_Audit_Log_Processor_v1.10.4.ps1)
 - **Documentation v1.10.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.10.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md)
 
 ---
 
 ## Overview
 
-Version 1.10.X introduces two major capabilities: the **Microsoft 365 Usage Bundle** and **Checkpoint & Resume** for long-running exports.
+Version 1.10.x introduces two major capabilities: the **Microsoft 365 Usage Bundle** and **Checkpoint & Resume** for long-running exports.
 
 The **Microsoft 365 Usage Bundle** (`-IncludeM365Usage`) is a single-switch activation that captures productivity activity across Outlook, Teams, SharePoint, OneDrive, Word, Excel, PowerPoint, OneNote, Forms, Stream, Planner, and PowerApps alongside Copilot data. This enables organizations to correlate Copilot adoption with broader Microsoft 365 usage patterns for ROI analysis and productivity benchmarking.
 
@@ -437,6 +437,16 @@ If minimum window reached:
 - **(v1.10.2) Connect-MgGraph parameter set conflict:** Fixed "Parameter set cannot be resolved" error when authenticating with client secret. The `-ClientId` parameter was incorrectly passed alongside `-ClientSecretCredential`, but the Graph SDK expects the ClientId to be embedded in the PSCredential username field only.
 
 - **(v1.10.3) Power BI template compatibility:** Enhanced Entra user export column names and structure to support seamless import into all of the Copilot ROI Analytics team's Power BI templates.
+
+- **(v1.10.4) EOM mode and PowerShell 5.1 compatibility:** Restored full EOM mode (`-UseEOM`) functionality with sequential partition processing for PowerShell 5.1 environments. Added clear validation messaging for PS 5.1 users when Graph API mode is attempted (which requires PS 7+), improved cleanup handling to suppress irrelevant Graph disconnect messages in EOM mode, and ensured UTF-8 BOM encoding for PS 5.1 parser compatibility.
+
+- **(v1.10.4) International locale date parsing:** Fixed date parsing errors for UK and other non-US locale users where US-format dates returned by the Purview API (M/d/yyyy) caused "String was not recognized as a valid DateTime" errors. All date parsing locations now use `InvariantCulture` to correctly interpret Purview API responses regardless of system locale.
+
+- **(v1.10.4) Memory exhaustion during resume:** Fixed memory exhaustion during `-Resume` operations with large datasets (millions of records) by implementing streaming merge that processes JSONL incremental files directly to CSV without loading all records into memory. Also fixed divide-by-zero errors and timestamp consistency issues in resume mode.
+
+- **(v1.10.4) Excel export performance:** Fixed Excel workbook export (`-ExportWorkbook`) hanging indefinitely for large datasets by replacing cell-by-cell processing with DataTable bulk insert via `Send-SQLDataToExcel`. A 35K row × 194 column dataset that previously took hours now completes in seconds. Also fixed CSV path extension issues when combining checkpointing with Excel export, and added retry logic for temp file cleanup.
+
+- **(v1.10.4) Resume mode reliability:** Fixed multiple resume-related issues including: header-only CSV overwriting completed exports when all partitions were already done; `-ExplodeArrays` parameter validation with live API mode; activity breakdown showing "Exported: 0 rows" in streaming merge mode; and explosion modes with all partitions completed from a prior run.
 
 ---
 
