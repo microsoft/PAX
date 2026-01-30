@@ -12,7 +12,7 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.10.4:** [PAX_Purview_Audit_Log_Processor_v1.10.4.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.4/PAX_Purview_Audit_Log_Processor_v1.10.4.ps1)
+- **PAX Purview Audit Log Processor Script v1.10.5:** [PAX_Purview_Audit_Log_Processor_v1.10.5.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.5/PAX_Purview_Audit_Log_Processor_v1.10.5.ps1)
 - **Documentation v1.10.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.10.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md)
 
 ---
@@ -447,6 +447,8 @@ If minimum window reached:
 - **(v1.10.4) Excel export performance:** Fixed Excel workbook export (`-ExportWorkbook`) hanging indefinitely for large datasets by replacing cell-by-cell processing with DataTable bulk insert via `Send-SQLDataToExcel`. A 35K row × 194 column dataset that previously took hours now completes in seconds. Also fixed CSV path extension issues when combining checkpointing with Excel export, and added retry logic for temp file cleanup.
 
 - **(v1.10.4) Resume mode reliability:** Fixed multiple resume-related issues including: header-only CSV overwriting completed exports when all partitions were already done; `-ExplodeArrays` parameter validation with live API mode; activity breakdown showing "Exported: 0 rows" in streaming merge mode; and explosion modes with all partitions completed from a prior run.
+
+- **(v1.10.5) AppRegistration token refresh failure:** Fixed "Parameter set cannot be resolved using the specified named parameters" error during automatic token refresh in long-running AppRegistration operations. The `Invoke-TokenRefresh` function had the same parameter set conflict fixed in v1.10.2 for initial authentication—passing `-ClientId` alongside `-ClientSecretCredential` when the Graph SDK expects ClientId embedded only in the PSCredential.
 
 ---
 
