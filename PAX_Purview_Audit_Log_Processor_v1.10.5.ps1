@@ -1,5 +1,5 @@
 ﻿# Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.10.4
+# Version: v1.10.5
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI: Microsoft Purview Data Security Posture Management integration
 #              MIXED FREE/PAYG Activity Types: AIInteraction (currently Microsoft platforms only), ConnectedAIAppInteraction (Microsoft + third-party)
@@ -1744,7 +1744,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.10.4'
+$ScriptVersion = '1.10.5'
 
 # --- Initialize/Clear persistent script variables to prevent cross-run contamination ---
 # Note: Script-scoped variables persist across multiple script invocations in the same PowerShell session
@@ -2219,7 +2219,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7 -and -not $UseEOM -and -not $RAWInputC
 	Write-Host ""
 	Write-Host "  SOLUTION: Add the -UseEOM switch to your command:" -ForegroundColor Cyan
 	Write-Host ""
-	Write-Host "    .\PAX_Purview_Audit_Log_Processor_v1.10.4.ps1 -UseEOM [your other parameters]" -ForegroundColor White
+	Write-Host "    .\PAX_Purview_Audit_Log_Processor.ps1 -UseEOM [your other parameters]" -ForegroundColor White
 	Write-Host ""
 	Write-Host "  OR upgrade to PowerShell 7+ for Graph API mode (recommended for performance):" -ForegroundColor Cyan
 	Write-Host "    https://aka.ms/powershell" -ForegroundColor White
@@ -3598,7 +3598,6 @@ function Invoke-TokenRefresh {
 				$script:AuthConfig.ClientSecret
 			)
 			Connect-MgGraph -TenantId $script:AuthConfig.TenantId `
-				-ClientId $script:AuthConfig.ClientId `
 				-ClientSecretCredential $credential `
 				-NoWelcome -ErrorAction Stop
 			$reconnected = $true
