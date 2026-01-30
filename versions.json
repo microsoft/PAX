@@ -6,7 +6,7 @@
   "products": {
     "pax": {
       "name": "PAX Infrastructure",
-      "version": "1.0.16",
+      "version": "1.0.17",
       "status": "development",
       "notes": "Core infrastructure, workflows, governance (iterating beyond last tagged release)"
     },
@@ -18,7 +18,7 @@
     },
     "purview": {
       "name": "Purview Audit Log Processor",
-      "version": "1.10.4",
+      "version": "1.10.5",
       "status": "development",
       "notes": "Canonical root script; prior versions in script_archive/Purview_Audit_Log_Processor."
     },
