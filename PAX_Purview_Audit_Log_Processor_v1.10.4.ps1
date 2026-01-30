@@ -1,5 +1,5 @@
-# Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.10.3
+﻿# Portable Audit eXporter (PAX) - Purview Audit Log Processor
+# Version: v1.10.4
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI: Microsoft Purview Data Security Posture Management integration
 #              MIXED FREE/PAYG Activity Types: AIInteraction (currently Microsoft platforms only), ConnectedAIAppInteraction (Microsoft + third-party)
@@ -363,8 +363,8 @@
 		  QUERY SUBMISSION SUMMARY
 		═══════════════════════════════════════════════════════════════
 		  Total Partitions: 134
-		  ✓ Sent and Complete: 131
-		  ⚠ Sent but Incomplete: 2
+		  Sent and Complete: 131
+		  [!] Sent but Incomplete: 2
 		  ✗ Never Sent: 1
 		═══════════════════════════════════════════════════════════════
 
@@ -1744,7 +1744,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.10.3'
+$ScriptVersion = '1.10.4'
 
 # --- Initialize/Clear persistent script variables to prevent cross-run contamination ---
 # Note: Script-scoped variables persist across multiple script invocations in the same PowerShell session
@@ -1753,7 +1753,7 @@ $script:processedJobIds = $null
 $script:shownJobMessages = $null
 
 # --- Known Microsoft 365 Copilot SKU IDs ---
-# Source: PAX Graph Audit Log Processor v1.0.1 + Microsoft official SKU documentation (updated Nov 2025)
+# Source: PAX Graph Audit Log Processor + Microsoft official SKU documentation
 $script:CopilotSkuIds = @{
     'c815c93d-0759-4bb8-b857-bc921a71be83' = 'Microsoft 365 Copilot'           # M365 Copilot
     '06ebc4ee-1bb5-47dd-8120-11324bc54e06' = 'Microsoft 365 Copilot'           # M365 Copilot (alternative)
@@ -2164,7 +2164,7 @@ if ($ExportWorkbook) {
 		
 		try {
 			Install-Module ImportExcel -Scope CurrentUser -Force -AllowClobber -Repository PSGallery -ErrorAction Stop
-			Write-Host "✓ ImportExcel module installed successfully!" -ForegroundColor Green
+			Write-Host "ImportExcel module installed successfully!" -ForegroundColor Green
 			Write-Host ""
 			
 			# Re-check for the module
@@ -2186,14 +2186,14 @@ if ($ExportWorkbook) {
 		}
 	}
 	else {
-		Write-Host "✓ ImportExcel module detected: $($importExcelModule.Name) v$($importExcelModule.Version)" -ForegroundColor Green
+		Write-Host "ImportExcel module detected: $($importExcelModule.Name) v$($importExcelModule.Version)" -ForegroundColor Green
 	}
 	
 	# Import ImportExcel module
 	if ($ExportWorkbook) {
 		try {
 			Import-Module ImportExcel -ErrorAction Stop
-			Write-Host "✓ ImportExcel module imported successfully" -ForegroundColor Green
+			Write-Host "ImportExcel module imported successfully" -ForegroundColor Green
 			Write-Host ""
 		}
 		catch {
@@ -2206,6 +2206,33 @@ if ($ExportWorkbook) {
 }
 
 # --- Early parameter validation & environment sanity checks ---
+
+# PowerShell 5.1 requires -UseEOM mode (Graph API mode requires PS 7+ for ThreadJob parallelism)
+if ($PSVersionTable.PSVersion.Major -lt 7 -and -not $UseEOM -and -not $RAWInputCSV -and -not $Resume) {
+	Write-Host "" -ForegroundColor Red
+	Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
+	Write-Host "  ERROR: PowerShell 5.1 Detected - Graph API Mode Not Supported" -ForegroundColor Red
+	Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
+	Write-Host ""
+	Write-Host "  The default Microsoft Graph API mode requires PowerShell 7+ for parallel query execution." -ForegroundColor Yellow
+	Write-Host "  PowerShell 5.1 is supported, but requires -UseEOM (Exchange Online Management) mode." -ForegroundColor Yellow
+	Write-Host ""
+	Write-Host "  SOLUTION: Add the -UseEOM switch to your command:" -ForegroundColor Cyan
+	Write-Host ""
+	Write-Host "    .\PAX_Purview_Audit_Log_Processor_v1.10.4.ps1 -UseEOM [your other parameters]" -ForegroundColor White
+	Write-Host ""
+	Write-Host "  OR upgrade to PowerShell 7+ for Graph API mode (recommended for performance):" -ForegroundColor Cyan
+	Write-Host "    https://aka.ms/powershell" -ForegroundColor White
+	Write-Host ""
+	Write-Host "  EOM MODE NOTES:" -ForegroundColor DarkCyan
+	Write-Host "    - Uses Search-UnifiedAuditLog cmdlet (serial processing)" -ForegroundColor Gray
+	Write-Host "    - Requires Exchange Online Management module" -ForegroundColor Gray
+	Write-Host "    - Requires Exchange Admin role or audit log read permissions" -ForegroundColor Gray
+	Write-Host "    - Some features (Entra user enrichment) not available in EOM mode" -ForegroundColor Gray
+	Write-Host ""
+	Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
+	exit 1
+}
 
 if ($ExcludeAgents -and ($AgentId -or $AgentsOnly)) {
 	Write-Host "ERROR: -ExcludeAgents cannot be used with -AgentId or -AgentsOnly switches." -ForegroundColor Red
@@ -2790,13 +2817,13 @@ function Invoke-GracefulExit {
 	Write-Host "  Disconnecting from Microsoft Graph..." -ForegroundColor Cyan
 	try {
 		Disconnect-MgGraph -ErrorAction Stop | Out-Null
-		Write-Host "  ✓ Microsoft Graph disconnected" -ForegroundColor Green
+		Write-Host "  Microsoft Graph disconnected" -ForegroundColor Green
 	}
 	catch {
 		if ($_.Exception.Message -match 'No application to sign out from') {
 			Write-Host "  (Not connected to Microsoft Graph)" -ForegroundColor DarkGray
 		} else {
-			Write-Host "  ✓ Microsoft Graph session cleared" -ForegroundColor Green
+			Write-Host "  Microsoft Graph session cleared" -ForegroundColor Green
 		}
 	}
 	
@@ -2806,7 +2833,7 @@ function Invoke-GracefulExit {
 		if ($eomSession) {
 			Write-Host "  Disconnecting from Exchange Online Management..." -ForegroundColor Cyan
 			Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
-			Write-Host "  ✓ Exchange Online disconnected" -ForegroundColor Green
+			Write-Host "  Exchange Online disconnected" -ForegroundColor Green
 		}
 	}
 	catch {
@@ -2899,12 +2926,12 @@ elseif (-not $UseEOM) {
 			try {
 				# Install latest Authentication module
 				Install-Module -Name Microsoft.Graph.Authentication -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
-				Write-LogHost "  ✓ Microsoft.Graph.Authentication updated to v$latestAuthVersion" -ForegroundColor Green
+				Write-LogHost "  Microsoft.Graph.Authentication updated to v$latestAuthVersion" -ForegroundColor Green
 				
 				# Install matching Security module
 				Write-LogHost "  Installing Microsoft.Graph.Security v$latestAuthVersion..." -ForegroundColor Yellow
 				Install-Module -Name Microsoft.Graph.Security -RequiredVersion $latestAuthVersion -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
-				Write-LogHost "  ✓ Microsoft.Graph.Security updated to v$latestAuthVersion" -ForegroundColor Green
+				Write-LogHost "  Microsoft.Graph.Security updated to v$latestAuthVersion" -ForegroundColor Green
 				
 				$updatePerformed = $true
 				
@@ -2918,7 +2945,7 @@ elseif (-not $UseEOM) {
 			}
 		}
 		elseif ($latestAuthVersion) {
-			Write-LogHost "  ✓ Microsoft Graph SDK is up to date (v$installedAuthVersion)" -ForegroundColor Green
+			Write-LogHost "  Microsoft Graph SDK is up to date (v$installedAuthVersion)" -ForegroundColor Green
 		}
 		else {
 			Write-LogHost "  Using installed version v$installedAuthVersion" -ForegroundColor Gray
@@ -2940,7 +2967,7 @@ elseif (-not $UseEOM) {
 		$authVersion = $authModule.Version
 		Write-LogHost "  Importing Microsoft.Graph.Authentication v$authVersion..." -ForegroundColor Gray
 		Import-Module Microsoft.Graph.Authentication -RequiredVersion $authVersion -Force -ErrorAction Stop
-		Write-LogHost "  ✓ Microsoft.Graph.Authentication v$authVersion loaded" -ForegroundColor Green
+		Write-LogHost "  Microsoft.Graph.Authentication v$authVersion loaded" -ForegroundColor Green
 
 		# Load Microsoft.Graph.Security matching auth version (exact if possible, otherwise same major/minor)
 		$securityModule = Get-Module -Name Microsoft.Graph.Security | Where-Object { $_.Version -eq $authVersion } | Select-Object -First 1
@@ -2958,7 +2985,7 @@ elseif (-not $UseEOM) {
 		$secVersion = $securityModule.Version
 		Write-LogHost "  Importing Microsoft.Graph.Security v$secVersion..." -ForegroundColor Gray
 		Import-Module Microsoft.Graph.Security -RequiredVersion $secVersion -Force -ErrorAction Stop
-		Write-LogHost "  ✓ Microsoft.Graph.Security v$secVersion loaded" -ForegroundColor Green
+		Write-LogHost "  Microsoft.Graph.Security v$secVersion loaded" -ForegroundColor Green
 	}
 	catch {
 		Write-LogHost "  ERROR: Failed to load Microsoft Graph module: $($_.Exception.Message)" -ForegroundColor Red
@@ -2969,7 +2996,7 @@ elseif (-not $UseEOM) {
 		throw
 	}
 
-	Write-LogHost "✓ Microsoft Graph modules loaded successfully`n" -ForegroundColor Green
+	Write-LogHost "Microsoft Graph modules loaded successfully`n" -ForegroundColor Green
 }
 else {
 	# EOM MODE: Exchange Online Management
@@ -3039,7 +3066,7 @@ function Connect-PurviewAudit {
 			Import-Module ExchangeOnlineManagement -Force -ErrorAction Stop
 			
 			$eomVersion = (Get-Module ExchangeOnlineManagement).Version
-			Write-LogHost "  ✓ ExchangeOnlineManagement v$eomVersion loaded" -ForegroundColor Green
+			Write-LogHost "  ExchangeOnlineManagement v$eomVersion loaded" -ForegroundColor Green
 		}
 		catch {
 			Write-LogHost "ERROR: Module load/install failure: $($_.Exception.Message)" -ForegroundColor Red
@@ -3102,7 +3129,7 @@ function Connect-PurviewAudit {
 			}
 			
 			$script:Connected = $true
-			Write-LogHost "✓ Successfully connected to Exchange Online" -ForegroundColor Green
+			Write-LogHost "Successfully connected to Exchange Online" -ForegroundColor Green
 			
 			# Verify connection
 			try {
@@ -3301,7 +3328,7 @@ function Connect-PurviewAudit {
 				}
 			}
 			
-			Write-LogHost "✓ Successfully connected to Microsoft Graph" -ForegroundColor Green
+			Write-LogHost "Successfully connected to Microsoft Graph" -ForegroundColor Green
 			
 			# Record token issue time for proactive refresh tracking
 			$script:AuthConfig.TokenIssueTime = Get-Date
@@ -3629,7 +3656,7 @@ function Invoke-TokenRefresh {
 				$script:AuthFailureDetected = $false
 				$script:Auth401MessageShown = $false  # Reset for next auth failure cycle
 				
-				Write-LogHost "  [TOKEN-REFRESH] ✓ Successfully obtained fresh access token" -ForegroundColor Green
+				Write-LogHost "  [TOKEN-REFRESH] Successfully obtained fresh access token" -ForegroundColor Green
 			}
 			else {
 				$result.Message = "Reconnected but could not extract access token"
@@ -3717,7 +3744,7 @@ function Refresh-GraphTokenIfNeeded {
 		$script:SharedAuthState.LastRefresh = Get-Date
 		$script:SharedAuthState.RefreshCount++
 		
-		Write-LogHost "  [TOKEN] ✓ Token refreshed silently (expires: $($tokenInfo.ExpiresOn.ToString('HH:mm:ss')) UTC, refresh #$($script:SharedAuthState.RefreshCount))" -ForegroundColor Green
+		Write-LogHost "  [TOKEN] Token refreshed silently (expires: $($tokenInfo.ExpiresOn.ToString('HH:mm:ss')) UTC, refresh #$($script:SharedAuthState.RefreshCount))" -ForegroundColor Green
 		Write-LogHost "  [TOKEN]   Note: In-flight queries may still require re-auth before this expiration" -ForegroundColor DarkGray
 		return $true
 	}
@@ -3731,14 +3758,14 @@ function Refresh-GraphTokenIfNeeded {
 			$script:SharedAuthState.LastRefresh = Get-Date
 			$script:SharedAuthState.RefreshCount++
 			
-			Write-LogHost "  [TOKEN] ✓ Token refreshed via AppRegistration (refresh #$($script:SharedAuthState.RefreshCount))" -ForegroundColor Green
+			Write-LogHost "  [TOKEN] Token refreshed via AppRegistration (refresh #$($script:SharedAuthState.RefreshCount))" -ForegroundColor Green
 			return $true
 		}
 	}
 	
 	# SILENT REFRESH FAILED - Immediately invoke interactive re-auth prompt
 	# This is the bulletproof path: user can walk away for hours, script waits at prompt
-	Write-LogHost "  [TOKEN] ⚠ Silent token refresh failed - interactive re-authentication required" -ForegroundColor Red
+	Write-LogHost "  [TOKEN] [!] Silent token refresh failed - interactive re-authentication required" -ForegroundColor Red
 	
 	$refreshResult = Invoke-TokenRefreshPrompt
 	if ($refreshResult -eq 'Quit') {
@@ -4185,9 +4212,9 @@ function Find-Checkpoints {
 				Path = $file.FullName
 				FileName = $file.Name
 				RunTimestamp = $data.runTimestamp
-				LastUpdated = [datetime]::Parse($data.lastUpdated)
-				StartDate = if ($data.parameters.startDate) { [datetime]::Parse($data.parameters.startDate).ToString('yyyy-MM-dd') } else { 'Unknown' }
-				EndDate = if ($data.parameters.endDate) { [datetime]::Parse($data.parameters.endDate).ToString('yyyy-MM-dd') } else { 'Unknown' }
+				LastUpdated = script:Parse-DateSafe $data.lastUpdated
+				StartDate = if ($data.parameters.startDate) { $d = script:Parse-DateSafe $data.parameters.startDate; if ($d) { $d.ToString('yyyy-MM-dd') } else { 'Unknown' } } else { 'Unknown' }
+				EndDate = if ($data.parameters.endDate) { $d = script:Parse-DateSafe $data.parameters.endDate; if ($d) { $d.ToString('yyyy-MM-dd') } else { 'Unknown' } } else { 'Unknown' }
 				PartitionsComplete = $data.statistics.partitionsComplete
 				PartitionsTotal = $data.partitions.total
 				RecordsSaved = $data.statistics.totalRecordsSaved
@@ -4385,7 +4412,7 @@ function Invoke-TokenRefreshPrompt {
 	
 	Write-Host ""
 	Write-Host "════════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
-	Write-Host "  ⚠️  AUTHENTICATION EXPIRED - Re-authentication Required" -ForegroundColor Red
+	Write-Host "  [!]  AUTHENTICATION EXPIRED - Re-authentication Required" -ForegroundColor Red
 	Write-Host "════════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
 	Write-Host ""
 	Write-Host "  Authentication failure detected (401 Unauthorized)." -ForegroundColor White
@@ -4421,7 +4448,7 @@ function Invoke-TokenRefreshPrompt {
 					$script:AuthFailureDetected = $false
 					$script:Auth401MessageShown = $false  # Reset for next auth failure cycle
 					
-					Write-Host "  ✓ Re-authentication successful. Resuming execution..." -ForegroundColor Green
+					Write-Host "  Re-authentication successful. Resuming execution..." -ForegroundColor Green
 					Write-Host "  Failed partitions will be retried with fresh token." -ForegroundColor Green
 					Write-Host ""
 					
@@ -4557,6 +4584,214 @@ function Merge-IncrementalSaves {
 	return $mergedCount
 }
 
+function Merge-IncrementalSaves-Streaming {
+	<#
+	.SYNOPSIS
+		Memory-efficient streaming merge of incremental JSONL files directly to CSV.
+	.DESCRIPTION
+		Instead of loading all records into memory, this function streams records
+		from incremental JSONL files directly to the final CSV output using batched
+		writes and explicit garbage collection between files. This prevents memory
+		exhaustion when merging millions of records.
+	.PARAMETER OutputFile
+		The final CSV file path to write merged data to.
+	.PARAMETER OutputDirectory
+		The output directory containing the .pax_incremental folder.
+	.PARAMETER OnlyPartitionIndices
+		If specified, only merge files for these partition indices.
+	.PARAMETER Columns
+		The column schema to use for CSV output. If not specified, uses default 7-column schema.
+	.RETURNS
+		The total number of records merged.
+	#>
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$OutputFile,
+		
+		[Parameter(Mandatory = $true)]
+		[string]$OutputDirectory,
+		
+		[Parameter(Mandatory = $false)]
+		[int[]]$OnlyPartitionIndices = $null,
+		
+		[Parameter(Mandatory = $false)]
+		[string[]]$Columns = $null
+	)
+	
+	$incrementalDir = Join-Path $OutputDirectory ".pax_incremental"
+	
+	if (-not (Test-Path $incrementalDir)) {
+		Write-LogHost "  [MERGE-STREAM] No incremental directory found" -ForegroundColor Yellow
+		return 0
+	}
+	
+	$allFiles = Get-ChildItem -Path $incrementalDir -Filter "*.jsonl" -ErrorAction SilentlyContinue
+	if (-not $allFiles -or $allFiles.Count -eq 0) {
+		Write-LogHost "  [MERGE-STREAM] No incremental files found" -ForegroundColor Yellow
+		return 0
+	}
+	
+	# Sort files by partition number for consistent output ordering
+	$files = $allFiles | Sort-Object { 
+		if ($_.Name -match 'Part(\d+)_') { [int]$Matches[1] } else { 999999 } 
+	}
+	
+	# Filter by partition indices if specified
+	if ($OnlyPartitionIndices) {
+		$files = $files | Where-Object {
+			$partMatch = [regex]::Match($_.Name, '^Part(\d+)_')
+			if ($partMatch.Success) {
+				[int]$partMatch.Groups[1].Value -in $OnlyPartitionIndices
+			} else {
+				$false
+			}
+		}
+	}
+	
+	if (-not $files -or @($files).Count -eq 0) {
+		Write-LogHost "  [MERGE-STREAM] No matching incremental files for specified partitions" -ForegroundColor Yellow
+		return 0
+	}
+	
+	$fileCount = @($files).Count
+	Write-LogHost "  [MERGE-STREAM] Streaming $fileCount incremental files to CSV..." -ForegroundColor Cyan
+	
+	# Use default 7-column schema if not specified (non-explosion mode)
+	if (-not $Columns) {
+		$Columns = @('RecordId', 'CreationDate', 'RecordType', 'Operation', 'AuditData', 'AssociatedAdminUnits', 'AssociatedAdminUnitsNames')
+	}
+	
+	$totalMerged = 0
+	$filesProcessed = 0
+	$headerWritten = $false
+	$batchSize = 5000
+	$startTime = Get-Date
+	$lastProgressTime = Get-Date
+	
+	# Track seen RecordIds for deduplication
+	$seenIds = New-Object System.Collections.Generic.HashSet[string]
+	$duplicatesSkipped = 0
+	
+	foreach ($file in $files) {
+		$filesProcessed++
+		$partNum = if ($file.Name -match 'Part(\d+)_') { $Matches[1] } else { "?" }
+		
+		try {
+			# Open CSV writer on first file with data
+			if (-not $headerWritten) {
+				Open-CsvWriter -Path $OutputFile -Columns $Columns
+				$headerWritten = $true
+			}
+			
+			# Stream records from this file in batches
+			$batch = New-Object System.Collections.Generic.List[object]
+			$fileRecords = 0
+			
+			Get-Content -Path $file.FullName -Encoding utf8 | ForEach-Object {
+				if (-not [string]::IsNullOrWhiteSpace($_)) {
+					try {
+						$record = $_ | ConvertFrom-Json
+						
+						# Deduplicate by RecordId
+						$recordId = $null
+						if ($record.Identity) { $recordId = $record.Identity }
+						elseif ($record.Id) { $recordId = $record.Id }
+						elseif ($record.RecordId) { $recordId = $record.RecordId }
+						
+						if ($recordId -and $seenIds.Contains($recordId)) {
+							$script:StreamingMergeDuplicatesSkipped++
+							return  # Skip duplicate
+						}
+						if ($recordId) { [void]$seenIds.Add($recordId) }
+						
+						# Parse AuditData for Operation if needed
+						$auditData = $record.AuditData
+						$parsedAudit = if ($record.PSObject.Properties['_ParsedAuditData']) { 
+							$record._ParsedAuditData 
+						} else { 
+							try { $auditData | ConvertFrom-Json -ErrorAction SilentlyContinue } catch { $null } 
+						}
+						$opValue = if ($parsedAudit -and $parsedAudit.Operation) { $parsedAudit.Operation } else { $record.Operations }
+						
+						# Create normalized record matching expected schema
+						$normalizedRecord = [pscustomobject]@{
+							RecordId                  = if ($record.RecordId) { $record.RecordId } elseif ($record.Identity) { $record.Identity } elseif ($record.Id) { $record.Id } elseif ($parsedAudit -and $parsedAudit.Id) { $parsedAudit.Id } else { $null }
+							CreationDate              = if ($record.CreationDate) { 
+								$dt = script:Parse-DateSafe $record.CreationDate; if ($dt) { $dt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $record.CreationDate }
+							} else { '' }
+							RecordType                = $record.RecordType
+							Operation                 = $opValue
+							AuditData                 = $auditData
+							AssociatedAdminUnits      = $record.AssociatedAdminUnits
+							AssociatedAdminUnitsNames = $record.AssociatedAdminUnitsNames
+						}
+						
+						$batch.Add($normalizedRecord)
+						$fileRecords++
+						
+						# Write batch when full
+						if ($batch.Count -ge $batchSize) {
+							Write-CsvRows -Rows $batch -Columns $Columns
+							$totalMerged += $batch.Count
+							$batch.Clear()
+						}
+					} catch {
+						# Skip malformed lines
+						Write-Verbose "Skipped malformed line in $($file.Name): $($_.Exception.Message)"
+					}
+				}
+			}
+			
+			# Flush remaining batch for this file
+			if ($batch.Count -gt 0) {
+				Write-CsvRows -Rows $batch -Columns $Columns
+				$totalMerged += $batch.Count
+				$batch.Clear()
+			}
+			
+			# Progress reporting every 30 seconds
+			$now = Get-Date
+			if (($now - $lastProgressTime).TotalSeconds -ge 30) {
+				$elapsed = ($now - $startTime).TotalSeconds
+				$rate = if ($elapsed -gt 0) { [int]($totalMerged / $elapsed) } else { 0 }
+				Write-LogHost "  [MERGE-STREAM] Progress: $filesProcessed/$fileCount files | $($totalMerged.ToString('N0')) records | ~$rate rec/sec" -ForegroundColor DarkCyan
+				$lastProgressTime = $now
+			}
+			
+			# Explicit garbage collection between files to release memory
+			$batch = $null
+			[GC]::Collect()
+			[GC]::WaitForPendingFinalizers()
+			
+		} catch {
+			Write-LogHost "  [WARN] Failed to stream merge $($file.Name): $($_.Exception.Message)" -ForegroundColor Yellow
+		}
+	}
+	
+	# Close CSV writer
+	if ($headerWritten) {
+		Close-CsvWriter
+	}
+	
+	# Final stats
+	$totalElapsed = (Get-Date) - $startTime
+	$finalRate = if ($totalElapsed.TotalSeconds -gt 0) { [int]($totalMerged / $totalElapsed.TotalSeconds) } else { 0 }
+	
+	Write-LogHost "  [MERGE-STREAM] Streaming merge complete: $($totalMerged.ToString('N0')) records from $filesProcessed files" -ForegroundColor Green
+	Write-LogHost "  [MERGE-STREAM]   Time: $([Math]::Round($totalElapsed.TotalSeconds, 1))s | Rate: $finalRate rec/sec" -ForegroundColor DarkGray
+	if ($duplicatesSkipped -gt 0 -or $script:StreamingMergeDuplicatesSkipped -gt 0) {
+		$totalDupes = $duplicatesSkipped + $script:StreamingMergeDuplicatesSkipped
+		Write-LogHost "  [MERGE-STREAM]   Duplicates skipped: $totalDupes" -ForegroundColor DarkGray
+	}
+	
+	# Clear the HashSet to free memory
+	$seenIds.Clear()
+	$seenIds = $null
+	[GC]::Collect()
+	
+	return $totalMerged
+}
+
 function Show-CheckpointExitMessage {
 	<#
 	.SYNOPSIS
@@ -4575,7 +4810,7 @@ function Show-CheckpointExitMessage {
 	
 	Write-Host ""
 	Write-Host "════════════════════════════════════════════════════════════════════════════════" -ForegroundColor Green
-	Write-Host "  ✓ PROGRESS SAVED" -ForegroundColor Green
+	Write-Host "  PROGRESS SAVED" -ForegroundColor Green
 	Write-Host "════════════════════════════════════════════════════════════════════════════════" -ForegroundColor Green
 	Write-Host ""
 	Write-Host "  Checkpoint: $(Split-Path $script:CheckpointPath -Leaf)" -ForegroundColor White
@@ -5413,7 +5648,7 @@ function ConvertFrom-GraphAuditRecord {
 			# Map: createdDateTime → CreationDate
 			if ($record.PSObject.Properties.Name -contains 'createdDateTime') {
 				try {
-					$eomRecord.CreationDate = [datetime]::Parse($record.createdDateTime)
+					$eomRecord.CreationDate = script:Parse-DateSafe $record.createdDateTime
 				}
 				catch {
 					$eomRecord.CreationDate = $record.createdDateTime
@@ -5620,7 +5855,7 @@ function Test-PurviewAuditCapability {
 			# Lightweight probe with unlikely operation
 			$null = Search-UnifiedAuditLog -StartDate $probeStart -EndDate $probeEnd -Operations 'UserLoggedIn' -ResultSize 1 -ErrorAction Stop
 			
-			Write-LogHost "  ✓ EOM capability check passed" -ForegroundColor Green
+			Write-LogHost "  EOM capability check passed" -ForegroundColor Green
 			return $true
 		}
 		catch {
@@ -5667,7 +5902,7 @@ function Test-PurviewAuditCapability {
 			# Check for required scopes
 			$requiredScope = 'AuditLog.Read.All'
 			if ($context.Scopes -notcontains $requiredScope) {
-				Write-LogHost "  ⚠ WARNING: Missing required scope: $requiredScope" -ForegroundColor Yellow
+				Write-LogHost "  [!] WARNING: Missing required scope: $requiredScope" -ForegroundColor Yellow
 				Write-LogHost "  Queries may fail without this permission" -ForegroundColor Yellow
 			}
 		}
@@ -5689,8 +5924,8 @@ function Test-PurviewAuditCapability {
 		
 		$createUri = Get-GraphAuditApiUri -Path 'queries'
 		$createResponse = Invoke-MgGraphRequest -Method POST -Uri $createUri -Body $testQueryBody -ErrorAction Stop			if ($createResponse.id) {
-				Write-LogHost "  ✓ Graph API capability check passed" -ForegroundColor Green
-				Write-LogHost "  ✓ Successfully created test query (ID: $($createResponse.id))" -ForegroundColor Green
+				Write-LogHost "  Graph API capability check passed" -ForegroundColor Green
+				Write-LogHost "  Successfully created test query (ID: $($createResponse.id))" -ForegroundColor Green
 				return $true
 			}
 			else {
@@ -5711,7 +5946,7 @@ function Test-PurviewAuditCapability {
 			# Throttling detected - friendly terminal message, full details to log only
 			Write-Host ""
 			Write-Host "============================================================================================================" -ForegroundColor DarkYellow
-			Write-Host "  ⚠ Graph API Throttling Detected (429 - Too Many Requests)" -ForegroundColor DarkYellow
+			Write-Host "  [!] Graph API Throttling Detected (429 - Too Many Requests)" -ForegroundColor DarkYellow
 			Write-Host "============================================================================================================" -ForegroundColor DarkYellow
 			Write-Host ""
 			Write-Host "  Microsoft Graph is currently rate-limiting requests to your tenant." -ForegroundColor White
@@ -5738,7 +5973,7 @@ function Test-PurviewAuditCapability {
 						
 						try {
 							Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
-							Write-Host "  ✓ Disconnected successfully" -ForegroundColor Green
+							Write-Host "  Disconnected successfully" -ForegroundColor Green
 						}
 						catch {
 							Write-Host "  (Graph connection cleanup completed)" -ForegroundColor Gray
@@ -6253,7 +6488,7 @@ function Disconnect-PurviewAudit {
 		try {
 			Write-LogHost "Disconnecting from Exchange Online..." -ForegroundColor Gray
 			Disconnect-ExchangeOnline -Confirm:$false -ErrorAction Stop | Out-Null
-			Write-LogHost "  ✓ Disconnected from Exchange Online" -ForegroundColor Green
+			Write-LogHost "  Disconnected from Exchange Online" -ForegroundColor Green
 		}
 		catch {
 			# Silently handle - may not be connected or already disconnected
@@ -6272,7 +6507,7 @@ function Disconnect-PurviewAudit {
 			if ($context) {
 				Write-LogHost "Disconnecting from Microsoft Graph..." -ForegroundColor Gray
 				Disconnect-MgGraph -ErrorAction Stop | Out-Null
-				Write-LogHost "  ✓ Disconnected from Microsoft Graph" -ForegroundColor Green
+				Write-LogHost "  Disconnected from Microsoft Graph" -ForegroundColor Green
 			}
 			else {
 				Write-LogHost "  (Not connected to Microsoft Graph)" -ForegroundColor DarkGray
@@ -6325,7 +6560,7 @@ function Invoke-AuditCapabilityDiagnostics {
 
 function Invoke-SearchUnifiedAuditLogWithRetry {
 	<#
-		Adapted from v1.7.3: Provides pagination & early 10K detection.
+		Provides pagination & early 10K detection.
 		Adjustments:
 		  * Honors $PacingMs but leaves adaptive / circuit breaker to caller.
 		  * Maintains metrics.PagesFetched & global limit flags used by higher layers.
@@ -6390,7 +6625,7 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
 					try {
 						$est = $pageResults[0].ResultCount
 						if ($null -ne $est -and $est -ge 10000) {
-							Write-LogHost "    ⚠ Estimated >=10K records in window – consider subdivision" -ForegroundColor Yellow
+							Write-LogHost "    [!] Estimated >=10K records in window – consider subdivision" -ForegroundColor Yellow
 						}
 					} catch {}
 				}
@@ -6425,7 +6660,7 @@ function Invoke-SearchUnifiedAuditLogWithRetry {
 							$timestamps = @()
 							foreach ($rec in $allResults) {
 								if ($rec.CreationDate) {
-									try { $timestamps += [datetime]$rec.CreationDate } catch {}
+									$ts = script:Parse-DateSafe $rec.CreationDate; if ($ts) { $timestamps += $ts }
 								}
 							}
 							if ($timestamps.Count -gt 100) {
@@ -6555,6 +6790,82 @@ if ($RAWInputCSV) { $ForcedRawInputCsvExplosion = $true }
 $script:RegexTrueFalse = [regex]::new('^(?i:true|false)$', [System.Text.RegularExpressions.RegexOptions]::Compiled)
 $script:RegexYes1 = [regex]::new('^(?i:yes|1)$', [System.Text.RegularExpressions.RegexOptions]::Compiled)
 $script:RegexNo0 = [regex]::new('^(?i:no|0)$', [System.Text.RegularExpressions.RegexOptions]::Compiled)
+$script:LocaleDateParsingNotified = $false
+
+function script:Parse-DateSafe {
+	<#
+	.SYNOPSIS
+		Culture-invariant date parsing that handles Purview API date formats.
+	.DESCRIPTION
+		Purview API returns dates in US format (M/d/yyyy HH:mm:ss) regardless of client locale.
+		This function safely parses such dates on systems with non-US regional settings (e.g., UK).
+	#>
+	param([Parameter(Mandatory=$false)][AllowNull()][AllowEmptyString()]$DateValue)
+	
+	# Log once when running under non-US locale
+	if (-not $script:LocaleDateParsingNotified) {
+		$script:LocaleDateParsingNotified = $true
+		$currentCulture = [System.Threading.Thread]::CurrentThread.CurrentCulture.Name
+		if ($currentCulture -and $currentCulture -ne 'en-US') {
+			Write-LogHost "  [DATE] Locale-aware date parsing active (Culture: $currentCulture)" -ForegroundColor DarkCyan
+		}
+	}
+	
+	# Already a DateTime? Return as-is
+	if ($DateValue -is [datetime]) { return $DateValue }
+	
+	# Null or empty? Return null
+	if ([string]::IsNullOrWhiteSpace($DateValue)) { return $null }
+	
+	$dateStr = [string]$DateValue
+	
+	# Try ISO 8601 formats first (most common from properly-formatted API responses)
+	$isoFormats = @(
+		'yyyy-MM-ddTHH:mm:ss.fffffffK',
+		'yyyy-MM-ddTHH:mm:ss.fffK',
+		'yyyy-MM-ddTHH:mm:ssK',
+		'yyyy-MM-ddTHH:mm:ss.fffffff',
+		'yyyy-MM-ddTHH:mm:ss.fffZ',
+		'yyyy-MM-ddTHH:mm:ssZ',
+		'yyyy-MM-ddTHH:mm:ss.fff',
+		'yyyy-MM-ddTHH:mm:ss',
+		'yyyy-MM-dd HH:mm:ss.fff',
+		'yyyy-MM-dd HH:mm:ss',
+		'yyyy-MM-dd'
+	)
+	
+	foreach ($fmt in $isoFormats) {
+		try {
+			return [datetime]::ParseExact($dateStr, $fmt, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+		}
+		catch { }
+	}
+	
+	# Try US formats explicitly (what Purview actually returns - causes UK locale issues)
+	$usFormats = @(
+		'M/d/yyyy HH:mm:ss',
+		'M/d/yyyy h:mm:ss tt',
+		'M/d/yyyy H:mm:ss',
+		'MM/dd/yyyy HH:mm:ss',
+		'M/d/yyyy',
+		'MM/dd/yyyy'
+	)
+	
+	foreach ($fmt in $usFormats) {
+		try {
+			return [datetime]::ParseExact($dateStr, $fmt, [System.Globalization.CultureInfo]::InvariantCulture)
+		}
+		catch { }
+	}
+	
+	# Last resort: use InvariantCulture with Parse
+	try {
+		return [datetime]::Parse($dateStr, [System.Globalization.CultureInfo]::InvariantCulture)
+	}
+	catch {
+		return $null
+	}
+}
 
 function script:Format-DatePurviewFast($dt) {
 	if (-not $dt) { return '' }
@@ -6563,7 +6874,8 @@ function script:Format-DatePurviewFast($dt) {
 			return $dt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
 		}
 		else { 
-			$p = [datetime]::Parse($dt)
+			$p = script:Parse-DateSafe $dt
+			if ($null -eq $p) { return '' }
 			return $p.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
 		}
 	}
@@ -7241,7 +7553,12 @@ elseif ($script:CheckpointEnabled) {
 	$ext = [System.IO.Path]::GetExtension($OutputFile)
 	$script:PartialOutputPath = Join-Path $dir "${baseName}_PARTIAL${ext}"
 	$OutputFile = $script:PartialOutputPath
-	$script:CsvOutputFile = $script:PartialOutputPath
+	# For ExportWorkbook mode, CsvOutputFile must use .csv extension (not .xlsx from PartialOutputPath)
+	if ($ExportWorkbook) {
+		$script:CsvOutputFile = Join-Path $dir "${baseName}_PARTIAL.csv"
+	} else {
+		$script:CsvOutputFile = $script:PartialOutputPath
+	}
 	
 	# Initialize checkpoint file for this run with ALL parameters for complete state restoration
 	$baseFileName = Split-Path $script:FinalOutputPath -Leaf
@@ -7291,7 +7608,7 @@ elseif ($script:CheckpointEnabled) {
 		AutoCompleteness = $AutoCompleteness.IsPresent
 		IncludeTelemetry = $IncludeTelemetry.IsPresent
 	}
-	Initialize-CheckpointForNewRun -OutputPath $OutputPath -BaseOutputFileName $baseFileName -RunTimestamp $global:ScriptRunTimestamp -StartDate ([datetime]::Parse($StartDate)) -EndDate ([datetime]::Parse($EndDate)) -AllParameters $allParams
+	Initialize-CheckpointForNewRun -OutputPath $OutputPath -BaseOutputFileName $baseFileName -RunTimestamp $global:ScriptRunTimestamp -StartDate (script:Parse-DateSafe $StartDate) -EndDate (script:Parse-DateSafe $EndDate) -AllParameters $allParams
 }
 else {
 	# No checkpoint needed (AppRegistration mode or RAWInputCSV or OnlyUserInfo)
@@ -7455,7 +7772,7 @@ if ($isMultiOutputScenario -and -not $Force) {
 	}
 	elseif ($multiOutput_choice -eq 'C' -or $multiOutput_choice -eq 'c') {
 		Write-LogHost ""
-		Write-LogHost "✓ ENABLED: -CombineOutput mode" -ForegroundColor Green
+		Write-LogHost "ENABLED: -CombineOutput mode" -ForegroundColor Green
 		Write-LogHost "  All $activityTypeCount activity types will be merged into a single CSV file." -ForegroundColor Cyan
 		Write-LogHost ""
 		$CombineOutput = $true
@@ -7490,7 +7807,7 @@ if (($finalActivityTypes -contains 'AIAppInteraction') -or ($finalActivityTypes 
 		Write-LogHost ""
 		# Check if AIAppInteraction is included - offer options
 		if ($finalActivityTypes -contains 'AIAppInteraction') {
-			Write-LogHost "⚠ IMPORTANT: AIAppInteraction REQUIRES Microsoft Purview PAYG billing" -ForegroundColor Yellow
+			Write-LogHost "[!] IMPORTANT: AIAppInteraction REQUIRES Microsoft Purview PAYG billing" -ForegroundColor Yellow
 			Write-LogHost ""
 			Write-LogHost "PAYG Requirements:" -ForegroundColor Cyan
 			Write-LogHost "  • Azure subscription linked to M365 tenant" -ForegroundColor Cyan
@@ -7514,8 +7831,8 @@ if (($finalActivityTypes -contains 'AIAppInteraction') -or ($finalActivityTypes 
 			}
 			elseif ($payg_choice -eq 'N' -or $payg_choice -eq 'n') {
 				Write-LogHost ""
-				Write-LogHost "✓ REMOVED: AIAppInteraction (third-party AI records will NOT be captured)" -ForegroundColor Yellow
-				Write-LogHost "✓ Continuing with: AIInteraction, ConnectedAIAppInteraction (Microsoft platforms only)" -ForegroundColor Green
+				Write-LogHost "REMOVED: AIAppInteraction (third-party AI records will NOT be captured)" -ForegroundColor Yellow
+				Write-LogHost "Continuing with: AIInteraction, ConnectedAIAppInteraction (Microsoft platforms only)" -ForegroundColor Green
 				Write-LogHost ""
 				Write-LogHost "Note: Without PAYG billing, only Microsoft-hosted AI activity will be captured." -ForegroundColor Yellow
 				Write-LogHost "      Third-party AI apps (ChatGPT, etc.) require PAYG billing." -ForegroundColor Yellow
@@ -7728,7 +8045,7 @@ if ($AppendFile) {
 		exit 1
 	}
 	
-	Write-LogHost "  ✓ Explosion parameters compatible ($($validation.CurrentMode.DisplayName)) - safe to append" -ForegroundColor Green
+	Write-LogHost "  Explosion parameters compatible ($($validation.CurrentMode.DisplayName)) - safe to append" -ForegroundColor Green
 	
 	Write-LogHost "AppendFile mode: Appending to existing file: $OutputFile" -ForegroundColor Cyan
 }
@@ -7948,6 +8265,169 @@ function Find-AllArrays {
 }
 
 function Test-ScalarValue { param($v) ($null -eq $v -or $v -is [string] -or $v -is [char] -or $v -is [bool] -or $v -is [int] -or $v -is [long] -or $v -is [double] -or $v -is [decimal] -or $v -is [float] -or $v -is [datetime] -or $v -is [guid]) }
+
+function Import-CsvToDataTable {
+	<#
+	.SYNOPSIS
+	Imports a CSV file directly into a System.Data.DataTable using fast .NET StreamReader.
+	
+	.DESCRIPTION
+	This is 10-50x faster than Import-Csv | ConvertTo-DataTable for large files because it:
+	1. Uses .NET StreamReader instead of PowerShell's Import-Csv
+	2. Avoids creating intermediate PSObjects
+	3. Parses CSV directly into DataTable rows
+	
+	.PARAMETER Path
+	The path to the CSV file to import.
+	
+	.OUTPUTS
+	System.Data.DataTable
+	#>
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$Path
+	)
+	
+	$dataTable = New-Object System.Data.DataTable
+	$reader = $null
+	
+	try {
+		$reader = New-Object System.IO.StreamReader($Path, [System.Text.Encoding]::UTF8)
+		$lineNum = 0
+		$columns = @()
+		
+		while ($null -ne ($line = $reader.ReadLine())) {
+			# Parse CSV line (handles quoted fields with commas)
+			$fields = [System.Collections.Generic.List[string]]::new()
+			$field = [System.Text.StringBuilder]::new()
+			$inQuotes = $false
+			
+			for ($i = 0; $i -lt $line.Length; $i++) {
+				$c = $line[$i]
+				if ($c -eq '"') {
+					if ($inQuotes -and $i + 1 -lt $line.Length -and $line[$i + 1] -eq '"') {
+						[void]$field.Append('"')
+						$i++
+					} else {
+						$inQuotes = -not $inQuotes
+					}
+				} elseif ($c -eq ',' -and -not $inQuotes) {
+					[void]$fields.Add($field.ToString())
+					[void]$field.Clear()
+				} else {
+					[void]$field.Append($c)
+				}
+			}
+			[void]$fields.Add($field.ToString())
+			
+			if ($lineNum -eq 0) {
+				# Header row - create columns
+				$columns = $fields.ToArray()
+				foreach ($col in $columns) {
+					[void]$dataTable.Columns.Add($col, [string])
+				}
+			} else {
+				# Data row
+				$row = $dataTable.NewRow()
+				for ($j = 0; $j -lt [Math]::Min($columns.Count, $fields.Count); $j++) {
+					$val = $fields[$j]
+					$row[$j] = if ([string]::IsNullOrEmpty($val)) { [DBNull]::Value } else { $val }
+				}
+				[void]$dataTable.Rows.Add($row)
+			}
+			$lineNum++
+		}
+	}
+	finally {
+		if ($reader) { $reader.Dispose() }
+	}
+	
+	return ,$dataTable
+}
+
+function ConvertTo-DataTable {
+	<#
+	.SYNOPSIS
+	Converts an array of PSObjects to a System.Data.DataTable for high-performance Excel export.
+	
+	.DESCRIPTION
+	Export-Excel with piped PSObjects processes cells one-by-one (~400 cells/sec), which is extremely
+	slow for large datasets. Send-SQLDataToExcel with DataTable uses bulk insert and is 100-1000x faster.
+	This function converts PSObject arrays to DataTable format for use with Send-SQLDataToExcel.
+	
+	.PARAMETER InputObject
+	The array of PSObjects to convert to a DataTable.
+	
+	.OUTPUTS
+	System.Data.DataTable
+	#>
+	param(
+		[Parameter(Mandatory = $true, ValueFromPipeline = $true)]
+		[object[]]$InputObject
+	)
+	
+	begin {
+		$dataTable = New-Object System.Data.DataTable
+		$isFirstRow = $true
+		$columns = @()
+	}
+	
+	process {
+		foreach ($obj in $InputObject) {
+			if ($isFirstRow) {
+				$columns = @($obj.PSObject.Properties.Name)
+				foreach ($colName in $columns) {
+					[void]$dataTable.Columns.Add($colName, [string])
+				}
+				$isFirstRow = $false
+			}
+			
+			$row = $dataTable.NewRow()
+			foreach ($colName in $columns) {
+				$val = $obj.$colName
+				$row[$colName] = if ($null -eq $val) { [DBNull]::Value } else { [string]$val }
+			}
+			[void]$dataTable.Rows.Add($row)
+		}
+	}
+	
+	end {
+		return ,$dataTable
+	}
+}
+
+function Export-DataTableToExcel {
+	<#
+	.SYNOPSIS
+	High-performance Excel export using DataTable bulk insert method.
+	
+	.DESCRIPTION
+	Wrapper function that converts PSObjects to DataTable and exports using Send-SQLDataToExcel.
+	This is 100-1000x faster than piping to Export-Excel for large datasets.
+	
+	.PARAMETER Data
+	The array of PSObjects to export.
+	
+	.PARAMETER Path
+	The path to the Excel file.
+	
+	.PARAMETER WorksheetName
+	The name of the worksheet/tab.
+	#>
+	param(
+		[Parameter(Mandatory = $true)]
+		[object[]]$Data,
+		
+		[Parameter(Mandatory = $true)]
+		[string]$Path,
+		
+		[Parameter(Mandatory = $true)]
+		[string]$WorksheetName
+	)
+	
+	$dataTable = $Data | ConvertTo-DataTable
+	Send-SQLDataToExcel -DataTable $dataTable -Path $Path -WorkSheetName $WorksheetName -Force -FreezeTopRow -BoldTopRow -AutoSize -NoNumberConversion '*'
+}
 
 function ConvertTo-UniqueString {
 	param([object]$items, [char]$Sep = ';')
@@ -8281,7 +8761,7 @@ function Convert-ToPurviewExplodedRecords {
 			try { $applicationId = Select-FirstNonNull -Values @((Get-SafeProperty $auditData 'ApplicationId'), (Get-SafeProperty $auditData 'AppId'), (Get-SafeProperty $auditData 'ClientAppId')) } catch {}
 			$enrichMap = @{
 				'Id'                           = { try { Get-SafeProperty $auditData 'Id' } catch { $null } }
-				'CreationTime'                  = { try { $ct = Get-SafeProperty $auditData 'CreationTime'; if ($ct) { ([datetime]::Parse($ct)).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null } } catch { $null } }
+				'CreationTime'                  = { try { $ct = Get-SafeProperty $auditData 'CreationTime'; if ($ct) { $parsed = script:Parse-DateSafe $ct; if ($parsed) { $parsed.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null } } else { $null } } catch { $null } }
 				'OrganizationId'               = { try { Get-SafeProperty $auditData 'OrganizationId' } catch { $null } }
 				'ResultStatus'                 = { try { Get-SafeProperty $auditData 'ResultStatus' } catch { $null } }
 				'UserKey'                      = { try { Get-SafeProperty $auditData 'UserKey' } catch { $null } }
@@ -8857,7 +9337,7 @@ function Convert-ToStructuredRecord {
 			IsValid            = $Record.IsValid
 			ObjectState        = $Record.ObjectState
 			Id                 = $auditData.Id
-			CreationTime       = ([datetime]::Parse($auditData.CreationTime)).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+			CreationTime       = & { $ct = script:Parse-DateSafe $auditData.CreationTime; if ($ct) { $ct.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $auditData.CreationTime } }
 			Operation          = $auditData.Operation
 			OrganizationId     = $auditData.OrganizationId
 			RecordTypeNum      = $auditData.RecordType
@@ -9132,8 +9612,8 @@ try {
 		Write-LogHost ""
 		Write-LogHost "Checkpoint loaded successfully:" -ForegroundColor Green
 		Write-LogHost "  Original Run:       $($checkpointData.runTimestamp)" -ForegroundColor White
-		$cpStartDate = if ($checkpointData.parameters.startDate) { ([datetime]::Parse($checkpointData.parameters.startDate)).ToString('yyyy-MM-dd') } else { 'Unknown' }
-		$cpEndDate = if ($checkpointData.parameters.endDate) { ([datetime]::Parse($checkpointData.parameters.endDate)).ToString('yyyy-MM-dd') } else { 'Unknown' }
+		$cpStartDate = if ($checkpointData.parameters.startDate) { $d = script:Parse-DateSafe $checkpointData.parameters.startDate; if ($d) { $d.ToString('yyyy-MM-dd') } else { 'Unknown' } } else { 'Unknown' }
+		$cpEndDate = if ($checkpointData.parameters.endDate) { $d = script:Parse-DateSafe $checkpointData.parameters.endDate; if ($d) { $d.ToString('yyyy-MM-dd') } else { 'Unknown' } } else { 'Unknown' }
 		Write-LogHost "  Date Range:         $cpStartDate to $cpEndDate" -ForegroundColor White
 		Write-LogHost "  Total Partitions:   $totalPartitions" -ForegroundColor White
 		Write-LogHost "  Completed:          $completedCount" -ForegroundColor Green
@@ -9147,9 +9627,21 @@ try {
 		Write-LogHost "Restoring parameters from checkpoint..." -ForegroundColor DarkGray
 		$cp = $checkpointData.parameters
 		
-		# Date range (required)
-		$StartDate = ([datetime]::Parse($cp.startDate)).ToString('yyyy-MM-dd')
-		$EndDate = ([datetime]::Parse($cp.endDate)).ToString('yyyy-MM-dd')
+		# Restore original run timestamp so incremental files use consistent naming
+		# This ensures all partition files (original run + resumes) share the same timestamp
+		if ($checkpointData.runTimestamp) {
+			$global:ScriptRunTimestamp = $checkpointData.runTimestamp
+			Write-LogHost "  Restored original run timestamp: $($global:ScriptRunTimestamp)" -ForegroundColor DarkGray
+		}
+		
+		# Date range (required) - using locale-safe parsing
+		$parsedStart = script:Parse-DateSafe $cp.startDate
+		if (-not $parsedStart) { throw "Failed to parse checkpoint startDate: $($cp.startDate)" }
+		$StartDate = $parsedStart.ToString('yyyy-MM-dd')
+		
+		$parsedEnd = script:Parse-DateSafe $cp.endDate
+		if (-not $parsedEnd) { throw "Failed to parse checkpoint endDate: $($cp.endDate)" }
+		$EndDate = $parsedEnd.ToString('yyyy-MM-dd')
 		
 		# Activity/Record filtering
 		if ($cp.activityTypes -and $cp.activityTypes.Count -gt 0) { $ActivityTypes = $cp.activityTypes }
@@ -9216,7 +9708,13 @@ try {
 		
 		# Set OutputFile and CsvOutputFile to the partial path for execution
 		$OutputFile = $script:PartialOutputPath
-		$script:CsvOutputFile = $script:PartialOutputPath
+		# For ExportWorkbook mode, CsvOutputFile must use .csv extension (not .xlsx from PartialOutputPath)
+		if ($ExportWorkbook) {
+			$csvBaseName = [System.IO.Path]::GetFileNameWithoutExtension($script:PartialOutputPath)
+			$script:CsvOutputFile = Join-Path $checkpointDir "${csvBaseName}.csv"
+		} else {
+			$script:CsvOutputFile = $script:PartialOutputPath
+		}
 		
 		# Check for incremental data files
 		$incrementalDir = Join-Path $checkpointDir ".pax_incremental"
@@ -9336,7 +9834,7 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 			$identity = if ($sampleRow.Id) { $sampleRow.Id } elseif ($sampleRow.RecordId) { $sampleRow.RecordId } else { [guid]::NewGuid().ToString() }
 			$rec = [pscustomobject]@{
 				RecordType   = $(try { [int]$sampleRow.RecordType } catch { 0 })
-				CreationDate = $(try { [datetime]$sampleRow.CreationDate } catch { Get-Date })
+				CreationDate = $(if ($sampleRow.CreationDate) { $d = script:Parse-DateSafe $sampleRow.CreationDate; if ($d) { $d } else { Get-Date } } else { Get-Date })
 				UserIds      = @($sampleRow.UserId)
 				Operations   = $sampleRow.Operation
 				ResultStatus = $(try { $sampleRow.ResultStatus } catch { '' })
@@ -9367,8 +9865,7 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		foreach ($row in $csvData) {
 			$keep = $true
 			$creationRaw = $row.CreationDate
-			$creation = $null
-			try { if ($creationRaw) { $creation = [datetime]$creationRaw } } catch {}
+			$creation = if ($creationRaw) { script:Parse-DateSafe $creationRaw } else { $null }
 			if ($applyDateFilter -and $creation) {
 				if ($startFilter -and $creation -lt $startFilter) { $keep = $false }
 				if ($endFilter -and $creation -ge $endFilter) { $keep = $false }
@@ -9618,10 +10115,10 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		Write-LogHost ""
 		Write-LogHost "=== DSPM for AI Options ===" -ForegroundColor Cyan
 	if ($IncludeDSPMForAI) {
-		Write-LogHost "  ✓ DSPM for AI activity types enabled (See billing information for details)" -ForegroundColor Cyan
+		Write-LogHost "  DSPM for AI activity types enabled (See billing information for details)" -ForegroundColor Cyan
 	}
 	if ($ExcludeCopilotInteraction) {
-		Write-LogHost "  ⚠ M365 Copilot activity type excluded (CopilotInteraction)" -ForegroundColor Red
+		Write-LogHost "  [!] M365 Copilot activity type excluded (CopilotInteraction)" -ForegroundColor Red
 	}
 }	# Step 11: Log conflict resolution if it occurred
 	if ($script:ConflictResolved) {
@@ -9675,7 +10172,7 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 			exit 1
 		}
 		
-		Write-LogHost "✓ AppendFile validation: Single-file output confirmed" -ForegroundColor Green
+		Write-LogHost "AppendFile validation: Single-file output confirmed" -ForegroundColor Green
 		if ($isExcelMode) {
 			Write-LogHost "  Mode: Excel multi-tab workbook" -ForegroundColor DarkGray
 		} elseif ($isCombineMode) {
@@ -9922,7 +10419,7 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 				$daySpan = ($endDateObj - $startDateObj).TotalDays
 				if ($daySpan -gt 30 -or $degree -gt 50) {
 					Write-LogHost ""
-					Write-LogHost "  ⚠️  LARGE QUERY DETECTED" -ForegroundColor Yellow
+					Write-LogHost "  [!]  LARGE QUERY DETECTED" -ForegroundColor Yellow
 					Write-LogHost "  Date Range: $([Math]::Round($daySpan, 1)) days | Partitions: $degree @ ${effectivePartitionHours}h" -ForegroundColor Yellow
 					Write-LogHost "  Large queries may take several hours to complete." -ForegroundColor Yellow
 					Write-LogHost "  Smaller date ranges or -PartitionHours will reduce processing time." -ForegroundColor Yellow
@@ -10308,7 +10805,7 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 			$activeRecordFilters = if ($partition.RecordTypes -and $partition.RecordTypes.Count -gt 0) { @($partition.RecordTypes) } else { $null }
 			$activeServiceFilter = $partition.ServiceFilter
 		
-			# Use all activities from partition (v1.9.0 behavior)
+			# Use all activities from partition
 			$queryActivities = if ($partition.Activities) { $partition.Activities } else { @($partition.Activity) }
 			# Log helper to capture current query payload state in debug stream (processed by parent thread)
 		function Write-GraphQueryDebug {
@@ -10384,7 +10881,7 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 			$networkErrorStart = $null
 			$maxNetworkOutageSeconds = $maxOutageMinutes * 60  # Convert minutes to seconds
 			
-			# Build query body ONCE before retry loop (v1.9.0 behavior)
+			# Build query body ONCE before retry loop
 			$queryBody = @{
 				displayName = $displayName
 				filterStartDateTime = $pStart.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
@@ -10658,7 +11155,7 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 
 										# No automatic filter fallback allowed – capture diagnostics only
 
-										$errorDetails = "StatusCode: $([string]::IsNullOrEmpty($statusCode) ? $_.Exception.Response.StatusCode : $statusCode), Message: $($_.Exception.Message)"
+										$errorDetails = "StatusCode: $(if ([string]::IsNullOrEmpty($statusCode)) { $_.Exception.Response.StatusCode } else { $statusCode }), Message: $($_.Exception.Message)"
 										Write-Host "[ERROR] Partition $idx/$tot - Query creation FAILED: $errorDetails" -ForegroundColor Red
 										Write-Output "[ERROR] Partition $idx/$tot - Query creation failed (non-retriable): $errorDetails"
 										if ($bodyText) {
@@ -10787,7 +11284,8 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 							}
 							$netOutageStart = $null; $netErrorStreak = 0
 							$lastNetHeartbeat = Get-Date  # Reset heartbeat timer on recovery
-							$lastNetMessage = $null  # Allow fresh message on next real outage
+							# NOTE: Do NOT reset $lastNetMessage here - keep throttle window active
+							# to prevent message flooding during intermittent connectivity
 						}
 					}
 					catch {
@@ -10814,7 +11312,7 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 							$telemetry.RetryAfterTotalSeconds += $retryAfter
 							
 							# Log throttling event to user
-							Write-Host "⚠️  API Rate Limit (429) - Partition $idx/$tot - Retry in $retryAfter seconds (Throttle #$($telemetry.ThrottledCount))" -ForegroundColor Yellow
+							Write-Host "[!]  API Rate Limit (429) - Partition $idx/$tot - Retry in $retryAfter seconds (Throttle #$($telemetry.ThrottledCount))" -ForegroundColor Yellow
 							
 							Start-Sleep -Seconds $retryAfter
 							continue  # Retry this poll
@@ -11235,7 +11733,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 											$telemetry.RetryAfterTotalSeconds += $retryAfter
 											
 											# Log throttling event to user
-											Write-Host "⚠️  API Rate Limit (429) during record fetch - Partition $idx/$tot Page $($telemetry.PageCount + 1) - Retry in $retryAfter seconds (Attempt $fetchRetries/$maxFetchRetries)" -ForegroundColor Yellow
+											Write-Host "[!]  API Rate Limit (429) during record fetch - Partition $idx/$tot Page $($telemetry.PageCount + 1) - Retry in $retryAfter seconds (Attempt $fetchRetries/$maxFetchRetries)" -ForegroundColor Yellow
 											
 											Start-Sleep -Seconds $retryAfter
 										}
@@ -11289,9 +11787,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 												foreach ($record in $recordsResponse.value) {
 											# Normalize to EOM-compatible format inline
 											# PERF: Store _ParsedAuditData to avoid re-parsing JSON during explosion
+											# NOTE: Using InvariantCulture directly here since Parse-DateSafe isn't available in ThreadJob scope
 											$normalized = [PSCustomObject]@{
 												RecordType = $record.auditLogRecordType
-												CreationDate = if ($record.createdDateTime) { [datetime]::Parse($record.createdDateTime) } else { $null }
+												CreationDate = if ($record.createdDateTime) { try { [datetime]::Parse($record.createdDateTime, [System.Globalization.CultureInfo]::InvariantCulture) } catch { $null } } else { $null }
 												UserIds = $record.userPrincipalName
 												Operations = $record.operation
 												AuditData = if ($record.auditData) { $record.auditData | ConvertTo-Json -Depth 100 -Compress } else { '{}' }
@@ -11429,7 +11928,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 								}
 
 								# Emit success notification for outer monitor (display handled once outside the job)
-								Write-Output "[SUCCESS] ✓ Query succeeded - Partition $idx/$tot - Query ID: $queryId - Retrieved $($allRecords.Count) records"
+								Write-Output "[SUCCESS] Query succeeded - Partition $idx/$tot - Query ID: $queryId - Retrieved $($allRecords.Count) records"
 									
 									# Clean up query after successful record retrieval (best-effort)
 									if ($queryId) {
@@ -11455,9 +11954,18 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 								}
 						}
 		}
-		# Diagnostic: Show concurrency settings before creating jobs
-		$diagMsg = "[CONCURRENCY] Partitions=$($partitions.Count) MaxConcurrency=$MaxConcurrency"
-		Write-LogHost $diagMsg -ForegroundColor Cyan
+		# Skip parallel execution machinery when sequential mode is active
+		# The sequential fallback (if -not $canParallel) handles processing below
+		if (-not $canParallel) {
+			# Skip to sequential fallback - set flag to bypass the while loop
+			$allPartitionsProcessed = $true
+		}
+		
+		# Diagnostic: Show concurrency settings before creating jobs (only for parallel mode)
+		if ($canParallel) {
+			$diagMsg = "[CONCURRENCY] Partitions=$($partitions.Count) MaxConcurrency=$MaxConcurrency"
+			Write-LogHost $diagMsg -ForegroundColor Cyan
+		}
 		
 		# Initialize job result tracking
 		$script:processedJobIds = New-Object System.Collections.Generic.HashSet[int]
@@ -11465,7 +11973,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 		# Outer loop: Continue creating jobs until all partitions (including subdivided ones) are processed
 		# This handles dynamic subdivision where new partitions are added during execution
 		$subdivisionPass = 0
-		$allPartitionsProcessed = $false
+		if (-not $allPartitionsProcessed) { $allPartitionsProcessed = $false }
 		
 		while (-not $allPartitionsProcessed) {
 			$subdivisionPass++
@@ -12501,10 +13009,8 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 								$timestamps = @()
 								foreach ($log in $res.Logs) {
 									if ($log.CreationTime) {
-										try {
-											$ts = [datetime]::Parse($log.CreationTime)
-											$timestamps += $ts
-										} catch {}
+										$ts = script:Parse-DateSafe $log.CreationTime
+										if ($ts) { $timestamps += $ts }
 									}
 								}
 								
@@ -12712,7 +13218,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 						
 						# Show throttle retry summary if any retries occurred
 						if ($res.Telemetry -and $res.Telemetry.ThrottleRetriesDuringCreation -and $res.Telemetry.ThrottleRetriesDuringCreation -gt 0) {
-							Write-LogHost "  ⚠ Throttled during query creation: $($res.Telemetry.ThrottleRetriesDuringCreation) retry(s)" -ForegroundColor Yellow
+							Write-LogHost "  [!] Throttled during query creation: $($res.Telemetry.ThrottleRetriesDuringCreation) retry(s)" -ForegroundColor Yellow
 						}
 						
 						try {
@@ -12904,7 +13410,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 						}
 						
 						if ($partitionsToRetry.Count -eq 0) {
-							Write-LogHost "  ✓ No partitions require retry" -ForegroundColor Green
+							Write-LogHost "  No partitions require retry" -ForegroundColor Green
 							break
 						}
 						
@@ -13075,7 +13581,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 									$script:partitionStatus[$pt.Index].RecordCount = $res.RetrievedCount
 									$script:partitionStatus[$pt.Index].Status = 'Complete'
 									
-									Write-LogHost "  ✓ Retry successful for Partition $($pt.Index)/$($pt.Total): $($res.RetrievedCount) records" -ForegroundColor Green										# Add to allLogs
+									Write-LogHost "  Retry successful for Partition $($pt.Index)/$($pt.Total): $($res.RetrievedCount) records" -ForegroundColor Green										# Add to allLogs
 										if ($res.Logs -and $res.Logs.Count -gt 0) {
 											foreach ($log in $res.Logs) {
 												[void]$allLogs.Add($log)
@@ -13155,10 +13661,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 					$neverSent = @($script:partitionStatus.Values | Where-Object { $_.Status -in @('Failed', 'NotStarted') -and -not $_.QueryId })
 					
 					Write-LogHost "  Total Partitions: $totalPartitions" -ForegroundColor White
-					Write-LogHost "  ✓ Sent and Complete: $($completedPartitions.Count)" -ForegroundColor Green
+					Write-LogHost "  Sent and Complete: $($completedPartitions.Count)" -ForegroundColor Green
 					
 					if ($sentButIncomplete.Count -gt 0) {
-						Write-LogHost "  ⚠ Sent but Incomplete: $($sentButIncomplete.Count)" -ForegroundColor Yellow
+						Write-LogHost "  [!] Sent but Incomplete: $($sentButIncomplete.Count)" -ForegroundColor Yellow
 						foreach ($status in $sentButIncomplete) {
 							$pt = $status.Partition
 							Write-LogHost "    - Partition $($pt.Index)/$($pt.Total): QueryName=$($status.QueryName), QueryId=$($status.QueryId)" -ForegroundColor Yellow
@@ -13188,13 +13694,13 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 					$missingPartitions = $expectedPartitions | Where-Object { $_ -notin $attemptedPartitions -and $_ -notin $intentionallySkipped }
 					
 					if ($missingPartitions.Count -gt 0) {
-						Write-LogHost "  ⚠ MISSING/SKIPPED PARTITIONS: $($missingPartitions.Count)" -ForegroundColor Red
+						Write-LogHost "  [!] MISSING/SKIPPED PARTITIONS: $($missingPartitions.Count)" -ForegroundColor Red
 						Write-LogHost "    Partitions: $($missingPartitions -join ', ')" -ForegroundColor Red
 					}
 					
 					# Show info about intentionally skipped partitions (resume mode)
 					if ($intentionallySkipped.Count -gt 0) {
-						Write-LogHost "  ✓ Previously completed partitions (from checkpoint): $($intentionallySkipped -join ', ')" -ForegroundColor Green
+						Write-LogHost "  Previously completed partitions (from checkpoint): $($intentionallySkipped -join ', ')" -ForegroundColor Green
 					}
 					
 					Write-LogHost "═══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
@@ -13206,7 +13712,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 						throw "All partitions failed - no data retrieved"
 					}
 					
-					Write-LogHost "  ✓ Continuing with $($completedPartitions.Count) successful partition(s)..." -ForegroundColor Green
+					Write-LogHost "  Continuing with $($completedPartitions.Count) successful partition(s)..." -ForegroundColor Green
 					
 					# Process any remaining completed jobs that weren't caught in the loop
 					# CRITICAL: Skip jobs with errors - they should have been handled by retry logic
@@ -13281,14 +13787,55 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 					}
 				}  # End of while (-not $allPartitionsProcessed) loop - subdivision pass complete
 				
-				# Show accurate completion status
-				$successCount = @($script:partitionStatus.Values | Where-Object { $_.Status -eq 'Complete' }).Count
-				$failedCount = $partitions.Count - $successCount
-				if ($failedCount -eq 0) {
-					Write-LogHost "  ✓ All $successCount partitions completed" -ForegroundColor Green
-				} else {
-					Write-LogHost "  ⚠️ $successCount/$($partitions.Count) partitions completed ($failedCount failed)" -ForegroundColor Yellow
+				# Show accurate completion status (only for parallel mode - sequential has its own summary)
+				if ($canParallel -and $script:partitionStatus) {
+					$successCount = @($script:partitionStatus.Values | Where-Object { $_.Status -eq 'Complete' }).Count
+					$failedCount = $partitions.Count - $successCount
+					if ($failedCount -eq 0) {
+						Write-LogHost "  All $successCount partitions completed" -ForegroundColor Green
+					} else {
+						Write-LogHost "  [!] $successCount/$($partitions.Count) partitions completed ($failedCount failed)" -ForegroundColor Yellow
+					}
 				}
+		}
+		# Sequential fallback: Process partitions one-by-one when parallel execution is not available
+		# This handles: EOM mode (-UseEOM), PS 5.1, or when ThreadJob module is unavailable
+		if (-not $canParallel) {
+			$sequentialGroups++
+			Write-LogHost "  Processing $($partitions.Count) partitions sequentially..." -ForegroundColor DarkCyan
+			foreach ($pt in $partitions) {
+				$tq0 = Get-Date
+				if (-not $UseEOM) { Write-LogHost "  Querying partition $($pt.Index)/$($pt.Total) sequentially" -ForegroundColor DarkCyan }
+				$logs = Invoke-ActivityTimeWindowProcessing -ActivityType $pt.Activity -StartDate $pt.PStart -EndDate $pt.PEnd -PartitionIndex $pt.Index -TotalPartitions $pt.Total -UseEOMMode $UseEOM
+				$tq1 = Get-Date
+				try {
+					$ms = [int]($tq1 - $tq0).TotalMilliseconds
+					$script:metrics.QueryMs += $ms
+					if ($logs) {
+						# Count records by their actual Operation value, not by query group name
+						$logArray = if ($logs -is [Array]) { $logs } else { @($logs) }
+						foreach ($log in $logArray) {
+							# Handle both Operation (EOM format) and Operations (Graph API normalized format)
+							$actualOperation = if ($log.Operation) { $log.Operation } elseif ($log.Operations) { $log.Operations } else { $null }
+							if (-not [string]::IsNullOrWhiteSpace($actualOperation)) {
+								if (-not $script:metrics.Activities.ContainsKey($actualOperation)) {
+									$script:metrics.Activities[$actualOperation] = @{ Retrieved = 0; Structured = 0 }
+								}
+								$script:metrics.Activities[$actualOperation].Retrieved += 1
+							}
+						}
+						$script:metrics.TotalRecordsFetched += $logArray.Count
+						# Add to collection
+						foreach ($item in $logArray) { [void]$allLogs.Add($item) }
+					}
+					# Explicit progress tick per sequential partition
+					$script:progressState.Query.Current = [Math]::Min($script:progressState.Query.Current + 1, $script:progressState.Query.Total)
+					Write-ProgressTick
+				} catch {
+					Write-LogHost "  Warning: Error processing partition $($pt.Index): $($_.Exception.Message)" -ForegroundColor Yellow
+				}
+			}
+			Write-LogHost "  Sequential processing complete: $($allLogs.Count) records retrieved" -ForegroundColor Green
 		}
 	}
 	$script:CurrentServiceFilter = $null
@@ -13301,7 +13848,83 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 		$partitionsToMerge = $script:OriginallySkippedPartitionIndices
 		if ($partitionsToMerge -and $partitionsToMerge.Count -gt 0) {
 			Write-LogHost "  [MERGE] Merging incremental data for previously-completed partitions: $($partitionsToMerge -join ', ')" -ForegroundColor Cyan
-			$mergedFromIncremental = Merge-IncrementalSaves -AllLogs $allLogs -OutputDirectory (Split-Path $script:PartialOutputPath -Parent) -CleanupAfterMerge $false -OnlyPartitionIndices $partitionsToMerge
+			
+			# Use streaming merge when we have many partitions OR large record counts to avoid memory exhaustion
+			# Threshold: If more than 20 partitions to merge, or estimated >500K records, use streaming
+			$estimatedRecords = 0
+			$incrementalDir = Join-Path (Split-Path $script:PartialOutputPath -Parent) ".pax_incremental"
+			if (Test-Path $incrementalDir) {
+				$filesToMerge = Get-ChildItem -Path $incrementalDir -Filter "*.jsonl" -ErrorAction SilentlyContinue | Where-Object {
+					$partMatch = [regex]::Match($_.Name, '^Part(\d+)_')
+					$partMatch.Success -and ([int]$partMatch.Groups[1].Value -in $partitionsToMerge)
+				}
+				foreach ($f in $filesToMerge) {
+					if ($f.Name -match '_(\d+)records\.jsonl$') {
+						$estimatedRecords += [int]$Matches[1]
+					}
+				}
+			}
+			
+			$useStreamingMerge = ($partitionsToMerge.Count -gt 20) -or ($estimatedRecords -gt 500000) -or ($allLogs.Count -eq 0)
+			
+			# Disable streaming merge for explosion modes - explosion requires in-memory processing
+			# Streaming merge only works with the non-explosion fast path (direct 1:1 CSV export)
+			$isExplosionMode = ($ExplodeDeep -or $ExplodeArrays -or $ForcedRawInputCsvExplosion)
+			if ($useStreamingMerge -and $isExplosionMode) {
+				Write-LogHost "  [MERGE] Explosion mode active - loading records into memory (streaming merge not supported with explosion)" -ForegroundColor DarkYellow
+				$useStreamingMerge = $false
+			}
+			
+			if ($useStreamingMerge) {
+				$streamingReason = if ($allLogs.Count -eq 0) { "all partitions from prior run" } elseif ($partitionsToMerge.Count -gt 20) { "$($partitionsToMerge.Count) partitions" } else { "~$($estimatedRecords.ToString('N0')) records" }
+				Write-LogHost "  [MERGE] Large merge detected ($streamingReason) - using streaming mode" -ForegroundColor Yellow
+				Write-LogHost "  [MERGE] Streaming merge avoids memory exhaustion for large datasets" -ForegroundColor DarkGray
+				
+				# Flag that we're using streaming - will need special handling for CSV export
+				$script:UseStreamingMergeForExport = $true
+				$script:StreamingMergePartitions = $partitionsToMerge
+				$script:StreamingMergeDirectory = Split-Path $script:PartialOutputPath -Parent
+				
+				# Don't merge into $allLogs - we'll stream directly to CSV later
+				# Just count the records for metrics
+				$mergedFromIncremental = $estimatedRecords
+				Write-LogHost "  [MERGE] Deferred streaming merge: $($mergedFromIncremental.ToString('N0')) records will be streamed during export" -ForegroundColor DarkGray
+			} elseif ($isExplosionMode -and $allLogs.Count -eq 0) {
+				# Special case: Explosion mode with all partitions from prior run
+				# Need to load JSONL directly into $allLogs (Merge-IncrementalSaves requires non-empty collection)
+				$script:UseStreamingMergeForExport = $false
+				Write-LogHost "  [MERGE] Loading $($estimatedRecords.ToString('N0')) records from prior run into memory for explosion..." -ForegroundColor Cyan
+				$incrementalDir = Join-Path (Split-Path $script:PartialOutputPath -Parent) ".pax_incremental"
+				$mergedFromIncremental = 0
+				if (Test-Path $incrementalDir) {
+					$filesToLoad = Get-ChildItem -Path $incrementalDir -Filter "*.jsonl" -ErrorAction SilentlyContinue | Where-Object {
+						$partMatch = [regex]::Match($_.Name, '^Part(\d+)_')
+						$partMatch.Success -and ([int]$partMatch.Groups[1].Value -in $partitionsToMerge)
+					}
+					foreach ($file in $filesToLoad) {
+						try {
+							$lines = Get-Content -Path $file.FullName -Encoding utf8
+							foreach ($line in $lines) {
+								if (-not [string]::IsNullOrWhiteSpace($line)) {
+									try {
+										$record = $line | ConvertFrom-Json
+										[void]$allLogs.Add($record)
+										$mergedFromIncremental++
+									} catch {}
+								}
+							}
+						} catch {
+							Write-LogHost "  [WARN] Failed to load $($file.Name): $($_.Exception.Message)" -ForegroundColor Yellow
+						}
+					}
+				}
+				Write-LogHost "  [MERGE] Loaded $($mergedFromIncremental.ToString('N0')) records into memory" -ForegroundColor Green
+			} else {
+				# Small merge - use original in-memory approach (faster for small datasets)
+				$script:UseStreamingMergeForExport = $false
+				$mergedFromIncremental = Merge-IncrementalSaves -AllLogs $allLogs -OutputDirectory (Split-Path $script:PartialOutputPath -Parent) -CleanupAfterMerge $false -OnlyPartitionIndices $partitionsToMerge
+			}
+			
 			# Update TotalRecordsFetched to include merged records (these were "fetched" in a previous run)
 			if ($mergedFromIncremental -gt 0) {
 				$script:metrics.TotalRecordsFetched += $mergedFromIncremental
@@ -13309,17 +13932,25 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 			}
 		} else {
 			$mergedFromIncremental = 0
+			$script:UseStreamingMergeForExport = $false
 		}
 		# Note: Incremental files are retained until successful script completion for data safety
 		# Cleanup happens at end of script (before exit) to allow recovery if explosion/export fails
 	} else {
 		$mergedFromIncremental = 0
+		$script:UseStreamingMergeForExport = $false
 		# Note: Incremental files are retained until successful script completion for data safety
 	}
 	
 	Set-ProgressPhase -Phase 'Explosion' -Status 'Analyzing and exploding records'
 	Write-LogHost ""; Write-LogHost "=== Enterprise Processing Summary ===" -ForegroundColor Green
-	Write-LogHost "Total audit records retrieved: $($allLogs.Count)" -ForegroundColor Cyan
+	if ($script:UseStreamingMergeForExport -and $mergedFromIncremental -gt 0) {
+		Write-LogHost "Records retrieved this run: $($allLogs.Count)" -ForegroundColor Cyan
+		Write-LogHost "Records from prior run (streaming): $($mergedFromIncremental.ToString('N0'))" -ForegroundColor Cyan
+		Write-LogHost "Total records for export: $(($allLogs.Count + $mergedFromIncremental).ToString('N0'))" -ForegroundColor Green
+	} else {
+		Write-LogHost "Total audit records retrieved: $($allLogs.Count)" -ForegroundColor Cyan
+	}
 	
 	# Deduplicate by RecordId to handle session pagination retry scenarios
 	# Bug context: When session pagination retries with a new SessionId after transient failures,
@@ -13400,7 +14031,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 			$allLogs = New-Object System.Collections.ArrayList
 			foreach ($row in $rehydrated) {
 				try {
-					$creation = $null; try { if ($row.CreationDate) { $creation = [datetime]$row.CreationDate } } catch {}
+					$creation = if ($row.CreationDate) { script:Parse-DateSafe $row.CreationDate } else { $null }
 					$identity = if ($row.Id) { $row.Id } elseif ($row.RecordId) { $row.RecordId } else { [guid]::NewGuid().ToString() }
 					$rec = [pscustomobject]@{
 						RecordType   = $(try { [int]$row.RecordType } catch { 0 })
@@ -13423,12 +14054,13 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 		catch { }
 	}
 	# For OnlyUserInfo mode, skip the early return - we don't need audit logs, just Entra data
-	if ($allLogs.Count -eq 0 -and -not $OnlyUserInfo) {
+	# For streaming merge mode, $allLogs is intentionally empty - data will be streamed from JSONL files
+	if ($allLogs.Count -eq 0 -and -not $OnlyUserInfo -and -not $script:UseStreamingMergeForExport) {
 		Write-LogHost ""; Write-LogHost "No audit logs found in the specified date range for the selected activity types." -ForegroundColor Yellow
 		Write-LogHost "Emitting header-only CSV (0 rows) for deterministic downstream processing..." -ForegroundColor Cyan
-		$headerColumns = if ($ExplodeDeep -or $ExplodeArrays -or $ForcedRawInputCsvExplosion) { if ($IncludeM365Usage) { Get-M365UsageWideHeader -RawCsvPath $RAWInputCSV -BaseHeader $M365UsageBaseHeader } else { $PurviewExplodedHeader } } else { @('RecordType', 'CreationDate', 'UserIds', 'Operations', 'ResultStatus', 'ResultCount', 'Identity', 'IsValid', 'ObjectState', 'Id', 'CreationTime', 'Operation', 'OrganizationId', 'RecordTypeNum', 'ResultStatus_Audit', 'UserKey', 'UserType', 'Version', 'Workload', 'UserId', 'AppId', 'ClientAppId', 'CorrelationId', 'ModelId', 'ModelProvider', 'ModelFamily', 'TokensTotal', 'TokensInput', 'TokensOutput', 'DurationMs', 'OutcomeStatus', 'ConversationId', 'TurnNumber', 'RetryCount', 'ClientVersion', 'ClientPlatform', 'AgentId', 'AgentName', 'AgentVersion', 'AgentCategory', 'AppIdentity', 'ApplicationName', 'AuditData', 'CopilotEventData') }
+		$headerColumns = if ($ExplodeDeep -or $ExplodeArrays -or $ForcedRawInputCsvExplosion) { if ($IncludeM365Usage -and $RAWInputCSV) { Get-M365UsageWideHeader -RawCsvPath $RAWInputCSV -BaseHeader $M365UsageBaseHeader } else { $PurviewExplodedHeader } } else { @('RecordType', 'CreationDate', 'UserIds', 'Operations', 'ResultStatus', 'ResultCount', 'Identity', 'IsValid', 'ObjectState', 'Id', 'CreationTime', 'Operation', 'OrganizationId', 'RecordTypeNum', 'ResultStatus_Audit', 'UserKey', 'UserType', 'Version', 'Workload', 'UserId', 'AppId', 'ClientAppId', 'CorrelationId', 'ModelId', 'ModelProvider', 'ModelFamily', 'TokensTotal', 'TokensInput', 'TokensOutput', 'DurationMs', 'OutcomeStatus', 'ConversationId', 'TurnNumber', 'RetryCount', 'ClientVersion', 'ClientPlatform', 'AgentId', 'AgentName', 'AgentVersion', 'AgentCategory', 'AppIdentity', 'ApplicationName', 'AuditData', 'CopilotEventData') }
 		try { $outputDirEmpty = Split-Path $OutputFile -Parent; if (-not (Test-Path $outputDirEmpty)) { New-Item -ItemType Directory -Path $outputDirEmpty -Force | Out-Null }; $enc = New-Object System.Text.UTF8Encoding($false); $sw = [System.IO.StreamWriter]::new($OutputFile, $false, $enc); $escapedCols = @(); foreach ($col in $headerColumns) { $c = [string]$col; $needsQuote = ($c -match '[",\r\n]') -or $c.StartsWith(' ') -or $c.EndsWith(' '); $escaped = $c -replace '"', '""'; if ($needsQuote) { $escaped = '"' + $escaped + '"' }; $escapedCols += , $escaped }; $sw.WriteLine(($escapedCols -join ',')); $sw.Flush(); $sw.Dispose() } catch { Write-LogHost "Failed to write header-only CSV: $($_.Exception.Message)" -ForegroundColor Red }
-		$script:metrics.TotalStructuredRows = 0; $script:metrics.EffectiveChunkSize = 0; Set-ProgressPhase -Phase 'Complete' -Status 'No data'; Complete-Progress; Write-LogHost "Header-only CSV created at: $OutputFile" -ForegroundColor Green; return
+		$script:metrics.TotalStructuredRows = 0; $script:metrics.EffectiveChunkSize = 0; Set-ProgressPhase -Phase 'Complete' -Status 'No data'; Complete-Progress; Write-LogHost "Header-only CSV created at: $OutputFile" -ForegroundColor Green; $script:ScriptCompleted = $true; return
 	}
 	
 	# Determine explosion mode:
@@ -13515,6 +14147,109 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 	# NON-EXPLOSION FAST PATH: Direct stream to CSV with fixed schema (skip parallel overhead)
 	# ═══════════════════════════════════════════════════════════════════════════════
 	if (-not $fullExplode) {
+		
+		# STREAMING MERGE PATH - Handle large resume scenarios without loading into memory
+		if ($script:UseStreamingMergeForExport) {
+			Write-LogHost "Non-explosion fast path: STREAMING MERGE MODE (memory-efficient)" -ForegroundColor Cyan
+			Write-LogHost "  Streaming directly from incremental files to avoid memory exhaustion..." -ForegroundColor DarkGray
+			$fastPathStart = Get-Date
+			$fastPathColumns = @('RecordId', 'CreationDate', 'RecordType', 'Operation', 'AuditData', 'AssociatedAdminUnits', 'AssociatedAdminUnitsNames')
+			
+			# First, write any in-memory records from THIS run's partitions (if any)
+			$inMemoryCount = $allLogs.Count
+			if ($inMemoryCount -gt 0) {
+				Write-LogHost "  Writing $($inMemoryCount.ToString('N0')) in-memory records from current run..." -ForegroundColor DarkCyan
+				Open-CsvWriter -Path $exportTemp -Columns $fastPathColumns
+				$csvWriter = $true
+				
+				$batch = New-Object System.Collections.Generic.List[object]
+				$batchSize = 5000
+				foreach ($log in $allLogs) {
+					$auditData = $log.AuditData
+					$parsedAudit = if ($log.PSObject.Properties['_ParsedAuditData']) { $log._ParsedAuditData } else { try { $auditData | ConvertFrom-Json -ErrorAction SilentlyContinue } catch { $null } }
+					$opValue = if ($parsedAudit -and $parsedAudit.Operation) { $parsedAudit.Operation } else { $log.Operations }
+					
+					$fastRecord = [pscustomobject]@{
+						RecordId                  = if ($log.RecordId) { $log.RecordId } elseif ($log.Identity) { $log.Identity } elseif ($log.Id) { $log.Id } elseif ($parsedAudit -and $parsedAudit.Id) { $parsedAudit.Id } else { $null }
+						CreationDate              = if ($log.CreationDate) { $log.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { '' }
+						RecordType                = $log.RecordType
+						Operation                 = $opValue
+						AuditData                 = $auditData
+						AssociatedAdminUnits      = $null
+						AssociatedAdminUnitsNames = $null
+					}
+					$batch.Add($fastRecord)
+					
+					if ($batch.Count -ge $batchSize) {
+						Write-CsvRows -Rows $batch -Columns $fastPathColumns
+						$batch.Clear()
+					}
+				}
+				if ($batch.Count -gt 0) {
+					Write-CsvRows -Rows $batch -Columns $fastPathColumns
+					$batch.Clear()
+				}
+				Close-CsvWriter
+				$csvWriter = $false
+				
+				# Clear in-memory collection to free RAM before streaming merge
+				$allLogs.Clear()
+				[GC]::Collect()
+				Write-LogHost "  In-memory records written, RAM freed" -ForegroundColor DarkGray
+			}
+			
+			# Now stream merge the previously-completed partitions directly to CSV
+			Write-LogHost "  Streaming merge of $($script:StreamingMergePartitions.Count) previously-completed partitions..." -ForegroundColor Cyan
+			
+			# If we already wrote in-memory records, we need to append to the temp file
+			if ($inMemoryCount -gt 0) {
+				# Streaming merge needs to append to existing file - use a second temp file then combine
+				$streamingTemp = Join-Path ([System.IO.Path]::GetTempPath()) ("pax_streaming_" + [guid]::NewGuid().ToString() + ".tmp")
+				$streamedCount = Merge-IncrementalSaves-Streaming -OutputFile $streamingTemp -OutputDirectory $script:StreamingMergeDirectory -OnlyPartitionIndices $script:StreamingMergePartitions -Columns $fastPathColumns
+				
+				# Append streaming temp to main temp (skip header line from streaming file)
+				if ((Test-Path $streamingTemp) -and $streamedCount -gt 0) {
+					Write-LogHost "  Combining in-memory and streamed data..." -ForegroundColor DarkGray
+					Get-Content $streamingTemp | Select-Object -Skip 1 | Add-Content $exportTemp
+					Remove-Item $streamingTemp -Force -ErrorAction SilentlyContinue
+				}
+				$totalStreamedRecords = $inMemoryCount + $streamedCount
+			} else {
+				# No in-memory records - stream directly to final temp file
+				$totalStreamedRecords = Merge-IncrementalSaves-Streaming -OutputFile $exportTemp -OutputDirectory $script:StreamingMergeDirectory -OnlyPartitionIndices $script:StreamingMergePartitions -Columns $fastPathColumns
+			}
+			
+			# Move temp file to final output
+			if (Test-Path $exportTemp) {
+				Move-Item -Path $exportTemp -Destination $OutputFile -Force
+			}
+			
+			$fastPathElapsed = (Get-Date) - $fastPathStart
+			$fastPathRate = if ($fastPathElapsed.TotalSeconds -gt 0) { [int]($totalStreamedRecords / $fastPathElapsed.TotalSeconds) } else { 0 }
+			Write-LogHost "Streaming merge export complete: $($totalStreamedRecords.ToString('N0')) records in $([Math]::Round($fastPathElapsed.TotalSeconds, 1))s ($fastPathRate rec/sec)" -ForegroundColor Green
+			
+			# Update metrics
+			$script:metrics.TotalStructuredRows = $totalStreamedRecords
+			$structuredDataCount = $totalStreamedRecords
+			$processedRecordCount = $totalStreamedRecords
+			$columnOrder = $fastPathColumns
+			$schemaFrozen = $true
+			
+			# In streaming merge (non-explosion), Structured equals Retrieved (1:1 mapping)
+			foreach ($opKey in $script:metrics.Activities.Keys) {
+				$script:metrics.Activities[$opKey].Structured = $script:metrics.Activities[$opKey].Retrieved
+			}
+			
+			# Store original count for ratio comparisons (allLogs was cleared for RAM)
+			$script:OriginalInputRecordCount = $totalStreamedRecords
+			
+			# Skip the normal fast path processing below
+			$script:StreamingMergeCompleted = $true
+		}
+		# END STREAMING MERGE PATH
+		
+		# Standard non-explosion fast path (original code, only runs if NOT using streaming merge)
+		if (-not $script:UseStreamingMergeForExport) {
 		Write-LogHost "Non-explosion fast path: Direct streaming with fixed 7-column schema..." -ForegroundColor Cyan
 		$fastPathStart = Get-Date
 		
@@ -13611,6 +14346,12 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 		
 		# Skip to post-processing (bypass parallel and serial paths)
 		$skipToPostProcessing = $true
+		} # End of standard non-explosion fast path (if not using streaming merge)
+		
+		# If streaming merge was used, also skip to post-processing
+		if ($script:UseStreamingMergeForExport) {
+			$skipToPostProcessing = $true
+		}
 	} else {
 		$skipToPostProcessing = $false
 	}
@@ -13664,7 +14405,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 					if ($schemaSampleRows.Count -ge $StreamingSchemaSample) {
 						if ($ExplodeArrays -or $ExplodeDeep -or $ForcedRawInputCsvExplosion) {
 							$columnOrder = New-Object System.Collections.Generic.List[string]
-							if ($IncludeM365Usage) {
+							if ($IncludeM365Usage -and $RAWInputCSV) {
 								foreach ($c in (Get-M365UsageWideHeader -RawCsvPath $RAWInputCSV -BaseHeader $M365UsageBaseHeader)) { [void]$columnOrder.Add($c) }
 							} else {
 								foreach ($c in $PurviewExplodedHeader) { [void]$columnOrder.Add($c) }
@@ -13900,10 +14641,35 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 					$ExplosionPerRecordRowCap = $Vars.ExplosionPerRecordRowCap
 					
 					# Thread-local script-scoped helper functions
+					# Parse-DateSafe: Culture-invariant date parsing for Purview API dates
+					function script:Parse-DateSafe {
+						param([string]$dateStr)
+						if ([string]::IsNullOrWhiteSpace($dateStr)) { return $null }
+						$dateStr = $dateStr.Trim()
+						# Try ISO 8601 formats first (most common from Purview)
+						$isoFormats = @(
+							'yyyy-MM-ddTHH:mm:ss.fffffffZ', 'yyyy-MM-ddTHH:mm:ss.ffffffZ', 'yyyy-MM-ddTHH:mm:ss.fffffZ',
+							'yyyy-MM-ddTHH:mm:ss.ffffZ', 'yyyy-MM-ddTHH:mm:ss.fffZ', 'yyyy-MM-ddTHH:mm:ss.ffZ',
+							'yyyy-MM-ddTHH:mm:ss.fZ', 'yyyy-MM-ddTHH:mm:ssZ', 'yyyy-MM-ddTHH:mm:ss',
+							'yyyy-MM-dd HH:mm:ss', 'yyyy-MM-dd'
+						)
+						foreach ($fmt in $isoFormats) {
+							try { return [datetime]::ParseExact($dateStr, $fmt, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal) } catch {}
+						}
+						# US date formats (MM/dd/yyyy as Purview returns)
+						$usFormats = @('M/d/yyyy h:mm:ss tt', 'M/d/yyyy HH:mm:ss', 'M/d/yyyy H:mm:ss', 'M/d/yyyy')
+						foreach ($fmt in $usFormats) {
+							try { return [datetime]::ParseExact($dateStr, $fmt, [System.Globalization.CultureInfo]::InvariantCulture) } catch {}
+						}
+						# Fallback to InvariantCulture Parse
+						try { return [datetime]::Parse($dateStr, [System.Globalization.CultureInfo]::InvariantCulture) } catch { return $null }
+					}
 					function script:Format-DatePurviewFast($dt) {
 						if (-not $dt) { return '' }
-						try { if ($dt -is [datetime]) { return $dt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { return ([datetime]::Parse($dt)).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } }
-						catch { return '' }
+						if ($dt -is [datetime]) { return $dt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') }
+						$parsed = script:Parse-DateSafe $dt
+						if ($parsed) { return $parsed.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') }
+						return ''
 					}
 					function script:BoolTFFast($v) {
 						if ($null -eq $v) { return '' }
@@ -14060,11 +14826,27 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 		$script:metrics.TotalStructuredRows = $structuredDataCount
 		$processedRecordCount = $totalRecords
 		
+		# Update per-activity Structured counts for Activity Type Breakdown display
+		# (Parallel explosion doesn't update these during processing - count now from consolidated results)
+		$activityStructuredCounts = @{}
+		foreach ($row in $allExplodedRecords) {
+			$opName = if ($row -is [hashtable]) { $row['Operation'] } else { $row.Operation }
+			if ($opName) {
+				if (-not $activityStructuredCounts.ContainsKey($opName)) { $activityStructuredCounts[$opName] = 0 }
+				$activityStructuredCounts[$opName]++
+			}
+		}
+		foreach ($opName in $activityStructuredCounts.Keys) {
+			if ($script:metrics.Activities.ContainsKey($opName)) {
+				$script:metrics.Activities[$opName].Structured = $activityStructuredCounts[$opName]
+			}
+		}
+		
 		# Build schema by scanning ALL records (not just first N)
 		# This ensures 100% column discovery - only reads property names, not values (fast)
 		$columnOrder = New-Object System.Collections.Generic.List[string]
 		if ($ExplodeArrays -or $ExplodeDeep -or $ForcedRawInputCsvExplosion) {
-			if ($IncludeM365Usage) {
+			if ($IncludeM365Usage -and $RAWInputCSV) {
 				foreach ($c in (Get-M365UsageWideHeader -RawCsvPath $RAWInputCSV -BaseHeader $M365UsageBaseHeader)) { [void]$columnOrder.Add($c) }
 			} else {
 				foreach ($c in $PurviewExplodedHeader) { [void]$columnOrder.Add($c) }
@@ -14156,7 +14938,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 	if (-not $schemaFrozen -and $schemaSampleRows.Count -gt 0) {
 		if ($ExplodeArrays -or $ExplodeDeep -or $ForcedRawInputCsvExplosion) {
 			$columnOrder = New-Object System.Collections.Generic.List[string];
-			if ($IncludeM365Usage) {
+			if ($IncludeM365Usage -and $RAWInputCSV) {
 				foreach ($c in (Get-M365UsageWideHeader -RawCsvPath $RAWInputCSV -BaseHeader $M365UsageBaseHeader)) { [void]$columnOrder.Add($c) }
 			} else {
 				foreach ($c in $PurviewExplodedHeader) { [void]$columnOrder.Add($c) }
@@ -14281,7 +15063,10 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 			Write-LogHost "    Reason: Unknown (no explicit filters active, possible internal filtering)" -ForegroundColor DarkYellow
 		}
 	}
-	elseif ($structuredDataCount -eq $allLogs.Count -and ($ExplodeArrays -or $ExplodeDeep)) {
+	# Use stored count for streaming merge (allLogs was cleared), otherwise use allLogs.Count
+	$inputRecordCount = if ($script:OriginalInputRecordCount) { $script:OriginalInputRecordCount } else { $allLogs.Count }
+	
+	if ($structuredDataCount -eq $inputRecordCount -and ($ExplodeArrays -or $ExplodeDeep)) {
 		Write-LogHost ""
 		Write-LogHost "  ℹ No explosion occurred (1:1 ratio)" -ForegroundColor Yellow
 		if ($PromptFilter) {
@@ -14292,10 +15077,10 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 			Write-LogHost "    Possible reasons: Records have no arrays to explode (Messages, Contexts, etc.)" -ForegroundColor DarkYellow
 		}
 	}
-	elseif ($structuredDataCount -gt $allLogs.Count) {
-		$explosionRatio = [Math]::Round($structuredDataCount / $allLogs.Count, 1)
+	elseif ($inputRecordCount -gt 0 -and $structuredDataCount -gt $inputRecordCount) {
+		$explosionRatio = [Math]::Round($structuredDataCount / $inputRecordCount, 1)
 		Write-LogHost ""
-		Write-LogHost "  ✓ Array explosion successful: ${explosionRatio}x expansion ($($allLogs.Count) records → $structuredDataCount rows)" -ForegroundColor Green
+		Write-LogHost "  Array explosion successful: ${explosionRatio}x expansion ($inputRecordCount records → $structuredDataCount rows)" -ForegroundColor Green
 	}
 	
 	if ($postFreezeNewColumns -gt 0) { Write-LogHost "NOTICE: $postFreezeNewColumns row(s) contained new columns after schema freeze (ignored). This only affects serial mode - increase -StreamingSchemaSample or use parallel mode (PS7+) for full coverage." -ForegroundColor DarkYellow }
@@ -14325,7 +15110,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				# Append to existing file
 				Add-Content -Path $OutputFile -Value $newLines -Encoding UTF8 -ErrorAction Stop
 				
-				Write-LogHost "  ✓ Appended $($newLines.Count) new record(s) to existing CSV" -ForegroundColor Green
+				Write-LogHost "  Appended $($newLines.Count) new record(s) to existing CSV" -ForegroundColor Green
 				
 				# Clean up temporary file
 				Remove-Item -Path $tempCsvPath -Force -ErrorAction SilentlyContinue
@@ -14396,7 +15181,8 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 			try {
 				$entraTab = 'EntraUsers_MAClicensing'
 				Write-LogHost "Creating Excel workbook with $entraTab tab ($($script:EntraUsersData.Count) rows)..." -ForegroundColor Cyan
-				$script:EntraUsersData | Export-Excel -Path $entraExcelFile -WorksheetName $entraTab -AutoSize -FreezeTopRow -BoldTopRow -NoNumberConversion '*' -ErrorAction Stop
+				$dataTable = $script:EntraUsersData | ConvertTo-DataTable
+				Send-SQLDataToExcel -DataTable $dataTable -Path $entraExcelFile -WorkSheetName $entraTab -Force -FreezeTopRow -BoldTopRow -AutoSize -NoNumberConversion '*'
 				Write-LogHost "EntraUsers Excel workbook created: $entraExcelFile" -ForegroundColor Green
 			} catch {
 				Write-LogHost "WARNING: Failed to export EntraUsers Excel: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -14627,18 +15413,19 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 			$csvFilePath = $script:CsvOutputFile
 		}
 		
-		# Load CSV data for Excel conversion
+		# Excel conversion - use fast path when possible
 		try {
-			Write-LogHost "Reading CSV data: $csvFilePath" -ForegroundColor Gray
-			$csvData = Import-Csv -Path $csvFilePath -ErrorAction Stop
-			$totalRows = $csvData.Count
-			Write-LogHost "Loaded $totalRows rows from CSV" -ForegroundColor Gray
-			
 			if ($CombineOutput) {
 				# --- Combined Mode: Single-tab workbook ---
 				$tabName = "CombinedUsageActivity"
 				
 				if ($AppendFile -and $script:ExistingExcelSheets -contains $tabName) {
+					# Append mode: Need to validate headers (requires loading CSV)
+					Write-LogHost "Reading CSV data for header validation: $csvFilePath" -ForegroundColor Gray
+					$csvData = Import-Csv -Path $csvFilePath -ErrorAction Stop
+					$totalRows = $csvData.Count
+					Write-LogHost "Loaded $totalRows rows from CSV" -ForegroundColor Gray
+					
 					# Validate headers match
 					Write-LogHost "Validating headers for tab: $tabName" -ForegroundColor Gray
 					$existingWorkbook = Import-Excel -Path $excelFilePath -WorksheetName $tabName -StartRow 1 -EndRow 1 -NoHeader
@@ -14662,27 +15449,37 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 						$timestampedTabName = "${tabName}_$excelTimestamp"
 						Write-LogHost "WARNING: Header mismatch detected for tab '$tabName'" -ForegroundColor Yellow
 						Write-LogHost "Creating timestamped duplicate tab: $timestampedTabName" -ForegroundColor Yellow
-						$csvData | Export-Excel -Path $excelFilePath -WorksheetName $timestampedTabName -AutoSize -FreezeTopRow -BoldTopRow -NoNumberConversion '*' -ErrorAction Stop
+						$dataTable = $csvData | ConvertTo-DataTable
+						Send-SQLDataToExcel -DataTable $dataTable -Path $excelFilePath -WorkSheetName $timestampedTabName -Force -FreezeTopRow -BoldTopRow -AutoSize -NoNumberConversion '*'
 					} else {
 						# Append to existing tab
 						Write-LogHost "Appending to existing tab: $tabName" -ForegroundColor Gray
-						$csvData | Export-Excel -Path $excelFilePath -WorksheetName $tabName -Append -AutoSize -FreezeTopRow -BoldTopRow -NoNumberConversion '*' -ErrorAction Stop
+						$dataTable = $csvData | ConvertTo-DataTable
+						Send-SQLDataToExcel -DataTable $dataTable -Path $excelFilePath -WorkSheetName $tabName -Append -FreezeTopRow -BoldTopRow -AutoSize -NoNumberConversion '*'
 					}
 			} else {
 				# Create new tab or new workbook
 				Write-LogHost "Creating tab: $tabName" -ForegroundColor Gray
-				$csvData | Export-Excel -Path $excelFilePath -WorksheetName $tabName -AutoSize -FreezeTopRow -BoldTopRow -NoNumberConversion '*' -ErrorAction Stop
+				$dataTable = Import-CsvToDataTable -Path $csvFilePath
+				$totalRows = $dataTable.Rows.Count
+				Send-SQLDataToExcel -DataTable $dataTable -Path $excelFilePath -WorkSheetName $tabName -Force -FreezeTopRow -BoldTopRow -AutoSize -NoNumberConversion '*'
 				# Append EntraUsers tab if requested
 				if ($IncludeUserInfo -and $script:EntraUsersData) {
 					$entraTab = 'EntraUsers_MAClicensing'
 					Write-LogHost "Creating tab: $entraTab" -ForegroundColor Gray
-					$script:EntraUsersData | Export-Excel -Path $excelFilePath -WorksheetName $entraTab -AutoSize -FreezeTopRow -BoldTopRow -NoNumberConversion '*' -ErrorAction Stop
+					$entraDataTable = $script:EntraUsersData | ConvertTo-DataTable
+					Send-SQLDataToExcel -DataTable $entraDataTable -Path $excelFilePath -WorkSheetName $entraTab -FreezeTopRow -BoldTopRow -AutoSize -NoNumberConversion '*'
 				}
 			}
 			
-			Write-LogHost "✓ Excel workbook created: $excelFilePath" -ForegroundColor Green
+			Write-LogHost "Excel workbook created: $excelFilePath" -ForegroundColor Green
 			Write-LogHost "  Tab: $tabName | Rows: $totalRows" -ForegroundColor White			} else {
 				# --- Multi-tab Mode: One tab per activity type ---
+				# Multi-tab mode requires loading CSV for grouping
+				Write-LogHost "Reading CSV data for multi-tab grouping: $csvFilePath" -ForegroundColor Gray
+				$csvData = Import-Csv -Path $csvFilePath -ErrorAction Stop
+				Write-LogHost "Loaded $($csvData.Count) rows from CSV" -ForegroundColor Gray
+				
 				# Group CSV data by Operation column
 				$groupedData = $csvData | Group-Object -Property Operation
 				
@@ -14726,18 +15523,21 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 							$timestampedTabName = "${activityType}_$excelTimestamp"
 							Write-LogHost "WARNING: Header mismatch detected for tab '$activityType'" -ForegroundColor Yellow
 							Write-LogHost "Creating timestamped duplicate tab: $timestampedTabName" -ForegroundColor Yellow
-							$activityData | Export-Excel -Path $excelFilePath -WorksheetName $timestampedTabName -AutoSize -FreezeTopRow -BoldTopRow -NoNumberConversion '*' -ErrorAction Stop
+							$activityDataTable = $activityData | ConvertTo-DataTable
+							Send-SQLDataToExcel -DataTable $activityDataTable -Path $excelFilePath -WorkSheetName $timestampedTabName -Force -FreezeTopRow -BoldTopRow -AutoSize -NoNumberConversion '*'
 							$tabsCreated += "$timestampedTabName ($activityRows rows)"
 						} else {
 							# Append to existing tab
 							Write-LogHost "Appending to existing tab: $activityType" -ForegroundColor Gray
-							$activityData | Export-Excel -Path $excelFilePath -WorksheetName $activityType -Append -AutoSize -FreezeTopRow -BoldTopRow -NoNumberConversion '*' -ErrorAction Stop
+							$activityDataTable = $activityData | ConvertTo-DataTable
+							Send-SQLDataToExcel -DataTable $activityDataTable -Path $excelFilePath -WorkSheetName $activityType -Append -FreezeTopRow -BoldTopRow -AutoSize -NoNumberConversion '*'
 							$tabsCreated += "$activityType ($activityRows rows appended)"
 						}
 					} else {
 						# Create new tab
 						Write-LogHost "Creating tab: $activityType ($activityRows rows)" -ForegroundColor Gray
-						$activityData | Export-Excel -Path $excelFilePath -WorksheetName $activityType -AutoSize -FreezeTopRow -BoldTopRow -NoNumberConversion '*' -ErrorAction Stop
+						$activityDataTable = $activityData | ConvertTo-DataTable
+						Send-SQLDataToExcel -DataTable $activityDataTable -Path $excelFilePath -WorkSheetName $activityType -Force -FreezeTopRow -BoldTopRow -AutoSize -NoNumberConversion '*'
 						$tabsCreated += "$activityType ($activityRows rows)"
 					}
 
@@ -14746,16 +15546,17 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				if ($IncludeUserInfo -and $script:EntraUsersData) {
 					$entraTab = 'EntraUsers_MAClicensing'
 					Write-LogHost "Creating tab: $entraTab ($($script:EntraUsersData.Count) rows)" -ForegroundColor Gray
-					$script:EntraUsersData | Export-Excel -Path $excelFilePath -WorksheetName $entraTab -AutoSize -FreezeTopRow -BoldTopRow -NoNumberConversion '*' -ErrorAction Stop
+					$entraDataTable = $script:EntraUsersData | ConvertTo-DataTable
+					Send-SQLDataToExcel -DataTable $entraDataTable -Path $excelFilePath -WorkSheetName $entraTab -FreezeTopRow -BoldTopRow -AutoSize -NoNumberConversion '*'
 					$tabsCreated += "$entraTab ($($script:EntraUsersData.Count) rows)"
 				}
 			}
 			
 		
-		Write-LogHost "✓ Excel workbook created: $excelFilePath" -ForegroundColor Green
+		Write-LogHost "Excel workbook created: $excelFilePath" -ForegroundColor Green
 		Write-LogHost "  Tabs: $($tabsCreated -join ', ')" -ForegroundColor White
 	}
-		# Delete temporary CSV file
+		# Delete temporary CSV file (with retry for file lock issues)
 		if ($AppendFile -and $script:AppendFileTempCsv) {
 			# AppendFile mode: Remove the temp CSV we created for new data
 			Write-LogHost "Removing temporary CSV file: $script:AppendFileTempCsv" -ForegroundColor Gray
@@ -14763,7 +15564,28 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 		} elseif (-not $AppendFile) {
 			# Normal mode: Remove the intermediate CSV that was converted to Excel
 			Write-LogHost "Removing temporary CSV file: $script:CsvOutputFile" -ForegroundColor Gray
-			Remove-Item -Path $script:CsvOutputFile -Force -ErrorAction Stop
+			# Retry with delay to handle transient file locks (antivirus, OneDrive sync, etc.)
+			$deleteSuccess = $false
+			for ($retryCount = 0; $retryCount -lt 3; $retryCount++) {
+				try {
+					# Force garbage collection to release any .NET file handles
+					[System.GC]::Collect()
+					[System.GC]::WaitForPendingFinalizers()
+					Start-Sleep -Milliseconds 500
+					Remove-Item -Path $script:CsvOutputFile -Force -ErrorAction Stop
+					$deleteSuccess = $true
+					break
+				} catch {
+					if ($retryCount -lt 2) {
+						Write-LogHost "  File locked, retrying in 2 seconds... (attempt $($retryCount + 1)/3)" -ForegroundColor DarkYellow
+						Start-Sleep -Seconds 2
+					}
+				}
+			}
+			if (-not $deleteSuccess) {
+				Write-LogHost "  Could not delete temp CSV (file may be locked by another process)" -ForegroundColor Yellow
+				Write-LogHost "  CSV file preserved at: $script:CsvOutputFile" -ForegroundColor Yellow
+			}
 		}
 		# Note: $OutputFile already points to the final Excel file
 		} catch {
@@ -14932,7 +15754,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 	if ($IncludeDSPMForAI) {
 		Write-LogHost ""
 		Write-LogHost "DSPM for AI Features:" -ForegroundColor Cyan
-		Write-LogHost "  ✓ Activity types: ConnectedAIAppInteraction, AIInteraction, AIAppInteraction" -ForegroundColor Cyan
+		Write-LogHost "  Activity types: ConnectedAIAppInteraction, AIInteraction, AIAppInteraction" -ForegroundColor Cyan
 		if ($ExcludeCopilotInteraction) {
 			Write-LogHost "  ✗ CopilotInteraction: EXCLUDED" -ForegroundColor Red
 		}
@@ -14983,7 +15805,8 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 		}
 
 		# Emit header-only CSV for combined mode when zero rows exported
-		if ($CombineOutput -and -not $ExportWorkbook -and ([int]$totalExported -eq 0)) {
+		# Use the metric directly in case $totalExported wasn't set (resume mode with no new fetches)
+		if ($CombineOutput -and -not $ExportWorkbook -and ([int]$script:metrics.TotalStructuredRows -eq 0)) {
 			try {
 				$headerColumns = if ($ExplodeDeep -or $ExplodeArrays -or $ForcedRawInputCsvExplosion) { $PurviewExplodedHeader } else { @('RecordType', 'CreationDate', 'UserIds', 'Operations', 'ResultStatus', 'ResultCount', 'Identity', 'IsValid', 'ObjectState', 'Id', 'CreationTime', 'Operation', 'OrganizationId', 'RecordTypeNum', 'ResultStatus_Audit', 'UserKey', 'UserType', 'Version', 'Workload', 'UserId', 'AppId', 'ClientAppId', 'CorrelationId', 'ModelId', 'ModelProvider', 'ModelFamily', 'TokensTotal', 'TokensInput', 'TokensOutput', 'DurationMs', 'OutcomeStatus', 'ConversationId', 'TurnNumber', 'RetryCount', 'ClientVersion', 'ClientPlatform', 'AgentId', 'AgentName', 'AgentVersion', 'AgentCategory', 'AppIdentity', 'ApplicationName', 'AuditData', 'CopilotEventData') }
 				$outputDirEmpty = Split-Path $OutputFile -Parent
@@ -15007,7 +15830,8 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 		}
 
 		# Emit header-only CSVs for per-activity split when zero rows exported
-		if (-not $CombineOutput -and -not $ExportWorkbook -and ([int]$totalExported -eq 0) -and $ActivityTypes) {
+		# Use the metric directly in case $totalExported wasn't set (resume mode with no new fetches)
+		if (-not $CombineOutput -and -not $ExportWorkbook -and ([int]$script:metrics.TotalStructuredRows -eq 0) -and $ActivityTypes) {
 			try {
 				$outputDir = Split-Path $OutputFile -Parent
 				$timestamp = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile) -replace '.*_(\d{8}_\d{6}).*', '$1'
@@ -15116,13 +15940,13 @@ finally {
 		Write-Host "  Disconnecting from Microsoft Graph..." -ForegroundColor Cyan
 		try {
 			Disconnect-MgGraph -ErrorAction Stop | Out-Null
-			Write-Host "  ✓ Microsoft Graph disconnected" -ForegroundColor Green
+			Write-Host "  Microsoft Graph disconnected" -ForegroundColor Green
 		}
 		catch {
 			if ($_.Exception.Message -match 'No application to sign out from') {
 				Write-Host "  (Not connected to Microsoft Graph)" -ForegroundColor DarkGray
 			} else {
-				Write-Host "  ✓ Microsoft Graph session cleared" -ForegroundColor Green
+				Write-Host "  Microsoft Graph session cleared" -ForegroundColor Green
 			}
 		}
 		
@@ -15132,7 +15956,7 @@ finally {
 			if ($eomSession) {
 				Write-Host "  Disconnecting from Exchange Online Management..." -ForegroundColor Cyan
 				Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
-				Write-Host "  ✓ Exchange Online disconnected" -ForegroundColor Green
+				Write-Host "  Exchange Online disconnected" -ForegroundColor Green
 			}
 		}
 		catch {
@@ -15169,26 +15993,29 @@ finally {
 	
 	# ALWAYS disconnect from Graph/EOM on script exit (completed, early exit, or error)
 	# This ensures credentials are cleared regardless of $script:Connected status
-	Write-LogHost "Disconnecting from Microsoft Graph..." -ForegroundColor Gray
-	try {
-		Disconnect-MgGraph -ErrorAction Stop | Out-Null
-		Write-LogHost "  ✓ Microsoft Graph disconnected" -ForegroundColor Green
-	}
-	catch {
-		if ($_.Exception.Message -match 'No application to sign out from') {
-			Write-LogHost "  (Not connected to Microsoft Graph)" -ForegroundColor DarkGray
-		} else {
-			Write-LogHost "  ✓ Microsoft Graph session cleared" -ForegroundColor Green
+	if (-not $UseEOM) {
+		# Graph API mode: Disconnect from Microsoft Graph
+		Write-LogHost "Disconnecting from Microsoft Graph..." -ForegroundColor Gray
+		try {
+			Disconnect-MgGraph -ErrorAction Stop | Out-Null
+			Write-LogHost "  Microsoft Graph disconnected" -ForegroundColor Green
+		}
+		catch {
+			if ($_.Exception.Message -match 'No application to sign out from') {
+				Write-LogHost "  (Not connected to Microsoft Graph)" -ForegroundColor DarkGray
+			} else {
+				Write-LogHost "  Microsoft Graph session cleared" -ForegroundColor Green
+			}
 		}
 	}
 	
-	# Also disconnect EOM if in EOM mode
+	# EOM mode: Disconnect from Exchange Online
 	if ($UseEOM) {
 		try {
 			$eomSession = Get-PSSession | Where-Object { $_.ConfigurationName -eq 'Microsoft.Exchange' -and $_.State -eq 'Opened' }
 			if ($eomSession) {
 				Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
-				Write-LogHost "  ✓ Exchange Online disconnected" -ForegroundColor Green
+				Write-LogHost "  Exchange Online disconnected" -ForegroundColor Green
 			}
 		}
 		catch {}
