@@ -3,7 +3,7 @@
 ## Release Information
 
 - **Version:** 1.10.x
-- **Release Date:** 2026-01-30
+- **Release Date:** 2026-02-10
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,7 +12,7 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.10.5:** [PAX_Purview_Audit_Log_Processor_v1.10.5.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.5/PAX_Purview_Audit_Log_Processor_v1.10.5.ps1)
+- **PAX Purview Audit Log Processor Script v1.10.6:** [PAX_Purview_Audit_Log_Processor_v1.10.6.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.6/PAX_Purview_Audit_Log_Processor_v1.10.6.ps1)
 - **Documentation v1.10.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.10.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md)
 
 ---
@@ -25,7 +25,7 @@ The **Microsoft 365 Usage Bundle** (`-IncludeM365Usage`) is a single-switch acti
 
 **Checkpoint & Resume** (`-Resume`) enables recovery from interrupted exports—a critical capability for multi-hour queries spanning large date ranges. PAX automatically saves progress after each partition completes, allowing seamless resumption after token expiry, network interruptions, or system restarts. Combined with intelligent token refresh (silent refresh attempts before prompting, proactive refresh for AppRegistration), this ensures reliable completion of even the longest exports.
 
-Additional enhancements include **parallel explosion processing** (`-ExplosionThreads`) for faster post-retrieval performance on PS7+, **automatic 1M record limit detection** for Graph API queries (with BlockHours auto-subdivision), new CopilotInteraction control switches, an execution telemetry export option, improved automation support with the `-Force` parameter, and UX safeguards when many output files or tabs are expected.
+Additional enhancements include **memory management** (`-MaxMemoryMB`) to prevent out-of-memory crashes on large exports by streaming records through JSONL files instead of accumulating them in memory, **parallel explosion processing** (`-ExplosionThreads`) for faster post-retrieval performance on PS7+, **automatic 1M record limit detection** for Graph API queries (with BlockHours auto-subdivision), new CopilotInteraction control switches, an execution telemetry export option, improved automation support with the `-Force` parameter, and UX safeguards when many output files or tabs are expected.
 
 ---
 
@@ -420,6 +420,42 @@ If minimum window reached:
 
 ---
 
+### Memory Management: `-MaxMemoryMB`
+
+| Area | Details |
+| --- | --- |
+| **Purpose** | Automatically prevents out-of-memory conditions during large audit log exports (100K+ records) by streaming records directly to JSONL files on disk instead of accumulating them in memory. Active by default — no switch required. |
+| **Default** | `-1` (auto-detect: 75% of system RAM). Use `0` to disable and restore original unlimited behavior. |
+| **How It Works** | Records are written directly to JSONL files on disk instead of accumulating in memory. At export time, records are streamed from JSONL files to CSV in batches with HashSet-based deduplication. |
+| **Limitation** | Not compatible with explosion modes (`-ExplodeDeep`/`-ExplodeArrays`), which require all records in memory. When explosion is specified, `-MaxMemoryMB` is ignored with a warning. |
+| **Checkpoint** | Value is saved in checkpoint JSON and restored on `-Resume`. Can be overridden on the resume command line. |
+
+#### Example
+
+```powershell
+# Default (auto-detect 75% of system RAM)
+./PAX_Purview_Audit_Log_Processor.ps1 `
+  -StartDate 2026-01-01 `
+  -EndDate 2026-02-01 `
+  -OutputPath "C:\Exports\"
+
+# Explicit 4GB limit
+./PAX_Purview_Audit_Log_Processor.ps1 `
+  -StartDate 2026-01-01 `
+  -EndDate 2026-02-01 `
+  -MaxMemoryMB 4096 `
+  -OutputPath "C:\Exports\"
+
+# Disable memory management (unlimited, original behavior)
+./PAX_Purview_Audit_Log_Processor.ps1 `
+  -StartDate 2026-01-01 `
+  -EndDate 2026-02-01 `
+  -MaxMemoryMB 0 `
+  -OutputPath "C:\Exports\"
+```
+
+---
+
 ## Bug Fixes
 
 - **(v1.10.0) Activity Type Breakdown metrics:** Fixed an issue where "Retrieved" counts showed 0 in the Activity Type Breakdown and Pipeline Summary sections. Per-activity retrieved counts now display correctly in all code paths.
@@ -449,6 +485,16 @@ If minimum window reached:
 - **(v1.10.4) Resume mode reliability:** Fixed multiple resume-related issues including: header-only CSV overwriting completed exports when all partitions were already done; `-ExplodeArrays` parameter validation with live API mode; activity breakdown showing "Exported: 0 rows" in streaming merge mode; and explosion modes with all partitions completed from a prior run.
 
 - **(v1.10.5) AppRegistration token refresh failure:** Fixed "Parameter set cannot be resolved using the specified named parameters" error during automatic token refresh in long-running AppRegistration operations. The `Invoke-TokenRefresh` function had the same parameter set conflict fixed in v1.10.2 for initial authentication—passing `-ClientId` alongside `-ClientSecretCredential` when the Graph SDK expects ClientId embedded only in the PSCredential.
+
+- **(v1.10.6) AppRegistration token reliability for long-running exports:** Fixed multiple issues causing 401 authentication cascades during exports exceeding 60 minutes with `-Auth AppRegistration`. ThreadJob parallel partitions now build fresh headers from the shared auth state for every API call (12 locations fixed), token refresh logic now correctly uses AppRegistration credentials instead of defaulting to interactive WebLogin, and proactive token refresh now runs periodically every 30 minutes throughout the export.
+
+- **(v1.10.6) Partition error recovery and final reconciliation:** Fixed an issue where partitions encountering non-authentication errors were not being queued for retry, potentially resulting in missing data in the final export. Added a final reconciliation safety net before export that detects any incomplete partitions and retries them sequentially (up to 5 attempts). Error messages now accurately indicate that failed partitions will be retried automatically.
+
+- **(v1.10.6) Query slot cleanup and fetch retry:** Failed partitions now clean up their server-side query slots immediately, preventing orphaned queries from filling all 10 concurrent slots and blocking subsequent queries. Also added retry logic for record fetch failures (3 attempts, 30-second delays) to preserve costly server-side query preparation work before deleting the query.
+
+- **(v1.10.6) Zero-record run cleanup:** Fixed `_PARTIAL` suffix remaining on output CSV and log filenames when all partitions completed successfully but returned 0 records. Checkpoint files are now properly cleaned up on zero-record runs.
+
+- **(v1.10.6) Log message completeness:** Fixed missing and duplicate "Query succeeded" messages in the log file. All three ThreadJob output processing code paths now reliably emit exactly one success message per partition.
 
 ---
 
