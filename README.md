@@ -1,5 +1,4 @@
 # Portable Audit eXporter (PAX) Solution Set
-<!-- v1.0.11 -->
 
 **Portable Audit eXporter (PAX)** exports Copilot and AI usage data from Purview and Graph API audit logs via Graph API or EOM methods. All solutions export to CSV or Excel formats, ready for analysis in Power BI or your preferred data analysis tool.
 
@@ -67,7 +66,7 @@ This is an experimental script. On occasion, you may notice small deviations fro
 
 ---
 
-> **🔍 Purview Audit Log Processor:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.5.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.5/PAX_Purview_Audit_Log_Processor_v1.10.5.ps1)
+> **🔍 Purview Audit Log Processor:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.6.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.6/PAX_Purview_Audit_Log_Processor_v1.10.6.ps1)
 >
 > **📖 Resources:** [Latest Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md) | [Latest Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.10.0.md)
 >
