@@ -10983,6 +10983,9 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 				$telemetry.QueryCreatedAt = 'reused_existing'
 			}
 			
+			# Convert outage tolerance to seconds BEFORE the skipCreate check so FETCH phase always has it
+			$maxNetworkOutageSeconds = $maxOutageMinutes * 60
+			
 			# Retry loop for query creation with 429 handling (unlimited retries for throttling)
 			# Also handles transient network errors (502, 503, connection failures) with time-based tolerance
 			if (-not $skipCreate) {
@@ -10990,7 +10993,6 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 			$createRetries = 0
 			$createSuccess = $false
 			$networkErrorStart = $null
-			$maxNetworkOutageSeconds = $maxOutageMinutes * 60  # Convert minutes to seconds
 			
 			# Build query body ONCE before retry loop
 			$queryBody = @{
