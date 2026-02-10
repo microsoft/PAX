@@ -1,30 +1,22 @@
-# Dependencies
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Build outputs
-dist/
-build/
-*.exe
-*.pdb
-*.msi
-*.dmg
-*.zip
-
-# Tauri build outputs
-src-tauri/target/
-src-tauri/WixTools/
-
-# Generated output files (exclude entire output tree from tracking)
+# Local working folders (not for repo)
+temp/
 output/
+scripts/
+changelogs/
 
-# Development and cache
-.turbo/
-.cache/
-.temp/
-.tmp/
+# Ignore test suite (retain ability to run locally; prevent committing)
+tests/
+tests/**
+!tests/README.md
+
+# Data files
+*.csv
+*.jsonl
+*.xlsx
+*.xls
+
+# Workspace file
+PAX.code-workspace
 
 # OS generated files
 .DS_Store
@@ -35,9 +27,7 @@ output/
 ehthumbs.db
 Thumbs.db
 
-# IDE files
-.vscode/settings.json
-.idea/
+# Editor files
 *.swp
 *.swo
 
@@ -46,27 +36,15 @@ Thumbs.db
 .env.local
 .env.production
 
+# Binaries and installers
+*.exe
+*.pdb
+*.msi
+*.dmg
+*.zip
+
 # Logs
-logs/
 *.log
 
-# Windows installer artifacts
-vs_BuildTools.exe
-rustup-init.exe
 
-# Release artifacts
-releases/
-
-# Internal documents (not for public repo)
-PAX_One_Pager_CVP.md
-
-# Ignore test suite (retain ability to run locally; prevent committing)
-tests/
-tests/**
-!tests/README.md
-
-
-
-
-# PAX-v1.0.4
 
