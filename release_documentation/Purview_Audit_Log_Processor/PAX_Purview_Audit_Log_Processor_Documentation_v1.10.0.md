@@ -1,6 +1,6 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.5.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.5/PAX_Purview_Audit_Log_Processor_v1.10.5.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.6.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.6/PAX_Purview_Audit_Log_Processor_v1.10.6.ps1)
 >
 > **📋 Release Notes:** See what's new → [v1.10.x Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.10.0.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
@@ -8,7 +8,7 @@
 >
 > **📚 Documentation Archive:** [v1.10.x Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md) | [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
-**Script:** `PAX_Purview_Audit_Log_Processor_v1.10.5.ps1`  
+**Script:** `PAX_Purview_Audit_Log_Processor_v1.10.6.ps1`  
 **Documentation Version:** 1.10.x  
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 5.1 (compatible) / PowerShell 7+ (recommended)  
@@ -51,7 +51,7 @@ This is an experimental script. On occasion, you may notice small deviations fro
 12. [Combining Filters](#combining-filters)
 13. [DSPM for AI](#dspm-for-ai)
 14. [Excel Export](#excel-export)
-15. [Incremental Data Collection](#incremental-data-collection-appendfile)
+15. [Incremental Data Collection](#incremental-data-collection)
 16. [Checkpoint & Resume](#checkpoint--resume)
 17. [Output Files & Schema](#output-files--schema)
 18. [Activity Types Reference](#activity-types-reference)
@@ -143,6 +143,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - **Learned Block Sizes:** Per-activity and global adaptive sizing based on observed densities
 - **Fast Data Writer:** Direct `StreamWriter` usage for CSV; ImportExcel module for Excel exports
 - **Schema Sampling:** Configurable initial sampling to optimize column discovery vs. memory usage
+- **Memory Management:** Automatic memory monitoring (`-MaxMemoryMB`) that streams records directly to JSONL files when system memory reaches the threshold (75% of RAM by default)
 
 </details>
 
@@ -450,7 +451,7 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -
 
 **Notes:**
 
-- See [Incremental Data Collection](#incremental-data-collection-appendfile) section for complete documentation
+- See [Incremental Data Collection](#incremental-data-collection) section for complete documentation
 - Validates header compatibility before appending
 - Works with both live query and offline replay modes
 - NOT compatible with `-IncludeUserInfo` or `-OnlyUserInfo`
@@ -1165,6 +1166,33 @@ ExchangeAdmin, ExchangeItem, ExchangeMailbox, SharePointFileOperation, SharePoin
 
 ---
 
+#### `-MaxMemoryMB` (int)
+
+**Purpose:** Memory threshold that controls when PAX switches to JSONL-only streaming mode (records bypass in-memory collection and are written directly to incremental JSONL files). Active by default — PAX automatically monitors memory usage and streams to disk when the threshold is reached.  
+**Range:** `-1` to `65536`  
+**Default:** `-1` (auto = 75% of system RAM)  
+**Adjust When:**
+
+- Running on memory-constrained machines where 75% of RAM is still too generous
+- Running alongside other processes that need available RAM — set an explicit lower cap
+- Scheduled/unattended exports where you want a predictable, fixed memory ceiling
+
+**Notes:**
+
+- Always active by default at 75% of system RAM — no action needed for most users
+- Set to `0` to disable the memory threshold entirely (all records collected in memory)
+- Not compatible with `-ExplodeArrays` or `-ExplodeDeep` (explosion modes always use in-memory processing; the threshold is ignored with a logged warning)
+- Stored in checkpoint and can be overridden with `-Resume` (e.g., resuming on different hardware)
+
+**Examples:**
+
+```
+-MaxMemoryMB 4096        # Override auto-detection — cap at 4 GB
+-MaxMemoryMB 0           # Disable — keep all records in memory
+```
+
+---
+
 ### Observability & Completeness Parameters
 
 #### `-EmitMetricsJson` (switch)
@@ -1271,6 +1299,7 @@ The `-Resume` switch restores ALL settings from the checkpoint file to ensure da
 | `-ClientId` | Override client ID (for AppRegistration) |
 | `-ClientSecret` | Provide client secret (for AppRegistration) |
 | `-ExplosionThreads` | Override thread count for parallel explosion (e.g., resuming on different hardware) |
+| `-MaxMemoryMB` | Override memory threshold (e.g., resuming on different hardware) |
 
 **NOT Allowed with `-Resume`:**
 
@@ -1821,7 +1850,7 @@ elseif ($LASTEXITCODE -eq 20) { Write-Host 'Circuit breaker tripped – investig
 
 </details>
 
-### Performance Tuning
+### Performance Tuning Examples
 
 <details>
 <summary>💻 Show Performance Tuning Examples</summary>
@@ -1838,6 +1867,9 @@ elseif ($LASTEXITCODE -eq 20) { Write-Host 'Circuit breaker tripped – investig
 
 # Parallel explosion for large datasets (PS7+ only)
 ./PAX_Purview_Audit_Log_Processor.ps1 -ExplodeDeep -ExplosionThreads 8 -StartDate 2025-10-01 -EndDate 2025-10-31
+
+# Cap memory at 4 GB for large standard exports
+./PAX_Purview_Audit_Log_Processor.ps1 -MaxMemoryMB 4096 -StartDate 2025-10-01 -EndDate 2025-10-31
 ```
 
 </details>
@@ -3821,6 +3853,7 @@ This reactive approach is more reliable than time-based prompts because token li
 - `-Auth` - Override authentication method
 - `-TenantId`, `-ClientId`, `-ClientSecret` - Auth credentials for AppRegistration
 - `-ExplosionThreads` - Override thread count for parallel explosion (e.g., resuming on different hardware)
+- `-MaxMemoryMB` - Override memory threshold (e.g., resuming on different hardware)
 
 **NOT Allowed with `-Resume`:**
 - Any other parameter (dates, activities, explosion settings, etc.)
@@ -5058,6 +5091,18 @@ pwsh -ExecutionPolicy Bypass -File ./PAX_Purview_Audit_Log_Processor.ps1 `
   -StreamingChunkSize 10000 `
   -StartDate 2025-10-01 `
   -EndDate 2025-10-02
+```
+
+**For Large Standard (Non-Exploded) Exports:**
+
+PAX automatically monitors memory and streams to JSONL when 75% of system RAM is reached. Use `-MaxMemoryMB` only to override the default threshold or disable it.
+
+```powershell
+# Override auto-detection — explicit 4 GB cap on memory-constrained machines
+./PAX_Purview_Audit_Log_Processor.ps1 -MaxMemoryMB 4096 -StartDate 2025-10-01 -EndDate 2025-10-31
+
+# Disable memory threshold — keep all records in memory (not recommended for large exports)
+./PAX_Purview_Audit_Log_Processor.ps1 -MaxMemoryMB 0 -StartDate 2025-10-01 -EndDate 2025-10-31
 ```
 
 </details>
