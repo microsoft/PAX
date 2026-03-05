@@ -4,6 +4,9 @@ output/
 scripts/
 changelogs/
 
+# Excluded script_archive subfolders (not for repo)
+script_archive/Purview_M365_Usage_Bundle_Explosion_Processor/
+
 # Ignore test suite (retain ability to run locally; prevent committing)
 tests/
 tests/**
