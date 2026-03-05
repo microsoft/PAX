@@ -1,6 +1,6 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.6.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.6/PAX_Purview_Audit_Log_Processor_v1.10.6.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.7.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.7/PAX_Purview_Audit_Log_Processor_v1.10.7.ps1)
 >
 > **📋 Release Notes:** See what's new → [v1.10.x Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.10.0.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
@@ -8,7 +8,7 @@
 >
 > **📚 Documentation Archive:** [v1.10.x Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md) | [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
-**Script:** `PAX_Purview_Audit_Log_Processor_v1.10.6.ps1`  
+**Script:** [`PAX_Purview_Audit_Log_Processor_v1.10.7.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.7/PAX_Purview_Audit_Log_Processor_v1.10.7.ps1)  
 **Documentation Version:** 1.10.x  
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 5.1 (compatible) / PowerShell 7+ (recommended)  
@@ -88,8 +88,8 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 **Execution Modes:**
 
 1. **Standard Mode** - One row per audit record (raw JSON preserved in `AuditData` column)
-2. **Array Explosion Mode** (`-ExplodeArrays`) - Canonical Purview 35-column schema with array elements expanded
-3. **Deep Flatten Mode** (`-ExplodeDeep`) - 35-column base schema + fully flattened `CopilotEventData.*` columns
+2. **Array Explosion Mode** (`-ExplodeArrays`) - Canonical Purview 153-column schema with array elements expanded
+3. **Deep Flatten Mode** (`-ExplodeDeep`) - 153-column base schema + fully flattened `CopilotEventData.*` columns
 4. **Offline Replay Mode** (`-RAWInputCSV`) - Re-process previously exported raw audit CSV files without querying the service
 5. **Agent Filtering Mode** (`-AgentsOnly` or `-AgentId` or `-ExcludeAgents`) - Filter for records based on Copilot agent presence (works with live queries and replay mode)
 6. **Prompt and Response Filtering Mode** (`-PromptFilter`) - Filter Copilot conversation turns by isPrompt property to isolate prompts, responses, or both
@@ -473,7 +473,7 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -
 - **Excel Mode:** Creates multi-tab workbook (one tab per activity type, e.g., `CopilotInteraction`, `ConnectedAIAppInteraction`)
 
 **With `-CombineOutput` switch:**
-- **CSV Mode:** Merges all activity types into single file: `Purview_Audit_CombinedUsageActivity_<timestamp>.csv` (with `Operation` column identifying type)
+- **CSV Mode:** Merges all activity types into single file: `Purview_Audit_CombinedUsageActivity_<timestamp>.csv` (with `Operations` column identifying type)
 - **Excel Mode:** Creates single-tab workbook with all activity types in one sheet: `Purview_Audit_CombinedUsageActivity_<timestamp>.xlsx`
 
 **Use Cases:**
@@ -924,7 +924,6 @@ Automating scripts, using headless terminals, or SSO scenarios
 
 | Category | Operations |
 |----------|------------|
-| Authentication | UserLoggedIn |
 | Outlook (Exchange) | MailboxLogin, MailItemsAccessed, Send, SendOnBehalf, SoftDelete, HardDelete, MoveToDeletedItems, CopyToFolder |
 | SharePoint/OneDrive (Files) | FileAccessed, FileDownloaded, FileUploaded, FileModified, FileDeleted, FileMoved, FileCheckedIn, FileCheckedOut, FileRecycled, FileRestored, FileVersionsAllDeleted |
 | SharePoint/OneDrive (Sharing) | SharingSet, SharingInvitationCreated, SharingInvitationAccepted, SharedLinkCreated, SharingRevoked, AddedToSecureLink, RemovedFromSecureLink, SecureLinkUsed |
@@ -962,7 +961,7 @@ ExchangeAdmin, ExchangeItem, ExchangeMailbox, SharePointFileOperation, SharePoin
 
 #### `-ExplodeArrays` (switch)
 
-**Purpose:** Enable Purview canonical 35-column exploded schema (array elements → rows)  
+**Purpose:** Enable Purview canonical 153-column exploded schema (array elements → rows)  
 **Default:** Off (standard 1:1 row mode)  
 **Use When:**
 
@@ -977,7 +976,7 @@ ExchangeAdmin, ExchangeItem, ExchangeMailbox, SharePointFileOperation, SharePoin
 
 #### `-ExplodeDeep` (switch)
 
-**Purpose:** Enable deep flattening (35-column base + all `CopilotEventData.*` columns)  
+**Purpose:** Enable deep flattening (153-column base + all `CopilotEventData.*` columns)  
 **Default:** Off  
 **Use When:**
 
@@ -1193,6 +1192,26 @@ ExchangeAdmin, ExchangeItem, ExchangeMailbox, SharePointFileOperation, SharePoin
 
 ---
 
+#### `-StatusIntervalSeconds` (int)
+
+**Purpose:** Controls how frequently PAX displays status updates during job polling and backpressure waits  
+**Range:** `30` to `600`  
+**Default:** `60`  
+**Use When:**
+
+- Reduce to see more frequent progress output during long-running exports
+- Increase to reduce console noise on extended runs
+- Adjusting visibility during unattended/scheduled exports
+
+**Example:** `-StatusIntervalSeconds 120`
+
+**Notes:**
+
+- Stored in checkpoint and restored on `-Resume`
+- Affects polling status messages and backpressure wait progress output
+
+---
+
 ### Observability & Completeness Parameters
 
 #### `-EmitMetricsJson` (switch)
@@ -1355,7 +1374,7 @@ Any other parameter (dates, activities, explosion settings, M365 bundles, etc.).
 | M365/User Info | IncludeM365Usage, IncludeUserInfo, IncludeDSPMForAI |
 | Partitioning | BlockHours, PartitionHours, MaxPartitions |
 | Output | OutputPath, ExportWorkbook, CombineOutput |
-| Other | ResultSize, MaxConcurrency, AutoCompleteness, IncludeTelemetry |
+| Other | ResultSize, MaxConcurrency, AutoCompleteness, IncludeTelemetry, StatusIntervalSeconds |
 
 **Notes:**
 
@@ -1841,7 +1860,7 @@ elseif ($LASTEXITCODE -eq 20) { Write-Host 'Circuit breaker tripped – investig
 <summary>💻 Show Exploded Schema Examples</summary>
 
 ```powershell
-# Array explosion (35-column Purview schema)
+# Array explosion (153-column Purview schema)
 ./PAX_Purview_Audit_Log_Processor.ps1 -ExplodeArrays -StartDate 2025-10-01 -EndDate 2025-10-02
 
 # Deep flatten (maximum column extraction)
@@ -3906,6 +3925,7 @@ The checkpoint file preserves ALL processing parameters:
 | Partitioning | BlockHours, PartitionHours, MaxPartitions |
 | Output | OutputPath, ExportWorkbook, CombineOutput |
 | Auth (method only) | Auth, TenantId, ClientId (no secrets) |
+| Tuning | ResultSize, MaxConcurrency, AutoCompleteness, IncludeTelemetry, StatusIntervalSeconds |
 | Partition State | Completed partitions, query IDs, record counts |
 
 ### Best Practices
@@ -4014,60 +4034,63 @@ Every execution produces two files:
 
 **One row per audit record.** AuditData preserved as JSON string in a single column.
 
-**Column Count:** Variable (base audit fields + `AuditData` JSON column)
+**Column Count:** 8 fixed columns (matching Purview UI audit export format)
+
+**Columns:** RecordId, CreationDate, RecordType, Operation, UserId, AuditData, AssociatedAdminUnits, AssociatedAdminUnitsNames
 
 **Use When:** Need raw data for custom processing or minimal transformation
 
 #### Exploded Mode (`-ExplodeArrays`)
 
-**Purview canonical 35-column schema.** Array elements (Messages, AccessedResources, AISystemPlugins) expanded to separate rows.
+**Purview canonical 153-column schema.** Array elements (Messages, AccessedResources, AISystemPlugins) expanded to separate rows.
 
-**Column Count:** 35 base columns
+**Column Count:** 153 base columns
 
-**Base Columns (35):**
-1. RecordId
-2. CreationDate
-3. RecordType
-4. Operation
-5. UserId
-6. AssociatedAdminUnits
-7. AssociatedAdminUnitsNames
-8. AgentId
-9. AgentName
-10. AppIdentity
-11. AppIdentity_DisplayName
-12. AppIdentity_PublisherId
-13. ApplicationName
-14. CreationTime
-15. ClientRegion
-16. ClientIP
-17. Audit_UserId
-18. AppHost
-19. ThreadId
-20. Context_Id
-21. Context_Type
-22. Message_Id
-23. Message_isPrompt
-24. AccessedResource_Action
-25. AccessedResource_PolicyDetails
-26. AccessedResource_SiteUrl
-27. AISystemPlugin_Id
-28. AISystemPlugin_Name
-29. ModelTransparencyDetails_ModelName
-30. MessageIds
-31. OrganizationId
-32. Version
-33. UserType
-34. CopilotLogVersion
-35. Workload
+**Base Columns (153):**
+
+**Core Record Identity (7)**
+RecordId, CreationDate, RecordType, Operation, UserId, AssociatedAdminUnits, AssociatedAdminUnitsNames
+
+**Audit & Organization Metadata (14)**
+@odata.type, CreationTime, Id, OrganizationId, ResultStatus, UserKey, UserType, Version, Workload, ObjectId, ErrorNumber, CorrelationId, RecordTypeNum, ResultStatus_Audit
+
+**Identity & Authentication (15)**
+AzureActiveDirectoryEventType, ActorContextId, ActorIpAddress, InterSystemsId, IntraSystemId, SupportTicketId, TargetContextId, ApplicationId, AuthenticationType, ActorInfoString, AppId, AuthType, TokenObjectId, TokenTenantId, TokenType
+
+**Device & Client (12)**
+ClientIP, ClientIPAddress, DeviceProperties.OS, DeviceProperties.BrowserType, DeviceDisplayName, IsManagedDevice, DeviceType, BrowserName, BrowserVersion, Platform, UserAgent, ClientRegion
+
+**SharePoint & OneDrive (18)**
+SiteUrl, SourceRelativeUrl, SourceFileName, SourceFileExtension, ListId, ListItemUniqueId, WebId, ApplicationDisplayName, EventSource, ItemType, SiteSensitivityLabelId, GeoLocation, ListBaseType, ListServerTemplate, Site, DoNotDistributeEvent, HighPriorityMediaProcessing, FileSizeBytes
+
+**Exchange & Mailbox (15)**
+ClientAppId, ClientInfoString, ExternalAccess, InternalLogonType, LogonType, LogonUserSid, MailboxGuid, MailboxOwnerSid, MailboxOwnerUPN, OrganizationName, OriginatingServer, SessionId, SaveToSentItems, OperationCount, CrossMailboxOperation
+
+**Sharing & Permissions (6)**
+Permission, SensitivityLabelId, SharingLinkScope, TargetUserOrGroupType, TargetUserOrGroupName, SensitivityLabel
+
+**Teams & Meetings (17)**
+MeetingId, MeetingType, EventSignature, EventData, MeetingURL, ChatId, MessageId, MessageSizeInBytes, MessageType, ChannelId, TeamName, TeamGuid, ResponseId, IsAnonymous, ChannelName, ChannelGuid, ChannelType
+
+**Collaboration & Apps (14)**
+FormId, FormName, VideoId, VideoName, ViewDuration, AppName, EnvironmentName, PlanId, PlanName, TaskId, TaskName, PercentComplete, AppHost, ThreadId
+
+**Copilot AI & Model (11)**
+CopilotLogVersion, TargetId, ModelId, ModelProvider, ModelFamily, TokensTotal, TokensInput, TokensOutput, DurationMs, OutcomeStatus, ModelTransparencyDetails_ModelName
+
+**Copilot Interaction (11)**
+ConversationId, TurnNumber, RetryCount, ClientVersion, ClientPlatform, AgentId, AgentName, AgentVersion, AgentCategory, ApplicationName, MessageIds
+
+**Copilot Context & Resources (13)**
+Context_Id, Context_Type, Context_Item, Message_Id, Message_isPrompt, AccessedResource_Action, AccessedResource_PolicyDetails, AccessedResource_SiteUrl, AccessedResource_Name, AccessedResource_SensitivityLabel, AccessedResource_ResourceType, AISystemPlugin_Id, AISystemPlugin_Name
 
 **Use When:** Need relational format for BI tools or matching Microsoft Purview exports
 
 #### Deep Flatten Mode (`-ExplodeDeep`)
 
-**35 base columns + all nested `CopilotEventData.*` columns.** Maximum data extraction with every nested field as a separate column.
+**153 base columns + all nested `CopilotEventData.*` columns.** Maximum data extraction with every nested field as a separate column.
 
-**Column Count:** 35+ (dynamic based on data)
+**Column Count:** 153+ (dynamic based on data)
 
 **Use When:** 
 - Maximum data extraction for BI/ML pipelines
@@ -4442,13 +4465,7 @@ The `-IncludeM365Usage` switch activates a curated bundle of activity types span
 
 ### Activity Types by Category
 
-The bundle includes activities from 11 categories:
-
-#### Authentication
-
-| Operation | Description |
-|-----------|-------------|
-| UserLoggedIn | User sign-in to Microsoft 365 |
+The bundle includes activities from 10 categories:
 
 #### Outlook / Exchange
 
@@ -5351,11 +5368,11 @@ Use `-AppendFile` with a specific filename for incremental appending.
 
 #### Q: Can I customize the output schema?
 
-**A:** The 35-column base schema is fixed to match Purview standards. In `-ExplodeDeep` mode, additional columns are auto-discovered from nested data.
+**A:** The 153-column base schema is fixed to match Purview standards. In `-ExplodeDeep` mode, additional columns are auto-discovered from nested data.
 
 #### Q: What's the difference between `-ExplodeArrays` and `-ExplodeDeep`?
 
-**A:** `-ExplodeArrays` creates 35 columns with array elements as separate rows. `-ExplodeDeep` adds all nested `CopilotEventData.*` fields as additional columns (wide schema).
+**A:** `-ExplodeArrays` creates 153 columns with array elements as separate rows. `-ExplodeDeep` adds all nested `CopilotEventData.*` fields as additional columns (wide schema).
 
 #### Q: What happens if some queries fail?
 

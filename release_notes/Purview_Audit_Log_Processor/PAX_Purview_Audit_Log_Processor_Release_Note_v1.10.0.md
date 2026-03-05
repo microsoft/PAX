@@ -3,7 +3,7 @@
 ## Release Information
 
 - **Version:** 1.10.x
-- **Release Date:** 2026-02-10
+- **Release Date:** 2026-03-05
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,7 +12,7 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.10.6:** [PAX_Purview_Audit_Log_Processor_v1.10.6.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.6/PAX_Purview_Audit_Log_Processor_v1.10.6.ps1)
+- **PAX Purview Audit Log Processor Script v1.10.7:** [PAX_Purview_Audit_Log_Processor_v1.10.7.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.7/PAX_Purview_Audit_Log_Processor_v1.10.7.ps1)
 - **Documentation v1.10.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.10.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md)
 
 ---
@@ -46,7 +46,6 @@ The bundle includes activity types across these categories:
 
 | Category | Activity Types |
 | --- | --- |
-| **Authentication** | UserLoggedIn |
 | **Outlook/Exchange** | MailboxLogin, MailItemsAccessed, Send, SendOnBehalf, SoftDelete, HardDelete, MoveToDeletedItems, CopyToFolder |
 | **SharePoint/OneDrive (Files)** | FileAccessed, FileDownloaded, FileUploaded, FileModified, FileDeleted, FileMoved, FileCheckedIn, FileCheckedOut, FileRecycled, FileRestored, FileVersionsAllDeleted |
 | **SharePoint/OneDrive (Sharing)** | SharingSet, SharingInvitationCreated, SharingInvitationAccepted, SharedLinkCreated, SharingRevoked, AddedToSecureLink, RemovedFromSecureLink, SecureLinkUsed |
@@ -495,6 +494,22 @@ If minimum window reached:
 - **(v1.10.6) Zero-record run cleanup:** Fixed `_PARTIAL` suffix remaining on output CSV and log filenames when all partitions completed successfully but returned 0 records. Checkpoint files are now properly cleaned up on zero-record runs.
 
 - **(v1.10.6) Log message completeness:** Fixed missing and duplicate "Query succeeded" messages in the log file. All three ThreadJob output processing code paths now reliably emit exactly one success message per partition.
+
+- **(v1.10.7) Enterprise query resilience and retry hardening:** Fixed multiple issues causing queries to fail prematurely on large tenants. The 429 throttle retry counter is now properly incremented (previously stuck at 0, causing infinite retry loops). HTTP 401 Unauthorized errors are now handled in all query phases (CREATE, POLL, FETCH) with automatic token refresh — previously, 401 in the POLL or FETCH phase immediately killed the partition with no recovery attempt. All 5xx server errors (not just 502/503/504) are now treated as transient and eligible for adaptive backoff retry. All artificial poll timeouts have been removed — the poll loop now runs until Purview responds or the user cancels, preventing premature termination of valid queries still processing server-side. Retry passes now use reduced concurrency (capped at 3) to lower sustained 504 pressure during recovery.
+
+- **(v1.10.7) Authentication recovery and token propagation:** Fixed a critical bug where refreshed authentication tokens were not propagated to active thread jobs after machine sleep or suspension, causing all thread jobs to continue using expired tokens and return 0 records with no error indication. Token refresh now validates that newly acquired tokens have more than 2 minutes remaining, preventing MSAL's in-memory cache from silently returning stale or already-expired tokens. Added automatic `Disconnect-MgGraph` before authentication to clear any pre-existing Graph sessions that could silently reuse expired or wrong-account cached tokens. When a run completes with 0 records and authentication recovery occurred during the run, a prominent warning now advises the user to check for auth-related issues.
+
+- **(v1.10.7) Data integrity and loss prevention:** Added multiple safety layers to prevent silent data loss in long-running exports. ThreadJob error detection now correctly reads error streams from `Start-ThreadJob` objects (previously checked wrong API, missing all thread errors). Partition completion now requires JSONL data files to exist on disk — partitions that completed without saving data are automatically re-marked as Failed and retried. Pre-merge validation compares JSONL file count against expected partition count and renames output to `_PARTIAL` when partitions are missing. Streaming merge is now scoped to the current run's files only, preventing stale files from prior runs from corrupting output with unrelated records. JSONL files are deduplicated per partition during merge, keeping only the largest file to prevent duplicate records from retry attempts. Invalid "empty QueryId + 0 records" completions are now detected and retried instead of being silently counted as successful. A zero-record recovery safety net re-fetches data directly from Purview when all processing completes with 0 records despite valid server-side queries.
+
+- **(v1.10.7) Memory management and performance:** Thread jobs now flush records to disk after each API page instead of accumulating all records in memory throughout pagination — per-thread peak memory is bounded to a single API page (~1,000 records) regardless of partition size, resolving out-of-memory crashes on servers processing large partitions across concurrent threads (previously 15–22 GB combined working set). In memory-flush mode, thread jobs persist JSONL data directly and return lightweight metadata to the main thread, eliminating large object transfers via `Receive-Job`. The streaming merge function now uses `System.IO.StreamReader` instead of `Get-Content | ForEach-Object` for ~5–10× throughput improvement on large merges. Fixed an O(n) iteration growth bug in the monitoring loop caused by `Receive-Job -Keep` re-delivering complete output history on every poll cycle, which caused STATUS intervals to drift from 2 minutes to 10+ minutes on multi-hour runs.
+
+- **(v1.10.7) CSV output schema alignment:** Non-exploded CSV output now matches Purview UI manual export schema: added the missing `UserIds` top-level column, renamed `Operation` → `Operations` (plural), and removed `AssociatedAdminUnits`/`AssociatedAdminUnitsNames` columns that do not exist in Purview UI exports. Column order is `RecordId, CreationDate, UserIds, RecordType, Operations, AuditData`. Exploded CSV output now uses a fixed 153-column schema matching the Power BI M code `#"Changed Type"` step exactly, replacing the previous dynamic schema that produced variable column count and order. Both Copilot and non-Copilot record types, across live and replay paths, now produce a consistent 153-column layout. **Breaking:** Non-exploded output column `Operation` is now `Operations` (plural); `AssociatedAdminUnits` and `AssociatedAdminUnitsNames` are removed from non-exploded output (still available in exploded output and in the `AuditData` JSON column).
+
+- **(v1.10.7) Console monitoring and STATUS improvements:** Suppressed terminal flooding from ThreadJob output streams. Added an "EXTREME VOLUME WARNING" for queries exceeding 60 days with >10 activity types or >120 partitions, recommending AppRegistration auth and `-Resume`. Added `-StatusIntervalSeconds` parameter (range 30–600, default 60) to control STATUS update frequency during polling. STATUS lines now display per-partition page counts (e.g., `| Pages P1:200pg P2:340pg`) for real-time visibility into active partition progress. Resume-mode STATUS lines now correctly reflect total partition counts including prior-run completions. Pipeline Summary counters now use actual merge data instead of filename-derived estimates, and duplicate removal counts are shown when applicable. Enterprise Processing Summary "Records from prior run" now uses checkpoint-stored exact counts instead of inflated filename-scan estimates.
+
+- **(v1.10.7) M365 Usage Bundle — `UserLoggedIn` removed:** Removed `UserLoggedIn` from the `-IncludeM365Usage` activity bundle. On large tenants, `UserLoggedIn` generates extremely high record volumes (often orders of magnitude more than all other M365 usage activities combined), significantly increasing query time and data size without contributing to Copilot ROI or productivity analytics. The activity type remains available for explicit queries via `-ActivityTypes 'UserLoggedIn'`.
+
+- **(v1.10.7) Checkpoint log file rename in split mode:** Fixed `_PARTIAL` suffix remaining on the log file after a fully successful export when CSV split mode (`-SplitByActivityType` or `-SplitByRecordType`) is active. The fallback rename is guarded to preserve `_PARTIAL` on genuinely interrupted runs for Resume mode detection.
 
 ---
 
