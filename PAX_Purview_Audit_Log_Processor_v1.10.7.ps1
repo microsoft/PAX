@@ -1,5 +1,5 @@
-# Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.10.6
+﻿# Portable Audit eXporter (PAX) - Purview Audit Log Processor
+# Version: v1.10.7
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI: Microsoft Purview Data Security Posture Management integration
 #              MIXED FREE/PAYG Activity Types: AIInteraction (currently Microsoft platforms only), ConnectedAIAppInteraction (Microsoft + third-party)
@@ -639,6 +639,11 @@
 	Not compatible with -ExplodeDeep or -ExplodeArrays (ignored when explosion enabled).
 	Range: -1 to 65536. Default: -1 (auto = 75% of system RAM). Use 0 to disable.
 
+.PARAMETER StatusIntervalSeconds
+	How often (in seconds) to display a status update during job polling and backpressure waits.
+	Reduce to see more frequent progress output; increase to reduce console noise on long runs.
+	Range: 30 to 600. Default: 60
+
 .PARAMETER LowLatencyMs
 	Sustained low latency threshold to consider concurrency step-up.
 	Range: 100 to 600000. Default: 20000
@@ -745,7 +750,6 @@
 	Forms, Stream, Planner, PowerApps, and Office desktop apps.
 	
 	ACTIVITY TYPES INCLUDED:
-	  Authentication: UserLoggedIn
 	  Exchange: MailboxLogin, MailItemsAccessed, Send, SendOnBehalf, SoftDelete, HardDelete,
 	            MoveToDeletedItems, CopyToFolder
 	  SharePoint/OneDrive (Files): FileAccessed, FileDownloaded, FileUploaded, FileModified,
@@ -1154,6 +1158,9 @@ param(
 	[Parameter(Mandatory = $false)]
 	[ValidateRange(-1,65536)]
 	[int]$MaxMemoryMB = -1,                 # Max process memory (MB) before flushing $allLogs to disk (-1 = auto 75%, 0 = disabled)
+	[Parameter(Mandatory = $false)]
+	[ValidateRange(30,600)]
+	[int]$StatusIntervalSeconds = 60,       # How often (seconds) to display status during polling and backpressure waits
 	[Parameter(Mandatory = $false)]
 	[ValidateRange(100,600000)]
 	[int]$LowLatencyMs = 20000,             # Sustained low latency threshold to consider concurrency step-up
@@ -1686,9 +1693,6 @@ $m365UsageServiceBundle = @('Exchange','SharePoint','OneDrive','Teams')
 $m365UsageRecordBundle = @('ExchangeAdmin','ExchangeItem','ExchangeMailbox','SharePointFileOperation','SharePointSharingOperation','SharePoint','OneDrive','MicrosoftTeams','OfficeNative','MicrosoftForms','MicrosoftStream','PlannerPlan','PlannerTask','PowerAppsApp')
 # Curated M365 usage operations spanning Exchange/SharePoint/OneDrive/Teams/Forms/Stream/Planner/PowerApps and Office desktop apps (Word/Excel/PowerPoint/OneNote)
 $m365UsageActivityBundle = @(
-	# === Authentication ===
-	'UserLoggedIn',
-	
 	# === Exchange/Email ===
 	'MailboxLogin','MailItemsAccessed','Send','SendOnBehalf','SoftDelete','HardDelete','MoveToDeletedItems','CopyToFolder',
 	
@@ -1753,7 +1757,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.10.6'
+$ScriptVersion = '1.10.7'
 
 # --- Initialize/Clear persistent script variables to prevent cross-run contamination ---
 # Note: Script-scoped variables persist across multiple script invocations in the same PowerShell session
@@ -3169,6 +3173,12 @@ function Connect-PurviewAudit {
 		# GRAPH API MODE: Microsoft Graph Security
 		# ========================================
 		
+		# Clear any stale Graph session from a previous script run or Ctrl+C in this terminal.
+		# This forces a fresh Connect-MgGraph with a new token, preventing issues where MSAL
+		# silently returns a cached expired token or a token from a different user account.
+		Write-LogHost "Clearing any previous Graph session..." -ForegroundColor Gray
+		try { Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null } catch { }
+		
 		Write-LogHost "Connecting to Microsoft Graph Security API..." -ForegroundColor Cyan
 		
 		# Define required scopes for Purview audit log access via beta endpoint
@@ -3748,11 +3758,13 @@ function Refresh-GraphTokenIfNeeded {
 		return $false  # Token still valid, no refresh needed
 	}
 	
-	# COOLDOWN CHECK: Don't spam refresh attempts - only try once per 5 minutes
+	# COOLDOWN CHECK: Auth-mode-aware cooldown between refresh attempts
+	# AppReg: 45 seconds (silent client_credentials grant - cheap and fast)
+	# Interactive: 5 minutes (avoids spamming browser/prompt windows)
+	$cooldownMinutes = if ($script:AuthConfig.Method -eq 'AppRegistration') { 0.75 } else { 5 }
 	if ($script:LastProactiveRefreshAttempt) {
 		$timeSinceLastAttempt = ((Get-Date) - $script:LastProactiveRefreshAttempt).TotalMinutes
-		if ($timeSinceLastAttempt -lt 5) {
-			# Already tried recently, don't spam
+		if ($timeSinceLastAttempt -lt $cooldownMinutes) {
 			return $false
 		}
 	}
@@ -3766,18 +3778,28 @@ function Refresh-GraphTokenIfNeeded {
 	# Try to refresh using Azure.Identity (uses cached MSAL tokens, may prompt if needed)
 	$tokenInfo = Get-GraphAccessTokenWithExpiry
 	if ($tokenInfo -and $tokenInfo.Token -ne $script:SharedAuthState.Token) {
-		# Got a new token
-		$script:SharedAuthState.Token = $tokenInfo.Token
-		$script:SharedAuthState.ExpiresOn = $tokenInfo.ExpiresOn
-		$script:SharedAuthState.LastRefresh = Get-Date
-		$script:SharedAuthState.RefreshCount++
-		
-		Write-LogHost "  [TOKEN] Token refreshed silently (expires: $($tokenInfo.ExpiresOn.ToString('HH:mm:ss')) UTC, refresh #$($script:SharedAuthState.RefreshCount))" -ForegroundColor Green
-		Write-LogHost "  [TOKEN]   Note: In-flight queries may still require re-auth before this expiration" -ForegroundColor DarkGray
-		return $true
+		# Validate the new token is actually valid (ExpiresOn must be > 2 min in the future)
+		# Protects against stale MSAL cache returning already-expired tokens (e.g., after process suspension)
+		$tokenExpiresOn = $tokenInfo.ExpiresOn
+		$nowUtc = (Get-Date).ToUniversalTime()
+		$minutesUntilExpiry = ($tokenExpiresOn - $nowUtc).TotalMinutes
+		if ($minutesUntilExpiry -le 2) {
+			Write-LogHost "  [TOKEN] WARNING: Refreshed token is already expired or near-expiry (expires in $([Math]::Round($minutesUntilExpiry, 1)) min) - forcing full re-authentication" -ForegroundColor Red
+			# Fall through to Invoke-TokenRefresh -Force below
+		} else {
+			# Got a genuinely valid new token
+			$script:SharedAuthState.Token = $tokenInfo.Token
+			$script:SharedAuthState.ExpiresOn = $tokenInfo.ExpiresOn
+			$script:SharedAuthState.LastRefresh = Get-Date
+			$script:SharedAuthState.RefreshCount++
+			
+			Write-LogHost "  [TOKEN] Token refreshed silently (expires: $($tokenInfo.ExpiresOn.ToString('HH:mm:ss')) UTC, refresh #$($script:SharedAuthState.RefreshCount))" -ForegroundColor Green
+			Write-LogHost "  [TOKEN]   Note: In-flight queries may still require re-auth before this expiration" -ForegroundColor DarkGray
+			return $true
+		}
 	}
 	
-	# Azure.Identity didn't give us a new token, try AppRegistration refresh if available
+	# Azure.Identity didn't give us a new token (or it was stale), try AppRegistration refresh if available
 	if ($script:AuthConfig.CanReauthenticate) {
 		$refreshResult = Invoke-TokenRefresh -Force
 		if ($refreshResult.Success) {
@@ -4641,6 +4663,9 @@ function Merge-IncrementalSaves-Streaming {
 		If specified, only merge files for these partition indices.
 	.PARAMETER Columns
 		The column schema to use for CSV output. If not specified, uses default 7-column schema.
+	.PARAMETER RunTimestamp
+		The script run timestamp used to filter incremental files to only those from the current run.
+		Prevents stale files from prior runs being merged into the output.
 	.RETURNS
 		The total number of records merged.
 	#>
@@ -4661,7 +4686,10 @@ function Merge-IncrementalSaves-Streaming {
 		[System.Collections.Generic.HashSet[string]]$ExcludeRecordIds = $null,
 		
 		[Parameter(Mandatory = $false)]
-		[ref]$ActivityCounts = $null
+		[ref]$ActivityCounts = $null,
+		
+		[Parameter(Mandatory = $false)]
+		[string]$RunTimestamp = $null
 	)
 	
 	$incrementalDir = Join-Path $OutputDirectory ".pax_incremental"
@@ -4671,9 +4699,11 @@ function Merge-IncrementalSaves-Streaming {
 		return 0
 	}
 	
-	$allFiles = Get-ChildItem -Path $incrementalDir -Filter "*.jsonl" -ErrorAction SilentlyContinue
+	# Filter by run timestamp to avoid merging stale files from prior runs
+	$jsonlFilter = if ($RunTimestamp) { "*_${RunTimestamp}_*.jsonl" } else { "*.jsonl" }
+	$allFiles = Get-ChildItem -Path $incrementalDir -Filter $jsonlFilter -ErrorAction SilentlyContinue
 	if (-not $allFiles -or $allFiles.Count -eq 0) {
-		Write-LogHost "  [MERGE-STREAM] No incremental files found" -ForegroundColor Yellow
+		Write-LogHost "  [MERGE-STREAM] No incremental files found$(if ($RunTimestamp) { " for run $RunTimestamp" })" -ForegroundColor Yellow
 		return 0
 	}
 	
@@ -4699,12 +4729,32 @@ function Merge-IncrementalSaves-Streaming {
 		return 0
 	}
 	
+	# When multiple JSONL files exist for the same partition (from retries with different QueryIds),
+	# keep only the largest file per partition. This prevents duplicate records from partial first attempts
+	# being merged alongside the full retry result.
+	$filesByPartition = @{}
+	foreach ($f in @($files)) {
+		if ($f.Name -match '^Part(\d+)_') {
+			$pIdx = [int]$Matches[1]
+			if (-not $filesByPartition.ContainsKey($pIdx) -or $f.Length -gt $filesByPartition[$pIdx].Length) {
+				$filesByPartition[$pIdx] = $f
+			}
+		}
+	}
+	$deduplicatedFiles = @($filesByPartition.Values | Sort-Object { if ($_.Name -match 'Part(\d+)_') { [int]$Matches[1] } else { 999999 } })
+	$removedFileCount = @($files).Count - $deduplicatedFiles.Count
+	if ($removedFileCount -gt 0) {
+		Write-LogHost "  [MERGE-STREAM] Removed $removedFileCount duplicate partition file(s) from prior retry attempts — keeping largest per partition" -ForegroundColor DarkYellow
+	}
+	$files = $deduplicatedFiles
+	
 	$fileCount = @($files).Count
 	Write-LogHost "  [MERGE-STREAM] Streaming $fileCount incremental files to CSV..." -ForegroundColor Cyan
 	
-	# Use default 7-column schema if not specified (non-explosion mode)
+	# Use default 8-column schema if not specified (non-explosion mode)
+	# Column names match Purview UI audit export: RecordId, CreationDate, RecordType, Operation, UserId, AuditData, AssociatedAdminUnits, AssociatedAdminUnitsNames
 	if (-not $Columns) {
-		$Columns = @('RecordId', 'CreationDate', 'RecordType', 'Operation', 'AuditData', 'AssociatedAdminUnits', 'AssociatedAdminUnitsNames')
+		$Columns = @('RecordId', 'CreationDate', 'RecordType', 'Operation', 'UserId', 'AuditData', 'AssociatedAdminUnits', 'AssociatedAdminUnitsNames')
 	}
 	
 	$totalMerged = 0
@@ -4733,10 +4783,12 @@ function Merge-IncrementalSaves-Streaming {
 			$batch = New-Object System.Collections.Generic.List[object]
 			$fileRecords = 0
 			
-			Get-Content -Path $file.FullName -Encoding utf8 | ForEach-Object {
-				if (-not [string]::IsNullOrWhiteSpace($_)) {
+			# Use StreamReader instead of Get-Content pipeline for ~5-10x faster file reading
+			$reader = [System.IO.StreamReader]::new($file.FullName, [System.Text.Encoding]::UTF8)
+			while ($null -ne ($line = $reader.ReadLine())) {
+				if (-not [string]::IsNullOrWhiteSpace($line)) {
 					try {
-						$record = $_ | ConvertFrom-Json
+						$record = $line | ConvertFrom-Json
 						
 						# Deduplicate by RecordId
 						$recordId = $null
@@ -4746,7 +4798,7 @@ function Merge-IncrementalSaves-Streaming {
 						
 						if ($recordId -and $seenIds.Contains($recordId)) {
 							$script:StreamingMergeDuplicatesSkipped++
-							return  # Skip duplicate
+							continue  # Skip duplicate — 'continue' works in while loop (was 'return' in ForEach-Object)
 						}
 						if ($recordId) { [void]$seenIds.Add($recordId) }
 						
@@ -4765,7 +4817,7 @@ function Merge-IncrementalSaves-Streaming {
 							$ActivityCounts.Value[$opValue]++
 						}
 						
-						# Create normalized record matching expected schema
+						# Create normalized record matching expected schema (column names match Purview UI export)
 						$normalizedRecord = [pscustomobject]@{
 							RecordId                  = if ($record.RecordId) { $record.RecordId } elseif ($record.Identity) { $record.Identity } elseif ($record.Id) { $record.Id } elseif ($parsedAudit -and $parsedAudit.Id) { $parsedAudit.Id } else { $null }
 							CreationDate              = if ($record.CreationDate) { 
@@ -4773,9 +4825,10 @@ function Merge-IncrementalSaves-Streaming {
 							} else { '' }
 							RecordType                = $record.RecordType
 							Operation                 = $opValue
+							UserId                    = if ($record.UserId) { $record.UserId } elseif ($record.UserIds) { $record.UserIds } else { '' }
 							AuditData                 = $auditData
-							AssociatedAdminUnits      = $record.AssociatedAdminUnits
-							AssociatedAdminUnitsNames = $record.AssociatedAdminUnitsNames
+							AssociatedAdminUnits      = $(try { if ($parsedAudit.AssociatedAdminUnits) { $parsedAudit.AssociatedAdminUnits } elseif ($record.AssociatedAdminUnits) { $record.AssociatedAdminUnits } else { '' } } catch { '' })
+							AssociatedAdminUnitsNames = $(try { if ($parsedAudit.AssociatedAdminUnitsNames) { $parsedAudit.AssociatedAdminUnitsNames } elseif ($record.AssociatedAdminUnitsNames) { $record.AssociatedAdminUnitsNames } else { '' } } catch { '' })
 						}
 						
 						$batch.Add($normalizedRecord)
@@ -4793,6 +4846,8 @@ function Merge-IncrementalSaves-Streaming {
 					}
 				}
 			}
+			# Dispose StreamReader to release file handle
+			if ($reader) { $reader.Dispose(); $reader = $null }
 			
 			# Flush remaining batch for this file
 			if ($batch.Count -gt 0) {
@@ -4810,12 +4865,16 @@ function Merge-IncrementalSaves-Streaming {
 				$lastProgressTime = $now
 			}
 			
-			# Explicit garbage collection between files to release memory
+			# Reduced GC frequency from every file to every 5th file for better throughput
 			$batch = $null
-			[GC]::Collect()
-			[GC]::WaitForPendingFinalizers()
+			if ($filesProcessed % 5 -eq 0) {
+				[GC]::Collect()
+				[GC]::WaitForPendingFinalizers()
+			}
 			
 		} catch {
+			# Ensure StreamReader is disposed on error to release file handle
+			if ($reader) { try { $reader.Dispose() } catch {} ; $reader = $null }
 			Write-LogHost "  [WARN] Failed to stream merge $($file.Name): $($_.Exception.Message)" -ForegroundColor Yellow
 		}
 	}
@@ -6354,10 +6413,15 @@ function Invoke-PurviewAuditQuery {
 			$transientPatterns = @('timed out','unable to connect','connection','remote name could not be resolved','temporarily unavailable')
 			
 			while (-not $queryComplete) {
-				$elapsedTotal = (Get-Date) - $pollStart
-				if ($elapsedTotal.TotalSeconds -ge $maxPollDurationSeconds) {
-					Write-Host "      [NET] Polling aborted after $effectiveOutageMinutes minutes without completion (network outage window exceeded)" -ForegroundColor Red
-					break
+				# Network outage guard: only abort if we've been in a CONTINUOUS network outage
+				# exceeding the user's MaxNetworkOutageMinutes threshold. Normal polling
+				# continues indefinitely until the query succeeds, fails, or the user cancels.
+				if ($networkOutageStart) {
+					$outageElapsed = (Get-Date) - $networkOutageStart
+					if ($outageElapsed.TotalSeconds -ge $maxPollDurationSeconds) {
+						Write-Host "      [NET] Polling aborted after $effectiveOutageMinutes minutes of continuous network outage" -ForegroundColor Red
+						break
+					}
 				}
 				Start-Sleep -Seconds $pollInterval
 				$pollCount++
@@ -6425,7 +6489,7 @@ function Invoke-PurviewAuditQuery {
 			}
 			
 			if (-not $queryComplete) {
-				Write-Host "      [Graph API] Query timed out after $($pollCount * $pollInterval) seconds" -ForegroundColor Yellow
+				Write-Host "      [Graph API] Query polling aborted (network outage or non-transient error after $pollCount polls)" -ForegroundColor Yellow
 				return @()
 			}
 			
@@ -6827,6 +6891,8 @@ $script:CheckpointData = $null              # Loaded/active checkpoint object
 $script:IsResumeMode = $false               # Whether we're resuming from checkpoint
 $script:PartialOutputPath = $null           # Path to _PARTIAL.csv file during execution
 $script:OriginallySkippedPartitionIndices = @()  # Partition indices that were already completed before this run (for resume mode)
+$script:StreamingMergeDuplicatesSkipped = 0      # Count of duplicate records removed during streaming merge
+$script:StreamingMergeDataLoss = $false          # Whether streaming merge detected missing partition data
 
 # Token expiration detection (reactive - triggers on 401 Unauthorized)
 $script:TokenAcquiredTime = $null           # When current token was obtained
@@ -7710,6 +7776,10 @@ if ($script:LogBuffer -and $script:LogBuffer.Count -gt 0) {
 # Note: $scriptMode already defined earlier for validation - reformat for display consistency
 $scriptModeDisplay = if ($ExplodeDeep) { "Deep Column Explosion" } elseif ($ExplodeArrays -or $ForcedRawInputCsvExplosion) { if ($ForcedRawInputCsvExplosion -and -not $ExplodeArrays.IsPresent -and -not $ExplodeDeep.IsPresent) { "Array Explosion (RAWInput implied)" } else { "Array Explosion" } } else { "Standard (1:1)" }
 
+# Clean display names — strip _PARTIAL suffix so the startup banner always shows the expected final filename
+$displayOutputFile = $OutputFile -replace '_PARTIAL(?=\.[^.]+$)', ''
+$displayLogFile    = $LogFile    -replace '_PARTIAL(?=\.log$)',    ''
+
 # Skip banner output to log file in resume mode (log file not set yet - will be set after checkpoint loads)
 if (-not $script:DeferLogFileSetup) {
 @"
@@ -7718,8 +7788,8 @@ Script Start Time (UTC): $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:
 Script Version: v$ScriptVersion
 Mode: $scriptModeDisplay
 Date Range: $(if ($RAWInputCSV) { if ([string]::IsNullOrWhiteSpace($StartDate) -and [string]::IsNullOrWhiteSpace($EndDate)) { 'Full CSV (no date filter)' } else { "$StartDate (inclusive) to $EndDate (exclusive) (filters)" } } else { "$StartDate (inclusive) to $EndDate (exclusive)" })
-Output File: $OutputFile
-Log File: $LogFile
+Output File: $displayOutputFile
+Log File: $displayLogFile
 ========================================================
 
 "@ | Out-File -FilePath $LogFile -Encoding UTF8
@@ -7971,7 +8041,7 @@ if ($OnlyUserInfo) {
 	} else { 
 		"CSV file" 
 	}
-	Write-LogHost "Output File: $OutputFile ($fileType)" -ForegroundColor White
+	Write-LogHost "Output File: $displayOutputFile ($fileType)" -ForegroundColor White
 	Write-LogHost "  Mode: Appending to existing file" -ForegroundColor Cyan
 } elseif ($IncludeDSPMForAI -or $ExcludeCopilotInteraction) {
 	# Activity type switches present - defer detailed filename listing until after activity types are finalized
@@ -7997,7 +8067,7 @@ if ($OnlyUserInfo) {
 	# CSV mode: combined file or separate files per activity type
 	if ($CombineOutput) {
 		# Single combined CSV file
-		Write-LogHost "Output File: $OutputFile (combined - all activity types)" -ForegroundColor White
+		Write-LogHost "Output File: $displayOutputFile (combined - all activity types)" -ForegroundColor White
 		if ($IncludeUserInfo -and -not $UseEOM) {
 			$entraFile = (Join-Path (Split-Path $OutputFile -Parent) "EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.csv")
 			Write-LogHost "  Entra Users File: $entraFile" -ForegroundColor Gray
@@ -8015,7 +8085,7 @@ if ($OnlyUserInfo) {
 	}
 }
 
-Write-LogHost "Log File: $LogFile" -ForegroundColor White
+Write-LogHost "Log File: $displayLogFile" -ForegroundColor White
 if (-not $RAWInputCSV) {
 	Write-LogHost "Authentication: $Auth" -ForegroundColor White
 }
@@ -8149,6 +8219,7 @@ if ($RAWInputCSV) {
 		ExplodeDeep            = $ExplodeDeep.IsPresent
 		UseEOM                 = $UseEOM.IsPresent
 		MaxMemoryMB            = $(if ($script:ResolvedMaxMemoryMB -eq 0) { 'Off' } else { "$($script:ResolvedMaxMemoryMB)MB" + $(if ($MaxMemoryMB -eq -1) { ' (auto)' } else { '' }) })
+		StatusIntervalSeconds  = $StatusIntervalSeconds
 		MaxPartitions          = $MaxPartitions
 		ResultSize             = $ResultSize
 		PacingMs               = $PacingMs
@@ -8162,8 +8233,8 @@ if ($RAWInputCSV) {
 		MetricsPath            = $(if ($MetricsPath) { $MetricsPath } else { '' })
 		StreamingSchemaSample  = $StreamingSchemaSample
 		StreamingChunkSize     = $StreamingChunkSize
-		OutputFile             = $OutputFile
-		LogFile                = $LogFile
+		OutputFile             = $displayOutputFile
+		LogFile                = $displayLogFile
 		PSVersion              = $PSVersionTable.PSVersion.ToString()
 		PSEdition              = $PSVersionTable.PSEdition
 		HostName               = $Host.Name
@@ -8187,8 +8258,8 @@ else {
 	$paramSnapshot = [ordered]@{
 		'StartDate (inclusive)' = $StartDate
 		'EndDate (exclusive)'   = $EndDate
-		OutputFile              = $OutputFile
-		LogFile                = $LogFile
+		OutputFile              = $displayOutputFile
+		LogFile                = $displayLogFile
 	}
 	
 	# Authentication (both modes, but different usage)
@@ -8225,6 +8296,7 @@ else {
 		$paramSnapshot['MaxPartitions'] = $MaxPartitions
 		$paramSnapshot['ResultSize'] = $ResultSize
 		$paramSnapshot['PacingMs'] = $PacingMs
+		$paramSnapshot['StatusIntervalSeconds'] = $StatusIntervalSeconds
 	} else {
 		# Graph API-specific: Parallel processing parameters
 		$paramSnapshot['MaxConcurrency'] = $MaxConcurrency
@@ -8238,6 +8310,7 @@ else {
 		$paramSnapshot['ResultSize'] = $ResultSize
 		$paramSnapshot['PacingMs'] = $PacingMs
 		$paramSnapshot['MaxMemoryMB'] = $(if ($script:ResolvedMaxMemoryMB -eq 0) { 'Off' } else { "$($script:ResolvedMaxMemoryMB)MB" + $(if ($MaxMemoryMB -eq -1) { ' (auto)' } else { '' }) })
+		$paramSnapshot['StatusIntervalSeconds'] = $StatusIntervalSeconds
 	}
 
 	# Common toggles and output options
@@ -8582,8 +8655,8 @@ function Invoke-ReplayInlineExport {
 	)
 	Write-LogHost "Replay inline export starting..." -ForegroundColor Magenta
 	$exportTemp = Join-Path ([System.IO.Path]::GetTempPath()) ("pax_export_" + [guid]::NewGuid().ToString() + ".tmp")
-	# Unified header: auto-detect all activity types from input CSV (no switch required)
-	$columnOrder = Get-UnifiedReplayHeader -RawCsvPath $RAWInputCSV
+	# Fixed 153-column M code schema (matches live explosion output exactly)
+	$columnOrder = $PurviewExplodedHeader
 	Open-CsvWriter -Path $exportTemp -Columns $columnOrder
 	$total = 0
 	$idx = 0
@@ -8632,22 +8705,52 @@ function Invoke-ReplayInlineExport {
 
 function Get-SafeProperty { param($obj, [string]$name) try { if ($null -ne $obj -and $obj.PSObject.Properties[$name]) { return $obj.($name) } } catch {}; return $null }
 
-# --- Purview Exploded Schema ---
+# --- Purview Exploded Schema (153 columns — matches M code #"Changed Type" step exactly) ---
 $PurviewExplodedHeader = @(
-	'RecordId', 'CreationDate', 'RecordType', 'Operation', 'UserId', 'OrganizationId', 'Workload', 'UserType', 'UserKey',
-	'Version', 'Id', 'RecordTypeNum', 'ResultStatus_Audit', 'AppId', 'ClientAppId', 'CorrelationId',
-	'ModelId', 'ModelProvider', 'ModelFamily', 'TokensTotal', 'TokensInput', 'TokensOutput',
-	'DurationMs', 'OutcomeStatus', 'ConversationId', 'TurnNumber', 'RetryCount', 'ClientVersion', 'ClientPlatform',
+	'RecordId', 'CreationDate', 'RecordType', 'Operation', 'UserId',
 	'AssociatedAdminUnits', 'AssociatedAdminUnitsNames',
-	'AgentId', 'AgentName', 'AgentVersion', 'AgentCategory',
-	'AppIdentity', 'AppIdentity_DisplayName', 'AppIdentity_PublisherId', 'ApplicationName',
-	'CreationTime', 'ClientRegion', 'ClientIP', 'AppHost', 'ThreadId', 'Context_Id', 'Context_Type', 'Message_Id',
-	'Message_isPrompt', 'AccessedResource_Action', 'AccessedResource_PolicyDetails', 'AccessedResource_SiteUrl',
-	'AISystemPlugin_Id', 'AISystemPlugin_Name', 'ModelTransparencyDetails_ModelName', 'MessageIds',
-	'CopilotLogVersion',
-	# DSPM for AI: Additional columns for enhanced DSPM activity types
-	'AccessedResource_Name', 'AccessedResource_SensitivityLabel', 'AccessedResource_ResourceType',
-	'SensitivityLabel', 'Context_Item'
+	'@odata.type', 'CreationTime', 'Id', 'OrganizationId',
+	'ResultStatus', 'UserKey', 'UserType', 'Version', 'Workload',
+	'ClientIP', 'ObjectId', 'AzureActiveDirectoryEventType',
+	'ActorContextId', 'ActorIpAddress', 'InterSystemsId', 'IntraSystemId',
+	'SupportTicketId', 'TargetContextId', 'ApplicationId',
+	'DeviceProperties.OS', 'DeviceProperties.BrowserType',
+	'ErrorNumber',
+	'SiteUrl', 'SourceRelativeUrl', 'SourceFileName', 'SourceFileExtension',
+	'ListId', 'ListItemUniqueId', 'WebId', 'ApplicationDisplayName', 'EventSource',
+	'ItemType', 'SiteSensitivityLabelId', 'GeoLocation', 'IsManagedDevice',
+	'DeviceDisplayName', 'ListBaseType', 'ListServerTemplate',
+	'AuthenticationType', 'Site', 'DoNotDistributeEvent', 'HighPriorityMediaProcessing',
+	'BrowserName', 'BrowserVersion', 'CorrelationId', 'Platform', 'UserAgent',
+	'ActorInfoString', 'AppId', 'AuthType', 'ClientAppId', 'ClientIPAddress',
+	'ClientInfoString', 'ExternalAccess', 'InternalLogonType', 'LogonType',
+	'LogonUserSid', 'MailboxGuid', 'MailboxOwnerSid', 'MailboxOwnerUPN',
+	'OrganizationName', 'OriginatingServer', 'SessionId',
+	'TokenObjectId', 'TokenTenantId', 'TokenType', 'SaveToSentItems',
+	'OperationCount', 'FileSizeBytes',
+	'MeetingId', 'MeetingType', 'EventSignature', 'EventData',
+	'Permission', 'SensitivityLabelId', 'SharingLinkScope',
+	'TargetUserOrGroupType', 'TargetUserOrGroupName',
+	'MeetingURL', 'ChatId', 'MessageId', 'MessageSizeInBytes', 'MessageType',
+	'FormId', 'FormName', 'VideoId', 'VideoName', 'ChannelId', 'ViewDuration',
+	'ClientRegion', 'CopilotLogVersion', 'TargetId',
+	'TeamName', 'TeamGuid', 'ResponseId', 'IsAnonymous', 'DeviceType',
+	'ChannelName', 'ChannelGuid', 'ChannelType', 'AppName', 'EnvironmentName',
+	'PlanId', 'PlanName', 'TaskId', 'TaskName', 'PercentComplete',
+	'CrossMailboxOperation',
+	'RecordTypeNum', 'ResultStatus_Audit',
+	'ModelId', 'ModelProvider', 'ModelFamily',
+	'TokensTotal', 'TokensInput', 'TokensOutput', 'DurationMs', 'OutcomeStatus',
+	'ConversationId', 'TurnNumber', 'RetryCount', 'ClientVersion', 'ClientPlatform',
+	'AgentId', 'AgentName', 'AgentVersion', 'AgentCategory', 'ApplicationName',
+	'AppHost', 'ThreadId',
+	'Context_Id', 'Context_Type',
+	'Message_Id', 'Message_isPrompt',
+	'AccessedResource_Action', 'AccessedResource_PolicyDetails', 'AccessedResource_SiteUrl',
+	'AISystemPlugin_Id', 'AISystemPlugin_Name',
+	'ModelTransparencyDetails_ModelName', 'MessageIds',
+	'AccessedResource_Name', 'AccessedResource_SensitivityLabel',
+	'AccessedResource_ResourceType', 'SensitivityLabel', 'Context_Item'
 )
 
 # --- M365 Usage Base Header ---
@@ -8826,173 +8929,201 @@ function Convert-ToPurviewExplodedRecords {
 
 		$ced = Get-SafeProperty $auditData 'CopilotEventData'
 		if (-not $ced) {
-			# Generic M365 (non-Copilot) multi-row explosion
-			# For non-Copilot M365 usage, get a single compact base row (raw AuditData retained)
-			$baseRows = Convert-ToStructuredRecord -Record $Record -EnableExplosion:$false
-			if (-not $baseRows -or $baseRows.Count -eq 0) { 
-				if (-not $SkipMetrics) {
-					$script:metrics.FilteringSkippedRecords++
-					$script:metrics.FilteringMissingAuditData++
+			# ── M code-aligned non-Copilot path: fixed 153-column extraction (no dynamic discovery) ──
+			# Produces exactly 1 row per record with all 153 M code columns populated from AuditData.
+			# No array explosion for non-Copilot records (matches M code behaviour).
+			# DeviceProperties NV-pivot: only .OS and .BrowserType (matches M code GetNVProp).
+			$recordId = if ($Record.RecordId) { $Record.RecordId } elseif ($Record.Identity) { $Record.Identity } elseif ($Record.Id) { $Record.Id } else { $auditData.Id }
+			$creationDate = script:Format-DatePurviewFast $Record.CreationDate
+			$creationTime = try { script:Format-DatePurviewFast $auditData.CreationTime } catch { '' }
+			$opValue = try { $auditData.Operation } catch { if ($Record.Operation) { $Record.Operation } else { $Record.Operations } }
+			$uidValue = try { $auditData.UserId } catch { if ($Record.UserId) { $Record.UserId } elseif ($Record.UserIds) { $Record.UserIds } else { '' } }
+			$recordType = $Record.RecordType
+			$resultStatus = Get-SafeProperty $auditData 'ResultStatus'
+			$recordTypeNum = try { [int]$recordType } catch { $recordType }
+			$applicationId = Select-FirstNonNull -Values @((Get-SafeProperty $auditData 'ApplicationId'), (Get-SafeProperty $auditData 'AppId'), (Get-SafeProperty $auditData 'ClientAppId'))
+			# DeviceProperties NV-pivot: only .OS and .BrowserType (matches M code GetNVProp)
+			$devProps = Get-SafeProperty $auditData 'DeviceProperties'
+			$dpOS = ''; $dpBrowser = ''
+			if ($devProps -and ($devProps -is [System.Collections.IEnumerable])) {
+				foreach ($dp in $devProps) {
+					try {
+						if ($dp.Name -eq 'OS') { $dpOS = $dp.Value }
+						elseif ($dp.Name -eq 'BrowserType') { $dpBrowser = $dp.Value }
+					} catch {}
 				}
-				return @() 
 			}
-			$baseRow = $baseRows[0]
-			# Drop raw JSON props from exploded output
-			foreach ($rawProp in @('AuditData','OriginalAuditData','CopilotEventData')) { if ($baseRow.PSObject.Properties[$rawProp]) { $baseRow.PSObject.Members.Remove($rawProp) } }
-			# Enrich base row with scalar fields from AuditData (no raw JSON)
-			$applicationId = $null
-			try { $applicationId = Select-FirstNonNull -Values @((Get-SafeProperty $auditData 'ApplicationId'), (Get-SafeProperty $auditData 'AppId'), (Get-SafeProperty $auditData 'ClientAppId')) } catch {}
-			$enrichMap = @{
-				'Id'                           = { try { Get-SafeProperty $auditData 'Id' } catch { $null } }
-				'CreationTime'                  = { try { $ct = Get-SafeProperty $auditData 'CreationTime'; if ($ct) { $parsed = script:Parse-DateSafe $ct; if ($parsed) { $parsed.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $null } } else { $null } } catch { $null } }
-				'OrganizationId'               = { try { Get-SafeProperty $auditData 'OrganizationId' } catch { $null } }
-				'ResultStatus'                 = { try { Get-SafeProperty $auditData 'ResultStatus' } catch { $null } }
-				'UserKey'                      = { try { Get-SafeProperty $auditData 'UserKey' } catch { $null } }
-				'UserType'                     = { try { Get-SafeProperty $auditData 'UserType' } catch { $null } }
-				'Version'                      = { try { Get-SafeProperty $auditData 'Version' } catch { $null } }
-				'Workload'                     = { try { Get-SafeProperty $auditData 'Workload' } catch { $null } }
-				'UserId'                       = { try { Get-SafeProperty $auditData 'UserId' } catch { $null } }
-				'ClientIP'                     = { try { Get-SafeProperty $auditData 'ClientIP' } catch { $null } }
-				'ObjectId'                     = { try { Get-SafeProperty $auditData 'ObjectId' } catch { $null } }
-				'AzureActiveDirectoryEventType'= { try { Get-SafeProperty $auditData 'AzureActiveDirectoryEventType' } catch { $null } }
-				'ActorContextId'               = { try { Get-SafeProperty $auditData 'ActorContextId' } catch { $null } }
-				'ActorIpAddress'               = { try { Get-SafeProperty $auditData 'ActorIpAddress' } catch { $null } }
-				'InterSystemsId'               = { try { Get-SafeProperty $auditData 'InterSystemsId' } catch { $null } }
-				'IntraSystemId'                = { try { Get-SafeProperty $auditData 'IntraSystemId' } catch { $null } }
-				'SupportTicketId'              = { try { Get-SafeProperty $auditData 'SupportTicketId' } catch { $null } }
-				'TargetContextId'              = { try { Get-SafeProperty $auditData 'TargetContextId' } catch { $null } }
-				'ApplicationId'                = { $applicationId }
-				'ErrorNumber'                  = { try { Get-SafeProperty $auditData 'ErrorNumber' } catch { $null } }
-				'SiteUrl'                      = { try { Get-SafeProperty $auditData 'SiteUrl' } catch { $null } }
-				'SourceRelativeUrl'            = { try { Get-SafeProperty $auditData 'SourceRelativeUrl' } catch { $null } }
-				'SourceFileName'               = { try { Get-SafeProperty $auditData 'SourceFileName' } catch { $null } }
-				'SourceFileExtension'          = { try { Get-SafeProperty $auditData 'SourceFileExtension' } catch { $null } }
-				'ListId'                       = { try { Get-SafeProperty $auditData 'ListId' } catch { $null } }
-				'ListItemUniqueId'             = { try { Get-SafeProperty $auditData 'ListItemUniqueId' } catch { $null } }
-				'WebId'                        = { try { Get-SafeProperty $auditData 'WebId' } catch { $null } }
-				'ApplicationDisplayName'       = { try { Get-SafeProperty $auditData 'ApplicationDisplayName' } catch { $null } }
-				'EventSource'                  = { try { Get-SafeProperty $auditData 'EventSource' } catch { $null } }
-				'ItemType'                     = { try { Get-SafeProperty $auditData 'ItemType' } catch { $null } }
-				'SiteSensitivityLabelId'       = { try { Get-SafeProperty $auditData 'SiteSensitivityLabelId' } catch { $null } }
-				'GeoLocation'                  = { try { Get-SafeProperty $auditData 'GeoLocation' } catch { $null } }
-				'IsManagedDevice'              = { try { Get-SafeProperty $auditData 'IsManagedDevice' } catch { $null } }
-				'DeviceDisplayName'            = { try { Get-SafeProperty $auditData 'DeviceDisplayName' } catch { $null } }
-				'ListBaseType'                 = { try { Get-SafeProperty $auditData 'ListBaseType' } catch { $null } }
-				'ListServerTemplate'           = { try { Get-SafeProperty $auditData 'ListServerTemplate' } catch { $null } }
-				'AppAccessContext'             = { try { Get-SafeProperty $auditData 'AppAccessContext' } catch { $null } }
-				'AuthenticationType'           = { try { Get-SafeProperty $auditData 'AuthenticationType' } catch { $null } }
-				'Site'                        = { try { Get-SafeProperty $auditData 'Site' } catch { $null } }
-				'DoNotDistributeEvent'         = { try { Get-SafeProperty $auditData 'DoNotDistributeEvent' } catch { $null } }
-				'HighPriorityMediaProcessing'  = { try { Get-SafeProperty $auditData 'HighPriorityMediaProcessing' } catch { $null } }
+			# AgentCategory
+			$agentIdVal = Get-SafeProperty $auditData 'AgentId'
+			$agentCat = ''
+			if ($agentIdVal) {
+				if ($agentIdVal -like "CopilotStudio.Declarative.*") { $agentCat = "Declarative Agent" }
+				elseif ($agentIdVal -like "CopilotStudio.CustomEngine.*") { $agentCat = "Custom Engine Agent" }
+				elseif ($agentIdVal -like "P_*") { $agentCat = "Declarative Agent (Purview)" }
+				else { $agentCat = "Other Agent" }
 			}
-			foreach ($kv in $enrichMap.GetEnumerator()) {
-				$k = $kv.Key; $getter = $kv.Value
-				try { $val = & $getter } catch { $val = $null }
-				if ($null -ne $val -and -not $baseRow.PSObject.Properties[$k]) { Add-Member -InputObject $baseRow -NotePropertyName $k -NotePropertyValue $val -Force }
-			}
-			# Add any other scalar root properties from AuditData (excluding known arrays/objects)
-			try {
-				foreach ($p in $auditData.PSObject.Properties) {
-					$pn = $p.Name; if ($pn -in @('ExtendedProperties','DeviceProperties','ModifiedProperties','Actor','Target','CopilotEventData')) { continue }
-					$pv = $p.Value
-					try { if (Test-ScalarValue $pv) { if (-not $baseRow.PSObject.Properties[$pn]) { Add-Member -InputObject $baseRow -NotePropertyName $pn -NotePropertyValue $pv -Force } } } catch {}
-				}
-			} catch {}
-
-			# Flatten AppAccessContext into columns
-			try {
-				$aac = Get-SafeProperty $auditData 'AppAccessContext'
-				if ($aac -and -not (Test-ScalarValue $aac)) {
-					$flatAac = ConvertTo-FlatColumns -Node $aac -Prefix 'AppAccessContext.' -MaxDepth $FlatDepthStandard
-					foreach ($k in $flatAac.Keys) {
-						if (-not $baseRow.PSObject.Properties[$k]) { Add-Member -InputObject $baseRow -NotePropertyName $k -NotePropertyValue $flatAac[$k] -Force }
-					}
-					if ($baseRow.PSObject.Properties['AppAccessContext']) { $baseRow.PSObject.Members.Remove('AppAccessContext') }
-				}
-				elseif ($aac -and (Test-ScalarValue $aac)) {
-					if (-not $baseRow.PSObject.Properties['AppAccessContext']) { Add-Member -InputObject $baseRow -NotePropertyName 'AppAccessContext' -NotePropertyValue $aac -Force }
-				}
-			} catch {}
-			# Detect arrays up to standard depth (6)
-			$arrays = Find-AllArrays -Data $auditData -Depth 0 -Arrays @{}
-			$arrayInfos = @()
-			if ($arrays) { $arrayInfos = $arrays.Values }
-
-			# Pivot Name/Value arrays (ExtendedProperties, DeviceProperties) into columns
-			$nvArrays = @('ExtendedProperties','DeviceProperties')
-			$nvPivot = @{}
-			foreach ($nvPath in $nvArrays) {
-				try {
-					$nv = (Get-SafeProperty $auditData $nvPath)
-					if ($nv -and ($nv -is [System.Collections.IEnumerable])) {
-						foreach ($item in $nv) {
-							try {
-								$n = $item.Name; $v = $item.Value
-								if (-not $n) { continue }
-								$key = "$nvPath.$n"
-								if (-not $nvPivot.ContainsKey($key)) { $nvPivot[$key] = New-Object System.Collections.Generic.List[object] }
-								$nvPivot[$key].Add($v) | Out-Null
-							} catch {}
-						}
-					}
-				} catch {}
-			}
-			if ($arrayInfos.Count -gt 0) {
-				$arrayInfos = $arrayInfos | Where-Object { $_.Path -notin $nvArrays }
-			}
-			$rowCount = if ($arrayInfos.Count -gt 0) { ($arrayInfos | ForEach-Object { $_.Count } | Measure-Object -Maximum).Maximum } else { 1 }
-			if ($rowCount -gt $ExplosionPerRecordRowCap) {
-				$rowCount = $ExplosionPerRecordRowCap
-				try { $script:metrics.ExplosionTruncated = $true } catch {}
-			}
-			# HashSet to avoid duplicate columns when flattening
-			$baseSet = New-Object System.Collections.Generic.HashSet[string]
-			foreach ($p in $baseRow.PSObject.Properties) { $null = $baseSet.Add($p.Name) }
-			
-			$rows = New-Object System.Collections.Generic.List[object]
-			for ($i = 0; $i -lt $rowCount; $i++) {
-				# Build row as hashtable first (fast), then convert to PSCustomObject once
-				$rowHash = [ordered]@{}
-				foreach ($p in $baseRow.PSObject.Properties) { $rowHash[$p.Name] = $p.Value }
-				# Add pivoted Name/Value arrays into the row
-				if ($nvPivot.Keys.Count -gt 0) {
-					foreach ($pk in $nvPivot.Keys) {
-						if ($rowHash.Contains($pk)) { continue }
-						$val = $nvPivot[$pk]
-						if ($val -isnot [string] -and $val -is [System.Collections.IEnumerable]) {
-							$val = ($val | ForEach-Object { $_.ToString() }) -join ';'
-						}
-						$rowHash[$pk] = $val
-					}
-				}
-				foreach ($info in $arrayInfos) {
-					$path = $info.Path
-					$dataArr = $info.Data
-					if ($i -lt $dataArr.Count) {
-						$el = $dataArr[$i]
-						if ($null -eq $el) { continue }
-						if (Test-ScalarValue $el) {
-							if (-not $rowHash.Contains($path)) { $rowHash[$path] = $el }
-						}
-						else {
-							$flatEl = ConvertTo-FlatColumns -Node $el -Prefix "$path." -MaxDepth $FlatDepthStandard
-							foreach ($k in $flatEl.Keys) { if (-not $rowHash.Contains($k)) { $rowHash[$k] = $flatEl[$k] } }
-						}
-					}
-				}
-				# Convert hashtable to PSCustomObject in single operation (much faster than Add-Member loop)
-				$rows.Add([PSCustomObject]$rowHash) | Out-Null
+			$rowObj = [PSCustomObject][ordered]@{
+				RecordId                          = $recordId
+				CreationDate                      = $creationDate
+				RecordType                        = $recordType
+				Operation                         = $opValue
+				UserId                            = $uidValue
+				AssociatedAdminUnits              = $(try { if ($Record.AssociatedAdminUnits) { $Record.AssociatedAdminUnits } elseif ($auditData.AssociatedAdminUnits) { $auditData.AssociatedAdminUnits } else { '' } } catch { '' })
+				AssociatedAdminUnitsNames         = $(try { if ($Record.AssociatedAdminUnitsNames) { $Record.AssociatedAdminUnitsNames } elseif ($auditData.AssociatedAdminUnitsNames) { $auditData.AssociatedAdminUnitsNames } else { '' } } catch { '' })
+				'@odata.type'                     = (Get-SafeProperty $auditData '@odata.type')
+				CreationTime                      = $creationTime
+				Id                                = (Get-SafeProperty $auditData 'Id')
+				OrganizationId                    = (Get-SafeProperty $auditData 'OrganizationId')
+				ResultStatus                      = $resultStatus
+				UserKey                           = (Get-SafeProperty $auditData 'UserKey')
+				UserType                          = (Get-SafeProperty $auditData 'UserType')
+				Version                           = (Get-SafeProperty $auditData 'Version')
+				Workload                          = (Get-SafeProperty $auditData 'Workload')
+				ClientIP                          = (Get-SafeProperty $auditData 'ClientIP')
+				ObjectId                          = (Get-SafeProperty $auditData 'ObjectId')
+				AzureActiveDirectoryEventType     = (Get-SafeProperty $auditData 'AzureActiveDirectoryEventType')
+				ActorContextId                    = (Get-SafeProperty $auditData 'ActorContextId')
+				ActorIpAddress                    = (Get-SafeProperty $auditData 'ActorIpAddress')
+				InterSystemsId                    = (Get-SafeProperty $auditData 'InterSystemsId')
+				IntraSystemId                     = (Get-SafeProperty $auditData 'IntraSystemId')
+				SupportTicketId                   = (Get-SafeProperty $auditData 'SupportTicketId')
+				TargetContextId                   = (Get-SafeProperty $auditData 'TargetContextId')
+				ApplicationId                     = $applicationId
+				'DeviceProperties.OS'             = $dpOS
+				'DeviceProperties.BrowserType'    = $dpBrowser
+				ErrorNumber                       = (Get-SafeProperty $auditData 'ErrorNumber')
+				SiteUrl                           = (Get-SafeProperty $auditData 'SiteUrl')
+				SourceRelativeUrl                 = (Get-SafeProperty $auditData 'SourceRelativeUrl')
+				SourceFileName                    = (Get-SafeProperty $auditData 'SourceFileName')
+				SourceFileExtension               = (Get-SafeProperty $auditData 'SourceFileExtension')
+				ListId                            = (Get-SafeProperty $auditData 'ListId')
+				ListItemUniqueId                  = (Get-SafeProperty $auditData 'ListItemUniqueId')
+				WebId                             = (Get-SafeProperty $auditData 'WebId')
+				ApplicationDisplayName            = (Get-SafeProperty $auditData 'ApplicationDisplayName')
+				EventSource                       = (Get-SafeProperty $auditData 'EventSource')
+				ItemType                          = (Get-SafeProperty $auditData 'ItemType')
+				SiteSensitivityLabelId            = (Get-SafeProperty $auditData 'SiteSensitivityLabelId')
+				GeoLocation                       = (Get-SafeProperty $auditData 'GeoLocation')
+				IsManagedDevice                   = (Get-SafeProperty $auditData 'IsManagedDevice')
+				DeviceDisplayName                 = (Get-SafeProperty $auditData 'DeviceDisplayName')
+				ListBaseType                      = (Get-SafeProperty $auditData 'ListBaseType')
+				ListServerTemplate                = (Get-SafeProperty $auditData 'ListServerTemplate')
+				AuthenticationType                = (Get-SafeProperty $auditData 'AuthenticationType')
+				Site                              = (Get-SafeProperty $auditData 'Site')
+				DoNotDistributeEvent              = (Get-SafeProperty $auditData 'DoNotDistributeEvent')
+				HighPriorityMediaProcessing       = (Get-SafeProperty $auditData 'HighPriorityMediaProcessing')
+				BrowserName                       = (Get-SafeProperty $auditData 'BrowserName')
+				BrowserVersion                    = (Get-SafeProperty $auditData 'BrowserVersion')
+				CorrelationId                     = (Get-SafeProperty $auditData 'CorrelationId')
+				Platform                          = (Get-SafeProperty $auditData 'Platform')
+				UserAgent                         = (Get-SafeProperty $auditData 'UserAgent')
+				ActorInfoString                   = (Get-SafeProperty $auditData 'ActorInfoString')
+				AppId                             = (Get-SafeProperty $auditData 'AppId')
+				AuthType                          = (Get-SafeProperty $auditData 'AuthType')
+				ClientAppId                       = (Get-SafeProperty $auditData 'ClientAppId')
+				ClientIPAddress                   = (Get-SafeProperty $auditData 'ClientIPAddress')
+				ClientInfoString                  = (Get-SafeProperty $auditData 'ClientInfoString')
+				ExternalAccess                    = (Get-SafeProperty $auditData 'ExternalAccess')
+				InternalLogonType                 = (Get-SafeProperty $auditData 'InternalLogonType')
+				LogonType                         = (Get-SafeProperty $auditData 'LogonType')
+				LogonUserSid                      = (Get-SafeProperty $auditData 'LogonUserSid')
+				MailboxGuid                       = (Get-SafeProperty $auditData 'MailboxGuid')
+				MailboxOwnerSid                   = (Get-SafeProperty $auditData 'MailboxOwnerSid')
+				MailboxOwnerUPN                   = (Get-SafeProperty $auditData 'MailboxOwnerUPN')
+				OrganizationName                  = (Get-SafeProperty $auditData 'OrganizationName')
+				OriginatingServer                 = (Get-SafeProperty $auditData 'OriginatingServer')
+				SessionId                         = (Get-SafeProperty $auditData 'SessionId')
+				TokenObjectId                     = (Get-SafeProperty $auditData 'TokenObjectId')
+				TokenTenantId                     = (Get-SafeProperty $auditData 'TokenTenantId')
+				TokenType                         = (Get-SafeProperty $auditData 'TokenType')
+				SaveToSentItems                   = (Get-SafeProperty $auditData 'SaveToSentItems')
+				OperationCount                    = (Get-SafeProperty $auditData 'OperationCount')
+				FileSizeBytes                     = (Get-SafeProperty $auditData 'FileSizeBytes')
+				MeetingId                         = (Get-SafeProperty $auditData 'MeetingId')
+				MeetingType                       = (Get-SafeProperty $auditData 'MeetingType')
+				EventSignature                    = (Get-SafeProperty $auditData 'EventSignature')
+				EventData                         = (Get-SafeProperty $auditData 'EventData')
+				Permission                        = (Get-SafeProperty $auditData 'Permission')
+				SensitivityLabelId                = (Get-SafeProperty $auditData 'SensitivityLabelId')
+				SharingLinkScope                  = (Get-SafeProperty $auditData 'SharingLinkScope')
+				TargetUserOrGroupType             = (Get-SafeProperty $auditData 'TargetUserOrGroupType')
+				TargetUserOrGroupName             = (Get-SafeProperty $auditData 'TargetUserOrGroupName')
+				MeetingURL                        = (Get-SafeProperty $auditData 'MeetingURL')
+				ChatId                            = (Get-SafeProperty $auditData 'ChatId')
+				MessageId                         = (Get-SafeProperty $auditData 'MessageId')
+				MessageSizeInBytes                = (Get-SafeProperty $auditData 'MessageSizeInBytes')
+				MessageType                       = (Get-SafeProperty $auditData 'MessageType')
+				FormId                            = (Get-SafeProperty $auditData 'FormId')
+				FormName                          = (Get-SafeProperty $auditData 'FormName')
+				VideoId                           = (Get-SafeProperty $auditData 'VideoId')
+				VideoName                         = (Get-SafeProperty $auditData 'VideoName')
+				ChannelId                         = (Get-SafeProperty $auditData 'ChannelId')
+				ViewDuration                      = (Get-SafeProperty $auditData 'ViewDuration')
+				ClientRegion                      = (Get-SafeProperty $auditData 'ClientRegion')
+				CopilotLogVersion                 = (Get-SafeProperty $auditData 'CopilotLogVersion')
+				TargetId                          = (Get-SafeProperty $auditData 'TargetId')
+				TeamName                          = (Get-SafeProperty $auditData 'TeamName')
+				TeamGuid                          = (Get-SafeProperty $auditData 'TeamGuid')
+				ResponseId                        = (Get-SafeProperty $auditData 'ResponseId')
+				IsAnonymous                       = (Get-SafeProperty $auditData 'IsAnonymous')
+				DeviceType                        = (Get-SafeProperty $auditData 'DeviceType')
+				ChannelName                       = (Get-SafeProperty $auditData 'ChannelName')
+				ChannelGuid                       = (Get-SafeProperty $auditData 'ChannelGuid')
+				ChannelType                       = (Get-SafeProperty $auditData 'ChannelType')
+				AppName                           = (Get-SafeProperty $auditData 'AppName')
+				EnvironmentName                   = (Get-SafeProperty $auditData 'EnvironmentName')
+				PlanId                            = (Get-SafeProperty $auditData 'PlanId')
+				PlanName                          = (Get-SafeProperty $auditData 'PlanName')
+				TaskId                            = (Get-SafeProperty $auditData 'TaskId')
+				TaskName                          = (Get-SafeProperty $auditData 'TaskName')
+				PercentComplete                   = (Get-SafeProperty $auditData 'PercentComplete')
+				CrossMailboxOperation             = (Get-SafeProperty $auditData 'CrossMailboxOperation')
+				RecordTypeNum                     = $recordTypeNum
+				ResultStatus_Audit                = $resultStatus
+				ModelId                           = (Get-SafeProperty $auditData 'ModelId')
+				ModelProvider                     = (Get-SafeProperty $auditData 'ModelProvider')
+				ModelFamily                       = (Get-SafeProperty $auditData 'ModelFamily')
+				TokensTotal                       = (Get-SafeProperty $auditData 'TokensTotal')
+				TokensInput                       = (Get-SafeProperty $auditData 'TokensInput')
+				TokensOutput                      = (Get-SafeProperty $auditData 'TokensOutput')
+				DurationMs                        = (Get-SafeProperty $auditData 'DurationMs')
+				OutcomeStatus                     = (Get-SafeProperty $auditData 'OutcomeStatus')
+				ConversationId                    = (Get-SafeProperty $auditData 'ConversationId')
+				TurnNumber                        = (Get-SafeProperty $auditData 'TurnNumber')
+				RetryCount                        = (Get-SafeProperty $auditData 'RetryCount')
+				ClientVersion                     = (Get-SafeProperty $auditData 'ClientVersion')
+				ClientPlatform                    = (Get-SafeProperty $auditData 'ClientPlatform')
+				AgentId                           = $agentIdVal
+				AgentName                         = (Get-SafeProperty $auditData 'AgentName')
+				AgentVersion                      = (Get-SafeProperty $auditData 'AgentVersion')
+				AgentCategory                     = $agentCat
+				ApplicationName                   = (Get-SafeProperty $auditData 'ApplicationName')
+				SensitivityLabel                  = (Get-SafeProperty $auditData 'SensitivityLabel')
+				# CED sub-fields — empty for non-Copilot records
+				AppHost                           = ''
+				ThreadId                          = ''
+				Context_Id                        = ''
+				Context_Type                      = ''
+				Message_Id                        = ''
+				Message_isPrompt                  = ''
+				AccessedResource_Action           = ''
+				AccessedResource_PolicyDetails    = ''
+				AccessedResource_SiteUrl          = ''
+				AISystemPlugin_Id                 = ''
+				AISystemPlugin_Name               = ''
+				ModelTransparencyDetails_ModelName = ''
+				MessageIds                        = ''
+				AccessedResource_Name             = ''
+				AccessedResource_SensitivityLabel = ''
+				AccessedResource_ResourceType     = ''
+				Context_Item                      = ''
 			}
 			if ($Deep) {
 				# Deep flatten entire AuditData for each row (no raw JSON)
-				for ($ri = 0; $ri -lt $rows.Count; $ri++) {
-					$r = $rows[$ri]
-					$flatAudit = ConvertTo-FlatColumns -Node $auditData -Prefix '' -MaxDepth $FlatDepthDeep
-					foreach ($k in $flatAudit.Keys) { if (-not $r.PSObject.Properties[$k]) { Add-Member -InputObject $r -NotePropertyName $k -NotePropertyValue $flatAudit[$k] -Force } }
-				}
+				$flatAudit = ConvertTo-FlatColumns -Node $auditData -Prefix '' -MaxDepth $FlatDepthDeep
+				foreach ($k in $flatAudit.Keys) { if (-not $rowObj.PSObject.Properties[$k]) { Add-Member -InputObject $rowObj -NotePropertyName $k -NotePropertyValue $flatAudit[$k] -Force } }
 			}
-			if (-not $SkipMetrics -and $rows.Count -gt 1) { try { $script:metrics.ExplosionEvents += 1; $script:metrics.ExplosionRowsFromEvents += ($rows.Count - 1); if ($rows.Count -gt $script:metrics.ExplosionMaxPerRecord) { $script:metrics.ExplosionMaxPerRecord = $rows.Count } } catch {} }
-			return $rows
+			return @($rowObj)
 		}
 		$messages = script:GetArrayFast $ced 'Messages'
 		if ($PromptFilterValue) {
@@ -9072,11 +9203,18 @@ function Convert-ToPurviewExplodedRecords {
 		$creationDate = script:Format-DatePurviewFast $Record.CreationDate
 		$creationTime = try { script:Format-DatePurviewFast $auditData.CreationTime } catch { '' }
 		$appIdentityRaw = (Select-FirstNonNull -Values @((Get-SafeProperty $auditData 'AppIdentity'), (Get-SafeProperty $ced 'AppIdentity')))
-		if ($appIdentityRaw -is [string]) { $appIdentity = $appIdentityRaw; $appDisp = ''; $appPub = '' }
-		elseif ($null -ne $appIdentityRaw) {
-			$appIdentity = ''; $appDisp = Get-SafeProperty $appIdentityRaw 'DisplayName'; $appPub = Get-SafeProperty $appIdentityRaw 'PublisherId'
+		$applicationId = Select-FirstNonNull -Values @((Get-SafeProperty $auditData 'ApplicationId'), (Get-SafeProperty $auditData 'AppId'), (Get-SafeProperty $auditData 'ClientAppId'))
+		# DeviceProperties NV-pivot: only .OS and .BrowserType (matches M code GetNVProp)
+		$devProps = Get-SafeProperty $auditData 'DeviceProperties'
+		$dpOS = ''; $dpBrowser = ''
+		if ($devProps -and ($devProps -is [System.Collections.IEnumerable])) {
+			foreach ($dp in $devProps) {
+				try {
+					if ($dp.Name -eq 'OS') { $dpOS = $dp.Value }
+					elseif ($dp.Name -eq 'BrowserType') { $dpBrowser = $dp.Value }
+				} catch {}
+			}
 		}
-		else { $appIdentity = ''; $appDisp = ''; $appPub = '' }
 		$appHost = (Select-FirstNonNull -Values @((Get-SafeProperty $ced 'AppHost'), (Get-SafeProperty $auditData 'AppHost'), (Get-SafeProperty $auditData 'Workload')))
 		$clientRegion = (Get-SafeProperty $auditData 'ClientRegion')
 		$agentId = (Get-SafeProperty $auditData 'AgentId')
@@ -9147,77 +9285,162 @@ function Convert-ToPurviewExplodedRecords {
 		$baseSet = New-Object System.Collections.Generic.HashSet[string]; foreach ($c in $PurviewExplodedHeader) { $null = $baseSet.Add($c) }
 		$rows = New-Object System.Collections.Generic.List[object]
 		for ($i = 0; $i -lt $rowCount; $i++) {
-			$rowObj = [PSCustomObject]@{
-				RecordId = $(if ($Record.RecordId) { $Record.RecordId } elseif ($Record.Identity) { $Record.Identity } elseif ($Record.Id) { $Record.Id } else { $auditData.Id })
-				CreationDate = $creationDate
-				RecordType = $Record.RecordType
-				Operation = $auditData.Operation
-				UserId = $auditData.UserId
-				OrganizationId = $organizationId
-				Workload = $workload
-				UserType = $userType
-				UserKey = $auditUserKey
-				Version = $version
-				Id = $auditDataId
-				RecordTypeNum = $recordTypeNum
-				ResultStatus_Audit = $resultStatusAudit
-				AppId = $appId
-				ClientAppId = $clientAppId
-				CorrelationId = $correlationId
-				ModelId = $modelId
-				ModelProvider = $modelProvider
-				ModelFamily = $modelFamily
-				TokensTotal = $tokensTotal
-				TokensInput = $tokensInput
-				TokensOutput = $tokensOutput
-				DurationMs = $durationMs
-				OutcomeStatus = $outcomeStatus
-				ConversationId = $conversationId
-				TurnNumber = $turnNumber
-				RetryCount = $retryCount
-				ClientVersion = $clientVersion
-				ClientPlatform = $clientPlatform
-				AssociatedAdminUnits = (Get-SafeProperty $auditData 'AssociatedAdminUnits')
-				AssociatedAdminUnitsNames = (Get-SafeProperty $auditData 'AssociatedAdminUnitsNames')
-				AgentId = $agentId
-				AgentName = $agentName
-				AgentVersion = $agentVersion
-				AgentCategory = $agentCategory
-				AppIdentity = $appIdentity
-				AppIdentity_DisplayName = $appDisp
-				AppIdentity_PublisherId = $appPub
-				ApplicationName = $appName
-				CreationTime = $creationTime
-				ClientRegion = $clientRegion
-				ClientIP = $clientIP
-				AppHost = $appHost
-				ThreadId = $threadId
-				Context_Id = $(if ($i -lt $contexts.Count -and $contexts[$i]) { try { Get-SafeProperty $contexts[$i] 'Id' } catch { '' } } else { '' })
-				Context_Type = $(if ($i -lt $contexts.Count -and $contexts[$i]) { try { Get-SafeProperty $contexts[$i] 'Type' } catch { '' } } else { '' })
-				Message_Id = $(if ($i -lt $messages.Count) { $msg = $messages[$i]; if ($msg -is [psobject]) { try { Get-SafeProperty $msg 'Id' } catch { '' } } else { $msg } } else { '' })
-				Message_isPrompt = $(if ($i -lt $messages.Count) { $msg = $messages[$i]; if ($msg -is [psobject]) { try { script:BoolTFFast (Get-SafeProperty $msg 'isPrompt') } catch { '' } } else { '' } } else { '' })
-				AccessedResource_Action = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'Action' } catch { '' } } else { '' })
-				AccessedResource_PolicyDetails = $(if ($i -lt $resources.Count -and $resources[$i]) { try { script:ToJsonIfObjectFast (Get-SafeProperty $resources[$i] 'PolicyDetails') } catch { '' } } else { '' })
-				AccessedResource_SiteUrl = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'SiteUrl' } catch { '' } } else { '' })
-				# DSPM for AI: Enhanced AccessedResource properties
-				AccessedResource_Name = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'Name' } catch { '' } } else { '' })
-				AccessedResource_SensitivityLabel = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'SensitivityLabel' } catch { '' } } else { '' })
-				AccessedResource_ResourceType = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'ResourceType' } catch { '' } } else { '' })
-				# Row explosion for AISystemPlugin array
-				AISystemPlugin_Id = $(if ($i -lt $pluginsRaw.Count -and $pluginsRaw[$i]) { try { Get-SafeProperty $pluginsRaw[$i] 'Id' } catch { '' } } else { '' })
-				AISystemPlugin_Name = $(if ($i -lt $pluginsRaw.Count -and $pluginsRaw[$i]) { try { Get-SafeProperty $pluginsRaw[$i] 'Name' } catch { '' } } else { '' })
-				# Row explosion for ModelTransparencyDetails array
+			$rowObj = [PSCustomObject][ordered]@{
+				RecordId                          = $(if ($Record.RecordId) { $Record.RecordId } elseif ($Record.Identity) { $Record.Identity } elseif ($Record.Id) { $Record.Id } else { $auditData.Id })
+				CreationDate                      = $creationDate
+				RecordType                        = $Record.RecordType
+				Operation                         = $auditData.Operation
+				UserId                            = $auditData.UserId
+				AssociatedAdminUnits              = $(try { if ($Record.AssociatedAdminUnits) { $Record.AssociatedAdminUnits } elseif ($auditData.AssociatedAdminUnits) { $auditData.AssociatedAdminUnits } else { '' } } catch { '' })
+				AssociatedAdminUnitsNames         = $(try { if ($Record.AssociatedAdminUnitsNames) { $Record.AssociatedAdminUnitsNames } elseif ($auditData.AssociatedAdminUnitsNames) { $auditData.AssociatedAdminUnitsNames } else { '' } } catch { '' })
+				'@odata.type'                     = (Get-SafeProperty $auditData '@odata.type')
+				CreationTime                      = $creationTime
+				Id                                = $auditDataId
+				OrganizationId                    = $organizationId
+				ResultStatus                      = $resultStatusAudit
+				UserKey                           = $auditUserKey
+				UserType                          = $userType
+				Version                           = $version
+				Workload                          = $workload
+				ClientIP                          = $clientIP
+				ObjectId                          = (Get-SafeProperty $auditData 'ObjectId')
+				AzureActiveDirectoryEventType     = (Get-SafeProperty $auditData 'AzureActiveDirectoryEventType')
+				ActorContextId                    = (Get-SafeProperty $auditData 'ActorContextId')
+				ActorIpAddress                    = (Get-SafeProperty $auditData 'ActorIpAddress')
+				InterSystemsId                    = (Get-SafeProperty $auditData 'InterSystemsId')
+				IntraSystemId                     = (Get-SafeProperty $auditData 'IntraSystemId')
+				SupportTicketId                   = (Get-SafeProperty $auditData 'SupportTicketId')
+				TargetContextId                   = (Get-SafeProperty $auditData 'TargetContextId')
+				ApplicationId                     = $applicationId
+				'DeviceProperties.OS'             = $dpOS
+				'DeviceProperties.BrowserType'    = $dpBrowser
+				ErrorNumber                       = (Get-SafeProperty $auditData 'ErrorNumber')
+				SiteUrl                           = (Get-SafeProperty $auditData 'SiteUrl')
+				SourceRelativeUrl                 = (Get-SafeProperty $auditData 'SourceRelativeUrl')
+				SourceFileName                    = (Get-SafeProperty $auditData 'SourceFileName')
+				SourceFileExtension               = (Get-SafeProperty $auditData 'SourceFileExtension')
+				ListId                            = (Get-SafeProperty $auditData 'ListId')
+				ListItemUniqueId                  = (Get-SafeProperty $auditData 'ListItemUniqueId')
+				WebId                             = (Get-SafeProperty $auditData 'WebId')
+				ApplicationDisplayName            = (Get-SafeProperty $auditData 'ApplicationDisplayName')
+				EventSource                       = (Get-SafeProperty $auditData 'EventSource')
+				ItemType                          = (Get-SafeProperty $auditData 'ItemType')
+				SiteSensitivityLabelId            = (Get-SafeProperty $auditData 'SiteSensitivityLabelId')
+				GeoLocation                       = (Get-SafeProperty $auditData 'GeoLocation')
+				IsManagedDevice                   = (Get-SafeProperty $auditData 'IsManagedDevice')
+				DeviceDisplayName                 = (Get-SafeProperty $auditData 'DeviceDisplayName')
+				ListBaseType                      = (Get-SafeProperty $auditData 'ListBaseType')
+				ListServerTemplate                = (Get-SafeProperty $auditData 'ListServerTemplate')
+				AuthenticationType                = (Get-SafeProperty $auditData 'AuthenticationType')
+				Site                              = (Get-SafeProperty $auditData 'Site')
+				DoNotDistributeEvent              = (Get-SafeProperty $auditData 'DoNotDistributeEvent')
+				HighPriorityMediaProcessing       = (Get-SafeProperty $auditData 'HighPriorityMediaProcessing')
+				BrowserName                       = (Get-SafeProperty $auditData 'BrowserName')
+				BrowserVersion                    = (Get-SafeProperty $auditData 'BrowserVersion')
+				CorrelationId                     = $correlationId
+				Platform                          = (Get-SafeProperty $auditData 'Platform')
+				UserAgent                         = (Get-SafeProperty $auditData 'UserAgent')
+				ActorInfoString                   = (Get-SafeProperty $auditData 'ActorInfoString')
+				AppId                             = $appId
+				AuthType                          = (Get-SafeProperty $auditData 'AuthType')
+				ClientAppId                       = $clientAppId
+				ClientIPAddress                   = (Get-SafeProperty $auditData 'ClientIPAddress')
+				ClientInfoString                  = (Get-SafeProperty $auditData 'ClientInfoString')
+				ExternalAccess                    = (Get-SafeProperty $auditData 'ExternalAccess')
+				InternalLogonType                 = (Get-SafeProperty $auditData 'InternalLogonType')
+				LogonType                         = (Get-SafeProperty $auditData 'LogonType')
+				LogonUserSid                      = (Get-SafeProperty $auditData 'LogonUserSid')
+				MailboxGuid                       = (Get-SafeProperty $auditData 'MailboxGuid')
+				MailboxOwnerSid                   = (Get-SafeProperty $auditData 'MailboxOwnerSid')
+				MailboxOwnerUPN                   = (Get-SafeProperty $auditData 'MailboxOwnerUPN')
+				OrganizationName                  = (Get-SafeProperty $auditData 'OrganizationName')
+				OriginatingServer                 = (Get-SafeProperty $auditData 'OriginatingServer')
+				SessionId                         = (Get-SafeProperty $auditData 'SessionId')
+				TokenObjectId                     = (Get-SafeProperty $auditData 'TokenObjectId')
+				TokenTenantId                     = (Get-SafeProperty $auditData 'TokenTenantId')
+				TokenType                         = (Get-SafeProperty $auditData 'TokenType')
+				SaveToSentItems                   = (Get-SafeProperty $auditData 'SaveToSentItems')
+				OperationCount                    = (Get-SafeProperty $auditData 'OperationCount')
+				FileSizeBytes                     = (Get-SafeProperty $auditData 'FileSizeBytes')
+				MeetingId                         = (Get-SafeProperty $auditData 'MeetingId')
+				MeetingType                       = (Get-SafeProperty $auditData 'MeetingType')
+				EventSignature                    = (Get-SafeProperty $auditData 'EventSignature')
+				EventData                         = (Get-SafeProperty $auditData 'EventData')
+				Permission                        = (Get-SafeProperty $auditData 'Permission')
+				SensitivityLabelId                = (Get-SafeProperty $auditData 'SensitivityLabelId')
+				SharingLinkScope                  = (Get-SafeProperty $auditData 'SharingLinkScope')
+				TargetUserOrGroupType             = (Get-SafeProperty $auditData 'TargetUserOrGroupType')
+				TargetUserOrGroupName             = (Get-SafeProperty $auditData 'TargetUserOrGroupName')
+				MeetingURL                        = (Get-SafeProperty $auditData 'MeetingURL')
+				ChatId                            = (Get-SafeProperty $auditData 'ChatId')
+				MessageId                         = (Get-SafeProperty $auditData 'MessageId')
+				MessageSizeInBytes                = (Get-SafeProperty $auditData 'MessageSizeInBytes')
+				MessageType                       = (Get-SafeProperty $auditData 'MessageType')
+				FormId                            = (Get-SafeProperty $auditData 'FormId')
+				FormName                          = (Get-SafeProperty $auditData 'FormName')
+				VideoId                           = (Get-SafeProperty $auditData 'VideoId')
+				VideoName                         = (Get-SafeProperty $auditData 'VideoName')
+				ChannelId                         = (Get-SafeProperty $auditData 'ChannelId')
+				ViewDuration                      = (Get-SafeProperty $auditData 'ViewDuration')
+				ClientRegion                      = $clientRegion
+				CopilotLogVersion                 = $copilotLogVersion
+				TargetId                          = (Get-SafeProperty $auditData 'TargetId')
+				TeamName                          = (Get-SafeProperty $auditData 'TeamName')
+				TeamGuid                          = (Get-SafeProperty $auditData 'TeamGuid')
+				ResponseId                        = (Get-SafeProperty $auditData 'ResponseId')
+				IsAnonymous                       = (Get-SafeProperty $auditData 'IsAnonymous')
+				DeviceType                        = (Get-SafeProperty $auditData 'DeviceType')
+				ChannelName                       = (Get-SafeProperty $auditData 'ChannelName')
+				ChannelGuid                       = (Get-SafeProperty $auditData 'ChannelGuid')
+				ChannelType                       = (Get-SafeProperty $auditData 'ChannelType')
+				AppName                           = (Get-SafeProperty $auditData 'AppName')
+				EnvironmentName                   = (Get-SafeProperty $auditData 'EnvironmentName')
+				PlanId                            = (Get-SafeProperty $auditData 'PlanId')
+				PlanName                          = (Get-SafeProperty $auditData 'PlanName')
+				TaskId                            = (Get-SafeProperty $auditData 'TaskId')
+				TaskName                          = (Get-SafeProperty $auditData 'TaskName')
+				PercentComplete                   = (Get-SafeProperty $auditData 'PercentComplete')
+				CrossMailboxOperation             = (Get-SafeProperty $auditData 'CrossMailboxOperation')
+				RecordTypeNum                     = $(try { [int]$Record.RecordType } catch { $Record.RecordType })
+				ResultStatus_Audit                = $resultStatusAudit
+				ModelId                           = $modelId
+				ModelProvider                     = $modelProvider
+				ModelFamily                       = $modelFamily
+				TokensTotal                       = $tokensTotal
+				TokensInput                       = $tokensInput
+				TokensOutput                      = $tokensOutput
+				DurationMs                        = $durationMs
+				OutcomeStatus                     = $outcomeStatus
+				ConversationId                    = $conversationId
+				TurnNumber                        = $turnNumber
+				RetryCount                        = $retryCount
+				ClientVersion                     = $clientVersion
+				ClientPlatform                    = $clientPlatform
+				AgentId                           = $agentId
+				AgentName                         = $agentName
+				AgentVersion                      = $agentVersion
+				AgentCategory                     = $agentCategory
+				ApplicationName                   = (Get-SafeProperty $auditData 'ApplicationName')
+				SensitivityLabel                  = $(if ($i -lt $sensitivityLabels.Count) { try { [string]$sensitivityLabels[$i] } catch { '' } } else { '' })
+				AppHost                           = $appHost
+				ThreadId                          = $threadId
+				Context_Id                        = $(if ($i -lt $contexts.Count -and $contexts[$i]) { try { Get-SafeProperty $contexts[$i] 'Id' } catch { '' } } else { '' })
+				Context_Type                      = $(if ($i -lt $contexts.Count -and $contexts[$i]) { try { Get-SafeProperty $contexts[$i] 'Type' } catch { '' } } else { '' })
+				Message_Id                        = $(if ($i -lt $messages.Count) { $msg = $messages[$i]; if ($msg -is [psobject]) { try { Get-SafeProperty $msg 'Id' } catch { '' } } else { $msg } } else { '' })
+				Message_isPrompt                  = $(if ($i -lt $messages.Count) { $msg = $messages[$i]; if ($msg -is [psobject]) { try { script:BoolTFFast (Get-SafeProperty $msg 'isPrompt') } catch { '' } } else { '' } } else { '' })
+				AccessedResource_Action           = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'Action' } catch { '' } } else { '' })
+				AccessedResource_PolicyDetails    = $(if ($i -lt $resources.Count -and $resources[$i]) { try { script:ToJsonIfObjectFast (Get-SafeProperty $resources[$i] 'PolicyDetails') } catch { '' } } else { '' })
+				AccessedResource_SiteUrl          = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'SiteUrl' } catch { '' } } else { '' })
+				AISystemPlugin_Id                 = $(if ($i -lt $pluginsRaw.Count -and $pluginsRaw[$i]) { try { Get-SafeProperty $pluginsRaw[$i] 'Id' } catch { '' } } else { '' })
+				AISystemPlugin_Name               = $(if ($i -lt $pluginsRaw.Count -and $pluginsRaw[$i]) { try { Get-SafeProperty $pluginsRaw[$i] 'Name' } catch { '' } } else { '' })
 				ModelTransparencyDetails_ModelName = $(if ($i -lt $modelDetRaw.Count -and $modelDetRaw[$i]) { try { Get-SafeProperty $modelDetRaw[$i] 'ModelName' } catch { '' } } else { '' })
-				MessageIds = $(if ($messageIds.Count -gt 0) { $messageIds -join ';' } else { '' })
-				# DSPM for AI: SensitivityLabels array explosion
-				SensitivityLabel = $(if ($i -lt $sensitivityLabels.Count) { try { [string]$sensitivityLabels[$i] } catch { '' } } else { '' })
-				
-				# DSPM for AI: 2-level explosion handling for Context Items[], Plugins[], RecordingSessions[]
-				# Full explosion (-ExplodeArrays/-ExplodeDeep): row-per-item explosion
-				Context_Item = $(
+				MessageIds                        = $(if ($messageIds.Count -gt 0) { $messageIds -join ';' } else { '' })
+				AccessedResource_Name             = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'Name' } catch { '' } } else { '' })
+				AccessedResource_SensitivityLabel = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'SensitivityLabel' } catch { '' } } else { '' })
+				AccessedResource_ResourceType     = $(if ($i -lt $resources.Count -and $resources[$i]) { try { Get-SafeProperty $resources[$i] 'ResourceType' } catch { '' } } else { '' })
+				Context_Item                      = $(
 					if ($activityType -eq 'CopilotInteraction') {
 						if ($PartialExplode) {
-							# Partial mode: Semi-colon-joined JSON for ALL items from matching context
 							if ($i -lt $contexts.Count -and $contexts[$i]) {
 								try {
 									$items = script:GetArrayFast $contexts[$i] 'Items'
@@ -9227,7 +9450,6 @@ function Convert-ToPurviewExplodedRecords {
 								} catch { '' }
 							} else { '' }
 						} else {
-							# Full mode: One item per row (loop through all contexts to find matching item index)
 							try {
 								$foundItem = $null
 								foreach ($ctx in $contexts) {
@@ -9244,8 +9466,6 @@ function Convert-ToPurviewExplodedRecords {
 						}
 					} else { '' }
 				)
-				
-				CopilotLogVersion = $copilotLogVersion
 			}
 			
 			# Partial explosion mode: Preserve AuditData column (full JSON) for downstream processing
@@ -9325,16 +9545,17 @@ function Convert-ToStructuredRecord {
 			return @() 
 		}
 		
-		# NON-EXPLOSION MODE: Return 7-column compact record with raw AuditData only
+		# NON-EXPLOSION MODE: Return 8-column compact record matching Purview UI export schema
 		if (-not $EnableExplosion -and -not $ExplodeDeep) {
 			$compactRecord = [pscustomobject]@{
 				RecordId               = $(if ($Record.RecordId) { $Record.RecordId } elseif ($Record.Identity) { $Record.Identity } elseif ($Record.Id) { $Record.Id } else { $auditData.Id })
 				CreationDate           = $Record.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
 				RecordType             = $Record.RecordType
-				Operation              = $(try { $auditData.Operation } catch { $Record.Operations })
+				Operation              = $(try { $auditData.Operation } catch { if ($Record.Operation) { $Record.Operation } else { $Record.Operations } })
+				UserId                 = if ($Record.UserId) { $Record.UserId } elseif ($Record.UserIds) { $Record.UserIds } else { '' }
 				AuditData              = $Record.AuditData
-				AssociatedAdminUnits   = $null
-				AssociatedAdminUnitsNames = $null
+				AssociatedAdminUnits      = $(try { if ($auditData.AssociatedAdminUnits) { $auditData.AssociatedAdminUnits } elseif ($Record.AssociatedAdminUnits) { $Record.AssociatedAdminUnits } else { '' } } catch { '' })
+				AssociatedAdminUnitsNames = $(try { if ($auditData.AssociatedAdminUnitsNames) { $auditData.AssociatedAdminUnitsNames } elseif ($Record.AssociatedAdminUnitsNames) { $Record.AssociatedAdminUnitsNames } else { '' } } catch { '' })
 			}
 			return @($compactRecord)
 		}
@@ -9412,8 +9633,6 @@ function Convert-ToStructuredRecord {
 			RecordId           = $(if ($Record.RecordId) { $Record.RecordId } elseif ($Record.Identity) { $Record.Identity } elseif ($Record.Id) { $Record.Id } else { $auditData.Id })
 			RecordType         = $Record.RecordType
 			CreationDate       = $Record.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
-			UserIds            = $Record.UserIds
-			Operations         = $Record.Operations
 			ResultStatus       = $Record.ResultStatus
 			ResultCount        = $Record.ResultCount
 			Identity           = $Record.Identity
@@ -9942,16 +10161,16 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 			$rec = [pscustomobject]@{
 				RecordType   = $(try { [int]$sampleRow.RecordType } catch { 0 })
 				CreationDate = $(if ($sampleRow.CreationDate) { $d = script:Parse-DateSafe $sampleRow.CreationDate; if ($d) { $d } else { Get-Date } } else { Get-Date })
-				UserIds      = @($sampleRow.UserId)
-				Operations   = $sampleRow.Operation
+				UserIds      = @(if ($sampleRow.UserIds) { $sampleRow.UserIds } elseif ($sampleRow.UserId) { $sampleRow.UserId } else { $null })
+				Operations   = if ($sampleRow.Operations) { $sampleRow.Operations } elseif ($sampleRow.Operation) { $sampleRow.Operation } else { $null }
 				ResultStatus = $(try { $sampleRow.ResultStatus } catch { '' })
 				ResultCount  = 0
 				Identity     = $identity
 				IsValid      = $true
 				ObjectState  = ''
 				AuditData    = $sampleRow.AuditData
-				Operation    = $sampleRow.Operation
-				UserId       = $sampleRow.UserId
+				Operation    = if ($sampleRow.Operation) { $sampleRow.Operation } elseif ($sampleRow.Operations) { $sampleRow.Operations } else { $null }
+				UserId       = if ($sampleRow.UserId) { $sampleRow.UserId } elseif ($sampleRow.UserIds) { $sampleRow.UserIds } else { $null }
 			}
 			$sampleOut = Convert-ToPurviewExplodedRecords -Record $rec -SkipMetrics
 			# sample row count preview removed (verbosity reduction)
@@ -9978,7 +10197,7 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 				if ($endFilter -and $creation -ge $endFilter) { $keep = $false }
 			}
 			if ($keep -and $applyActivityFilter) {
-				$op = $row.Operation
+				$op = if ($row.Operation) { $row.Operation } elseif ($row.Operations) { $row.Operations } else { $null }
 				if (-not $op -or -not $activitySet.Contains([string]$op)) { $keep = $false }
 			}
 			if (-not $keep) { continue }
@@ -9987,16 +10206,16 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 			$rec = [pscustomobject]@{
 				RecordType   = $(try { [int]$row.RecordType } catch { 0 })
 				CreationDate = $(if ($creation) { $creation } else { Get-Date })
-				UserIds      = @($row.UserId)
-				Operations   = $row.Operation
+				UserIds      = @(if ($row.UserIds) { $row.UserIds } elseif ($row.UserId) { $row.UserId } else { $null })
+				Operations   = if ($row.Operations) { $row.Operations } elseif ($row.Operation) { $row.Operation } else { $null }
 				ResultStatus = $(try { $row.ResultStatus } catch { '' })
 				ResultCount  = 0
 				Identity     = $identity
 				IsValid      = $true
 				ObjectState  = ''
 				AuditData    = $auditData
-				Operation    = $row.Operation
-				UserId       = $row.UserId
+				Operation    = if ($row.Operation) { $row.Operation } elseif ($row.Operations) { $row.Operations } else { $null }
+				UserId       = if ($row.UserId) { $row.UserId } elseif ($row.UserIds) { $row.UserIds } else { $null }
 			}
 			[void]$filteredRows.Add($row)
 			[void]$allLogs.Add($rec)
@@ -10543,6 +10762,32 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 					}
 					Write-LogHost ""
 				}
+				
+				# EXTREME VOLUME WARNING: Detect scenarios likely to exceed token lifetime (P2 advisory)
+				# Triggers on: very long date range with many activity types, or very high partition counts
+				# These runs routinely take 4-8+ hours and are prone to 401 token expiration mid-run
+				$activityCount = $grp.Activities.Count
+				if (($daySpan -gt 60 -and $activityCount -gt 10) -or $degree -gt 120) {
+					$estimatedHours = [Math]::Round(($degree * 2.5) / 60, 1)  # ~2.5 min per partition is a rough average
+					Write-LogHost "" -ForegroundColor Red
+					Write-LogHost "  ╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Red
+					Write-LogHost "  ║  ⚠  EXTREME VOLUME WARNING                                 ║" -ForegroundColor Red
+					Write-LogHost "  ╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Red
+					Write-LogHost "  Date Range: $([Math]::Round($daySpan, 0)) days | Activity Types: $activityCount | Partitions: $degree" -ForegroundColor Red
+					Write-LogHost "  Estimated run time: $estimatedHours+ hours (actual may vary significantly)" -ForegroundColor Yellow
+					Write-LogHost "" -ForegroundColor Yellow
+					Write-LogHost "  This query volume is very likely to encounter token expiration (401)" -ForegroundColor Yellow
+					Write-LogHost "  during processing. Recommendations:" -ForegroundColor Yellow
+					$authMethod = $script:SharedAuthState.AuthMethod
+					if ($authMethod -in 'weblogin', 'devicecode') {
+						Write-LogHost "    ► STRONGLY recommend switching to -AppRegistration auth" -ForegroundColor Cyan
+						Write-LogHost "      (enables automatic silent token refresh without browser prompts)" -ForegroundColor Gray
+					}
+					Write-LogHost "    ► Progress is checkpointed automatically — use -Resume if interrupted" -ForegroundColor Cyan
+					Write-LogHost "    ► Incremental data is saved to disk every 500 pages per partition" -ForegroundColor Cyan
+					Write-LogHost "    ► Consider splitting into smaller date ranges (e.g., 30-day windows)" -ForegroundColor Cyan
+					Write-LogHost "" -ForegroundColor Red
+				}
 			}
 			
 			if (-not $UseEOM) { 
@@ -10800,6 +11045,15 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 		
 		# Track partition status for retry logic and final summary
 		$script:partitionStatus = @{}
+		
+		# Track page download progress per partition index (for STATUS display)
+		$script:partitionPageCounts = @{}
+		
+		# Track how many job output messages we've already processed per job (prevent O(n) iteration growth)
+		$script:jobOutputOffset = @{}
+		
+		# Track how many partitions were already complete before this run started (resume offset for STATUS display)
+		$script:resumeCompletedOffset = if ($script:IsResumeMode -and $script:CheckpointData.partitions.completed) { $script:CheckpointData.partitions.completed.Count } else { 0 }
 		foreach ($pt in $partitions) {
 			$script:partitionStatus[$pt.Index] = @{
 				Partition = $pt
@@ -10828,7 +11082,7 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 		
 		# Define the ThreadJob scriptblock once for reuse in both initial and retry attempts
 		$queryJobScriptBlock = {
-		param($pStart, $pEnd, [array]$activity, $resultSize, $userIds, $idx, $tot, $sharedAuthState, $partition, $maxOutageMinutes, $apiVersion, $logPath, $existingQueryId)
+		param($pStart, $pEnd, [array]$activity, $resultSize, $userIds, $idx, $tot, $sharedAuthState, $partition, $maxOutageMinutes, $apiVersion, $logPath, $existingQueryId, $incrementalDir, $runTimestamp, $memoryFlushEnabled)
 			# Suppress web request progress bar in job runspace
 			$ProgressPreference = 'SilentlyContinue'
 			
@@ -10860,7 +11114,43 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 				return ($remainingMinutes -gt $bufferMinutes)
 			}
 			
-			$allRecords = @()
+			# Wait-ForTokenRefresh: Called by thread jobs on 401/403 to wait for main thread token refresh
+			# Instead of retrying immediately with the same expired token, waits until $sharedAuthState.Token changes
+			# AppReg: max 120s (silent client_credentials refresh is fast)
+			# Interactive: max 86400s (24 hours - user may be away overnight)
+			function Wait-ForTokenRefresh {
+				$oldToken = $sharedAuthState.Token
+				$authMethod = $sharedAuthState.AuthMethod
+				$maxWaitSeconds = if ($authMethod -eq 'AppRegistration') { 120 } else { 86400 }
+				$checkInterval = if ($authMethod -eq 'AppRegistration') { 5 } else { 30 }
+				$waited = 0
+				
+				Write-Output "[$(Get-Date -Format 'HH:mm:ss')] [P$idx] Auth failure detected - waiting for main thread token refresh ($authMethod mode, max ${maxWaitSeconds}s)..."
+				
+				while ($waited -lt $maxWaitSeconds) {
+					Start-Sleep -Seconds $checkInterval
+					$waited += $checkInterval
+					
+					# Check if token changed (main thread refreshed it)
+					if ($sharedAuthState.Token -ne $oldToken) {
+						Write-Output "[$(Get-Date -Format 'HH:mm:ss')] [P$idx] Token refreshed by main thread after ${waited}s wait. Resuming."
+						return $true
+					}
+					
+					# Periodic status for long waits (every 5 minutes)
+					if ($waited % 300 -eq 0) {
+						Write-Output "[$(Get-Date -Format 'HH:mm:ss')] [P$idx] Still waiting for token refresh... (${waited}s elapsed, max ${maxWaitSeconds}s)"
+					}
+				}
+				
+				Write-Output "[$(Get-Date -Format 'HH:mm:ss')] [P$idx] Token refresh wait timed out after ${maxWaitSeconds}s."
+				return $false
+			}
+			
+			$allRecords = [System.Collections.Generic.List[object]]::new()
+			$threadSavedToDisk = $false
+			$threadSavedFile = $null
+			$jobRunId = [System.Guid]::NewGuid().ToString('N').Substring(0, 8)  # Unique per job execution — ensures retry flush files don't collide with original run files
 			$t0 = Get-Date
 			$queryId = $existingQueryId  # Use existing QueryId if provided (for retry after 403 fetch failure)
 			$debugInfo = $null
@@ -11033,21 +11323,14 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 						
 						if ($_.Exception.Response) {
 							$statusCode = $_.Exception.Response.StatusCode.value__
-							if ($statusCode -in @(502, 503, 504)) {
+							if ($statusCode -ge 500) {
 								$isNetworkError = $true
-								$errorSummary = switch ($statusCode) {
-									502 { "502 Bad Gateway" }
-									503 { "503 Service Unavailable" }
-									504 { "504 Gateway Timeout" }
-								}
+								$errorSummary = "$statusCode Server Error"
 							}
 						}
-						if (-not $isNetworkError -and ($errorMessage -match '502|503|504|Bad Gateway|Service Unavailable|Gateway Timeout')) {
+						if (-not $isNetworkError -and ($errorMessage -match '5\d{2}|Bad Gateway|Service Unavailable|Gateway Timeout|Internal Server Error')) {
 							$isNetworkError = $true
-							$errorSummary = if ($errorMessage -match '502') { "502 Bad Gateway" } 
-										   elseif ($errorMessage -match '503') { "503 Service Unavailable" }
-										   elseif ($errorMessage -match '504') { "504 Gateway Timeout" }
-										   else { "Network infrastructure error" }
+							$errorSummary = "Server error (from message)"
 						}
 						if (-not $isNetworkError -and ($errorMessage -match 'timed out|connection|unable to connect|could not be resolved')) {
 							$isNetworkError = $true
@@ -11188,6 +11471,7 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 							}
 						}
 						elseif ($is429Create) {
+							$createRetries++
 							# Throttling - get retry-after value
 							if ($_.Exception.Response.Headers -and $_.Exception.Response.Headers['Retry-After']) {
 								$retryAfter = [int]$_.Exception.Response.Headers['Retry-After']
@@ -11213,6 +11497,11 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 							}
 							
 							Start-Sleep -Seconds $retryAfter
+							
+							# Safety cap: prevent truly infinite throttle loops
+							if ($createRetries -ge 20) {
+								throw "Query creation throttled after $createRetries attempts - aborting partition"
+							}
 						}
 						elseif ($isNetworkError) {
 										# Network error - check if we're still within the outage tolerance window
@@ -11305,26 +11594,17 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 			}
 			}  # End of if (-not $skipCreate) block
 			
-			# Step 2: Poll for completion with PRODUCTION-SCALE backoff + timeout detection
+			# Step 2: Poll for completion (no artificial timeout — polls until Purview responds)
 				# Microsoft guidance: 30-60s intervals for enterprise-scale parallel execution
-				# Timeout: Dynamic limit based on partition count (DELETE hung queries to keep tenant clean)
-				# Scale maxPolls and timeout based on partition count (more partitions = longer backend processing)
 				# Network outage tolerance (adaptive) using passed-in MaxNetworkOutageMinutes parameter
 				$effectiveOutage = if ($maxOutageMinutes -and $maxOutageMinutes -gt 0) { $maxOutageMinutes } else { 30 }
 				$netOutageStart = $null
 				$netErrorStreak = 0
-				$netPatterns = @('timed out','connection','unable to connect','remote name could not be resolved','temporarily unavailable','network','502','503','504','bad gateway','gateway timeout','service unavailable')
+				$netPatterns = @('timed out','connection','unable to connect','remote name could not be resolved','temporarily unavailable','network','500','502','503','504','bad gateway','gateway timeout','service unavailable','internal server error')
 				$lastNetHeartbeat = Get-Date
 				$lastNetMessage = $null  # Throttle repetitive network messages
 				$netMessageMinInterval = 60  # Minimum seconds between network status messages
 				$pollCount = 0
-				$basePolls = 80  # 80 polls base (80 minutes with 60s intervals)
-				$extraPollsPerPartition = 5  # Add 5 polls per partition above 5 (~5 min each)
-				$partitionScaling = [Math]::Max(0, $tot - 5)
-				$maxPolls = $basePolls + ($partitionScaling * $extraPollsPerPartition)  # 80 for 5, 90 for 7, 105 for 10
-				
-				# Bounded timeout: 180 minutes per slice (acts as guardrail, not scaling crutch)
-				$maxWaitMinutes = 180
 				
 				$pollStartTime = Get-Date
 				$queryComplete = $false
@@ -11334,58 +11614,16 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 				$telemetry.InitialPollDelaySeconds = $initialWaitSeconds
 				Start-Sleep -Seconds $initialWaitSeconds
 				
-				while ($pollCount -lt $maxPolls -and -not $queryComplete) {
+				while (-not $queryComplete) {
 					$pollCount++
-					
-					# Check for hard timeout (hung query detection)
-					$elapsedMinutes = ((Get-Date) - $pollStartTime).TotalMinutes
-					if ($elapsedMinutes -gt $maxWaitMinutes) {
-						# DELETE hung query to keep tenant clean
-						try {
-							$deleteUri = "https://graph.microsoft.com/$apiVersion/security/auditLog/queries/$queryId"
-							Invoke-RestMethod -Method DELETE -Uri $deleteUri `
-								-Headers (Get-CurrentHeaders -ClientRequestId $clientRequestId) -ErrorAction SilentlyContinue | Out-Null
-						} catch {
-							# Silently continue - cleanup failure shouldn't block error reporting
-						}
-						throw "Query timeout after $([Math]::Round($elapsedMinutes, 1)) minutes - query deleted"
-					}
-					
-					# Deadline splitter: Check if we're at 90 min and query still running/notStarted
-					if ($elapsedMinutes -ge 90) {
-						$statusCheckResponse = $null
-						try {
-							$statusUri = "https://graph.microsoft.com/$apiVersion/security/auditLog/queries/$queryId"
-							$statusCheckResponse = Invoke-RestMethod -Method GET -Uri $statusUri `
-								-Headers (Get-CurrentHeaders -ClientRequestId $clientRequestId) -ErrorAction Stop
-						} catch {
-							# If we can't check status, continue with normal flow
-						}
-						
-						if ($statusCheckResponse -and $statusCheckResponse.status -in @('running','notStarted')) {
-							# DELETE query and return SplitRequired signal
-							try {
-								Invoke-RestMethod -Method DELETE -Uri (Get-AuditUri -path "queries/$queryId") `
-									-Headers (Get-CurrentHeaders -ClientRequestId $clientRequestId) -ErrorAction SilentlyContinue | Out-Null
-							} catch {
-								# Silently continue
-							}
-							
-							# Return structured object indicating split required
-							return @{
-								SplitRequired = $true
-								ElapsedMinutes = $elapsedMinutes
-								Status = $statusCheckResponse.status
-								PartitionStart = $pStart
-								PartitionEnd = $pEnd
-								Records = @()
-								QueryId = $queryId
-							}
-						}
-					}
 					
 					# Poll query status with 429 throttling detection
 					try {
+						# Pre-check: if token is already expired, wait for refresh before making a doomed API call
+						if (-not (Test-TokenValid)) {
+							Write-Output "[$(Get-Date -Format 'HH:mm:ss')] [P$idx] Token expired before POLL - waiting for main thread refresh..."
+							$null = Wait-ForTokenRefresh
+						}
 						$statusResponse = Invoke-RestMethod -Method GET -Uri (Get-AuditUri -path "queries/$queryId") `
 							-Headers (Get-CurrentHeaders -ClientRequestId $clientRequestId) -ErrorAction Stop
 						# Reset outage tracking on success
@@ -11487,7 +11725,16 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 												Write-Output "[403-PERM] Partition $idx/$tot - PERMANENT 403 on POLL - Failing partition | request-id: $requestId403Poll | client-request-id: $clientRequestId"
 								}
 								
-								# 403 during status polling - increment counter and retry with backoff
+								# 403 during status polling - wait for main thread to refresh token first
+								$tokenRefreshed = Wait-ForTokenRefresh
+								if ($tokenRefreshed) {
+									# Token was refreshed - reset counter and retry immediately with fresh token
+									$script:poll403Count = 0
+									Write-Output "[403-POLL] Partition $idx/$tot - Token refreshed, resetting retry counter and resuming poll"
+									continue  # Retry this poll with new token
+								}
+								
+								# Token refresh failed/timed out - fall through to limited retry logic
 								if (-not $script:poll403Count) { $script:poll403Count = 0 }
 								$script:poll403Count++
 								$max403Polls = 3
@@ -11536,7 +11783,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 								}
 								
 								if ($shouldShowMessage) {
-									Write-Host "[NET] Transient network issue (streak $netErrorStreak, outage $([Math]::Round($elapsedOutage.TotalMinutes,1))m) - Partition $idx/$tot" -ForegroundColor Yellow
+									Write-Output "[NETWORK] Transient network issue (streak $netErrorStreak, outage $([Math]::Round($elapsedOutage.TotalMinutes,1))m) - Partition $idx/$tot"
 									$lastNetMessage = Get-Date
 								}
 								
@@ -11546,7 +11793,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 								
 								# Heartbeat every ~5 minutes of sustained outage (only if outage > 2 min)
 								if ($elapsedOutage.TotalMinutes -ge 2 -and ((Get-Date) - $lastNetHeartbeat).TotalMinutes -ge 5) {
-									Write-Host "[NET] Still waiting on network recovery (outage $([Math]::Round($elapsedOutage.TotalMinutes,1))m, tolerance $effectiveOutage m)" -ForegroundColor DarkYellow
+									Write-Output "[NETWORK] Still waiting on network recovery (outage $([Math]::Round($elapsedOutage.TotalMinutes,1))m, tolerance $effectiveOutage m)"
 									$lastNetHeartbeat = Get-Date
 								}
 								
@@ -11554,7 +11801,20 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 									throw "Network outage exceeded tolerance ($effectiveOutage minutes)"
 								}
 								continue
-							} else {
+							}
+							elseif ($statusCode -eq 401 -or $errorMessage -match '401|Unauthorized') {
+								# 401 Unauthorized during poll - token expired, wait for main thread refresh
+								Write-Output "[ERROR] Partition $idx/$tot - 401 Unauthorized during poll - waiting for token refresh"
+								$refreshed = Wait-ForTokenRefresh -TimeoutSeconds 120 -CheckIntervalSeconds 5
+								if ($refreshed) {
+									Write-Output "[STATUS] Partition $idx/$tot - Token refreshed, retrying poll"
+									$currentToken = $SharedAuthState.AccessToken
+									continue  # Retry the poll with fresh token
+								} else {
+									throw "401 Unauthorized during poll and token refresh timed out"
+								}
+							}
+							else {
 								throw  # Non-transient, abort partition
 							}
 						}
@@ -11670,19 +11930,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 							Start-Sleep -Seconds $waitSeconds
 						}
 					}
-				}							if (-not $queryComplete) {
-								# Clean up orphaned query from Purview before failing
-								if ($queryId) {
-									try {
-										Invoke-RestMethod -Method DELETE -Uri (Get-AuditUri -path "queries/$queryId") `
-											-Headers (Get-CurrentHeaders -ClientRequestId $clientRequestId) -ErrorAction SilentlyContinue | Out-Null
-										Write-Output "[CLEANUP] Partition $idx/$tot - Deleted query $queryId from Purview (poll exhausted)"
-									} catch {
-										# Silently continue - cleanup failure shouldn't block retry
-									}
-								}
-								throw "Query timed out"
-							}
+				}
 							
 							# Step 3: Retrieve records with pagination
 							$recordsUri = Get-AuditUri -path "queries/$queryId/records"
@@ -11694,7 +11942,9 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 							
 							# CRITICAL: When resultSize=0, fetch unlimited records (don't check count)
 							# When resultSize>0, stop when we reach the limit (EOM mode behavior)
-							while ($recordsUri -and ($resultSize -eq 0 -or $allRecords.Count -lt $resultSize)) {
+							$pageFlushTotalCount = 0
+							$pageFlushFilePath = $null
+							while ($recordsUri -and ($resultSize -eq 0 -or ($pageFlushTotalCount + $allRecords.Count) -lt $resultSize)) {
 								# Retry loop for record fetching with 429 and network error handling
 								$fetchRetries = 0
 								$maxFetchRetries = 5
@@ -11727,21 +11977,14 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 										
 										if ($_.Exception.Response) {
 											$statusCode = $_.Exception.Response.StatusCode.value__
-											if ($statusCode -in @(502, 503, 504)) {
+											if ($statusCode -ge 500) {
 												$isNetworkFetch = $true
-												$fetchErrorSummary = switch ($statusCode) {
-													502 { "502 Bad Gateway" }
-													503 { "503 Service Unavailable" }
-													504 { "504 Gateway Timeout" }
-												}
+												$fetchErrorSummary = "$statusCode Server Error"
 											}
 										}
-										if (-not $isNetworkFetch -and ($fetchErrorMessage -match '502|503|504|Bad Gateway|Service Unavailable|Gateway Timeout')) {
+										if (-not $isNetworkFetch -and ($fetchErrorMessage -match '5\d{2}|Bad Gateway|Service Unavailable|Gateway Timeout|Internal Server Error')) {
 											$isNetworkFetch = $true
-											$fetchErrorSummary = if ($fetchErrorMessage -match '502') { "502 Bad Gateway" }
-														   elseif ($fetchErrorMessage -match '503') { "503 Service Unavailable" }
-														   elseif ($fetchErrorMessage -match '504') { "504 Gateway Timeout" }
-														   else { "Network infrastructure error" }
+											$fetchErrorSummary = "Server error (from message)"
 										}
 										if (-not $isNetworkFetch -and ($fetchErrorMessage -match 'timed out|connection|unable to connect|could not be resolved')) {
 											$isNetworkFetch = $true
@@ -11834,9 +12077,18 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 																	Write-Output "[403-PERM] Partition $idx/$tot - PERMANENT 403 on FETCH - Failing partition | request-id: $requestId403Fetch | client-request-id: $clientRequestId"
 											}
 											
-											# 403 Forbidden during FETCH - limited retry with exponential backoff
+											# 403 Forbidden during FETCH - wait for main thread to refresh token first
+											$tokenRefreshed = Wait-ForTokenRefresh
+											if ($tokenRefreshed) {
+												# Token was refreshed - reset counter and retry immediately with fresh token
+												$fetchRetries = 0
+												Write-Output "[403-FETCH] Partition $idx/$tot - Token refreshed, resetting retry counter and resuming fetch"
+												continue  # Retry this fetch with new token
+											}
+											
+											# Token refresh failed/timed out - fall through to limited retry logic
 											$fetchRetries++
-											$max403FetchRetries = 3  # Limited retries since we can't refresh token inside ThreadJob
+											$max403FetchRetries = 3
 											
 											if ($fetchRetries -le $max403FetchRetries) {
 												# Exponential backoff: 15s, 30s, 60s
@@ -11917,6 +12169,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 								
 								# Track page retrieval
 								$telemetry.PageCount++
+								# Emit page count heartbeat on page 1 and every 200 pages so main thread can display progress in STATUS line
+								if ($telemetry.PageCount -eq 1 -or $telemetry.PageCount % 200 -eq 0) {
+									Write-Output "[PROGRESS] P${idx}/$tot pg$($telemetry.PageCount)"
+								}
 								if ($telemetry.PageCount -eq 1) {
 									$telemetry.FirstPageAt = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
 								}
@@ -11934,7 +12190,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 												Operations = $record.operation
 												AuditData = if ($record.auditData) { $record.auditData | ConvertTo-Json -Depth 100 -Compress } else { '{}' }
 												_ParsedAuditData = $record.auditData  # Already-parsed object from Graph API
-												ResultIndex = $allRecords.Count + 1
+												ResultIndex = $pageFlushTotalCount + $allRecords.Count + 1
 												ResultCount = 1
 												Identity = $record.id
 												IsValid = $true
@@ -11946,11 +12202,11 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 													}
 													
 													if ($includeRecord) {
-														$allRecords += $normalized
+														[void]$allRecords.Add($normalized)
 													}
 													
 													# Only break if resultSize > 0 and we've reached the limit
-													if ($resultSize -gt 0 -and $allRecords.Count -ge $resultSize) {
+													if ($resultSize -gt 0 -and ($pageFlushTotalCount + $allRecords.Count) -ge $resultSize) {
 														break
 													}
 												}
@@ -11958,6 +12214,36 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 											
 											# Check for next page
 											$recordsUri = if ($recordsResponse.'@odata.nextLink') { $recordsResponse.'@odata.nextLink' } else { $null }
+											
+											# PER-PAGE MEMORY FLUSH: Append current page to disk and clear in-memory batch
+											if ($memoryFlushEnabled -and $allRecords.Count -gt 0) {
+												try {
+													if (-not (Test-Path $incrementalDir)) { New-Item -ItemType Directory -Path $incrementalDir -Force | Out-Null }
+													if (-not $pageFlushFilePath) {
+														$pageFlushFilePath = Join-Path $incrementalDir "Part${idx}_${runTimestamp}_qid-${queryId}_${jobRunId}.jsonl"
+													}
+													$allRecords | ForEach-Object { $_ | ConvertTo-Json -Depth 10 -Compress } | Add-Content -Path $pageFlushFilePath -Encoding utf8
+													$pageFlushTotalCount += $allRecords.Count
+													$allRecords.Clear()
+													$threadSavedToDisk = $true
+												} catch {
+													Write-Output "[FLUSH-WARN] Partition $idx/$tot - Page flush failed, keeping in memory: $($_.Exception.Message)"
+												}
+											}
+											
+											# ROLLING PERSISTENCE SAFETY NET: Write backup snapshot every 500 pages
+											# This is write-only — $allRecords is NOT cleared. Normal flow is unchanged.
+											# If the process crashes mid-pagination, these files exist for manual recovery.
+											if (-not $memoryFlushEnabled -and $incrementalDir -and $allRecords.Count -gt 0 -and $telemetry.PageCount -gt 0 -and $telemetry.PageCount % 500 -eq 0) {
+												try {
+													if (-not (Test-Path $incrementalDir)) { New-Item -ItemType Directory -Path $incrementalDir -Force | Out-Null }
+													$snapshotFile = Join-Path $incrementalDir "Part${idx}_${runTimestamp}_snapshot_page$($telemetry.PageCount)_$($allRecords.Count)records.jsonl"
+													$allRecords | ForEach-Object { $_ | ConvertTo-Json -Depth 10 -Compress } | Out-File -FilePath $snapshotFile -Encoding utf8 -Force
+													Write-Output "[SNAPSHOT] Partition $idx/$tot - Safety snapshot at page $($telemetry.PageCount): $($allRecords.Count) records written to disk"
+												} catch {
+													Write-Output "[SNAPSHOT-WARN] Partition $idx/$tot - Failed to write safety snapshot: $($_.Exception.Message)"
+												}
+											}
 										}
 								}
 								catch {
@@ -11977,6 +12263,16 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 									$fetchErrorRetryCount++
 									
 									if ($fetchErrorRetryCount -lt $maxFetchErrorRetries) {
+										# 401/Unauthorized: Wait for main thread token refresh before retrying (same pattern as 403 handler)
+										if ($unexpectedError -match '401|Unauthorized') {
+											$tokenRefreshed = Wait-ForTokenRefresh
+											if ($tokenRefreshed) {
+												$fetchErrorRetryCount = 0  # Reset retries — fresh token deserves fresh attempts
+												Write-Output "[FETCH-RETRY] Partition $idx/$tot - 401 detected, token refreshed, resetting retry counter"
+												continue  # Retry immediately with fresh token
+											}
+										}
+										
 										# Retries remain - log and retry the same page
 										Write-Output "[FETCH-RETRY] Partition $idx/$tot - Unexpected error ($fetchErrorRetryCount/$maxFetchErrorRetries) - Retrying in 30s: $unexpectedError"
 										try {
@@ -12011,11 +12307,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 																	$t1 = Get-Date
 									
 									# Finalize telemetry
-									$telemetry.RowCount = $allRecords.Count
-									$telemetry.ElapsedMinutes = [Math]::Round(($t1 - $t0).TotalMinutes, 2)
+								$telemetry.RowCount = $pageFlushTotalCount + $allRecords.Count
 									
 									# POST-FETCH 10K LIMIT DETECTION: Only applies to EOM mode (resultSize > 0)
-											if ($resultSize -gt 0 -and $allRecords.Count -eq 10000) {
+											if ($resultSize -gt 0 -and ($pageFlushTotalCount + $allRecords.Count) -eq 10000) {
 												$partitionHours = ($pEnd - $pStart).TotalHours
 												$minSubdivisionDays = 0.001389  # 2 minutes
 												$minSubdivisionHours = $minSubdivisionDays * 24
@@ -12046,7 +12341,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 												}
 											}
 											# POST-FETCH 1M LIMIT DETECTION: Graph API has 1,000,000 record limit per query
-											elseif ($resultSize -eq 0 -and $allRecords.Count -ge 1000000) {
+											elseif ($resultSize -eq 0 -and ($pageFlushTotalCount + $allRecords.Count) -ge 1000000) {
 												$partitionHours = ($pEnd - $pStart).TotalHours
 												$minSubdivisionDays = 0.001389  # 2 minutes
 												$minSubdivisionHours = $minSubdivisionDays * 24
@@ -12092,8 +12387,27 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 									throw [System.Exception]::new("Unexpected record processing error: $unexpectedProcessingMessage")
 								}
 
+								# Thread-side final persistence (memory-flush mode): write final partition JSONL before returning
+								if ($memoryFlushEnabled -and $incrementalDir -and $allRecords.Count -gt 0) {
+									try {
+										if (-not (Test-Path $incrementalDir)) {
+											New-Item -ItemType Directory -Path $incrementalDir -Force | Out-Null
+										}
+										$threadSavedFile = Join-Path $incrementalDir "Part${idx}_${runTimestamp}_qid-${queryId}_$($allRecords.Count)records.jsonl"
+										$allRecords | ForEach-Object { $_ | ConvertTo-Json -Depth 10 -Compress } | Out-File -FilePath $threadSavedFile -Encoding utf8 -Force
+										$threadSavedToDisk = $true
+										Write-Output "[SAVE-THREAD] Partition $($idx)/$($tot): $($allRecords.Count) records persisted by thread job"
+									} catch {
+										Write-Output "[SAVE-THREAD-WARN] Partition $($idx)/$($tot): final thread persistence failed: $($_.Exception.Message)"
+									}
+								} elseif ($memoryFlushEnabled -and $pageFlushFilePath) {
+									# All records were already flushed per-page; just ensure thread-saved references are set
+									$threadSavedToDisk = $true
+									$threadSavedFile = $pageFlushFilePath
+								}
+
 								# Emit success notification for outer monitor (display handled once outside the job)
-								Write-Output "[SUCCESS] Query succeeded - Partition $idx/$tot - Query ID: $queryId - Retrieved $($allRecords.Count) records"
+								Write-Output "[SUCCESS] Query succeeded - Partition $idx/$tot - Query ID: $queryId - Retrieved $($pageFlushTotalCount + $allRecords.Count) records"
 									
 									# Clean up query after successful record retrieval (best-effort)
 									if ($queryId) {
@@ -12106,16 +12420,19 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 									}
 									
 								# Return results with telemetry
+								$returnLogs = if ($memoryFlushEnabled -and $threadSavedToDisk) { @() } else { $allRecords }
 								[pscustomobject]@{
 									Activity = $activity
-									Logs = $allRecords
-									RetrievedCount = $allRecords.Count
+									Logs = $returnLogs
+									RetrievedCount = $pageFlushTotalCount + $allRecords.Count
 									ElapsedMs = [int]($t1 - $t0).TotalMilliseconds
 									Partition = $idx
 									Total = $tot
 									QueryId = $queryId
 									DebugInfo = $debugInfo
 									Telemetry = $telemetry
+									ThreadSavedToDisk = $threadSavedToDisk
+									ThreadSavedFile = $threadSavedFile
 								}
 						}
 		}
@@ -12134,6 +12451,11 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 		
 		# Initialize job result tracking
 		$script:processedJobIds = New-Object System.Collections.Generic.HashSet[int]
+		
+		# Pre-compute incremental directory and timestamp for ThreadJob rolling persistence safety net
+		$threadIncrementalDir = if ($script:PartialOutputPath) { Join-Path (Split-Path $script:PartialOutputPath -Parent) ".pax_incremental" } else { $null }
+		$threadRunTimestamp = $global:ScriptRunTimestamp
+		$threadMemoryFlushEnabled = [bool]$script:memoryFlushEnabled
 		
 		# Outer loop: Continue creating jobs until all partitions (including subdivided ones) are processed
 		# This handles dynamic subdivision where new partitions are added during execution
@@ -12247,13 +12569,13 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 				# STATUS UPDATE: Show periodic status during backpressure wait
 				if (-not $script:lastBackpressureStatus) { $script:lastBackpressureStatus = Get-Date }
 				$backpressureElapsed = ((Get-Date) - $script:lastBackpressureStatus).TotalSeconds
-				if ($backpressureElapsed -ge 60) {
+				if ($backpressureElapsed -ge $StatusIntervalSeconds) {
 					$completedCount = @($jobs | Where-Object { $_.State -eq 'Completed' }).Count
 					$runningCount = @($jobs | Where-Object { $_.State -eq 'Running' }).Count
 					# Count partitions that have actually sent queries (have QueryId)
 					$sentToServerCount = @($script:partitionStatus.Values | Where-Object { $_.QueryId }).Count
 					$ts = Get-Date -Format 'HH:mm:ss'
-					Write-LogHost "[STATUS]  [$ts] Partitions (Queries): $runningCount active | $sentToServerCount sent | $completedCount/$totalPartitions complete" -ForegroundColor Yellow
+					Write-LogHost "[STATUS]  [$ts] Partitions (Queries): $runningCount active | $sentToServerCount sent | $($completedCount + $script:resumeCompletedOffset)/$totalPartitions complete" -ForegroundColor Yellow
 					$script:lastBackpressureStatus = Get-Date
 				}
 				
@@ -12444,20 +12766,44 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 									}
 								}
 								elseif ($output -isnot [string] -and -not $script:processedJobIds.Contains($activeJob.Id)) {
+									# DEFENSIVE: Detect SplitRequired objects (should never arrive now, but guard against it)
+									if ($output.SplitRequired -eq $true) {
+										$jobPartition = $jobMeta[$activeJob.Id]
+										if ($jobPartition -and $script:partitionStatus.ContainsKey($jobPartition.Index)) {
+											$script:partitionStatus[$jobPartition.Index].Status = 'Failed'
+											$script:partitionStatus[$jobPartition.Index].LastError = "Query still running after $([Math]::Round($output.ElapsedMinutes,1)) min - queued for retry"
+											Write-LogHost "  [RETRY-QUEUE] Partition $($jobPartition.Index)/$($jobPartition.Total) - query still processing after $([Math]::Round($output.ElapsedMinutes,1)) min, queued for retry" -ForegroundColor Yellow
+										}
+										[void]$script:processedJobIds.Add($activeJob.Id)
+										continue
+									}
 									# FULL RESULT PROCESSING: Handle result objects immediately to ensure JSONL save
 									$jobPartition = $jobMeta[$activeJob.Id]
 									if ($jobPartition -and $script:partitionStatus.ContainsKey($jobPartition.Index)) {
 										$currentStatus = $script:partitionStatus[$jobPartition.Index].Status
 										if ($currentStatus -ne 'Complete') {
+											if ([string]::IsNullOrWhiteSpace([string]$output.QueryId) -and [int]($output.RetrievedCount ?? 0) -le 0) {
+												$script:partitionStatus[$jobPartition.Index].Status = 'Failed'
+												$script:partitionStatus[$jobPartition.Index].LastError = 'ThreadJob returned empty QueryId with zero records (query was not created/sent)'
+												Write-LogHost "  [DATA-CHECK] Partition $($jobPartition.Index) returned empty QueryId with 0 records - marked Failed for retry" -ForegroundColor Yellow
+												[void]$script:processedJobIds.Add($activeJob.Id)
+												continue
+											}
+
 											$script:partitionStatus[$jobPartition.Index].Status = 'Complete'
 											$script:partitionStatus[$jobPartition.Index].QueryId = $output.QueryId
-											$script:partitionStatus[$jobPartition.Index].RecordCount = $output.RetrievedCount
+											$script:partitionStatus[$jobPartition.Index].RecordCount = ($output.RetrievedCount ?? 0)
 											
 											# Fallback: emit SUCCESS message if the original [SUCCESS] string was already consumed
 											$successKey = "$($activeJob.Id):SUCCESS"
 											if (-not $script:shownJobMessages.ContainsKey($successKey)) {
 												$script:shownJobMessages[$successKey] = $true
-												Write-LogHost "Query succeeded - Partition $($jobPartition.Index)/$($jobPartition.Total) - Query ID: $($output.QueryId) - Retrieved $($output.RetrievedCount) records" -ForegroundColor Green
+												Write-LogHost "Query succeeded - Partition $($jobPartition.Index)/$($jobPartition.Total) - Query ID: $($output.QueryId) - Retrieved $($output.RetrievedCount ?? 0) records" -ForegroundColor Green
+											}
+
+											if ($output.ThreadSavedToDisk -and $script:memoryFlushEnabled -and -not $script:memoryFlushed) {
+												$script:memoryFlushed = $true
+												Write-LogHost "  [MEMORY] Thread-side persistence active - streaming export will use JSONL files" -ForegroundColor Yellow
 											}
 											
 											# Add logs to collection (skip when memory flush enabled - data goes to JSONL only)
@@ -12525,7 +12871,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 				Write-LogHost "[RESUME] Partition $($pt.Index)/$($pt.Total) - Using stored QueryId: $existingQueryIdForJob" -ForegroundColor Yellow
 			}
 			
-		$job = Start-ThreadJob -ThrottleLimit $maxConcurrentPartitions -ScriptBlock $queryJobScriptBlock -ArgumentList $pt.PStart, $pt.PEnd, $activities, $graphResultSize, $UserIds, $pt.Index, $pt.Total, $script:SharedAuthState, $pt, $MaxNetworkOutageMinutes, $script:GraphAuditApiVersion, $script:LogFile, $existingQueryIdForJob
+		$job = Start-ThreadJob -ThrottleLimit $maxConcurrentPartitions -ScriptBlock $queryJobScriptBlock -ArgumentList $pt.PStart, $pt.PEnd, $activities, $graphResultSize, $UserIds, $pt.Index, $pt.Total, $script:SharedAuthState, $pt, $MaxNetworkOutageMinutes, $script:GraphAuditApiVersion, $script:LogFile, $existingQueryIdForJob, $threadIncrementalDir, $threadRunTimestamp, $threadMemoryFlushEnabled
 					$jobs += $job
 					$jobMeta[$job.Id] = $pt
 					
@@ -12656,6 +13002,14 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 									if ($jobPartition -and $script:partitionStatus.ContainsKey($jobPartition.Index)) {
 										$currentStatus = $script:partitionStatus[$jobPartition.Index].Status
 										if ($currentStatus -ne 'Complete') {
+											if ([string]::IsNullOrWhiteSpace([string]$output.QueryId) -and [int]($output.RetrievedCount ?? 0) -le 0) {
+												$script:partitionStatus[$jobPartition.Index].Status = 'Failed'
+												$script:partitionStatus[$jobPartition.Index].LastError = 'ThreadJob returned empty QueryId with zero records (query was not created/sent)'
+												Write-LogHost "  [DATA-CHECK] Partition $($jobPartition.Index) returned empty QueryId with 0 records - marked Failed for retry" -ForegroundColor Yellow
+												[void]$script:processedJobIds.Add($job.Id)
+												continue
+											}
+
 											$script:partitionStatus[$jobPartition.Index].Status = 'Complete'
 											$script:partitionStatus[$jobPartition.Index].QueryId = $output.QueryId
 											$script:partitionStatus[$jobPartition.Index].RecordCount = $output.RetrievedCount
@@ -12786,7 +13140,24 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 													$script:shownJobMessages[$msgKey] = $true
 												}
 											}
+											elseif ($output -match '^\[PROGRESS\]') {
+												# Silent: extract page count to update STATUS display, do not log
+												if ($output -match '\[PROGRESS\] P(\d+)/\d+ pg(\d+)') {
+													$pIdx = [int]$matches[1]; $pg = [int]$matches[2]
+													if (-not $script:partitionPageCounts.ContainsKey($pIdx) -or $pg -gt $script:partitionPageCounts[$pIdx]) {
+														$script:partitionPageCounts[$pIdx] = $pg
+													}
+												}
+												$script:shownJobMessages[$msgKey] = $true
+											}
 											elseif ($output -match '^\[NETWORK\]') {
+												# Also extract page count from NETWORK error messages
+												if ($output -match 'Partition (\d+)/\d+ Page (\d+)') {
+													$pIdx = [int]$matches[1]; $pg = [int]$matches[2]
+													if (-not $script:partitionPageCounts.ContainsKey($pIdx) -or $pg -gt $script:partitionPageCounts[$pIdx]) {
+														$script:partitionPageCounts[$pIdx] = $pg
+													}
+												}
 												if (-not $script:shownJobMessages.ContainsKey($msgKey)) {
 													Write-LogHost $output -ForegroundColor DarkYellow
 													$script:shownJobMessages[$msgKey] = $true
@@ -12801,20 +13172,44 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 											}
 										}
 										elseif ($output -isnot [string] -and -not $script:processedJobIds.Contains($existingJob.Id)) {
+											# DEFENSIVE: Detect SplitRequired objects and treat as Failed for retry
+											if ($output.SplitRequired -eq $true) {
+												$jobPartition = $jobMeta[$existingJob.Id]
+												if ($jobPartition -and $script:partitionStatus.ContainsKey($jobPartition.Index)) {
+													$script:partitionStatus[$jobPartition.Index].Status = 'Failed'
+													$script:partitionStatus[$jobPartition.Index].LastError = "Query still running after $([Math]::Round($output.ElapsedMinutes,1)) min - queued for retry"
+													Write-LogHost "  [RETRY-QUEUE] Partition $($jobPartition.Index)/$($jobPartition.Total) - query still processing after $([Math]::Round($output.ElapsedMinutes,1)) min, queued for retry" -ForegroundColor Yellow
+												}
+												[void]$script:processedJobIds.Add($existingJob.Id)
+												continue
+											}
 											# FULL RESULT PROCESSING: Handle result objects immediately to ensure JSONL save
 											$jobPartition = $jobMeta[$existingJob.Id]
 											if ($jobPartition -and $script:partitionStatus.ContainsKey($jobPartition.Index)) {
 												$currentStatus = $script:partitionStatus[$jobPartition.Index].Status
 												if ($currentStatus -ne 'Complete') {
+													if ([string]::IsNullOrWhiteSpace([string]$output.QueryId) -and [int]($output.RetrievedCount ?? 0) -le 0) {
+														$script:partitionStatus[$jobPartition.Index].Status = 'Failed'
+														$script:partitionStatus[$jobPartition.Index].LastError = 'ThreadJob returned empty QueryId with zero records (query was not created/sent)'
+														Write-LogHost "  [DATA-CHECK] Partition $($jobPartition.Index) returned empty QueryId with 0 records - marked Failed for retry" -ForegroundColor Yellow
+														[void]$script:processedJobIds.Add($existingJob.Id)
+														continue
+													}
+
 													$script:partitionStatus[$jobPartition.Index].Status = 'Complete'
 													$script:partitionStatus[$jobPartition.Index].QueryId = $output.QueryId
-													$script:partitionStatus[$jobPartition.Index].RecordCount = $output.RetrievedCount
+													$script:partitionStatus[$jobPartition.Index].RecordCount = ($output.RetrievedCount ?? 0)
 													
 													# Fallback: emit SUCCESS message if the original [SUCCESS] string was already consumed
 													$successKey = "$($existingJob.Id):SUCCESS"
 													if (-not $script:shownJobMessages.ContainsKey($successKey)) {
 														$script:shownJobMessages[$successKey] = $true
-														Write-LogHost "Query succeeded - Partition $($jobPartition.Index)/$($jobPartition.Total) - Query ID: $($output.QueryId) - Retrieved $($output.RetrievedCount) records" -ForegroundColor Green
+														Write-LogHost "Query succeeded - Partition $($jobPartition.Index)/$($jobPartition.Total) - Query ID: $($output.QueryId) - Retrieved $($output.RetrievedCount ?? 0) records" -ForegroundColor Green
+													}
+
+													if ($output.ThreadSavedToDisk -and $script:memoryFlushEnabled -and -not $script:memoryFlushed) {
+														$script:memoryFlushed = $true
+														Write-LogHost "  [MEMORY] Thread-side persistence active - streaming export will use JSONL files" -ForegroundColor Yellow
 													}
 													
 													# Add logs to collection (skip if memory flush enabled - using JSONL only)
@@ -12870,7 +13265,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 						}
 					
 					$elapsedSinceLastUpdate = ((Get-Date) - $script:lastStatusUpdate).TotalSeconds
-					if ($elapsedSinceLastUpdate -ge 60) {
+					if ($elapsedSinceLastUpdate -ge $StatusIntervalSeconds) {
 						# Count partitions by status (EXCLUDE 'Subdivided' parent partitions from total)
 						$activeStatuses = $script:partitionStatus.Values | Where-Object { $_.Status -ne 'Subdivided' }
 						$completedPartitions = @($activeStatuses | Where-Object { $_.Status -eq 'Complete' }).Count
@@ -12881,7 +13276,11 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 						$remainingToComplete = $jobCreatedPartitions + $notStartedPartitions
 						$totalPartitions = $activeStatuses.Count
 						
-						$statusLine = "[$(Get-Date -Format 'HH:mm:ss')] Total Queries: $totalPartitions | Completed: $completedPartitions | Remaining: $remainingToComplete"
+						$statusLine = "[$(Get-Date -Format 'HH:mm:ss')] Total Queries: $($totalPartitions + $script:resumeCompletedOffset) | Completed: $($completedPartitions + $script:resumeCompletedOffset) | Remaining: $remainingToComplete"
+						if ($script:partitionPageCounts -and $script:partitionPageCounts.Count -gt 0) {
+							$pageStr = ($script:partitionPageCounts.GetEnumerator() | Sort-Object Key | ForEach-Object { "P$($_.Key):$($_.Value.ToString('N0'))pg" }) -join ' '
+							$statusLine += " | Pages $pageStr"
+						}
 						Write-LogHost $statusLine -ForegroundColor White
 						
 						$script:lastStatusUpdate = Get-Date
@@ -12919,6 +13318,15 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 							
 							try {
 								$jobOutput = Receive-Job -Job $job -Keep -ErrorAction SilentlyContinue -ErrorVariable jobErrors
+								
+								# SCALING FIX: Receive-Job -Keep re-delivers ALL historical output every loop iteration.
+								# After hundreds/thousands of pages, iterating all messages on every 500ms cycle causes
+								# progressive slowdown (STATUS gaps widen from 60s to 10+ minutes after many hours).
+								# Track per-job offset so we only process truly new messages each cycle.
+								$rawCount = if ($jobOutput) { @($jobOutput).Count } else { 0 }
+								$seenCount = if ($script:jobOutputOffset.ContainsKey($job.Id)) { $script:jobOutputOffset[$job.Id] } else { 0 }
+								$script:jobOutputOffset[$job.Id] = $rawCount
+								$jobOutput = if ($rawCount -gt $seenCount) { @($jobOutput)[$seenCount..($rawCount - 1)] } else { $null }
 								
 								# Capture and log job errors to file (only once per job)
 								if ($jobErrors -and $jobErrors.Count -gt 0) {
@@ -12985,6 +13393,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 												# This prevents "Attempt 2/3" from repeating but allows different attempts to show
 												$msgKey = "$($job.Id):$output"
 											}
+											elseif ($output -match '^\[PROGRESS\]') {
+												# PROGRESS messages are silent page-count heartbeats — use full output as key (each is unique)
+												$msgKey = "$($job.Id):$output"
+											}
 											elseif ($output -match '^\[NETWORK\]') {
 												# NETWORK messages include changing elapsed time - deduplicate by partition/page only
 												# Extract partition and page info for stable key
@@ -13035,7 +13447,23 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 											elseif ($output -match '^\[403-CREATE\]|^\[403-FETCH\]') {
 												Write-LogHost $output -ForegroundColor Yellow
 											}
+											elseif ($output -match '^\[PROGRESS\]') {
+												# Silent: extract page count, do not display
+												if ($output -match '\[PROGRESS\] P(\d+)/\d+ pg(\d+)') {
+													$pIdx = [int]$matches[1]; $pg = [int]$matches[2]
+													if (-not $script:partitionPageCounts.ContainsKey($pIdx) -or $pg -gt $script:partitionPageCounts[$pIdx]) {
+														$script:partitionPageCounts[$pIdx] = $pg
+													}
+												}
+											}
 											elseif ($output -match '^\[NETWORK\]') {
+												# Also extract page count from NETWORK error messages
+												if ($output -match 'Partition (\d+)/\d+ Page (\d+)') {
+													$pIdx = [int]$matches[1]; $pg = [int]$matches[2]
+													if (-not $script:partitionPageCounts.ContainsKey($pIdx) -or $pg -gt $script:partitionPageCounts[$pIdx]) {
+														$script:partitionPageCounts[$pIdx] = $pg
+													}
+												}
 												Write-LogHost $output -ForegroundColor Yellow
 											}
 											elseif ($output -match '^\[STATUS\] Query running') {
@@ -13047,6 +13475,17 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 											}
 										}
 										elseif ($output -isnot [string]) {
+											# DEFENSIVE: Detect SplitRequired objects and treat as Failed for retry
+											if ($output.SplitRequired -eq $true) {
+												$pt = $jobMeta[$job.Id]
+												if ($pt -and $script:partitionStatus.ContainsKey($pt.Index)) {
+													$script:partitionStatus[$pt.Index].Status = 'Failed'
+													$script:partitionStatus[$pt.Index].LastError = "Query still running after $([Math]::Round($output.ElapsedMinutes,1)) min - queued for retry"
+													Write-LogHost "  [RETRY-QUEUE] Partition $($pt.Index)/$($pt.Total) - query still processing after $([Math]::Round($output.ElapsedMinutes,1)) min, queued for retry" -ForegroundColor Yellow
+												}
+												[void]$script:processedJobIds.Add($job.Id)
+												continue
+											}
 											# This is a result object - mark partition as Complete and collect logs immediately
 											$pt = $jobMeta[$job.Id]
 											if ($pt) {
@@ -13055,15 +13494,29 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 													$currentStatus = $script:partitionStatus[$pt.Index].Status
 													
 													if ($currentStatus -ne 'Complete') {
+														if ([string]::IsNullOrWhiteSpace([string]$output.QueryId) -and [int]($output.RetrievedCount ?? 0) -le 0) {
+															$script:partitionStatus[$pt.Index].Status = 'Failed'
+															$script:partitionStatus[$pt.Index].LastError = 'ThreadJob returned empty QueryId with zero records (query was not created/sent)'
+															Write-LogHost "  [DATA-CHECK] Partition $($pt.Index) returned empty QueryId with 0 records - marked Failed for retry" -ForegroundColor Yellow
+															[void]$script:processedJobIds.Add($job.Id)
+															continue
+														}
+
 														$script:partitionStatus[$pt.Index].Status = 'Complete'
 														$script:partitionStatus[$pt.Index].QueryId = $output.QueryId
-														$script:partitionStatus[$pt.Index].RecordCount = $output.RetrievedCount
+														$script:partitionStatus[$pt.Index].RecordCount = ($output.RetrievedCount ?? 0)
 														
 														# Fallback: emit SUCCESS message if the original [SUCCESS] string was already consumed
 														$successKey = "$($job.Id):SUCCESS"
 														if (-not $script:shownJobMessages.ContainsKey($successKey)) {
 															$script:shownJobMessages[$successKey] = $true
-															Write-LogHost "Query succeeded - Partition $($pt.Index)/$($pt.Total) - Query ID: $($output.QueryId) - Retrieved $($output.RetrievedCount) records" -ForegroundColor Green
+															Write-LogHost "Query succeeded - Partition $($pt.Index)/$($pt.Total) - Query ID: $($output.QueryId) - Retrieved $($output.RetrievedCount ?? 0) records" -ForegroundColor Green
+														}
+														
+														# Activate streaming export if thread persisted data to disk (thread-side save path: Logs returned empty)
+														if ($output.ThreadSavedToDisk -and $script:memoryFlushEnabled -and -not $script:memoryFlushed) {
+															$script:memoryFlushed = $true
+															Write-LogHost "  [MEMORY] Thread-side persistence active - streaming export will use JSONL files" -ForegroundColor Yellow
 														}
 														
 														# Add logs to collection (skip if memory flush enabled - using JSONL only)
@@ -13127,7 +13580,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 						
 						# Check if 60 seconds have passed since last status update (or first iteration)
 						$elapsedSinceLastUpdate = ((Get-Date) - $lastStatusUpdate).TotalSeconds
-						if ($firstStatus -or $elapsedSinceLastUpdate -ge 60) {
+						if ($firstStatus -or $elapsedSinceLastUpdate -ge $StatusIntervalSeconds) {
 							# Count partitions by status (EXCLUDE 'Subdivided' parent partitions)
 							$activeStatuses = @($script:partitionStatus.Values) | Where-Object { $_.Status -ne 'Subdivided' }
 							$completedPartitions = @($activeStatuses | Where-Object { $_.Status -eq 'Complete' }).Count
@@ -13139,9 +13592,13 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 							$remainingToComplete = $jobCreatedPartitions + $notStartedPartitions
 							$totalPartitions = @($activeStatuses).Count
 							
-							$statusLine = "[$(Get-Date -Format 'HH:mm:ss')] Total Queries: $totalPartitions | Completed: $completedPartitions | Remaining: $remainingToComplete"
+							$statusLine = "[$(Get-Date -Format 'HH:mm:ss')] Total Queries: $($totalPartitions + $script:resumeCompletedOffset) | Completed: $($completedPartitions + $script:resumeCompletedOffset) | Remaining: $remainingToComplete"
 							if ($failedCount -gt 0) {
 								$statusLine += " | Failed: $failedCount"
+							}
+							if ($script:partitionPageCounts -and $script:partitionPageCounts.Count -gt 0) {
+								$pageStr = ($script:partitionPageCounts.GetEnumerator() | Sort-Object Key | ForEach-Object { "P$($_.Key):$($_.Value.ToString('N0'))pg" }) -join ' '
+								$statusLine += " | Pages $pageStr"
 							}
 							
 							Write-LogHost $statusLine -ForegroundColor White
@@ -13188,6 +13645,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 								
 								# CRITICAL: Update $accessToken with fresh token for retry phase
 								$accessToken = $refreshResult.NewToken
+								# CRITICAL: Update shared auth state so thread jobs see the fresh token
+								$script:SharedAuthState.Token = $refreshResult.NewToken
+								$script:SharedAuthState.ExpiresOn = (Get-Date).ToUniversalTime().AddMinutes(50)
+								$script:SharedAuthState.LastRefresh = Get-Date
 								Write-LogHost "  [AUTH] Token refreshed successfully" -ForegroundColor Green
 								$script:AuthFailureDetected = $false
 								$script:Auth401MessageShown = $false  # Reset for next auth failure cycle
@@ -13216,6 +13677,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 									return
 								}
 								Write-LogHost "  [AUTH] Fresh token obtained for retry phase" -ForegroundColor Green
+								# CRITICAL: Update shared auth state so thread jobs see the fresh token
+								$script:SharedAuthState.Token = $accessToken
+								$script:SharedAuthState.ExpiresOn = (Get-Date).ToUniversalTime().AddMinutes(50)
+								$script:SharedAuthState.LastRefresh = Get-Date
 								# CRITICAL: Reset auth failure flags after successful interactive re-auth
 								# Without this, old 401 errors in job buffers re-trigger the auth prompt
 								$script:AuthFailureDetected = $false
@@ -13402,6 +13867,8 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 						
 						# Rebuild partition status dictionary with new indexes
 						$script:partitionStatus = @{}
+						$script:partitionPageCounts = @{}
+						$script:jobOutputOffset = @{}
 						foreach ($partition in $partitions) {
 							# Find if this partition had existing status data (by object reference or parent index)
 							$existingStatus = $null
@@ -13661,17 +14128,58 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 					if ($script:partitionStatus.ContainsKey($pt.Index)) {
 						# Check if job produced errors (401, network failures, thrown exceptions)
 						$jobErrors = @()
-						try { $jobErrors = @($completedJob.ChildJobs | ForEach-Object { $_.Error } | Where-Object { $_ }) } catch {}
+						try {
+							$jobErrors = @($completedJob.ChildJobs | ForEach-Object { $_.Error } | Where-Object { $_ })
+							# ThreadJobs store errors directly in .Error, not in ChildJobs
+							if ($jobErrors.Count -eq 0 -and $completedJob.Error.Count -gt 0) {
+								$jobErrors = @($completedJob.Error)
+							}
+						} catch {}
 						
 						if ($jobErrors.Count -gt 0 -and $script:partitionStatus[$pt.Index].Status -notin @('Complete', 'Subdivided')) {
 							# Job completed WITH errors - mark as Failed for retry
 							$script:partitionStatus[$pt.Index].Status = 'Failed'
 							$script:partitionStatus[$pt.Index].LastError = $jobErrors[0].ToString()
+							# QueryId preserved — query may still be valid on Purview for retry resume
 							Write-LogHost "  [ERROR-CHECK] Partition $($pt.Index) job completed with errors - marked Failed for retry" -ForegroundColor Yellow
 						}
 						elseif ($script:partitionStatus[$pt.Index].Status -in @('NotStarted','JobCreated')) {
-							# No errors and not already processed - mark as Complete
-							$script:partitionStatus[$pt.Index].Status = 'Complete'
+							# Validate that partition actually saved data before marking Complete
+						# ThreadJobs that hit 504/network errors internally may complete with State='Completed'
+						# but never save any data to disk. Check for JSONL file existence before trusting the job state.
+							$hasDataOnDisk = $false
+							try {
+								$validationIncrDir = Join-Path (Split-Path $script:PartialOutputPath -Parent) ".pax_incremental"
+								if (Test-Path $validationIncrDir) {
+									$partJsonl = Get-ChildItem -Path $validationIncrDir -Filter "Part$($pt.Index)_${global:ScriptRunTimestamp}_*.jsonl" -ErrorAction SilentlyContinue
+									$hasDataOnDisk = ($partJsonl -and @($partJsonl).Count -gt 0)
+								}
+							} catch {}
+							
+							if ($hasDataOnDisk) {
+								# JSONL file exists — partition genuinely completed
+								$script:partitionStatus[$pt.Index].Status = 'Complete'
+								# Job completed before monitoring loop polled it; result object was never
+								# received, so ThreadSavedToDisk was never processed. Activate streaming export here.
+								if ($script:memoryFlushEnabled -and -not $script:memoryFlushed) {
+									$script:memoryFlushed = $true
+									Write-LogHost "  [MEMORY] Thread-side JSONL confirmed in reconciliation - streaming export activated" -ForegroundColor Yellow
+								}
+							} else {
+								# No JSONL file — job finished but never saved data (likely 504/auth failure swallowed internally)
+								$script:partitionStatus[$pt.Index].Status = 'Failed'
+								$script:partitionStatus[$pt.Index].LastError = 'Job completed without saving data (no JSONL file found) - likely network/auth failure swallowed by retry logic'
+								Write-LogHost "  [DATA-CHECK] Partition $($pt.Index) job completed but NO data saved to disk - marked Failed for retry" -ForegroundColor Yellow
+							}
+						}
+						elseif ($script:partitionStatus[$pt.Index].Status -eq 'Complete') {
+							$queryIdMissing = [string]::IsNullOrWhiteSpace([string]$script:partitionStatus[$pt.Index].QueryId)
+							$recordCountZero = ([int]($script:partitionStatus[$pt.Index].RecordCount ?? 0) -le 0)
+							if ($queryIdMissing -and $recordCountZero) {
+								$script:partitionStatus[$pt.Index].Status = 'Failed'
+								$script:partitionStatus[$pt.Index].LastError = 'Partition marked Complete but has empty QueryId and zero records'
+								Write-LogHost "  [DATA-CHECK] Partition $($pt.Index) had invalid completion state (empty QueryId + 0 records) - marked Failed for retry" -ForegroundColor Yellow
+							}
 						}
 					}
 				}
@@ -13808,6 +14316,8 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 						# Create retry jobs
 						$retryJobs = @()
 						$retryJobMeta = @{}
+						$retryMaxConcurrency = [Math]::Min($maxConcurrentPartitions, 3)
+						Write-LogHost "  [RETRY] Using reduced retry concurrency: $retryMaxConcurrency (initial phase: $maxConcurrentPartitions)" -ForegroundColor DarkCyan
 						
 						foreach ($pt in $partitionsToRetry) {
 							$script:partitionStatus[$pt.Index].AttemptNumber++
@@ -13822,7 +14332,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 							if ($existingQueryId) {
 								Write-LogHost "    [REUSE] Reusing existing QueryId: $existingQueryId" -ForegroundColor Cyan
 							}
-							$job = Start-ThreadJob -ThrottleLimit $maxConcurrentPartitions -ScriptBlock $queryJobScriptBlock -ArgumentList $pt.PStart, $pt.PEnd, $activities, $graphResultSize, $UserIds, $pt.Index, $pt.Total, $script:SharedAuthState, $pt, $MaxNetworkOutageMinutes, $script:GraphAuditApiVersion, $script:LogFile, $existingQueryId
+							$job = Start-ThreadJob -ThrottleLimit $retryMaxConcurrency -ScriptBlock $queryJobScriptBlock -ArgumentList $pt.PStart, $pt.PEnd, $activities, $graphResultSize, $UserIds, $pt.Index, $pt.Total, $script:SharedAuthState, $pt, $MaxNetworkOutageMinutes, $script:GraphAuditApiVersion, $script:LogFile, $existingQueryId, $threadIncrementalDir, $threadRunTimestamp, $threadMemoryFlushEnabled
 							$retryJobs += $job
 							$retryJobMeta[$job.Id] = $pt
 						}
@@ -13885,12 +14395,25 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 								$res = $allOutput | Where-Object { $_ -isnot [string] } | Select-Object -First 1
 								
 								if ($null -ne $res -and $script:partitionStatus.ContainsKey($pt.Index)) {
+									if ([string]::IsNullOrWhiteSpace([string]$res.QueryId) -and [int]($res.RetrievedCount ?? 0) -le 0) {
+										$script:partitionStatus[$pt.Index].Status = 'Failed'
+										$script:partitionStatus[$pt.Index].LastError = 'Retry ThreadJob returned empty QueryId with zero records (query was not created/sent)'
+										Write-LogHost "  [DATA-CHECK] Retry Partition $($pt.Index) returned empty QueryId with 0 records - marked Failed for next retry" -ForegroundColor Yellow
+										continue
+									}
+
 									$script:partitionStatus[$pt.Index].QueryId = $res.QueryId
 									$script:partitionStatus[$pt.Index].QueryName = "PAX_Query_$($pt.PStart.ToString('yyyyMMdd_HHmm'))-$($pt.PEnd.ToString('yyyyMMdd_HHmm'))_Part$($pt.Index)/$($pt.Total)"
 									$script:partitionStatus[$pt.Index].RecordCount = $res.RetrievedCount
 									$script:partitionStatus[$pt.Index].Status = 'Complete'
 									
 									Write-LogHost "  Retry successful for Partition $($pt.Index)/$($pt.Total): $($res.RetrievedCount) records" -ForegroundColor Green										# Add to allLogs
+									if ($res.ThreadSavedToDisk -and $script:memoryFlushEnabled -and -not $script:memoryFlushed) {
+										$script:memoryFlushed = $true
+										Write-LogHost "  [MEMORY] Thread-side persistence active - streaming export will use JSONL files" -ForegroundColor Yellow
+									}
+
+									# Add to allLogs
 										if ($res.Logs -and $res.Logs.Count -gt 0) {
 											foreach ($log in $res.Logs) {
 												[void]$allLogs.Add($log)
@@ -14044,6 +14567,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 							if ($null -ne $res) {
 									Write-LogHost "  Partition $($pt.Index)/$($pt.Total) complete: Retrieved $($res.RetrievedCount) records in $($res.ElapsedMs)ms" -ForegroundColor Cyan
 							Write-LogHost "    Query: $($pt.PStart.ToString('yyyy-MM-dd HH:mm')) to $($pt.PEnd.ToString('yyyy-MM-dd HH:mm')) UTC" -ForegroundColor DarkGray
+								if ($res.ThreadSavedToDisk -and $script:memoryFlushEnabled -and -not $script:memoryFlushed) {
+									$script:memoryFlushed = $true
+									Write-LogHost "  [MEMORY] Thread-side persistence active - streaming export will use JSONL files" -ForegroundColor Yellow
+								}
 								try {
 									$script:metrics.QueryMs += [int]$res.ElapsedMs
 									$script:metrics.TotalRecordsFetched += [int]$res.RetrievedCount
@@ -14306,17 +14833,8 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 		$completedPartitions = @($script:partitionStatus.Values | Where-Object { $_.Status -eq 'Complete' } | ForEach-Object { $_.Partition.Index })
 		$script:StreamingMergePartitions = $completedPartitions
 		
-		# Count records from JSONL files for metrics
-		$incrementalDir = Join-Path $script:StreamingMergeDirectory ".pax_incremental"
-		$estimatedFromJSONL = 0
-		if (Test-Path $incrementalDir) {
-			$jsonlFiles = Get-ChildItem -Path $incrementalDir -Filter "*${global:ScriptRunTimestamp}*.jsonl" -ErrorAction SilentlyContinue
-			foreach ($f in $jsonlFiles) {
-				if ($f.Name -match '_(\d+)records\.jsonl$') {
-					$estimatedFromJSONL += [int]$Matches[1]
-				}
-			}
-		}
+		# Count records from partition status for accurate totals
+		$estimatedFromJSONL = ($completedPartitions | ForEach-Object { [int]($script:partitionStatus[$_].RecordCount ?? 0) } | Measure-Object -Sum).Sum
 		$script:StreamingMergeRecordCount = $estimatedFromJSONL
 		Write-LogHost "  [MEMORY] Found $($estimatedFromJSONL.ToString('N0')) records across $($completedPartitions.Count) partitions for streaming export" -ForegroundColor DarkCyan
 	}
@@ -14334,13 +14852,27 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 			# Threshold: If more than 20 partitions to merge, or estimated >500K records, use streaming
 			$estimatedRecords = 0
 			$incrementalDir = Join-Path (Split-Path $script:PartialOutputPath -Parent) ".pax_incremental"
-			if (Test-Path $incrementalDir) {
+			# Primary: derive record count from checkpoint data — checkpoint stores exact per-partition recordCount
+			# set at completion time, and is not affected by multi-file (snapshot/append) inflation or stale
+			# files from prior runs that may still exist in the .pax_incremental folder.
+			if ($script:CheckpointData -and $script:CheckpointData.partitions.completed) {
+				$estimatedRecords = [int](($script:CheckpointData.partitions.completed |
+					Where-Object { [int]$_.index -in $partitionsToMerge } |
+					ForEach-Object { [int]$_.records } |
+					Measure-Object -Sum).Sum)
+			}
+			# Fallback: estimate from JSONL filenames if checkpoint data is unavailable or zero.
+			# Two filters applied to avoid inflation:
+			#   (1) Current run's timestamp only — excludes stale files from prior runs in the same folder.
+			#   (2) No snapshot files — snapshots are cumulative in-progress saves (subset of final file);
+			#       counting them alongside the final file would double-count those records.
+			if ($estimatedRecords -eq 0 -and (Test-Path $incrementalDir)) {
 				$filesToMerge = Get-ChildItem -Path $incrementalDir -Filter "*.jsonl" -ErrorAction SilentlyContinue | Where-Object {
 					$partMatch = [regex]::Match($_.Name, '^Part(\d+)_')
-					$partMatch.Success -and ([int]$partMatch.Groups[1].Value -in $partitionsToMerge)
+					$partMatch.Success -and ([int]$partMatch.Groups[1].Value -in $partitionsToMerge) -and ($_.Name -like "*${global:ScriptRunTimestamp}*")
 				}
 				foreach ($f in $filesToMerge) {
-					if ($f.Name -match '_(\d+)records\.jsonl$') {
+					if ($f.Name -notmatch '_snapshot_page\d+_' -and $f.Name -match '_(\d+)records\.jsonl$') {
 						$estimatedRecords += [int]$Matches[1]
 					}
 				}
@@ -14426,6 +14958,109 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 		# Note: Incremental files are retained until successful script completion for data safety
 	}
 	
+	# ============================================================================
+	# ZERO-RECORD RECOVERY: If all partitions "completed" but returned 0 records,
+	# re-check QueryIds directly against Purview - the queries may still have data
+	# This handles machine sleep/suspension where thread jobs died but queries succeeded
+	# ============================================================================
+	$effectiveRecordCount = $allLogs.Count
+	if ($script:UseStreamingMergeForExport) {
+		$effectiveRecordCount += $(if ($script:StreamingMergeRecordCount -gt 0) { $script:StreamingMergeRecordCount } else { $mergedFromIncremental })
+	}
+	
+	if ($effectiveRecordCount -eq 0 -and $script:partitionStatus -and $script:partitionStatus.Count -gt 0 -and -not $UseEOM) {
+		# Find partitions with valid QueryIds that reported 0 records
+		# Include both 'Complete' and 'Failed' partitions - queries persist 30 days on Purview
+		# regardless of thread job outcome, so data may still be recoverable
+		$partitionsWithQueryIds = @($script:partitionStatus.Values | Where-Object { 
+			$_.QueryId -and $_.Status -in @('Complete','Failed') -and ($_.RecordCount -eq 0 -or $null -eq $_.RecordCount)
+		})
+		
+		if ($partitionsWithQueryIds.Count -gt 0) {
+			Write-LogHost "" -ForegroundColor Yellow
+			Write-LogHost "============================================================" -ForegroundColor Yellow
+			Write-LogHost "[ZERO-RECORD-RECOVERY] All partitions returned 0 records but have valid QueryIds" -ForegroundColor Yellow
+			Write-LogHost "[ZERO-RECORD-RECOVERY] Re-checking queries directly against Purview..." -ForegroundColor Yellow
+			Write-LogHost "============================================================" -ForegroundColor Yellow
+			
+			# Refresh token first (critical after potential machine sleep)
+			$refreshResult = Refresh-GraphTokenIfNeeded -BufferMinutes 5
+			if ($refreshResult -is [string] -and $refreshResult -eq 'Quit') {
+				if ($script:CheckpointEnabled) { Save-Checkpoint -Force }
+				Show-CheckpointExitMessage
+				exit 0
+			}
+			
+			$recoveredRecords = 0
+			$queriesChecked = 0
+			$queriesWithData = 0
+			
+			foreach ($partitionStatus in $partitionsWithQueryIds) {
+				$queryId = $partitionStatus.QueryId
+				$partitionIndex = $partitionStatus.Partition.Index
+				$partitionTotal = $partitionStatus.Partition.Total
+				$queriesChecked++
+				
+				Write-LogHost "  [CHECK] Partition $partitionIndex/$partitionTotal - QueryId: $queryId" -ForegroundColor Cyan
+				
+				try {
+					# Check query status directly
+					$status = Get-GraphAuditQueryStatus -QueryId $queryId
+					
+					if ($status -and $status.Status -eq 'succeeded' -and $status.RecordCount -gt 0) {
+						$queriesWithData++
+						Write-LogHost "    [FOUND] Query has $($status.RecordCount) records - fetching..." -ForegroundColor Green
+						
+						# Fetch the records
+						$rawRecords = Get-GraphAuditRecords -QueryId $queryId
+						
+						if ($rawRecords -and $rawRecords.Count -gt 0) {
+							# Normalize to EOM-compatible format
+							$normalizedRecords = ConvertFrom-GraphAuditRecord -GraphRecords $rawRecords
+							
+							# Add to allLogs
+							foreach ($rec in $normalizedRecords) {
+								[void]$allLogs.Add($rec)
+							}
+							
+							# Update partition status
+							$script:partitionStatus[$partitionIndex].RecordCount = $normalizedRecords.Count
+							$recoveredRecords += $normalizedRecords.Count
+							
+							# Save to incremental for checkpoint safety
+							$incrementalDir = Join-Path (Split-Path $script:PartialOutputPath -Parent) ".pax_incremental"
+							if (-not (Test-Path $incrementalDir)) { New-Item -ItemType Directory -Path $incrementalDir -Force | Out-Null }
+							$incrementalFile = Join-Path $incrementalDir "Part${partitionIndex}_${global:ScriptRunTimestamp}_qid-recovery_$($normalizedRecords.Count)records.jsonl"
+							$normalizedRecords | ForEach-Object { $_ | ConvertTo-Json -Depth 10 -Compress } | Out-File -FilePath $incrementalFile -Encoding utf8 -Force
+							
+							Write-LogHost "    [RECOVERED] $($normalizedRecords.Count) records from partition $partitionIndex" -ForegroundColor Green
+							
+							# Update metrics
+							$script:metrics.TotalRecordsFetched += $normalizedRecords.Count
+						}
+					} elseif ($status) {
+						Write-LogHost "    [EMPTY] Query status: $($status.Status), RecordCount: $($status.RecordCount)" -ForegroundColor DarkGray
+					} else {
+						Write-LogHost "    [WARN] Could not retrieve query status" -ForegroundColor Yellow
+					}
+				} catch {
+					Write-LogHost "    [ERROR] Failed to check/fetch QueryId $queryId : $($_.Exception.Message)" -ForegroundColor Red
+				}
+			}
+			
+			# Summary
+			Write-LogHost "" -ForegroundColor White
+			if ($recoveredRecords -gt 0) {
+				Write-LogHost "[ZERO-RECORD-RECOVERY] SUCCESS: Recovered $($recoveredRecords.ToString('N0')) records from $queriesWithData query(ies)" -ForegroundColor Green
+				Write-LogHost "[ZERO-RECORD-RECOVERY] This typically indicates machine sleep/suspension caused thread job failures" -ForegroundColor Yellow
+				Write-LogHost "[ZERO-RECORD-RECOVERY] while the Purview queries completed successfully server-side." -ForegroundColor Yellow
+			} else {
+				Write-LogHost "[ZERO-RECORD-RECOVERY] No additional records found - date range may genuinely be empty" -ForegroundColor DarkGray
+			}
+			Write-LogHost "" -ForegroundColor White
+		}
+	}
+	
 	Set-ProgressPhase -Phase 'Explosion' -Status 'Analyzing and exploding records'
 	Write-LogHost ""; Write-LogHost "=== Enterprise Processing Summary ===" -ForegroundColor Green
 	if ($script:UseStreamingMergeForExport -and $mergedFromIncremental -gt 0) {
@@ -14497,7 +15132,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 		# StreamingMergeRecordCount = memory flush fresh run; mergedFromIncremental = deferred resume merge
 		$streamCount = if ($script:StreamingMergeRecordCount -gt 0) { $script:StreamingMergeRecordCount } else { $mergedFromIncremental }
 		$effectiveTotal = $allLogs.Count + $streamCount
-		Write-LogHost "Unique audit records: $($effectiveTotal.ToString('N0')) (streaming records deduplicated during export)" -ForegroundColor Cyan
+		Write-LogHost "Records for export: $($effectiveTotal.ToString('N0')) (cross-partition deduplication occurs during streaming merge)" -ForegroundColor Cyan
 	} else {
 		Write-LogHost "Unique audit records: $($allLogs.Count)" -ForegroundColor Cyan
 	}
@@ -14531,16 +15166,16 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 					$rec = [pscustomobject]@{
 						RecordType   = $(try { [int]$row.RecordType } catch { 0 })
 						CreationDate = $(if ($creation) { $creation } else { Get-Date })
-						UserIds      = @($row.UserId)
-						Operations   = $row.Operation
+						UserIds      = @(if ($row.UserIds) { $row.UserIds } elseif ($row.UserId) { $row.UserId } else { $null })
+						Operations   = if ($row.Operations) { $row.Operations } elseif ($row.Operation) { $row.Operation } else { $null }
 						ResultStatus = $(try { $row.ResultStatus } catch { '' })
 						ResultCount  = 0
 						Identity     = $identity
 						IsValid      = $true
 						ObjectState  = ''
 						AuditData    = $row.AuditData
-						Operation    = $row.Operation
-						UserId       = $row.UserId
+						Operation    = if ($row.Operation) { $row.Operation } elseif ($row.Operations) { $row.Operations } else { $null }
+						UserId       = if ($row.UserId) { $row.UserId } elseif ($row.UserIds) { $row.UserIds } else { $null }
 					}
 					[void]$allLogs.Add($rec)
 				} catch {}
@@ -14552,8 +15187,18 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 	# For streaming merge mode, $allLogs is intentionally empty - data will be streamed from JSONL files
 	if ($allLogs.Count -eq 0 -and -not $OnlyUserInfo -and -not $script:UseStreamingMergeForExport) {
 		Write-LogHost ""; Write-LogHost "No audit logs found in the specified date range for the selected activity types." -ForegroundColor Yellow
+		# Warn if token refresh occurred during monitoring — 0 records may indicate auth-related data loss
+		if ($script:SharedAuthState.RefreshCount -gt 0) {
+			Write-LogHost ""
+			Write-LogHost "  [!] WARNING: Token refresh occurred during this run ($($script:SharedAuthState.RefreshCount) refresh(es))." -ForegroundColor Red
+			Write-LogHost "      Zero records with auth recovery suggests credentials may have expired" -ForegroundColor Red
+			Write-LogHost "      while queries were being polled. Check the log file for 401 errors." -ForegroundColor Red
+			Write-LogHost "      If the machine was suspended/sleeping, this is the likely cause." -ForegroundColor Red
+			Write-LogHost "      Recommendation: Re-run the script on a machine that will not sleep." -ForegroundColor Yellow
+			Write-LogHost ""
+		}
 		Write-LogHost "Emitting header-only CSV (0 rows) for deterministic downstream processing..." -ForegroundColor Cyan
-		$headerColumns = if ($ExplodeDeep -or $ExplodeArrays -or $ForcedRawInputCsvExplosion) { if ($IncludeM365Usage -and $RAWInputCSV) { Get-M365UsageWideHeader -RawCsvPath $RAWInputCSV -BaseHeader $M365UsageBaseHeader } else { $PurviewExplodedHeader } } else { @('RecordType', 'CreationDate', 'UserIds', 'Operations', 'ResultStatus', 'ResultCount', 'Identity', 'IsValid', 'ObjectState', 'Id', 'CreationTime', 'Operation', 'OrganizationId', 'RecordTypeNum', 'ResultStatus_Audit', 'UserKey', 'UserType', 'Version', 'Workload', 'UserId', 'AppId', 'ClientAppId', 'CorrelationId', 'ModelId', 'ModelProvider', 'ModelFamily', 'TokensTotal', 'TokensInput', 'TokensOutput', 'DurationMs', 'OutcomeStatus', 'ConversationId', 'TurnNumber', 'RetryCount', 'ClientVersion', 'ClientPlatform', 'AgentId', 'AgentName', 'AgentVersion', 'AgentCategory', 'AppIdentity', 'ApplicationName', 'AuditData', 'CopilotEventData') }
+		$headerColumns = if ($ExplodeDeep -or $ExplodeArrays -or $ForcedRawInputCsvExplosion) { if ($IncludeM365Usage -and $RAWInputCSV) { Get-M365UsageWideHeader -RawCsvPath $RAWInputCSV -BaseHeader $M365UsageBaseHeader } else { $PurviewExplodedHeader } } else { @('RecordId', 'CreationDate', 'RecordType', 'Operation', 'UserId', 'AuditData', 'AssociatedAdminUnits', 'AssociatedAdminUnitsNames') }
 		try { $outputDirEmpty = Split-Path $OutputFile -Parent; if (-not (Test-Path $outputDirEmpty)) { New-Item -ItemType Directory -Path $outputDirEmpty -Force | Out-Null }; $enc = New-Object System.Text.UTF8Encoding($false); $sw = [System.IO.StreamWriter]::new($OutputFile, $false, $enc); $escapedCols = @(); foreach ($col in $headerColumns) { $c = [string]$col; $needsQuote = ($c -match '[",\r\n]') -or $c.StartsWith(' ') -or $c.EndsWith(' '); $escaped = $c -replace '"', '""'; if ($needsQuote) { $escaped = '"' + $escaped + '"' }; $escapedCols += , $escaped }; $sw.WriteLine(($escapedCols -join ',')); $sw.Flush(); $sw.Dispose() } catch { Write-LogHost "Failed to write header-only CSV: $($_.Exception.Message)" -ForegroundColor Red }
 		# Finalize checkpoint: rename _PARTIAL files and delete checkpoint (same pattern as normal completion)
 		if ($script:CheckpointEnabled -and $script:PartialOutputPath -and (Test-Path $script:PartialOutputPath)) {
@@ -14662,7 +15307,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 			Write-LogHost "Non-explosion fast path: STREAMING MERGE MODE (memory-efficient)" -ForegroundColor Cyan
 			Write-LogHost "  Streaming directly from incremental files to avoid memory exhaustion..." -ForegroundColor DarkGray
 			$fastPathStart = Get-Date
-			$fastPathColumns = @('RecordId', 'CreationDate', 'RecordType', 'Operation', 'AuditData', 'AssociatedAdminUnits', 'AssociatedAdminUnitsNames')
+			$fastPathColumns = @('RecordId', 'CreationDate', 'RecordType', 'Operation', 'UserId', 'AuditData', 'AssociatedAdminUnits', 'AssociatedAdminUnitsNames')
 			
 			# First, write any in-memory records from THIS run's partitions (if any)
 			$inMemoryCount = $allLogs.Count
@@ -14691,9 +15336,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 						CreationDate              = if ($log.CreationDate) { $log.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { '' }
 						RecordType                = $log.RecordType
 						Operation                 = $opValue
+						UserId                    = if ($log.UserId) { $log.UserId } elseif ($log.UserIds) { $log.UserIds } else { '' }
 						AuditData                 = $auditData
-						AssociatedAdminUnits      = $null
-						AssociatedAdminUnitsNames = $null
+						AssociatedAdminUnits      = $(try { if ($parsedAudit.AssociatedAdminUnits) { $parsedAudit.AssociatedAdminUnits } elseif ($log.AssociatedAdminUnits) { $log.AssociatedAdminUnits } else { '' } } catch { '' })
+						AssociatedAdminUnitsNames = $(try { if ($parsedAudit.AssociatedAdminUnitsNames) { $parsedAudit.AssociatedAdminUnitsNames } elseif ($log.AssociatedAdminUnitsNames) { $log.AssociatedAdminUnitsNames } else { '' } } catch { '' })
 					}
 					$batch.Add($fastRecord)
 					if ($fastRecord.RecordId) { [void]$inMemoryRecordIds.Add($fastRecord.RecordId) }
@@ -14716,6 +15362,31 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 				Write-LogHost "  In-memory records written, RAM freed" -ForegroundColor DarkGray
 			}
 			
+			# Validate JSONL file count vs expected partition count before streaming merge
+			# Detect data loss early — if fewer files exist than completed partitions, warn and mark output as PARTIAL
+			$validationIncrDir = Join-Path $script:StreamingMergeDirectory ".pax_incremental"
+			$expectedPartitionCount = @($script:StreamingMergePartitions).Count
+			$actualJsonlFiles = @()
+			if (Test-Path $validationIncrDir) {
+				$actualJsonlFiles = @(Get-ChildItem -Path $validationIncrDir -Filter "*_${global:ScriptRunTimestamp}_*.jsonl" -ErrorAction SilentlyContinue)
+			}
+			$actualFileCount = $actualJsonlFiles.Count
+			if ($actualFileCount -lt $expectedPartitionCount) {
+				# Identify which partition numbers have files vs which are missing
+				$partitionsWithFiles = @($actualJsonlFiles | ForEach-Object { if ($_.Name -match '^Part(\d+)_') { [int]$Matches[1] } } | Sort-Object -Unique)
+				$missingPartitions = @($script:StreamingMergePartitions | Where-Object { $_ -notin $partitionsWithFiles } | Sort-Object)
+				Write-LogHost "" -ForegroundColor Yellow
+				Write-LogHost "  [DATA-LOSS] WARNING: Only $actualFileCount of $expectedPartitionCount partition JSONL files found for this run" -ForegroundColor Yellow
+				Write-LogHost "  [DATA-LOSS] Missing partition data: $($missingPartitions -join ', ')" -ForegroundColor Yellow
+				Write-LogHost "  [DATA-LOSS] Output will be marked as PARTIAL due to incomplete data" -ForegroundColor Yellow
+				Write-LogHost "" -ForegroundColor Yellow
+				# Mark output as PARTIAL by updating the output file name
+				$script:StreamingMergeDataLoss = $true
+				$script:StreamingMergeMissingPartitions = $missingPartitions
+			} else {
+				$script:StreamingMergeDataLoss = $false
+			}
+			
 			# Now stream merge the previously-completed partitions directly to CSV
 			Write-LogHost "  Streaming merge of $($script:StreamingMergePartitions.Count) previously-completed partitions..." -ForegroundColor Cyan
 			
@@ -14723,7 +15394,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 			if ($inMemoryCount -gt 0) {
 				# Streaming merge needs to append to existing file - use a second temp file then combine
 				$streamingTemp = Join-Path ([System.IO.Path]::GetTempPath()) ("pax_streaming_" + [guid]::NewGuid().ToString() + ".tmp")
-				$streamedCount = Merge-IncrementalSaves-Streaming -OutputFile $streamingTemp -OutputDirectory $script:StreamingMergeDirectory -OnlyPartitionIndices $script:StreamingMergePartitions -Columns $fastPathColumns -ExcludeRecordIds $inMemoryRecordIds -ActivityCounts ([ref]$streamingActivityCounts)
+				$streamedCount = Merge-IncrementalSaves-Streaming -OutputFile $streamingTemp -OutputDirectory $script:StreamingMergeDirectory -OnlyPartitionIndices $script:StreamingMergePartitions -Columns $fastPathColumns -ExcludeRecordIds $inMemoryRecordIds -ActivityCounts ([ref]$streamingActivityCounts) -RunTimestamp $global:ScriptRunTimestamp
 				
 				# Append streaming temp to main temp (skip header line from streaming file)
 				if ((Test-Path $streamingTemp) -and $streamedCount -gt 0) {
@@ -14734,7 +15405,17 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 				$totalStreamedRecords = $inMemoryCount + $streamedCount
 			} else {
 				# No in-memory records - stream directly to final temp file
-				$totalStreamedRecords = Merge-IncrementalSaves-Streaming -OutputFile $exportTemp -OutputDirectory $script:StreamingMergeDirectory -OnlyPartitionIndices $script:StreamingMergePartitions -Columns $fastPathColumns -ActivityCounts ([ref]$streamingActivityCounts)
+				$totalStreamedRecords = Merge-IncrementalSaves-Streaming -OutputFile $exportTemp -OutputDirectory $script:StreamingMergeDirectory -OnlyPartitionIndices $script:StreamingMergePartitions -Columns $fastPathColumns -ActivityCounts ([ref]$streamingActivityCounts) -RunTimestamp $global:ScriptRunTimestamp
+			}
+			
+			# If data loss detected, rename output to include _PARTIAL suffix so users know data is incomplete
+			if ($script:StreamingMergeDataLoss) {
+				$outDir = Split-Path $OutputFile -Parent
+				$outBase = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile)
+				$outExt = [System.IO.Path]::GetExtension($OutputFile)
+				$OutputFile = Join-Path $outDir "${outBase}_PARTIAL${outExt}"
+				Write-LogHost "  [DATA-LOSS] Output file renamed to: $(Split-Path $OutputFile -Leaf)" -ForegroundColor Yellow
+				Write-LogHost "  [DATA-LOSS] Missing partitions: $($script:StreamingMergeMissingPartitions -join ', ')" -ForegroundColor Yellow
 			}
 			
 			# Move temp file to final output
@@ -14753,6 +15434,13 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 			$columnOrder = $fastPathColumns
 			$schemaFrozen = $true
 			
+			# Update Retrieved counter to reflect actual streaming merge data
+			# actual = exported unique records + duplicates removed (more accurate than filename-based estimate)
+			$actualRetrievedFromMerge = $totalStreamedRecords + [int]$script:StreamingMergeDuplicatesSkipped
+			if ($actualRetrievedFromMerge -gt 0) {
+				$script:metrics.TotalRecordsFetched = $actualRetrievedFromMerge
+			}
+			
 			# Populate per-activity metrics from actual streaming counts (inline handlers don't track these reliably)
 			$script:metrics.Activities = @{}
 			foreach ($opKey in $streamingActivityCounts.Keys) {
@@ -14769,11 +15457,11 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 		
 		# Standard non-explosion fast path (original code, only runs if NOT using streaming merge)
 		if (-not $script:UseStreamingMergeForExport) {
-		Write-LogHost "Non-explosion fast path: Direct streaming with fixed 7-column schema..." -ForegroundColor Cyan
+		Write-LogHost "Non-explosion fast path: Direct streaming with fixed 8-column schema..." -ForegroundColor Cyan
 		$fastPathStart = Get-Date
 		
-		# Fixed schema for non-explosion mode (no discovery needed)
-		$fastPathColumns = @('RecordId', 'CreationDate', 'RecordType', 'Operation', 'AuditData', 'AssociatedAdminUnits', 'AssociatedAdminUnitsNames')
+		# Fixed schema for non-explosion mode (column names match Purview UI export)
+		$fastPathColumns = @('RecordId', 'CreationDate', 'RecordType', 'Operation', 'UserId', 'AuditData', 'AssociatedAdminUnits', 'AssociatedAdminUnitsNames')
 		
 		# Open CSV with known schema immediately
 		Open-CsvWriter -Path $exportTemp -Columns $fastPathColumns
@@ -14806,9 +15494,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 				CreationDate              = if ($log.CreationDate) { $log.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { '' }
 				RecordType                = $log.RecordType
 				Operation                 = $opValue
+				UserId                    = if ($log.UserId) { $log.UserId } elseif ($log.UserIds) { $log.UserIds } else { '' }
 				AuditData                 = $auditData
-				AssociatedAdminUnits      = $null
-				AssociatedAdminUnitsNames = $null
+				AssociatedAdminUnits      = $(try { if ($parsedAudit.AssociatedAdminUnits) { $parsedAudit.AssociatedAdminUnits } elseif ($log.AssociatedAdminUnits) { $log.AssociatedAdminUnits } else { '' } } catch { '' })
+				AssociatedAdminUnitsNames = $(try { if ($parsedAudit.AssociatedAdminUnitsNames) { $parsedAudit.AssociatedAdminUnitsNames } elseif ($log.AssociatedAdminUnitsNames) { $log.AssociatedAdminUnitsNames } else { '' } } catch { '' })
 			}
 			
 			$batch.Add($fastRecord)
@@ -15349,7 +16038,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 		# (Parallel explosion doesn't update these during processing - count now from consolidated results)
 		$activityStructuredCounts = @{}
 		foreach ($row in $allExplodedRecords) {
-			$opName = if ($row -is [hashtable]) { $row['Operation'] } else { $row.Operation }
+			$opName = if ($row -is [hashtable]) { if ($row['Operation']) { $row['Operation'] } else { $row['Operations'] } } else { if ($row.Operation) { $row.Operation } else { $row.Operations } }
 			if ($opName) {
 				if (-not $activityStructuredCounts.ContainsKey($opName)) { $activityStructuredCounts[$opName] = 0 }
 				$activityStructuredCounts[$opName]++
@@ -16124,6 +16813,32 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 		$LogFile = $script:LogFile  # Also update LogFile variable (was updated by Complete-CheckpointRun)
 	}
 	
+	# ============================================================
+	# FIX 37: FALLBACK LOG RENAME — remove _PARTIAL from log file
+	# When CSV split mode deletes the combined _PARTIAL.csv before
+	# Complete-CheckpointRun runs, the Test-Path guard above fails
+	# and the log file is never renamed. This catch-all handles that
+	# case (and any other code path that could skip the rename).
+	# GUARD: Only rename on genuinely completed runs — interrupted
+	# or failed runs MUST keep _PARTIAL so Resume mode can detect them.
+	# ============================================================
+	if ($script:LogFile -and $script:LogFile -match '_PARTIAL\.log$' -and (Test-Path $script:LogFile) -and -not $script:CtrlCPressed -and -not $script:EarlyExit) {
+		try {
+			$finalLogPath = $script:LogFile -replace '_PARTIAL\.log$', '.log'
+			if (Test-Path $finalLogPath) {
+				$logDir = Split-Path $finalLogPath -Parent
+				$logName = [System.IO.Path]::GetFileNameWithoutExtension($finalLogPath)
+				$ts = Get-Date -Format 'yyyyMMdd_HHmmss'
+				$finalLogPath = Join-Path $logDir "${logName}_${ts}.log"
+			}
+			Move-Item -Path $script:LogFile -Destination $finalLogPath -Force
+			$script:LogFile = $finalLogPath
+			$LogFile = $finalLogPath
+		} catch {
+			# Non-fatal: log file keeps _PARTIAL suffix but data is intact
+		}
+	}
+	
 	Write-LogHost ""; Write-LogHost "=== Enterprise Export Complete ===" -ForegroundColor Green
 	
 	if ($OnlyUserInfo) {
@@ -16254,6 +16969,14 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 			Write-LogHost "  Filtered:  $totalFiltered records" -ForegroundColor White
 		}
 		Write-LogHost "  Exported:  $totalExported rows" -ForegroundColor White
+		# Show duplicate removal count in Pipeline Summary when streaming merge deduplicated records
+		if ($script:StreamingMergeDuplicatesSkipped -gt 0) {
+			Write-LogHost "  Deduped:   $($script:StreamingMergeDuplicatesSkipped) duplicate records removed" -ForegroundColor DarkGray
+		}
+		# Show data loss warning in Pipeline Summary if partitions were missing
+		if ($script:StreamingMergeDataLoss) {
+			Write-LogHost "  [DATA-LOSS] WARNING: Output is PARTIAL — missing partitions: $($script:StreamingMergeMissingPartitions -join ', ')" -ForegroundColor Yellow
+		}
 	}
 	
 	# Export telemetry CSV for Graph API parallel execution analysis (one row per partition) - only when -IncludeTelemetry switch is used
@@ -16328,7 +17051,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 		# Use the metric directly in case $totalExported wasn't set (resume mode with no new fetches)
 		if ($CombineOutput -and -not $ExportWorkbook -and ([int]$script:metrics.TotalStructuredRows -eq 0)) {
 			try {
-				$headerColumns = if ($ExplodeDeep -or $ExplodeArrays -or $ForcedRawInputCsvExplosion) { $PurviewExplodedHeader } else { @('RecordType', 'CreationDate', 'UserIds', 'Operations', 'ResultStatus', 'ResultCount', 'Identity', 'IsValid', 'ObjectState', 'Id', 'CreationTime', 'Operation', 'OrganizationId', 'RecordTypeNum', 'ResultStatus_Audit', 'UserKey', 'UserType', 'Version', 'Workload', 'UserId', 'AppId', 'ClientAppId', 'CorrelationId', 'ModelId', 'ModelProvider', 'ModelFamily', 'TokensTotal', 'TokensInput', 'TokensOutput', 'DurationMs', 'OutcomeStatus', 'ConversationId', 'TurnNumber', 'RetryCount', 'ClientVersion', 'ClientPlatform', 'AgentId', 'AgentName', 'AgentVersion', 'AgentCategory', 'AppIdentity', 'ApplicationName', 'AuditData', 'CopilotEventData') }
+				$headerColumns = if ($ExplodeDeep -or $ExplodeArrays -or $ForcedRawInputCsvExplosion) { $PurviewExplodedHeader } else { @('RecordId', 'CreationDate', 'RecordType', 'Operation', 'UserId', 'AuditData', 'AssociatedAdminUnits', 'AssociatedAdminUnitsNames') }
 				$outputDirEmpty = Split-Path $OutputFile -Parent
 				if (-not (Test-Path $outputDirEmpty)) { New-Item -ItemType Directory -Path $outputDirEmpty -Force | Out-Null }
 				$enc = New-Object System.Text.UTF8Encoding($false)
@@ -16355,7 +17078,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 			try {
 				$outputDir = Split-Path $OutputFile -Parent
 				$timestamp = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile) -replace '.*_(\d{8}_\d{6}).*', '$1'
-				$headerColumns = if ($ExplodeDeep -or $ExplodeArrays -or $ForcedRawInputCsvExplosion) { $PurviewExplodedHeader } else { @('RecordType', 'CreationDate', 'UserIds', 'Operations', 'ResultStatus', 'ResultCount', 'Identity', 'IsValid', 'ObjectState', 'Id', 'CreationTime', 'Operation', 'OrganizationId', 'RecordTypeNum', 'ResultStatus_Audit', 'UserKey', 'UserType', 'Version', 'Workload', 'UserId', 'AppId', 'ClientAppId', 'CorrelationId', 'ModelId', 'ModelProvider', 'ModelFamily', 'TokensTotal', 'TokensInput', 'TokensOutput', 'DurationMs', 'OutcomeStatus', 'ConversationId', 'TurnNumber', 'RetryCount', 'ClientVersion', 'ClientPlatform', 'AgentId', 'AgentName', 'AgentVersion', 'AgentCategory', 'AppIdentity', 'ApplicationName', 'AuditData', 'CopilotEventData') }
+				$headerColumns = if ($ExplodeDeep -or $ExplodeArrays -or $ForcedRawInputCsvExplosion) { $PurviewExplodedHeader } else { @('RecordId', 'CreationDate', 'RecordType', 'Operation', 'UserId', 'AuditData', 'AssociatedAdminUnits', 'AssociatedAdminUnitsNames') }
 				foreach ($actType in $ActivityTypes) {
 					$file = Join-Path $outputDir ("Purview_Audit_{0}_{1}.csv" -f $actType, $timestamp)
 					try {
