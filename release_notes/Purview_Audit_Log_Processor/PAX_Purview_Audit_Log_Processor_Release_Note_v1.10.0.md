@@ -3,7 +3,7 @@
 ## Release Information
 
 - **Version:** 1.10.x
-- **Release Date:** 2026-03-05
+- **Release Date:** 2026-03-09
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,7 +12,7 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.10.7:** [PAX_Purview_Audit_Log_Processor_v1.10.7.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.7/PAX_Purview_Audit_Log_Processor_v1.10.7.ps1)
+- **PAX Purview Audit Log Processor Script v1.10.8:** [PAX_Purview_Audit_Log_Processor_v1.10.8.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.8/PAX_Purview_Audit_Log_Processor_v1.10.8.ps1)
 - **Documentation v1.10.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.10.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md)
 
 ---
@@ -510,6 +510,10 @@ If minimum window reached:
 - **(v1.10.7) M365 Usage Bundle — `UserLoggedIn` removed:** Removed `UserLoggedIn` from the `-IncludeM365Usage` activity bundle. On large tenants, `UserLoggedIn` generates extremely high record volumes (often orders of magnitude more than all other M365 usage activities combined), significantly increasing query time and data size without contributing to Copilot ROI or productivity analytics. The activity type remains available for explicit queries via `-ActivityTypes 'UserLoggedIn'`.
 
 - **(v1.10.7) Checkpoint log file rename in split mode:** Fixed `_PARTIAL` suffix remaining on the log file after a fully successful export when CSV split mode (`-SplitByActivityType` or `-SplitByRecordType`) is active. The fallback rename is guarded to preserve `_PARTIAL` on genuinely interrupted runs for Resume mode detection.
+
+- **(v1.10.8) Purview date-range bleed — client-side trimming:** Added client-side date-range trimming to eliminate records that bleed past the requested `EndDate` boundary by up to ~10 hours (a known Purview API behavior affecting ~3–5% of returned records). Output CSV is now guaranteed to contain only records within the user-specified `[StartDate, EndDate)` range. Timezone-safe boundary parsing uses `SpecifyKind(..., Utc)` to prevent local timezone offsets from shifting UTC midnight boundaries. Trimmed record count is reported in the Pipeline Summary for operator visibility.
+
+- **(v1.10.8) M365 Usage Bundle — noisy operations removed:** Removed six high-volume, low-signal operations from the `-IncludeM365Usage` bundle: `MailboxLogin`, `SharingSet`, `AddedToSecureLink`, `SecureLinkUsed`, `NewInboxRule`, and `UpdateInboxRules`. Bundle size reduced from ~121 to ~117 curated operation types. All removed operations remain available for explicit queries via `-ActivityTypes`.
 
 ---
 

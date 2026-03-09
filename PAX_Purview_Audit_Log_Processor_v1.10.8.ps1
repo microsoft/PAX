@@ -1,5 +1,5 @@
 ﻿# Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.10.7
+# Version: v1.10.8
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI: Microsoft Purview Data Security Posture Management integration
 #              MIXED FREE/PAYG Activity Types: AIInteraction (currently Microsoft platforms only), ConnectedAIAppInteraction (Microsoft + third-party)
@@ -42,6 +42,8 @@
 		- Partial success: Continues processing with successful partitions if some fail
 		- Query naming: PAX_Query_<DateRange>_PartX/Total visible in Purview UI
 		- Unified concurrency: MaxConcurrency parameter controls both EOM and Graph API modes (default: 10)
+		- Date-range accuracy: Client-side trimming ensures output contains only records within
+		  [StartDate, EndDate), compensating for Purview API date-range bleed
 		- Checkpoint & Resume: All auth modes automatically save progress to checkpoint files,
 		  enabling resumption after Ctrl+C, network failures, or any interruption via -Resume
     
@@ -750,13 +752,13 @@
 	Forms, Stream, Planner, PowerApps, and Office desktop apps.
 	
 	ACTIVITY TYPES INCLUDED:
-	  Exchange: MailboxLogin, MailItemsAccessed, Send, SendOnBehalf, SoftDelete, HardDelete,
+	  Exchange: MailItemsAccessed, Send, SendOnBehalf, SoftDelete, HardDelete,
 	            MoveToDeletedItems, CopyToFolder
 	  SharePoint/OneDrive (Files): FileAccessed, FileDownloaded, FileUploaded, FileModified,
 	            FileDeleted, FileMoved, FileCheckedIn, FileCheckedOut, FileRecycled, FileRestored,
 	            FileVersionsAllDeleted
-	  SharePoint/OneDrive (Sharing): SharingSet, SharingInvitationCreated, SharingInvitationAccepted,
-	            SharedLinkCreated, SharingRevoked, AddedToSecureLink, RemovedFromSecureLink, SecureLinkUsed
+	  SharePoint/OneDrive (Sharing): SharingInvitationCreated, SharingInvitationAccepted,
+	            SharedLinkCreated, SharingRevoked, RemovedFromSecureLink
 	  Groups: AddMemberToUnifiedGroup, RemoveMemberFromUnifiedGroup
 	  Teams (Team/Channel): TeamCreated, TeamDeleted, TeamArchived, TeamSettingChanged,
 	            TeamMemberAdded, TeamMemberRemoved, MemberAdded, MemberRemoved, MemberRoleChanged,
@@ -1678,9 +1680,9 @@ $recordTypeWorkloadMap = @{
 
 $serviceOperationMap = @{
 	'AzureActiveDirectory' = @('UserLoggedIn','UserLoginFailed','AdminLoggedIn','ResetUserPassword','AddRegisteredUser','UpdateUser','ChangedUserSetting')
-	'Exchange' = @('MailboxLogin','MailItemsAccessed','Send','SendOnBehalf','SoftDelete','HardDelete','MoveToDeletedItems','CopyToFolder','NewInboxRule','UpdateInboxRules','AddMailboxPermission','RemoveMailboxPermission')
-	'SharePoint' = @('FileAccessed','FileDownloaded','FileUploaded','FileModified','FileDeleted','FileMoved','SharingSet','SharingInvitationCreated','SharingInvitationAccepted','SharedLinkCreated','SharingRevoked','AddMemberToUnifiedGroup','RemoveMemberFromUnifiedGroup')
-	'OneDrive' = @('FileAccessed','FileDownloaded','FileUploaded','FileModified','FileDeleted','FileMoved','SharingSet','SharingInvitationCreated','SharingInvitationAccepted','SharedLinkCreated','SharingRevoked','AddMemberToUnifiedGroup','RemoveMemberFromUnifiedGroup')
+	'Exchange' = @('MailItemsAccessed','Send','SendOnBehalf','SoftDelete','HardDelete','MoveToDeletedItems','CopyToFolder','AddMailboxPermission','RemoveMailboxPermission')
+	'SharePoint' = @('FileAccessed','FileDownloaded','FileUploaded','FileModified','FileDeleted','FileMoved','SharingInvitationCreated','SharingInvitationAccepted','SharedLinkCreated','SharingRevoked','AddMemberToUnifiedGroup','RemoveMemberFromUnifiedGroup')
+	'OneDrive' = @('FileAccessed','FileDownloaded','FileUploaded','FileModified','FileDeleted','FileMoved','SharingInvitationCreated','SharingInvitationAccepted','SharedLinkCreated','SharingRevoked','AddMemberToUnifiedGroup','RemoveMemberFromUnifiedGroup')
 	'Teams' = @('TeamMemberAdded','TeamMemberRemoved','ChannelAdded','ChannelDeleted','ChannelMessageSent','ChannelMessageDeleted','TeamDeleted','TeamArchived','AddMemberToUnifiedGroup','RemoveMemberFromUnifiedGroup')
 	'MicrosoftForms' = @('CreateForm','EditForm','DeleteForm','ViewForm','CreateResponse','SubmitResponse','ViewResponse','DeleteResponse')
 	'MicrosoftStream' = @('StreamModified','StreamViewed','StreamDeleted','StreamDownloaded')
@@ -1694,15 +1696,15 @@ $m365UsageRecordBundle = @('ExchangeAdmin','ExchangeItem','ExchangeMailbox','Sha
 # Curated M365 usage operations spanning Exchange/SharePoint/OneDrive/Teams/Forms/Stream/Planner/PowerApps and Office desktop apps (Word/Excel/PowerPoint/OneNote)
 $m365UsageActivityBundle = @(
 	# === Exchange/Email ===
-	'MailboxLogin','MailItemsAccessed','Send','SendOnBehalf','SoftDelete','HardDelete','MoveToDeletedItems','CopyToFolder',
+	'MailItemsAccessed','Send','SendOnBehalf','SoftDelete','HardDelete','MoveToDeletedItems','CopyToFolder',
 	
 	# === SharePoint/OneDrive - Files ===
 	'FileAccessed','FileDownloaded','FileUploaded','FileModified','FileDeleted','FileMoved',
 	'FileCheckedIn','FileCheckedOut','FileRecycled','FileRestored','FileVersionsAllDeleted',
 	
 	# === SharePoint/OneDrive - Sharing ===
-	'SharingSet','SharingInvitationCreated','SharingInvitationAccepted','SharedLinkCreated','SharingRevoked',
-	'AddedToSecureLink','RemovedFromSecureLink','SecureLinkUsed',
+	'SharingInvitationCreated','SharingInvitationAccepted','SharedLinkCreated','SharingRevoked',
+	'RemovedFromSecureLink',
 	
 	# === Groups/Unified Groups ===
 	'AddMemberToUnifiedGroup','RemoveMemberFromUnifiedGroup',
@@ -1757,7 +1759,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.10.7'
+$ScriptVersion = '1.10.8'
 
 # --- Initialize/Clear persistent script variables to prevent cross-run contamination ---
 # Note: Script-scoped variables persist across multiple script invocations in the same PowerShell session
@@ -2438,6 +2440,15 @@ else {
 		if ($parsedEnd -lt $parsedStart) { Write-Host "ERROR: EndDate ($EndDate) is earlier than StartDate ($StartDate)." -ForegroundColor Red; exit 1 }
 	}
 }
+
+# Client-side date-range trim boundaries — Purview's partition-based indexing can
+# return records outside the requested date range (observed up to ~10 h past EndDate).
+# These UTC boundaries are used after dedup to trim any out-of-range records.
+# SpecifyKind(Utc) is critical: ParseExact returns Kind=Unspecified, and .ToUniversalTime()
+# on Unspecified assumes LOCAL time, shifting the boundary by the machine's UTC offset.
+$script:TrimStartDateUTC = if ($StartDate -ne '*') { [datetime]::SpecifyKind([datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null), [System.DateTimeKind]::Utc) } else { $null }
+$script:TrimEndDateUTC   = if ($EndDate   -ne '*') { [datetime]::SpecifyKind([datetime]::ParseExact($EndDate,   'yyyy-MM-dd', $null), [System.DateTimeKind]::Utc) } else { $null }
+$script:DateTrimCount    = 0
 
 if ($BlockHours -le 0) { Write-Host "ERROR: BlockHours must be positive." -ForegroundColor Red; exit 1 }
 
@@ -4801,6 +4812,16 @@ function Merge-IncrementalSaves-Streaming {
 							continue  # Skip duplicate — 'continue' works in while loop (was 'return' in ForEach-Object)
 						}
 						if ($recordId) { [void]$seenIds.Add($recordId) }
+						
+						# Client-side date-range trimming for streaming path
+						if ($script:TrimStartDateUTC -or $script:TrimEndDateUTC) {
+							$recDate = script:Parse-DateSafe $record.CreationDate
+							if ($recDate) {
+								$recDateUtc = $recDate.ToUniversalTime()
+								if ($script:TrimStartDateUTC -and $recDateUtc -lt $script:TrimStartDateUTC) { $script:DateTrimCount++; continue }
+								if ($script:TrimEndDateUTC   -and $recDateUtc -ge $script:TrimEndDateUTC)   { $script:DateTrimCount++; continue }
+							}
+						}
 						
 						# Parse AuditData for Operation if needed
 						$auditData = $record.AuditData
@@ -15127,6 +15148,27 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 		}
 	}
 	
+	# Client-side date-range trimming — remove records returned outside the requested date boundaries.
+	# Purview's partition-based indexing can bleed records up to ~10 hours past EndDate on large tenants.
+	if (($script:TrimStartDateUTC -or $script:TrimEndDateUTC) -and $allLogs.Count -gt 0) {
+		$preTrimCount = $allLogs.Count
+		$trimmedLogs = New-Object System.Collections.ArrayList($preTrimCount)
+		foreach ($log in $allLogs) {
+			$cd = script:Parse-DateSafe $log.CreationDate
+			if (-not $cd) { [void]$trimmedLogs.Add($log); continue }  # Keep records with unparseable dates
+			$cdUtc = $cd.ToUniversalTime()
+			if ($script:TrimStartDateUTC -and $cdUtc -lt $script:TrimStartDateUTC) { continue }
+			if ($script:TrimEndDateUTC   -and $cdUtc -ge $script:TrimEndDateUTC)   { continue }
+			[void]$trimmedLogs.Add($log)
+		}
+		$trimCount = $preTrimCount - $trimmedLogs.Count
+		if ($trimCount -gt 0) {
+			$script:DateTrimCount += $trimCount
+			$allLogs = $trimmedLogs
+			Write-LogHost "Date-range trim: Removed $trimCount record(s) outside requested date boundaries" -ForegroundColor Yellow
+		}
+	}
+	
 	# Show accurate record count — in streaming mode allLogs may be empty because records went JSONL→CSV directly
 	if ($script:UseStreamingMergeForExport) {
 		# StreamingMergeRecordCount = memory flush fresh run; mergedFromIncremental = deferred resume merge
@@ -16972,6 +17014,10 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 		# Show duplicate removal count in Pipeline Summary when streaming merge deduplicated records
 		if ($script:StreamingMergeDuplicatesSkipped -gt 0) {
 			Write-LogHost "  Deduped:   $($script:StreamingMergeDuplicatesSkipped) duplicate records removed" -ForegroundColor DarkGray
+		}
+		# Show date-range trim count in Pipeline Summary
+		if ($script:DateTrimCount -gt 0) {
+			Write-LogHost "  Trimmed:   $($script:DateTrimCount) record(s) outside requested date range" -ForegroundColor DarkGray
 		}
 		# Show data loss warning in Pipeline Summary if partitions were missing
 		if ($script:StreamingMergeDataLoss) {

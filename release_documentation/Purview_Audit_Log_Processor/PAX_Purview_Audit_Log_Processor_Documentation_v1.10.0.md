@@ -1,6 +1,6 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.7.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.7/PAX_Purview_Audit_Log_Processor_v1.10.7.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.8.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.8/PAX_Purview_Audit_Log_Processor_v1.10.8.ps1)
 >
 > **📋 Release Notes:** See what's new → [v1.10.x Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.10.0.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
@@ -8,7 +8,7 @@
 >
 > **📚 Documentation Archive:** [v1.10.x Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md) | [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
-**Script:** [`PAX_Purview_Audit_Log_Processor_v1.10.7.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.7/PAX_Purview_Audit_Log_Processor_v1.10.7.ps1)  
+**Script:** [`PAX_Purview_Audit_Log_Processor_v1.10.8.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.8/PAX_Purview_Audit_Log_Processor_v1.10.8.ps1)  
 **Documentation Version:** 1.10.x  
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 5.1 (compatible) / PowerShell 7+ (recommended)  
@@ -409,6 +409,7 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -
 - **Live mode:** Must specify both or neither (partial specification rejected)
 - **Replay mode:** Both dates optional; act as filters on `CreationDate` column
 - **Time zone:** All dates interpreted as UTC; convert local times before invocation
+- **Date-range accuracy:** The Purview API may return records slightly beyond the requested `EndDate`. PAX automatically trims these so the exported output contains only records within your specified `[StartDate, EndDate)` range. The number of trimmed records is reported in the log file's Pipeline Summary.
 
 ---
 
@@ -924,9 +925,9 @@ Automating scripts, using headless terminals, or SSO scenarios
 
 | Category | Operations |
 |----------|------------|
-| Outlook (Exchange) | MailboxLogin, MailItemsAccessed, Send, SendOnBehalf, SoftDelete, HardDelete, MoveToDeletedItems, CopyToFolder |
+| Outlook (Exchange) | MailItemsAccessed, Send, SendOnBehalf, SoftDelete, HardDelete, MoveToDeletedItems, CopyToFolder |
 | SharePoint/OneDrive (Files) | FileAccessed, FileDownloaded, FileUploaded, FileModified, FileDeleted, FileMoved, FileCheckedIn, FileCheckedOut, FileRecycled, FileRestored, FileVersionsAllDeleted |
-| SharePoint/OneDrive (Sharing) | SharingSet, SharingInvitationCreated, SharingInvitationAccepted, SharedLinkCreated, SharingRevoked, AddedToSecureLink, RemovedFromSecureLink, SecureLinkUsed |
+| SharePoint/OneDrive (Sharing) | SharingInvitationCreated, SharingInvitationAccepted, SharedLinkCreated, SharingRevoked, RemovedFromSecureLink |
 | Groups | AddMemberToUnifiedGroup, RemoveMemberFromUnifiedGroup |
 | Teams (Team/Channel) | TeamCreated, TeamDeleted, TeamArchived, TeamSettingChanged, TeamMemberAdded, TeamMemberRemoved, MemberAdded, MemberRemoved, MemberRoleChanged, ChannelAdded, ChannelDeleted, ChannelSettingChanged, ChannelOwnerResponded, ChannelMessageSent, ChannelMessageDeleted, BotAddedToTeam, BotRemovedFromTeam, TabAdded, TabRemoved, TabUpdated, ConnectorAdded, ConnectorRemoved, ConnectorUpdated |
 | Teams (Chat/Messaging) | TeamsSessionStarted, ChatCreated, ChatRetrieved, ChatUpdated, MessageSent, MessageRead, MessageDeleted, MessageUpdated, MessagesListed, MessageCreation, MessageCreatedHasLink, MessageEditedHasLink, MessageHostedContentRead, MessageHostedContentsListed, SensitiveContentShared |
@@ -4471,7 +4472,6 @@ The bundle includes activities from 10 categories:
 
 | Operation | Description |
 |-----------|-------------|
-| MailboxLogin | User accessed mailbox |
 | MailItemsAccessed | Email items accessed (read/preview) |
 | Send | Email sent |
 | SendOnBehalf | Email sent on behalf of another user |
@@ -4500,14 +4500,11 @@ The bundle includes activities from 10 categories:
 
 | Operation | Description |
 |-----------|-------------|
-| SharingSet | Sharing permissions set |
 | SharingInvitationCreated | Sharing invitation created |
 | SharingInvitationAccepted | Sharing invitation accepted |
 | SharedLinkCreated | Shared link created |
 | SharingRevoked | Sharing permissions revoked |
-| AddedToSecureLink | User added to secure link |
 | RemovedFromSecureLink | User removed from secure link |
-| SecureLinkUsed | Secure link accessed |
 
 #### Groups
 
