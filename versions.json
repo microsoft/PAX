@@ -6,7 +6,7 @@
   "products": {
     "pax": {
       "name": "PAX Infrastructure",
-      "version": "1.0.20",
+      "version": "1.0.21",
       "status": "development",
       "notes": "Core infrastructure, workflows, governance (iterating beyond last tagged release)"
     },
@@ -24,10 +24,10 @@
     },
     "copilotinteractions": {
       "name": "Copilot Interactions Content Audit Log Processor",
-      "version": "1.2.0",
+      "version": "2.0.0",
       "status": "development",
       "notes": "Canonical root script; prior versions in script_archive/CopilotInteractions_Content_Audit_Log_Processor."
     }
   },
-  "lastUpdated": "2026-03-09T00:00:00Z"
+  "lastUpdated": "2026-04-08T00:00:00Z"
 }
