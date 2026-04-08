@@ -1,3 +1,4 @@
+# Version: v2.0.0
 <#
 .SYNOPSIS
     PAX CopilotInteractions Content Audit Log Processor - Extract Copilot interaction content via Graph API.
@@ -25,7 +26,7 @@
     1. Connect to Microsoft Graph with app-only authentication
     2. Detect filter support in tenant (appClass vs createdDateTime)
     3. Load watermarks from previous run (optional, for incremental processing)
-    4. Process users in parallel batches (20 users per batch, 25 concurrent)
+    4. Process users in parallel batches (20 users per batch, 5 concurrent by default)
     5. Fetch interactions via getAllEnterpriseInteractions API with pagination
     6. Apply client-side filtering (dates, appClass) and watermark early-exit
     7. Update watermarks with latest timestamps and export to CSV/Excel
@@ -34,7 +35,7 @@
     • Endpoint: /v1.0/copilot/users/{upn}/interactionHistory/getAllEnterpriseInteractions
     • Pagination: Automatic via @odata.nextLink
     • Batch size: 20 requests per JSON batch (Microsoft Graph limit)
-    • Parallel execution: Configurable concurrent batches (default: 25)
+    • Parallel execution: Configurable concurrent batches (default: 5)
     
     FILTERING SUPPORT:
     • appClass filter: Supported server-side (documented feature)
@@ -64,15 +65,24 @@
        https://learn.microsoft.com/entra/identity-platform/quickstart-register-app
     
     2. Configure API Permissions (Application Permissions - NOT Delegated)
-       Required for Copilot interaction retrieval:
-       • API: Microsoft Graph
-       • Permission: AiEnterpriseInteraction.Read.All (Application)
-       • Admin consent: REQUIRED (click "Grant admin consent for [tenant]")
        
-       Required when using -IncludeUserInfo parameter:
+       ALL REQUIRED:
        • API: Microsoft Graph
-       • Permission: User.Read.All (Application)
-       • Admin consent: REQUIRED
+         Permission: AiEnterpriseInteraction.Read.All (Application)
+         Purpose: Read Copilot interaction history for all users in the tenant
+         Admin consent: REQUIRED
+       
+       • API: Microsoft Graph
+         Permission: Reports.Read.All (Application)
+         Purpose: Retrieve Copilot-licensed user list via Copilot Usage Report API
+         Admin consent: REQUIRED
+       
+       • API: Microsoft Graph
+         Permission: User.Read.All (Application)
+         Purpose: Read user directory, profile information, and license data
+         Admin consent: REQUIRED
+       
+       After adding permissions, click "Grant admin consent for [tenant]" to consent.
        
        📖 How to Add API Permissions:
        https://learn.microsoft.com/entra/identity-platform/quickstart-configure-app-access-web-apis#application-permission-to-microsoft-graph
@@ -112,11 +122,16 @@
     
     PERMISSION DETAILS:
     • AiEnterpriseInteraction.Read.All: Grants access to read Copilot interaction history
-      for all users in the tenant (audit/compliance scenarios)
-    • User.Read.All: Grants access to read basic user profile information from Entra ID
-      (required only when using -IncludeUserInfo parameter)
+      for all users in the tenant (audit/compliance scenarios).
+    • Reports.Read.All: Grants access to the Copilot Usage Report API, which provides the
+      authoritative list of Copilot-licensed users. Used as the primary license detection
+      method (replaces hardcoded SKU dictionary matching).
+    • User.Read.All: Grants access to read user directory and profile information from
+      Entra ID. Used for user enrichment, country filtering, and as a fallback for license
+      detection if the Reports API is unavailable.
     
-    Both permissions require Application type (app-only access) and tenant admin consent.
+    All three permissions are required. All use Application type (app-only access) and
+    require tenant admin consent.
 
 .PARAMETER UserPrincipalNames
     Array of user UPNs to search. If not provided, searches all licensed users.
@@ -262,11 +277,12 @@
 
 .PARAMETER ParallelBatchThrottle
     Maximum concurrent $batch API requests to process in parallel.
-    Default: 25 concurrent batches (each batch contains up to 20 user requests).
+    Default: 5 concurrent batches (each batch contains up to 20 user requests).
     
     • Higher values = faster completion but more API load
     • Lower values = more conservative API usage
-    • Each batch processes 20 users, so 25 batches = 500 users in flight
+    • Each batch processes 20 users, so 5 batches = 100 users in flight
+    • The Copilot interaction API is rate-limited to 30 rps per app per tenant
     • Only applies when -ParallelMode is 'On' or 'Auto' (with PowerShell 7+)
 
 .PARAMETER ParallelMode
@@ -443,11 +459,11 @@
     Extract interactions with Excel export and Entra ID user enrichment.
 
 .EXAMPLE
-    .\PAX_CopilotInteractions_Content_Audit_Log_Processor.ps1 -ParallelBatchThrottle 25
+    .\PAX_CopilotInteractions_Content_Audit_Log_Processor.ps1 -ParallelBatchThrottle 10
     
-    Enable parallel JSON batching for all licensed users. Processes 25 concurrent batches (20 users per batch).
+    Increase parallel batch concurrency to 10 (default is 5). Processes up to 10 concurrent batches (20 users per batch).
     Each batch = 1 HTTP request to Graph API (JSON batching reduces network overhead).
-    Ideal for Fortune 50 deployments with 50,000+ users.
+    Higher values speed up large-user-set processing but increase API load. Use with caution.
 
 .EXAMPLE
     .\PAX_CopilotInteractions_Content_Audit_Log_Processor.ps1 -UserListFile .\50000_users.txt -UseWatermark -StartDate 2025-01-01 -EndDate 2025-12-31
@@ -513,7 +529,7 @@
     • /v1.0/copilot/users/{upn}/interactionHistory/getAllEnterpriseInteractions
     • Pagination: Automatic via @odata.nextLink
     • Batch size: 20 requests per JSON batch (Microsoft Graph limit)
-    • Parallel execution: Configurable concurrent batches (default: 25)
+    • Parallel execution: Configurable concurrent batches (default: 5)
     • Throttling: 30 requests/second per app per tenant (1,800/minute)
     
     FILTERING CAPABILITIES:
@@ -523,11 +539,9 @@
     • Watermark pattern: Stores last seen timestamp per user for incremental processing
     
     REQUIRED PERMISSIONS (Application Type with Admin Consent):
-    • AiEnterpriseInteraction.Read.All - Read Copilot interaction history for all users
-    • User.Read.All - Read user directory and license information
-    • Organization.Read.All - Read organization and related resources
-    
-    All three permissions are required for every script execution.
+    • AiEnterpriseInteraction.Read.All - Read Copilot interaction history
+    • Reports.Read.All - Retrieve Copilot-licensed user list via Usage Report API
+    • User.Read.All - Read user directory, profile information, and license data
     
     AUTHENTICATION:
     • App-only authentication using client credentials flow (OAuth 2.0)
@@ -609,7 +623,7 @@ param(
     
     [Parameter(Mandatory=$false)]
     [ValidateRange(1, 25)]
-    [int]$ParallelBatchThrottle = 25,
+    [int]$ParallelBatchThrottle = 5,
     
     [Parameter(Mandatory=$false)]
     [ValidateSet('Auto', 'On', 'Off')]
@@ -737,7 +751,7 @@ if ($env:PAX_SUPPRESS_LOG -eq '1') {
 }
 
 # Script version and metadata
-$ScriptVersion = "1.1.0"
+$ScriptVersion = "2.0.0"
 $ScriptName = "PAX CopilotInteractions Content Audit Log Processor"
 $ScriptStartTime = Get-Date
 $ScriptTimestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
@@ -755,6 +769,14 @@ $script:CopilotSkuIds = @{
     '15f2e9fc-b782-4f73-bf51-81d8b7fff6f4' = 'Microsoft Copilot for Sales'
     '639dec6b-bb19-468b-871c-c5c441c4b0cb' = 'Copilot for Microsoft 365'
 }
+
+# Copilot Usage Report API version configuration (v1.0 → beta fallback)
+# Primary license detection: calls the Copilot Usage Report API to get licensed user list
+# Falls back to $script:CopilotSkuIds dictionary if Reports API is unavailable
+$script:CopilotUsageReportApi_Current  = '/v1.0/copilot/reports/getMicrosoft365CopilotUsageUserDetail'   # Try first (GA)
+$script:CopilotUsageReportApi_Fallback = '/beta/reports/getMicrosoft365CopilotUsageUserDetail'           # Fallback (beta)
+$script:CopilotUsageReportApi_Resolved = $null   # Runtime-detected path (do not edit)
+$script:CopilotLicensedUPNs = $null              # Cached licensed UPN set from Reports API (do not edit)
 
 if ($Help) {
     Get-Help $PSCommandPath -Full
@@ -882,7 +904,7 @@ if ($OnlyUserInfo) {
     if ($PSBoundParameters.ContainsKey('MaxBodyLength')) { $incompatibleParams += "  - MaxBodyLength (no content data in user-only mode)" }
     
     # Processing parameters
-    if ($PSBoundParameters.ContainsKey('ParallelBatchThrottle') -and $ParallelBatchThrottle -ne 25) { $incompatibleParams += "  - ParallelBatchThrottle (API batching setting)" }
+    if ($PSBoundParameters.ContainsKey('ParallelBatchThrottle') -and $ParallelBatchThrottle -ne 5) { $incompatibleParams += "  - ParallelBatchThrottle (API batching setting)" }
     if ($PSBoundParameters.ContainsKey('UseWatermark')) { $incompatibleParams += "  - UseWatermark (watermark pattern for incremental interaction retrieval)" }
     if ($PSBoundParameters.ContainsKey('WatermarkFile')) { $incompatibleParams += "  - WatermarkFile (watermark storage for incremental interaction retrieval)" }
     
@@ -1543,6 +1565,9 @@ function Invoke-GraphRequestWithRetry {
         [hashtable]$Headers,
         
         [Parameter(Mandatory=$false)]
+        [string]$OutputType,
+        
+        [Parameter(Mandatory=$false)]
         [int]$MaxRetries = 5
     )
     
@@ -1566,6 +1591,10 @@ function Invoke-GraphRequestWithRetry {
             
             if ($Headers) {
                 $params.Headers = $Headers
+            }
+            
+            if ($OutputType) {
+                $params.OutputType = $OutputType
             }
             
             $response = Invoke-MgGraphRequest @params
@@ -1608,7 +1637,7 @@ function Invoke-GraphRequestWithRetry {
                         throw "Authorization failed - unable to refresh token"
                     }
                 } else {
-                    throw "Authorization failed after $retryCount attempts. Check permissions: AiEnterpriseInteraction.Read.All, User.Read.All"
+                    throw "Authorization failed after $retryCount attempts. Check permissions: AiEnterpriseInteraction.Read.All, Reports.Read.All, User.Read.All"
                 }
             }
             
@@ -1785,27 +1814,20 @@ function ConvertTo-FlatEntraUsers {
         }
         
         # MAC Licensing Columns (assignedLicenses, hasLicense)
-        # Two-tier Copilot license detection:
-        # 1. Check known Copilot SKU IDs from $script:CopilotSkuIds
-        # 2. Pattern match SKU names containing "Copilot" (catches new/promotional variants)
+        # hasLicense is initially set by SKU dictionary check (pre-flight best-effort).
+        # In ALL code paths that produce Entra output (-OnlyUserInfo and -IncludeUserInfo),
+        # hasLicense is deterministically corrected post-flight using Interaction API results:
+        #   -OnlyUserInfo:    Test-CopilotLicenseProbe patches flat objects before export
+        #   -IncludeUserInfo: Post-collection patching corrects $script:EntraCache before export
         if ($user.assignedLicenses -and $user.assignedLicenses.Count -gt 0) {
             $skuIds = $user.assignedLicenses | ForEach-Object { $_.skuId } | Where-Object { $_ }
             $flatUser['assignedLicenses'] = if ($skuIds) { ($skuIds -join '; ') } else { $null }
             
-            # Check if user has Copilot license
             $hasCopilot = $false
             $copilotSkuIds = $script:CopilotSkuIds.Keys
             
             foreach ($license in $user.assignedLicenses) {
-                $skuId = $license.skuId
-                
-                # Check known Copilot SKU IDs
-                $isCopilotSku = $copilotSkuIds -contains $skuId
-                
-                # Pattern match for new Copilot SKUs not yet in the list
-                $isCopilotName = $script:CopilotSkuIds.ContainsKey($skuId) -and ($script:CopilotSkuIds[$skuId] -like "*Copilot*")
-                
-                if ($isCopilotSku -or $isCopilotName) {
+                if ($copilotSkuIds -contains $license.skuId) {
                     $hasCopilot = $true
                     break
                 }
@@ -1870,6 +1892,205 @@ function Resolve-IsoCountryCode {
     }
 
     return $null
+}
+
+function Get-CopilotLicensedUsers {
+    <#
+    .SYNOPSIS
+        Retrieves the set of Copilot-related UPNs from the Microsoft Graph Copilot Usage Report API.
+    
+    .DESCRIPTION
+        Calls getMicrosoft365CopilotUsageUserDetail (v1.0 first, beta fallback) to enumerate users
+        associated with Copilot in the tenant. Caches the result in $script:CopilotLicensedUPNs.
+        Returns $null if the API is unavailable (caller should fall back to Entra + SKU dictionary).
+        
+        NOTE: Despite Microsoft's documentation claiming this API "only returns usage data for users
+        who have a Microsoft 365 Copilot license," testing confirms it returns ALL users including
+        unlicensed ones. The returned set is used for user enumeration only — NOT as a license
+        authority. License determination is handled by the SKU dictionary (pre-flight) and
+        Interaction API 403 reclassification (post-flight ground truth).
+        
+        Requires Reports.Read.All permission.
+    
+    .OUTPUTS
+        HashSet of lowercase UPNs, or $null if API unavailable
+    #>
+    
+    # Return cached result if already resolved
+    if ($null -ne $script:CopilotLicensedUPNs) {
+        return $script:CopilotLicensedUPNs
+    }
+    
+    $endpoints = @(
+        @{ Path = $script:CopilotUsageReportApi_Current;  Label = 'v1.0 (GA)' },
+        @{ Path = $script:CopilotUsageReportApi_Fallback; Label = 'beta (fallback)' }
+    )
+    
+    foreach ($ep in $endpoints) {
+        $uri = "https://graph.microsoft.com$($ep.Path)(period='ALL')?`$format=application/json"
+        try {
+            Write-Log "Attempting Copilot Usage Report API: $($ep.Label)..." -Level Info
+            $allUsers = @()
+            $nextLink = $uri
+            $loops = 0
+            
+            while ($nextLink) {
+                $loops++
+                $resp = Invoke-GraphRequestWithRetry -Uri $nextLink
+                if ($resp.value) { $allUsers += $resp.value }
+                $nextLink = $resp.'@odata.nextLink'
+                if ($loops -gt 500) { throw "Safety abort: excessive paging (>500)" }
+            }
+            
+            # Build case-insensitive UPN lookup set from all returned users
+            # This set is used for user ENUMERATION — not license authority
+            $upnSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            foreach ($u in $allUsers) {
+                $upn = if ($u -is [System.Collections.IDictionary]) { $u['userPrincipalName'] } else { $u.userPrincipalName }
+                if ($upn) {
+                    [void]$upnSet.Add($upn)
+                }
+            }
+            
+            $script:CopilotUsageReportApi_Resolved = $ep.Path
+            $script:CopilotLicensedUPNs = $upnSet
+            Write-Log "  Copilot Usage Report API ($($ep.Label)): $($upnSet.Count) user(s) returned" -Level Success
+            return $upnSet
+        }
+        catch {
+            Write-Log "  Copilot Usage Report API ($($ep.Label)) unavailable: $($_.Exception.Message)" -Level Warning
+        }
+    }
+    
+    # Both endpoints failed — caller will fall back to SKU dictionary
+    Write-Log "  Copilot Usage Report API not available. Falling back to SKU-based license detection." -Level Warning
+    return $null
+}
+
+function Test-CopilotLicenseProbe {
+    <#
+    .SYNOPSIS
+        Probes the Interaction API to determine license status for each user.
+    
+    .DESCRIPTION
+        Makes a minimal $top=1 call to the Copilot Interaction API for each user.
+        - HTTP 200 (with or without data) → user is licensed
+        - HTTP 403 "does not have a valid Copilot license" → user is unlicensed (immediate, no retry)
+        Returns two lists of UPNs: licensed and unlicensed.
+
+        IMPORTANT: Does NOT use Invoke-GraphRequestWithRetry because that wrapper treats
+        all 403s as token issues and retries with token refresh (2+ seconds per retry).
+        The Copilot license 403 is a definitive answer, not a token problem.
+        This function calls Invoke-MgGraphRequest directly with its own 429 retry logic.
+    
+    .PARAMETER UserPrincipalNames
+        Array of UPN strings to probe.
+    
+    .OUTPUTS
+        Hashtable with keys 'Licensed' and 'Unlicensed', each containing a
+        [System.Collections.Generic.List[string]] of UPNs.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$UserPrincipalNames
+    )
+
+    $licensed = [System.Collections.Generic.List[string]]::new()
+    $unlicensed = [System.Collections.Generic.List[string]]::new()
+    $errors = 0
+    $probeIndex = 0
+    $total = $UserPrincipalNames.Count
+    $lastProgressUpdate = 0
+
+    Write-Log "═══════════════════════════════════════════════════════════════" -Level Header
+    Write-Log "LICENSE PROBE: Verifying Copilot license status via Interaction API" -Level Highlight
+    Write-Log "Probing $total user(s) with minimal API calls (`$top=1, no content retrieval)..." -Level Processing
+    Write-Log "═══════════════════════════════════════════════════════════════" -Level Header
+
+    foreach ($upn in $UserPrincipalNames) {
+        $probeIndex++
+        $probeSuccess = $false
+        $maxRetries = 3
+        $retryCount = 0
+        $backoffSeconds = 2
+
+        while (-not $probeSuccess -and $retryCount -le $maxRetries) {
+            try {
+                $uri = "https://graph.microsoft.com/v1.0/copilot/users/$upn/interactionHistory/getAllEnterpriseInteractions?`$top=1"
+                $null = Invoke-MgGraphRequest -Uri $uri -Method GET -ContentType 'application/json'
+                $licensed.Add($upn)
+                $probeSuccess = $true
+            }
+            catch {
+                $statusCode = $null
+                try { $statusCode = $_.Exception.Response.StatusCode.value__ } catch {}
+                $errorMessage = $_.Exception.Message
+
+                # Also check for 403 via exception message (Invoke-MgGraphRequest wraps
+                # the status as "Response status code does not indicate success: Forbidden (Forbidden)."
+                # and the license denial text is in $_.ErrorDetails.Message, not Exception.Message)
+                $is403 = ($statusCode -eq 403) -or ($errorMessage -match 'Forbidden \(Forbidden\)')
+
+                if ($is403) {
+                    # Per-user 403 from the Copilot Interaction API = unlicensed user.
+                    # App-level permission issues (missing AiEnterpriseInteraction.Read.All)
+                    # would have failed for ALL users during collection, not just here.
+                    $unlicensed.Add($upn)
+                    $probeSuccess = $true
+                }
+                elseif ((Test-Is429 -Exception $_) -or $statusCode -eq 429) {
+                    $retryCount++
+                    if ($retryCount -le $maxRetries) {
+                        $retryAfter = $_.Exception.Response.Headers | Where-Object { $_.Key -eq 'Retry-After' } | Select-Object -ExpandProperty Value -First 1
+                        $waitTime = if ($retryAfter) { [int]$retryAfter } else { $backoffSeconds }
+                        Write-Log "  License probe 429 for $($upn). Waiting $waitTime seconds... Retry $retryCount/$maxRetries" -Level Warning
+                        Start-Sleep -Seconds $waitTime
+                        $backoffSeconds = [Math]::Min($backoffSeconds * 2, 60)
+                    }
+                    else {
+                        $errors++
+                        Write-Log "  License probe error for $($upn): Max retries exceeded (429 throttled)" -Level Warning
+                        $probeSuccess = $true
+                    }
+                }
+                else {
+                    # Other error — don't retry
+                    $errors++
+                    Write-Log "  License probe error for $($upn): $errorMessage" -Level Warning
+                    $probeSuccess = $true
+                }
+            }
+        }
+
+        # Progress reporting (every 5% or every 100 users)
+        $percentComplete = [int](($probeIndex / $total) * 100)
+        $shouldUpdate = ($percentComplete -ge ($lastProgressUpdate + 5)) -or
+                        ($probeIndex % 100 -eq 0) -or
+                        ($probeIndex -eq $total)
+
+        if ($shouldUpdate) {
+            $lastProgressUpdate = $percentComplete
+            $progressMsg = "  [$percentComplete%] Probed $probeIndex/$total users ($($licensed.Count) licensed, $($unlicensed.Count) unlicensed"
+            if ($errors -gt 0) { $progressMsg += ", $errors errors" }
+            $progressMsg += ")"
+            Write-Log $progressMsg -Level Metric
+        }
+
+        # Pacing: 200ms between probes to respect API rate limits
+        if ($probeIndex -lt $total) {
+            Start-Sleep -Milliseconds 200
+        }
+    }
+
+    Write-Log "License probe complete: $($licensed.Count) licensed, $($unlicensed.Count) unlicensed" -Level Success
+    if ($errors -gt 0) {
+        Write-Log "  $errors user(s) had probe errors (hasLicense will use SKU dictionary fallback for these)" -Level Warning
+    }
+
+    return @{
+        Licensed   = $licensed
+        Unlicensed = $unlicensed
+    }
 }
 
 function Get-EntraUsers {
@@ -2738,7 +2959,7 @@ try {
         Write-Log "Authentication requires:" -Level Info
         Write-Log "  • Valid Tenant ID, Client ID, and Client Secret" -Level Info
         Write-Log "  • App registration with Application permissions (not Delegated)" -Level Info
-        Write-Log "  • Admin consent granted for: AiEnterpriseInteraction.Read.All, User.Read.All" -Level Info
+        Write-Log "  • Admin consent granted for: AiEnterpriseInteraction.Read.All, Reports.Read.All, User.Read.All" -Level Info
         throw "Microsoft Graph authentication failed"
     }
     
@@ -2748,6 +2969,9 @@ try {
         Write-Log "-OnlyUserInfo mode: Exporting Entra ID user directory only" -Level Highlight
         Write-Log "Skipping Copilot interaction content retrieval" -Level Processing
         Write-Log "═══════════════════════════════════════════════════════════════" -Level Header
+        
+        # Pre-fetch Copilot licensed user set (used by ConvertTo-FlatEntraUsers for hasLicense)
+        $null = Get-CopilotLicensedUsers
         
         # Retrieve Entra ID users
         Write-Log "Retrieving Entra ID users..." -Level Processing
@@ -2815,6 +3039,40 @@ try {
             }
 
             $entraUsers = $matchedEntraUsers
+        }
+        
+        # License probe: Deterministically verify hasLicense via Interaction API
+        # Makes a minimal $top=1 call per user — no content data is retrieved.
+        # Results override the SKU dictionary values set by ConvertTo-FlatEntraUsers.
+        if ($entraUsers.Count -gt 0) {
+            $probeUPNs = $entraUsers | ForEach-Object { $_.userPrincipalName } | Where-Object { $_ }
+            $probeResults = Test-CopilotLicenseProbe -UserPrincipalNames $probeUPNs
+
+            # Build lookup sets for fast patching
+            $licensedSet = [System.Collections.Generic.HashSet[string]]::new(
+                [System.StringComparer]::OrdinalIgnoreCase)
+            $unlicensedSet = [System.Collections.Generic.HashSet[string]]::new(
+                [System.StringComparer]::OrdinalIgnoreCase)
+            foreach ($upn in $probeResults.Licensed)   { $null = $licensedSet.Add($upn) }
+            foreach ($upn in $probeResults.Unlicensed) { $null = $unlicensedSet.Add($upn) }
+
+            # Patch hasLicense directly on the flat objects
+            $patchedLicensed = 0
+            $patchedUnlicensed = 0
+            foreach ($user in $entraUsers) {
+                if ($licensedSet.Contains($user.userPrincipalName)) {
+                    $user.hasLicense = $true
+                    $patchedLicensed++
+                }
+                elseif ($unlicensedSet.Contains($user.userPrincipalName)) {
+                    $user.hasLicense = $false
+                    $patchedUnlicensed++
+                }
+                # else: probe error — SKU dictionary value is kept as fallback
+            }
+            if ($patchedLicensed -gt 0 -or $patchedUnlicensed -gt 0) {
+                Write-Log "  hasLicense corrected via Interaction API: $patchedLicensed licensed, $patchedUnlicensed unlicensed" -Level Info
+            }
         }
         
         # Export to file
@@ -2914,18 +3172,29 @@ try {
         Write-Log "✓ Loaded $($targetUsers.Count) user(s) from file" -Level Success
     }
     else {
-        # Get all licensed users from Entra
-        Write-Log "Retrieving all Copilot-licensed users from Entra ID..." -Level Info
-        $entraUsers = Get-EntraUsers
-        $licensedUsers = $entraUsers | Where-Object { $_.hasLicense -eq $true }
-        $unlicensedCount = ($entraUsers | Where-Object { $_.hasLicense -ne $true }).Count
+        # Get all Copilot-licensed users via Reports API (primary) or Entra+SKU (fallback)
+        Write-Log "Retrieving all Copilot-licensed users..." -Level Info
+        $reportUPNs = Get-CopilotLicensedUsers
         
-        if ($unlicensedCount -gt 0) {
-            Write-Log "  Filtered out $unlicensedCount user(s) without Copilot licenses" -Level Metric
+        if ($null -ne $reportUPNs -and $reportUPNs.Count -gt 0) {
+            # Reports API succeeded — use its authoritative licensed user list
+            $targetUsers = @($reportUPNs)
+            Write-Log "✓ Retrieved $($targetUsers.Count) licensed user(s) via Copilot Usage Report API" -Level Success
         }
-        
-        $targetUsers = $licensedUsers | Where-Object { $_.UserPrincipalName } | Select-Object -ExpandProperty UserPrincipalName
-        Write-Log "✓ Retrieved $($targetUsers.Count) licensed user(s)" -Level Success
+        else {
+            # Fallback: Entra directory + SKU dictionary
+            Write-Log "Falling back to Entra directory + SKU-based license detection..." -Level Info
+            $entraUsers = Get-EntraUsers
+            $licensedUsers = $entraUsers | Where-Object { $_.hasLicense -eq $true }
+            $unlicensedCount = ($entraUsers | Where-Object { $_.hasLicense -ne $true }).Count
+            
+            if ($unlicensedCount -gt 0) {
+                Write-Log "  Filtered out $unlicensedCount user(s) without Copilot licenses" -Level Metric
+            }
+            
+            $targetUsers = $licensedUsers | Where-Object { $_.UserPrincipalName } | Select-Object -ExpandProperty UserPrincipalName
+            Write-Log "✓ Retrieved $($targetUsers.Count) licensed user(s) via Entra SKU detection (fallback)" -Level Success
+        }
     }
     
     if ($targetUsers.Count -eq 0) {
@@ -2939,40 +3208,53 @@ try {
         $unlicensedTargets = @()
         $validationErrors = @()
         
-        foreach ($upn in $targetUsers) {
-            try {
-                # Fetch user's license info from Graph API
-                $userLicenseUri = "https://graph.microsoft.com/v1.0/users/$upn`?`$select=userPrincipalName,assignedLicenses"
-                $userLicenses = Invoke-MgGraphRequest -Method GET -Uri $userLicenseUri -OutputType PSObject -ErrorAction Stop
-                
-                # Check for Copilot license using same logic as ConvertTo-FlatEntraUsers
-                $hasCopilot = $false
-                if ($userLicenses.assignedLicenses -and $userLicenses.assignedLicenses.Count -gt 0) {
-                    $copilotSkuIds = $script:CopilotSkuIds.Keys
-                    
-                    foreach ($license in $userLicenses.assignedLicenses) {
-                        $skuId = $license.skuId
-                        
-                        # Check known Copilot SKU IDs
-                        if ($copilotSkuIds -contains $skuId) {
-                            $hasCopilot = $true
-                            break
-                        }
-                    }
-                }
-                
-                if ($hasCopilot) {
+        # Try Reports API first (single call replaces N per-user license checks)
+        $reportUPNs = Get-CopilotLicensedUsers
+        
+        if ($null -ne $reportUPNs) {
+            # Reports API available — validate against authoritative licensed set
+            foreach ($upn in $targetUsers) {
+                if ($reportUPNs.Contains($upn)) {
                     $licensedTargets += $upn
                 } else {
                     $unlicensedTargets += $upn
                 }
             }
-            catch {
-                $validationErrors += [PSCustomObject]@{
-                    User = $upn
-                    Error = $_.Exception.Message
+        }
+        else {
+            # Fallback: per-user Graph license check using SKU dictionary
+            foreach ($upn in $targetUsers) {
+                try {
+                    $userLicenseUri = "https://graph.microsoft.com/v1.0/users/$upn`?`$select=userPrincipalName,assignedLicenses"
+                    $userLicenses = Invoke-GraphRequestWithRetry -Uri $userLicenseUri -Method GET -OutputType PSObject
+                    
+                    $hasCopilot = $false
+                    if ($userLicenses.assignedLicenses -and $userLicenses.assignedLicenses.Count -gt 0) {
+                        $copilotSkuIds = $script:CopilotSkuIds.Keys
+                        
+                        foreach ($license in $userLicenses.assignedLicenses) {
+                            $skuId = $license.skuId
+                            
+                            if ($copilotSkuIds -contains $skuId) {
+                                $hasCopilot = $true
+                                break
+                            }
+                        }
+                    }
+                    
+                    if ($hasCopilot) {
+                        $licensedTargets += $upn
+                    } else {
+                        $unlicensedTargets += $upn
+                    }
                 }
-                Write-Log "  WARNING: Failed to validate license for $upn : $($_.Exception.Message)" -Level Warning
+                catch {
+                    $validationErrors += [PSCustomObject]@{
+                        User = $upn
+                        Error = $_.Exception.Message
+                    }
+                    Write-Log "  WARNING: Failed to validate license for $upn : $($_.Exception.Message)" -Level Warning
+                }
             }
         }
         
@@ -3091,6 +3373,10 @@ try {
     
     # Initialize Entra cache if -IncludeUserInfo is specified
     if ($IncludeUserInfo) {
+        if (-not $entraUsers -or $entraUsers.Count -eq 0) {
+            Write-Log "Entra enrichment requires directory lookup. Retrieving Entra users..." -Level Info
+            $entraUsers = Get-EntraUsers
+        }
         Write-Log "Entra user data will be exported to output files" -Level Info
         
         # Convert entraUsers array to hashtable for efficient lookups
@@ -3110,8 +3396,21 @@ try {
     Write-Log "Processing $($targetUsers.Count) user(s) from $(Get-Date $StartDate -Format 'yyyy-MM-dd') to $(Get-Date $EndDate -Format 'yyyy-MM-dd')" -Level Highlight
     
     Write-Log "Testing server-side filter support in this tenant..." -Level Info
-    $testUser = $targetUsers[0]
-    $filterSupport = Test-FilterSupport -UserIdOrUpn $testUser
+    # Try up to 5 users for filter detection — 404 means the specific user has no
+    # interaction history resource, not that filtering is unsupported tenant-wide.
+    $filterSupport = $null
+    $maxFilterTestUsers = [Math]::Min(5, $targetUsers.Count)
+    for ($fti = 0; $fti -lt $maxFilterTestUsers; $fti++) {
+        $testUser = $targetUsers[$fti]
+        $filterSupport = Test-FilterSupport -UserIdOrUpn $testUser
+        # If we got a definitive answer (not all nulls from 404), stop testing
+        if ($filterSupport.AppClassFilterSupported -ne $null -or $filterSupport.DateFilterSupported -ne $null) {
+            break
+        }
+        if ($fti -lt ($maxFilterTestUsers - 1)) {
+            Write-Log "  Filter test user $($fti + 1) returned inconclusive (404) - trying next user..." -Level Info
+        }
+    }
     
     Write-Log "Filter capability detection results:" -Level Info
     foreach ($detail in $filterSupport.Details) {
@@ -3170,6 +3469,9 @@ try {
     $successCount = 0
     $errorCount = 0
     $noDataCount = 0
+    $unlicensedCount = 0
+    $unlicensedUPNs = [System.Collections.Generic.List[string]]::new()
+    $licensedUPNs = [System.Collections.Generic.List[string]]::new()
     
     if ($useParallel) {
         # Parallel JSON batch processing using ForEach-Object -Parallel (PS7+)
@@ -3185,7 +3487,7 @@ try {
         
         Write-Log "Created $($batches.Count) batches ($batchSize users per batch) for parallel processing" -Level Info
         
-        # Process batches in parallel (25 concurrent batches)
+        # Process batches in parallel (throttled to $ParallelBatchThrottle concurrent batches)
         $results = $batches | ForEach-Object -ThrottleLimit $ParallelBatchThrottle -Parallel {
             $batchUsers = $_
             $watermarkStore = $using:script:watermarkStore
@@ -3195,6 +3497,38 @@ try {
             $EndDate = $using:EndDate
             $serverSideAppClassSupported = $using:script:serverSideAppClassSupported
             $serverSideDateFilterSupported = $using:script:serverSideDateFilterSupported
+            
+            # Inline 429 retry wrapper (script-scoped functions are inaccessible in -Parallel blocks)
+            $InvokeGraphWithRetry = {
+                param([string]$Uri, [string]$Method = 'GET', [string]$Body, [string]$ContentType)
+                $retryCount = 0
+                $backoffSeconds = 2
+                while ($true) {
+                    try {
+                        $p = @{ Uri = $Uri; Method = $Method; OutputType = 'PSObject'; ErrorAction = 'Stop' }
+                        if ($Body) { $p.Body = $Body }
+                        if ($ContentType) { $p.ContentType = $ContentType }
+                        return (Invoke-MgGraphRequest @p)
+                    } catch {
+                        $sc = $null
+                        try { $sc = [int]$_.Exception.Response.StatusCode.value__ } catch {}
+                        if ($sc -eq 429 -and $retryCount -lt 5) {
+                            $retryCount++
+                            $ra = $null
+                            try {
+                                $ra = [int]($_.Exception.Response.Headers |
+                                    Where-Object { $_.Key -eq 'Retry-After' } |
+                                    Select-Object -ExpandProperty Value -First 1)
+                            } catch {}
+                            $waitSec = if ($ra) { $ra } else { $backoffSeconds }
+                            Start-Sleep -Seconds $waitSec
+                            $backoffSeconds = [Math]::Min($backoffSeconds * 2, 60)
+                            continue
+                        }
+                        throw
+                    }
+                }
+            }
             
             # Build JSON batch request (up to 20 individual requests)
             $batchRequests = @()
@@ -3265,17 +3599,80 @@ try {
                 $requestId++
             }
             
-            # Send batch request to Graph API
+            # Send batch request to Graph API (with inter-batch pacing to avoid 30 rps tenant limit)
+            Start-Sleep -Seconds 1
             $batchResults = @()
             try {
                 $batchPayload = @{
                     requests = $batchRequests
                 } | ConvertTo-Json -Depth 10
                 
-                $batchResponse = Invoke-MgGraphRequest -Method POST -Uri "https://graph.microsoft.com/v1.0/`$batch" -Body $batchPayload -ContentType "application/json" -OutputType PSObject -ErrorAction Stop
+                $batchResponse = & $InvokeGraphWithRetry -Uri "https://graph.microsoft.com/v1.0/`$batch" -Method POST -Body $batchPayload -ContentType "application/json"
                 
-                # Process each response in the batch
-                foreach ($response in $batchResponse.responses) {
+                # Retry loop for individual 429 responses inside the batch (up to 5 retries).
+                # Microsoft docs: "Requests in a batch are evaluated individually against throttling
+                # limits and if any request exceeds the limits, it fails with a status of 429.
+                # You should retry each failed request from the batch using the value provided in
+                # the retry-after response header from the JSON content."
+                $pendingRequests = $batchRequests
+                $allResponses = @{}  # keyed by original request id
+                $batchRetryCount = 0
+                $maxBatchRetries = 5
+                
+                while ($true) {
+                    # Separate 429s from completed responses
+                    $throttledRequests = @()
+                    $maxRetryAfter = 0
+                    
+                    foreach ($response in $batchResponse.responses) {
+                        if ($response.status -eq 429) {
+                            # Find the original request to re-submit
+                            $origReq = $pendingRequests | Where-Object { $_.id -eq $response.id } | Select-Object -First 1
+                            if ($origReq) { $throttledRequests += $origReq }
+                            # Extract Retry-After from individual response headers
+                            $ra = 0
+                            if ($response.headers -and $response.headers.'Retry-After') {
+                                try { $ra = [int]$response.headers.'Retry-After' } catch {}
+                            }
+                            elseif ($response.headers -and $response.headers.'retry-after') {
+                                try { $ra = [int]$response.headers.'retry-after' } catch {}
+                            }
+                            if ($ra -gt $maxRetryAfter) { $maxRetryAfter = $ra }
+                        }
+                        else {
+                            # Store completed response (success or non-429 error)
+                            $allResponses[$response.id] = $response
+                        }
+                    }
+                    
+                    # If no 429s or max retries reached, stop
+                    if ($throttledRequests.Count -eq 0 -or $batchRetryCount -ge $maxBatchRetries) {
+                        # On max retries, store remaining 429s as errors
+                        if ($throttledRequests.Count -gt 0) {
+                            foreach ($response in $batchResponse.responses) {
+                                if ($response.status -eq 429 -and -not $allResponses.ContainsKey($response.id)) {
+                                    $allResponses[$response.id] = $response
+                                }
+                            }
+                        }
+                        break
+                    }
+                    
+                    # Wait using the longest Retry-After value (minimum 2 seconds)
+                    $waitSec = [Math]::Max($maxRetryAfter, 2)
+                    $waitSec = [Math]::Min($waitSec, 60)
+                    Start-Sleep -Seconds $waitSec
+                    $batchRetryCount++
+                    
+                    # Re-submit only the throttled requests
+                    $pendingRequests = $throttledRequests
+                    $retryPayload = @{ requests = $throttledRequests } | ConvertTo-Json -Depth 10
+                    $batchResponse = & $InvokeGraphWithRetry -Uri "https://graph.microsoft.com/v1.0/`$batch" -Method POST -Body $retryPayload -ContentType "application/json"
+                }
+                
+                # Process all collected responses
+                foreach ($responseEntry in $allResponses.GetEnumerator()) {
+                    $response = $responseEntry.Value
                     $requestIdNum = [int]$response.id
                     $upn = $batchUsers[$requestIdNum - 1]
                     
@@ -3298,7 +3695,8 @@ try {
                             # Handle pagination (nextLink in batch response)
                             $nextLink = $response.body.'@odata.nextLink'
                             while ($nextLink) {
-                                $pageResponse = Invoke-MgGraphRequest -Method GET -Uri $nextLink -OutputType PSObject -ErrorAction Stop
+                                Start-Sleep -Milliseconds 200
+                                $pageResponse = & $InvokeGraphWithRetry -Uri $nextLink
                                 if ($pageResponse.value) {
                                     $interactions += $pageResponse.value
                                 }
@@ -3402,6 +3800,7 @@ try {
                     }
                     
                     $successCount++
+                    $licensedUPNs.Add($result.User)
                 }
                 else {
                     # Write to user status CSV
@@ -3409,15 +3808,26 @@ try {
                     $statusLine | Out-File -FilePath $userStatusFile -Append -Encoding UTF8
                     
                     $noDataCount++
+                    $licensedUPNs.Add($result.User)
                 }
             }
             else {
-                # Escape quotes in error message for CSV
-                $errorMsg = $result.Error -replace '"', '""'
-                $statusLine = "$($result.User),Error,0,""$errorMsg"",$statusTimestamp"
-                $statusLine | Out-File -FilePath $userStatusFile -Append -Encoding UTF8
-                
-                $errorCount++
+                # Check if this is an unlicensed user (403 "does not have a valid Copilot license")
+                if ($result.Error -match 'does not have a valid Copilot license') {
+                    $statusLine = "$($result.User),Unlicensed,0,,$statusTimestamp"
+                    $statusLine | Out-File -FilePath $userStatusFile -Append -Encoding UTF8
+                    
+                    $unlicensedCount++
+                    $unlicensedUPNs.Add($result.User)
+                }
+                else {
+                    # Genuine error — escape quotes in error message for CSV
+                    $errorMsg = $result.Error -replace '"', '""'
+                    $statusLine = "$($result.User),Error,0,""$errorMsg"",$statusTimestamp"
+                    $statusLine | Out-File -FilePath $userStatusFile -Append -Encoding UTF8
+                    
+                    $errorCount++
+                }
             }
             
             # Progress summarization (every 5% or minimum every 100 users) - show counts for THIS interval
@@ -3435,6 +3845,7 @@ try {
                 $intervalWithData = 0
                 $intervalNoData = 0
                 $intervalErrors = 0
+                $intervalUnlicensed = 0
                 
                 for ($i = $startIdx; $i -le $endIdx; $i++) {
                     $res = $results[$i]
@@ -3444,6 +3855,8 @@ try {
                         } else {
                             $intervalNoData++
                         }
+                    } elseif ($res.Error -match 'does not have a valid Copilot license') {
+                        $intervalUnlicensed++
                     } else {
                         $intervalErrors++
                     }
@@ -3451,7 +3864,11 @@ try {
                 
                 $lastProgressUpdate = $percentComplete
                 $lastReportedIndex = $userIndex
-                Write-Log "  [$percentComplete%] Processed $userIndex/$($targetUsers.Count) users (batch: $intervalWithData with data, $intervalNoData no data, $intervalErrors errors)" -Level Metric
+                $progressMsg = "  [$percentComplete%] Processed $userIndex/$($targetUsers.Count) users (batch: $intervalWithData with data, $intervalNoData no data"
+                if ($intervalUnlicensed -gt 0) { $progressMsg += ", $intervalUnlicensed unlicensed" }
+                if ($intervalErrors -gt 0) { $progressMsg += ", $intervalErrors errors" }
+                $progressMsg += ")"
+                Write-Log $progressMsg -Level Metric
             }
         }
     }
@@ -3523,11 +3940,12 @@ try {
                 # Paginate through all results
                 $userInteractions = @()
                 do {
-                    $response = Invoke-MgGraphRequest -Method GET -Uri $uri -OutputType PSObject -ErrorAction Stop
+                    $response = Invoke-GraphRequestWithRetry -Uri $uri -Method GET -OutputType PSObject
                     if ($response.value) {
                         $userInteractions += $response.value
                     }
                     $uri = $response.'@odata.nextLink'
+                    if ($uri) { Start-Sleep -Milliseconds 200 }
                 } while ($uri)
                 
                 # Apply client-side date filtering if server-side not supported
@@ -3571,6 +3989,7 @@ try {
                     }
                     
                     $successCount++
+                    $licensedUPNs.Add($upn)
                 }
                 else {
                     # Write to user status CSV
@@ -3578,15 +3997,26 @@ try {
                     $statusLine | Out-File -FilePath $userStatusFile -Append -Encoding UTF8
                     
                     $noDataCount++
+                    $licensedUPNs.Add($upn)
                 }
             }
             catch {
-                # Escape quotes in error message for CSV
-                $errorMsg = $_.Exception.Message -replace '"', '""'
-                $statusLine = "$upn,Error,0,""$errorMsg"",$statusTimestamp"
-                $statusLine | Out-File -FilePath $userStatusFile -Append -Encoding UTF8
-                
-                $errorCount++
+                # Check if this is an unlicensed user (403 "does not have a valid Copilot license")
+                if ($_.Exception.Message -match 'does not have a valid Copilot license') {
+                    $statusLine = "$upn,Unlicensed,0,,$statusTimestamp"
+                    $statusLine | Out-File -FilePath $userStatusFile -Append -Encoding UTF8
+                    
+                    $unlicensedCount++
+                    $unlicensedUPNs.Add($upn)
+                }
+                else {
+                    # Genuine error — escape quotes in error message for CSV
+                    $errorMsg = $_.Exception.Message -replace '"', '""'
+                    $statusLine = "$upn,Error,0,""$errorMsg"",$statusTimestamp"
+                    $statusLine | Out-File -FilePath $userStatusFile -Append -Encoding UTF8
+                    
+                    $errorCount++
+                }
             }
             
             # Progress summarization (every 5% or minimum every 100 users)
@@ -3598,7 +4028,11 @@ try {
             if ($shouldUpdate) {
                 $lastProgressUpdate = $percentComplete
                 $withDataCount = $successCount
-                Write-Log "  [$percentComplete%] Processed $userIndex/$($targetUsers.Count) users ($withDataCount with data, $noDataCount no data, $errorCount errors)" -Level Metric
+                $progressMsg = "  [$percentComplete%] Processed $userIndex/$($targetUsers.Count) users ($withDataCount with data, $noDataCount no data"
+                if ($unlicensedCount -gt 0) { $progressMsg += ", $unlicensedCount unlicensed" }
+                if ($errorCount -gt 0) { $progressMsg += ", $errorCount errors" }
+                $progressMsg += ")"
+                Write-Log $progressMsg -Level Metric
             }
         }
     }
@@ -3610,6 +4044,9 @@ try {
     Write-Log "Total users processed: $($targetUsers.Count)" -Level Metric
     Write-Log "With interactions: $successCount" -Level Success
     Write-Log "No interactions: $noDataCount" -Level Metric
+    if ($unlicensedCount -gt 0) {
+        Write-Log "Unlicensed (skipped): $unlicensedCount" -Level Warning
+    }
     Write-Log "Errors: $errorCount" -Level $(if ($errorCount -gt 0) { 'Error' } else { 'Metric' })
     Write-Log "Total interactions collected: $($allInteractions.Count)" -Level Highlight
     
@@ -3650,6 +4087,87 @@ try {
             }
             else {
                 Write-Log "  → Next run will retrieve only records AFTER these timestamps" -Level Info
+            }
+        }
+    }
+    
+    # Post-collection: Deterministically patch hasLicense in EntraCache using Interaction API results
+    # The SKU dictionary (used pre-flight in ConvertTo-FlatEntraUsers) is a best-effort guess.
+    # The Interaction API is the deterministic authority for every queried user:
+    #   - Successfully queried (WithData or NoData, no 403) → hasLicense = $true
+    #   - HTTP 403 "does not have a valid Copilot license" → hasLicense = $false
+    # Note: -OnlyUserInfo uses Test-CopilotLicenseProbe separately; this block is for -IncludeUserInfo.
+    if ($IncludeUserInfo -and $script:EntraCache -and $script:EntraCache.Count -gt 0 -and ($licensedUPNs.Count -gt 0 -or $unlicensedUPNs.Count -gt 0)) {
+        $patchedLicensed = 0
+        $patchedUnlicensed = 0
+        foreach ($upn in $licensedUPNs) {
+            foreach ($key in $script:EntraCache.Keys) {
+                $cachedUser = $script:EntraCache[$key]
+                if ($cachedUser.userPrincipalName -and $cachedUser.userPrincipalName -eq $upn) {
+                    $cachedUser.hasLicense = $true
+                    $patchedLicensed++
+                    break
+                }
+            }
+        }
+        foreach ($upn in $unlicensedUPNs) {
+            foreach ($key in $script:EntraCache.Keys) {
+                $cachedUser = $script:EntraCache[$key]
+                if ($cachedUser.userPrincipalName -and $cachedUser.userPrincipalName -eq $upn) {
+                    $cachedUser.hasLicense = $false
+                    $patchedUnlicensed++
+                    break
+                }
+            }
+        }
+        if ($patchedLicensed -gt 0 -or $patchedUnlicensed -gt 0) {
+            Write-Log "  hasLicense corrected via Interaction API: $patchedLicensed licensed, $patchedUnlicensed unlicensed" -Level Info
+        }
+
+        # Probe any Entra users that were NOT in $targetUsers (and therefore never queried)
+        # These users exist in EntraCache but have only SKU dictionary values for hasLicense.
+        # Use Test-CopilotLicenseProbe to deterministically verify them too.
+        $queriedSet = [System.Collections.Generic.HashSet[string]]::new(
+            [System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($upn in $licensedUPNs)   { $null = $queriedSet.Add($upn) }
+        foreach ($upn in $unlicensedUPNs) { $null = $queriedSet.Add($upn) }
+
+        $unqueriedUPNs = @()
+        foreach ($key in $script:EntraCache.Keys) {
+            $cachedUser = $script:EntraCache[$key]
+            if ($cachedUser.userPrincipalName -and -not $queriedSet.Contains($cachedUser.userPrincipalName)) {
+                $unqueriedUPNs += $cachedUser.userPrincipalName
+            }
+        }
+
+        if ($unqueriedUPNs.Count -gt 0) {
+            Write-Log "  $($unqueriedUPNs.Count) Entra user(s) were not in the queried set — probing for license status..." -Level Info
+            $probeResults = Test-CopilotLicenseProbe -UserPrincipalNames $unqueriedUPNs
+
+            $probePatchedLicensed = 0
+            $probePatchedUnlicensed = 0
+            foreach ($upn in $probeResults.Licensed) {
+                foreach ($key in $script:EntraCache.Keys) {
+                    $cachedUser = $script:EntraCache[$key]
+                    if ($cachedUser.userPrincipalName -and $cachedUser.userPrincipalName -eq $upn) {
+                        $cachedUser.hasLicense = $true
+                        $probePatchedLicensed++
+                        break
+                    }
+                }
+            }
+            foreach ($upn in $probeResults.Unlicensed) {
+                foreach ($key in $script:EntraCache.Keys) {
+                    $cachedUser = $script:EntraCache[$key]
+                    if ($cachedUser.userPrincipalName -and $cachedUser.userPrincipalName -eq $upn) {
+                        $cachedUser.hasLicense = $false
+                        $probePatchedUnlicensed++
+                        break
+                    }
+                }
+            }
+            if ($probePatchedLicensed -gt 0 -or $probePatchedUnlicensed -gt 0) {
+                Write-Log "  hasLicense corrected via probe: $probePatchedLicensed licensed, $probePatchedUnlicensed unlicensed" -Level Info
             }
         }
     }
@@ -4195,6 +4713,7 @@ try {
                 TotalUsers = $userIndex
                 SuccessfulUsers = $successCount
                 FailedUsers = $errorCount
+                UnlicensedUsers = $unlicensedCount
                 TotalInteractions = $transformedData.Count
                 UniqueUsers = ($transformedData | Select-Object -ExpandProperty UserId -Unique).Count
                 UniqueSessions = ($transformedData | Select-Object -ExpandProperty SessionId -Unique).Count
