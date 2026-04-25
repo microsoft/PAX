@@ -1,6 +1,6 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.8.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.8/PAX_Purview_Audit_Log_Processor_v1.10.8.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.9.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.9/PAX_Purview_Audit_Log_Processor_v1.10.9.ps1)
 >
 > **📋 Release Notes:** See what's new → [v1.10.x Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.10.0.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
@@ -8,7 +8,7 @@
 >
 > **📚 Documentation Archive:** [v1.10.x Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md) | [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
-**Script:** [`PAX_Purview_Audit_Log_Processor_v1.10.8.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.8/PAX_Purview_Audit_Log_Processor_v1.10.8.ps1)  
+**Script:** [`PAX_Purview_Audit_Log_Processor_v1.10.9.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.9/PAX_Purview_Audit_Log_Processor_v1.10.9.ps1)  
 **Documentation Version:** 1.10.x  
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 5.1 (compatible) / PowerShell 7+ (recommended)  
@@ -246,7 +246,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 | **PowerShell**              | 5.1 or 7+                               | 7+ strongly recommended for parallel execution and UTF-8     |
 | **Unified Audit Logging**   | Enabled in tenant                       | Verify in Microsoft Purview compliance portal                |
 | **Graph API Permissions**   | See [Permission Details](#permission-details) below | Required for Graph API mode (default). Consented during interactive sign-in or pre-configured for app registrations. |
-| **Audit Role**              | Purview Audit Reader (or higher) | Required for delegated authentication. The Exchange audit backend enforces this role. Not required for app-only (`-Auth AppRegistration`). |
+| **Audit Role**              | Purview Audit Reader (or higher) | Required only for EOM mode (`-UseEOM`) and the Purview UI. Not required for Graph API mode (default), regardless of authentication method. |
 | **Network Access**          | Microsoft 365 endpoints                 | Ensure firewall allows connections to Microsoft Graph and Exchange Online endpoints |
 | **Execution Policy**        | Bypass or RemoteSigned                  | See [Authentication Methods](#authentication-methods)        |
 
@@ -257,30 +257,27 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 
 **Permissions by Execution Mode:**
 
-| Permission | Purpose | Graph API (Delegated) | Graph API (AppRegistration) | ExchangeOnlineManagement (EOM) |
-|------------|---------|:---------------------:|:---------------------------:|:------------------------------:|
-| **Graph: AuditLog.Read.All** | General audit log access | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: ThreatIntelligence.Read.All** | Required for GET operations (query status checks) | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: AuditLogsQuery-Entra.Read.All** | Entra ID (Azure AD) audit logs | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: AuditLogsQuery-Exchange.Read.All** | Exchange Online audit logs | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: AuditLogsQuery-OneDrive.Read.All** | OneDrive audit logs | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: AuditLogsQuery-SharePoint.Read.All** | SharePoint Online audit logs | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: Organization.Read.All** | Tenant/organization context, license metadata | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: User.Read.All** | Entra user directory, MAC licensing (optional) | ✅ Yes | ✅ Yes | — N/A |
-| **Purview Audit Reader** | Backend audit enforcement | ✅ Yes | ❌ No | ✅ Yes |
+Graph API mode requests scopes conditionally based on the switches you pass. The umbrella `AuditLogsQuery.Read.All` permission is the baseline; per-workload, user-directory, and group-expansion scopes are requested only when the corresponding feature is enabled. Grant any conditional scopes for features you intend to use.
+
+| Permission | Purpose | When required (Graph API) | Graph API (Delegated) | Graph API (AppRegistration) | ExchangeOnlineManagement (EOM) |
+|------------|---------|---------------------------|:---------------------:|:---------------------------:|:------------------------------:|
+| **Graph: AuditLogsQuery.Read.All** | Umbrella permission for the Microsoft Graph audit query API — covers `CopilotInteraction` record type | Always (except `-OnlyUserInfo`) | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: AuditLogsQuery-Exchange.Read.All** | Exchange Online audit logs | `-IncludeM365Usage` | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: AuditLogsQuery-OneDrive.Read.All** | OneDrive audit logs | `-IncludeM365Usage` | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: AuditLogsQuery-SharePoint.Read.All** | SharePoint Online audit logs | `-IncludeM365Usage` | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: User.Read.All** | Entra user directory, MAC licensing | `-IncludeUserInfo`, `-OnlyUserInfo`, or `-GroupNames` | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: Organization.Read.All** | Tenant/organization context, license metadata | `-IncludeUserInfo` or `-OnlyUserInfo` | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: GroupMember.Read.All** | Group lookup and membership expansion (least privilege) | `-GroupNames` | ✅ Yes | ✅ Yes | — N/A |
+| **Purview Audit Reader** | Purview UI/EOM | EOM only | ❌ No | ❌ No | ✅ Yes |
 
 > **📚 Reference:** [Microsoft Graph Audit Log Query Permissions](https://learn.microsoft.com/en-us/graph/api/security-auditcoreroot-post-auditlogqueries#permissions) | [Get auditLogQuery Permissions](https://learn.microsoft.com/en-us/graph/api/security-auditlogquery-get#permissions)
 
 **Audit Role Requirement and Enforcement Behavior:**
 
-Access to audit data via Microsoft Graph is governed by the same underlying audit authorization used by Microsoft Purview and Exchange Online.
+The **Purview Audit Reader** role is only required for EOM mode (`-UseEOM`) and the Purview UI — it is enforced by the Exchange audit backend. In Graph API mode (default), audit authorization is evaluated solely against the caller's Microsoft Graph permissions for both delegated and application authentication, and no user-level audit role is required.
 
-Users running the script with **delegated authentication** must be assigned the **Purview Audit Reader** role (read-only) so that the Exchange audit service recognizes them as authorized to perform audit searches.
-
-When using **application-only authentication** (`-Auth AppRegistration`), audit authorization is evaluated solely against the app's Microsoft Graph permissions, and no user-level audit role is required.
-
-> **⚠️ Troubleshooting: "User is not authorized" or 403 Errors**  
-> If the script fails with an error message containing `"User is not authorized for the RBAC roles"` or returns a `403 Forbidden` response during audit queries, this typically indicates a stale role assignment. The Purview Audit Reader role may appear correctly assigned in the Purview portal, but the Exchange audit backend no longer recognizes it.  
+> **⚠️ Troubleshooting (EOM mode): "User is not authorized" or 403 Errors**  
+> If an EOM-mode run fails with `"User is not authorized for the RBAC roles"` or returns a `403 Forbidden` response, this typically indicates a stale role assignment. The Purview Audit Reader role may appear correctly assigned in the Purview portal, but the Exchange audit backend no longer recognizes it.  
 > **Fix:** Remove and re-assign the **Purview Audit Reader** role to the user. This refreshes the Exchange audit authorization mapping. No new permissions are required.
 
 **DSPM for AI Access:**
@@ -288,7 +285,7 @@ When using **application-only authentication** (`-Auth AppRegistration`), audit 
 - No additional permissions required for DSPM activity types (`ConnectedAIAppInteraction`, `AIInteraction`, `AIAppInteraction`)
 
 **Entra ID User Enrichment + M365 Copilot Licensing (Optional Feature - Graph API Mode Only):**
-- Uses the **User.Read.All** and **Organization.Read.All** permissions (already required for Graph API mode)
+- Requires the **User.Read.All** and **Organization.Read.All** permissions (requested only when this feature is enabled)
 - Enabled via `-IncludeUserInfo` or `-OnlyUserInfo` parameters
 - Provides access to Entra user attributes AND M365 Copilot (MAC) license information
 - Not applicable in EOM mode (`-UseEOM`)
@@ -1577,26 +1574,27 @@ The script uses **Microsoft Graph API by default** for audit log retrieval, prov
 
 **Recommendation:** Use Graph API mode (default) unless you require `-GroupNames` filtering or have legacy constraints.
 
-> **Important:** Graph API mode requires multiple permissions for the Microsoft Purview Audit Search API. See [Permission Details](#permission-details) in the Prerequisites section for the complete list. For delegated authentication (WebLogin, DeviceCode, Credential, Silent), users must also be assigned the **Purview Audit Reader** role (or higher) so that the Exchange audit backend recognizes them as authorized. Application-only authentication (`-Auth AppRegistration`) requires only Graph API permissions—no user-level audit role is needed.
+> **Important:** Graph API mode requires multiple permissions for the Microsoft Purview Audit Search API. See [Permission Details](#permission-details) in the Prerequisites section for the complete list. The **Purview Audit Reader** role is only required for EOM mode (`-UseEOM`) and the Purview UI — it is not required for Graph API mode regardless of authentication method.
 
 **Required Permissions by Execution Mode:**
 
-| Permission | Purpose | Graph API (Delegated) | Graph API (AppRegistration) | ExchangeOnlineManagement (EOM) |
-|------------|---------|:---------------------:|:---------------------------:|:------------------------------:|
-| **Graph: AuditLog.Read.All** | General audit log access | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: ThreatIntelligence.Read.All** | Required for GET operations (query status checks) | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: AuditLogsQuery-Entra.Read.All** | Entra ID (Azure AD) audit logs | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: AuditLogsQuery-Exchange.Read.All** | Exchange Online audit logs | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: AuditLogsQuery-OneDrive.Read.All** | OneDrive audit logs | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: AuditLogsQuery-SharePoint.Read.All** | SharePoint Online audit logs | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: Organization.Read.All** | Tenant/organization context, license metadata | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: User.Read.All** | Entra user directory, MAC licensing (optional) | ✅ Yes | ✅ Yes | — N/A |
-| **Purview Audit Reader** | Backend audit enforcement | ✅ Yes | ❌ No | ✅ Yes |
+Graph API mode requests scopes conditionally based on the switches you pass. The umbrella `AuditLogsQuery.Read.All` permission is the baseline; per-workload, user-directory, and group-expansion scopes are requested only when the corresponding feature is enabled. Grant any conditional scopes for features you intend to use.
+
+| Permission | Purpose | When required (Graph API) | Graph API (Delegated) | Graph API (AppRegistration) | ExchangeOnlineManagement (EOM) |
+|------------|---------|---------------------------|:---------------------:|:---------------------------:|:------------------------------:|
+| **Graph: AuditLogsQuery.Read.All** | Umbrella permission for the Microsoft Graph audit query API — covers `CopilotInteraction` record type | Always (except `-OnlyUserInfo`) | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: AuditLogsQuery-Exchange.Read.All** | Exchange Online audit logs | `-IncludeM365Usage` | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: AuditLogsQuery-OneDrive.Read.All** | OneDrive audit logs | `-IncludeM365Usage` | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: AuditLogsQuery-SharePoint.Read.All** | SharePoint Online audit logs | `-IncludeM365Usage` | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: User.Read.All** | Entra user directory, MAC licensing | `-IncludeUserInfo`, `-OnlyUserInfo`, or `-GroupNames` | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: Organization.Read.All** | Tenant/organization context, license metadata | `-IncludeUserInfo` or `-OnlyUserInfo` | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: GroupMember.Read.All** | Group lookup and membership expansion (least privilege) | `-GroupNames` | ✅ Yes | ✅ Yes | — N/A |
+| **Purview Audit Reader** | Purview UI/EOM | EOM only | ❌ No | ❌ No | ✅ Yes |
 
 > **📚 Reference:** [Microsoft Graph Audit Log Query Permissions](https://learn.microsoft.com/en-us/graph/api/security-auditcoreroot-post-auditlogqueries#permissions) | [Get auditLogQuery Permissions](https://learn.microsoft.com/en-us/graph/api/security-auditlogquery-get#permissions)
 
-> **⚠️ Troubleshooting: "User is not authorized" or 403 Errors**  
-> If the script fails with an error message containing `"User is not authorized for the RBAC roles"` or returns a `403 Forbidden` response during audit queries, this typically indicates a stale role assignment. The Purview Audit Reader role may appear correctly assigned in the Purview portal, but the Exchange audit backend no longer recognizes it.  
+> **⚠️ Troubleshooting (EOM mode): "User is not authorized" or 403 Errors**  
+> If an EOM-mode run fails with `"User is not authorized for the RBAC roles"` or returns a `403 Forbidden` response, this typically indicates a stale role assignment. The Purview Audit Reader role may appear correctly assigned in the Purview portal, but the Exchange audit backend no longer recognizes it.  
 > **Fix:** Remove and re-assign the **Purview Audit Reader** role to the user. This refreshes the Exchange audit authorization mapping. No new permissions are required.
 
 ---
@@ -1626,7 +1624,7 @@ The script supports five authentication methods:
 **Token Refresh Details:**
 - **AppRegistration:** Proactively refreshes token at ~45-50 minutes (before expiry). Also handles 401 errors reactively as a backup. Fully automatic and silent.
 - **Interactive (WebLogin/DeviceCode):** On 401 error, first attempts silent refresh using SDK's cached refresh token. Only prompts user if silent refresh fails.
-- **403 Forbidden errors:** Indicate a permissions issue, NOT token expiry. Token refresh will not help—check `AuditLog.Read.All` consent and role assignments.
+- **403 Forbidden errors:** Indicate a permissions issue, NOT token expiry. Token refresh will not help—check `AuditLogsQuery.Read.All` consent and role assignments.
 
 > 💡 **Recommendation:** For long-running queries, use `-Auth AppRegistration` with a service principal for automatic token refresh. For interactive modes (WebLogin/DeviceCode), the script attempts silent token refresh first and only prompts for re-authentication when necessary, with incremental saves ensuring no data loss.
 
@@ -1703,7 +1701,7 @@ Username/password prompt. Credentials stored in memory only during script execut
 Service principal authentication for automation, CI/CD, and headless batch jobs. Requires an Entra AD app registration with Microsoft Graph application permissions aligned with the script’s requirements.
 
 - **Best for:** Fully unattended scheduling (Task Scheduler, Azure Automation, containers) and CI/CD pipelines.
-- **Prerequisites:** App registration with Graph application permissions (e.g., `AuditLog.Read.All`, `Directory.Read.All`), admin consent, and either a client secret or certificate.
+- **Prerequisites:** App registration with Graph application permissions (at minimum `AuditLogsQuery.Read.All`, plus any conditional scopes required by the switches you use — see the Permissions table above), admin consent, and either a client secret or certificate.
 - **Works in:** Graph API mode only; automatically blocked when `-UseEOM` is supplied.
 - **Automation suitability:** Purpose-built for automation with support for secrets, PFX certificates, or certificate thumbprints.
 
@@ -3862,7 +3860,7 @@ This reactive approach is more reliable than time-based prompts because token li
 
 > ⚠️ **401 vs 403 Errors:** PAX differentiates between these error types:
 > - **401 Unauthorized:** Token expired or invalid → Token refresh will help
-> - **403 Forbidden:** Permissions issue → Token refresh will NOT help. Check `AuditLog.Read.All` consent and role assignments.
+> - **403 Forbidden:** Permissions issue → Token refresh will NOT help. Check `AuditLogsQuery.Read.All` consent and role assignments.
 
 ### Resume Mode: Standalone Behavior
 
@@ -5252,8 +5250,7 @@ When using `-ExplodeArrays` or `-ExplodeDeep` with large datasets, parallel expl
 **Solutions:**
 
 **Graph API Mode (Default):**
-- Verify you have AuditLog.Read.All permission (Application or Delegated)
-- Verify you have Entra AD role: Compliance Administrator, Security Administrator, or Global Reader
+- Verify you have `AuditLogsQuery.Read.All` permission (Application or Delegated). If you use `-IncludeM365Usage`, also verify the per-workload `AuditLogsQuery-Exchange.Read.All`, `AuditLogsQuery-OneDrive.Read.All`, and `AuditLogsQuery-SharePoint.Read.All` permissions are consented.
 - Check network connectivity to Microsoft Graph endpoints (`*.graph.microsoft.com`)
 - Try different auth method: `-Auth DeviceCode` for headless sessions
 - Clear cached credentials: Restart PowerShell session
@@ -5465,8 +5462,8 @@ Most transient issues (network hiccups, temporary service throttling) are resolv
 
 **Graph API Mode (Default):**
 
-- **API Permission:** AuditLog.Read.All (Application or Delegated)
-- **Entra AD Role:** Compliance Administrator, Security Administrator, Security Reader, or Global Reader
+- **API Permissions (least privilege):** `AuditLogsQuery.Read.All` (umbrella) is the baseline. PAX requests additional scopes only when the corresponding feature is used: `AuditLogsQuery-Exchange.Read.All` / `AuditLogsQuery-OneDrive.Read.All` / `AuditLogsQuery-SharePoint.Read.All` (`-IncludeM365Usage`); `User.Read.All` (`-IncludeUserInfo`, `-OnlyUserInfo`, or `-GroupNames`); `Organization.Read.All` (`-IncludeUserInfo` or `-OnlyUserInfo`); `GroupMember.Read.All` (`-GroupNames`).
+- **No user-level audit role required:** Audit authorization in Graph API mode is evaluated solely against the caller's Microsoft Graph permissions for both delegated and application authentication.
 - **Read-Only:** No write permissions required
 - Create dedicated service account for automated runs
 - Limit access to output files (contain sensitive audit data)

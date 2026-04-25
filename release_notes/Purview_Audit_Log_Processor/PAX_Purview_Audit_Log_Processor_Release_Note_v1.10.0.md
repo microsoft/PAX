@@ -3,7 +3,7 @@
 ## Release Information
 
 - **Version:** 1.10.x
-- **Release Date:** 2026-03-09
+- **Release Date:** 2026-04-25
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,12 +12,14 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.10.8:** [PAX_Purview_Audit_Log_Processor_v1.10.8.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.8/PAX_Purview_Audit_Log_Processor_v1.10.8.ps1)
+- **PAX Purview Audit Log Processor Script v1.10.9:** [PAX_Purview_Audit_Log_Processor_v1.10.9.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.10.9/PAX_Purview_Audit_Log_Processor_v1.10.9.ps1)
 - **Documentation v1.10.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.10.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md)
 
 ---
 
 ## Overview
+
+> ⚠️ **Required Action for v1.10.9 (Microsoft Graph Permissions Enforcement — April 2026):** Microsoft introduced a new dedicated permission level for the Microsoft Graph audit query API (`/security/auditLog/queries`) and began enforcing it across all tenants in April, 2026. Going forward, the audit query endpoint requires the new `AuditLogsQuery.Read.All` permission (and the granular `AuditLogsQuery-*.Read.All` workload scopes for optional M365 usage per-service queries); the broader `AuditLog.Read.All` permission is no longer sufficient on its own. **All app registrations and admin-consented delegated scopes used with PAX must be updated to grant `AuditLogsQuery.Read.All`** before running v1.10.9 against the Graph API path. Without it, Microsoft's enforcement causes the endpoint to return 0 records for `CopilotInteraction` and other workload-agnostic record types. v1.10.9 aligns PAX with Microsoft's new permission model and also adopts least-privilege conditional scopes — see the **Microsoft Graph API Permissions Enforcement & Least-Privilege Hardening (v1.10.9)** section below for full details. EOM mode (`-UseEOM`) is unaffected.
 
 Version 1.10.x introduces two major capabilities: the **Microsoft 365 Usage Bundle** and **Checkpoint & Resume** for long-running exports.
 
@@ -30,6 +32,46 @@ Additional enhancements include **memory management** (`-MaxMemoryMB`) to preven
 ---
 
 ## What's New
+
+### Microsoft Graph API Permissions Enforcement & Least-Privilege Hardening (v1.10.9)
+
+| Area | Details |
+| --- | --- |
+| **What changed** | Microsoft introduced a new dedicated permission level for the Microsoft Graph audit query API (`/security/auditLog/queries`) and began enforcing it across all tenants in April, 2026. The audit query endpoint now requires its own `AuditLogsQuery.Read.All` (umbrella) permission — plus the granular `AuditLogsQuery-*.Read.All` per-workload scopes for service-scoped queries — instead of the broader `AuditLog.Read.All` permission previously used by all tooling that called this endpoint. |
+| **Tenant impact** | Calls to the audit query endpoint authenticated with only the legacy `AuditLog.Read.All` permission still receive a `succeeded` query status under Microsoft's enforcement, but the endpoint returns **zero records** for record types not covered by a granular `AuditLogsQuery-*.Read.All` workload scope (most notably `CopilotInteraction`). This is a Microsoft platform-level change and applies to every tenant; it is not specific to PAX. |
+| **New permission to grant** | `AuditLogsQuery-*.Read.All` is the new umbrella permission set that authorizes the caller to retrieve all CopilotInteraction and M365 usage record types via the audit query endpoint. PAX v1.10.9 has been validated against an isolated app registration holding only this permission and successfully retrieves all expected record types under Microsoft's new enforcement. |
+| **Customer action required** | Update existing PAX app registrations and admin-consented delegated scopes to add the `AuditLogsQuery-*.Read.All` permission family (Microsoft Graph, Application permission) and grant admin consent. After consent, no further changes are needed — the script will request the updated scope set automatically on next run. |
+| **Interim workaround** | Runs can use `-UseEOM` to bypass the Graph API path while consent is in flight. EOM mode uses Exchange Online RBAC and is unaffected by Microsoft's Graph permission enforcement change. |
+
+#### Least-Privilege Conditional Scope Request Set
+
+| Scope | Conditional on |
+|---|---|
+| `AuditLogsQuery.Read.All` (umbrella) | `-not $OnlyUserInfo` |
+| `AuditLogsQuery-Exchange.Read.All` | `-IncludeM365Usage` |
+| `AuditLogsQuery-OneDrive.Read.All` | `-IncludeM365Usage` |
+| `AuditLogsQuery-SharePoint.Read.All` | `-IncludeM365Usage` |
+| `User.Read.All` | `-IncludeUserInfo`, `-OnlyUserInfo`, or `-GroupNames` |
+| `Organization.Read.All` | `-IncludeUserInfo` or `-OnlyUserInfo` |
+| `GroupMember.Read.All` | `-GroupNames` |
+
+
+#### UX Updates
+
+- **Connection banner filtering:** The "Successfully connected to Microsoft Graph" banner now displays only scopes present in `$RequiredScopes` — extra scopes carried by the token from prior `Connect-MgGraph` sessions or other tooling are no longer printed.
+- **Query Mode permissions banner:** The startup `QUERY MODE: Microsoft Graph Security API` banner now renders each scope in **Yellow** when actively requested for the run and **DarkGray** when not, with a legend at the top. Sub-blocks for M365 usage, Entra directory enrichment, and group expansion show exactly which scopes a given invocation requires.
+- **403/Forbidden diagnostics:** Recommends `GroupMember.Read.All` first, with `Group.Read.All` / `Directory.Read.All` listed as higher-privilege fallbacks. Authentication failure messages now reference `AuditLogsQuery.Read.All` throughout.
+- **Diagnostic logging:** A new `Graph scopes requested: <list>` log line is written on each connect for post-mortem traceability of exactly which scopes were sent.
+
+#### Customer Impact Summary
+
+- Baseline `-StartDate / -EndDate` Graph runs now request **only** `AuditLogsQuery.Read.All`.
+- `-OnlyUserInfo` runs no longer request audit query scopes they never use.
+- `-IncludeUserInfo` / `-OnlyUserInfo` users no longer have a silent permission gap on `/users` (previously needed external consent for `User.Read.All`).
+- `-GroupNames` users no longer have a silent permission gap on `/groups` and now request least-privilege `GroupMember.Read.All` instead of `Group.Read.All`.
+- **EOM mode (`-UseEOM`) is unaffected** — uses Exchange Online RBAC, not Graph scopes.
+
+---
 
 ### Microsoft 365 Usage Bundle: `-IncludeM365Usage`
 
@@ -514,6 +556,24 @@ If minimum window reached:
 - **(v1.10.8) Purview date-range bleed — client-side trimming:** Added client-side date-range trimming to eliminate records that bleed past the requested `EndDate` boundary by up to ~10 hours (a known Purview API behavior affecting ~3–5% of returned records). Output CSV is now guaranteed to contain only records within the user-specified `[StartDate, EndDate)` range. Timezone-safe boundary parsing uses `SpecifyKind(..., Utc)` to prevent local timezone offsets from shifting UTC midnight boundaries. Trimmed record count is reported in the Pipeline Summary for operator visibility.
 
 - **(v1.10.8) M365 Usage Bundle — noisy operations removed:** Removed six high-volume, low-signal operations from the `-IncludeM365Usage` bundle: `MailboxLogin`, `SharingSet`, `AddedToSecureLink`, `SecureLinkUsed`, `NewInboxRule`, and `UpdateInboxRules`. Bundle size reduced from ~121 to ~117 curated operation types. All removed operations remain available for explicit queries via `-ActivityTypes`.
+
+- **(v1.10.9) Entra Users CSV column naming alignment (breaking):** Renamed five Entra Users CSV columns from PascalCase to camelCase to match Microsoft Graph API property naming exactly: `DisplayName` → `displayName`, `Email` → `mail`, `JobTitle` → `jobTitle`, `Country` → `country`, `HasLicense` → `hasLicense`. Total column count remains 47. Output now matches the column names expected by the M365 Usage Analysis Dashboard and AI-in-One Power BI templates without requiring rename steps in M code. **Breaking:** Downstream consumers referencing the old PascalCase names must be updated.
+
+- **(v1.10.9) Time-zone-dependent record loss in streaming merge:** Fixed a bug where `CreationDate` lost its `Z` suffix during the JSONL round-trip in worker page-flushes (always the case in v1.10.9 with `$memoryFlushEnabled=true`). Downstream parsing returned `Kind=Unspecified`, and `.ToUniversalTime()` then treated the value as local time — shifting UTC records by `[local-UTC-offset]` hours and trimming everything past the `TrimEndDateUTC` boundary. In a UTC-5 (EST) tenant pulling a single day, all activity authored after 19:00 UTC was silently dropped, often producing 0 exported records despite valid retrievals. The worker normalizer now parses with `AssumeUniversal | AdjustToUniversal`, producing `Kind=Utc` so JSONL serialization preserves the `Z`. Existing `.pax_incremental` JSONL files written by earlier v1.10.9 builds must be deleted and the run re-executed.
+
+- **(v1.10.9) Circuit breaker cascading partition loss in sequential mode:** Fixed a bug where tripping the circuit breaker on one partition caused every remaining sequential partition to immediately `break` with 0 records (because the cooldown had not yet elapsed when the next partition's first iteration checked the flag). A single transient outage could silently skip 5–6 partitions (40–60% of the requested date range). The sequential `foreach` loop now waits out the remaining cooldown and resets the breaker before each partition. Affects EOM mode and any other sequential processing path; parallel mode was not affected.
+
+- **(v1.10.9) 404 handling in ThreadJob status poll & dead QueryId reuse:** Added 404 detection in the ThreadJob status poll catch block that previously fell through to the generic error handler with no diagnostic context. A new `[QUERY-GONE]` log tag is emitted with the dead QueryId on detection. Combined with this, the main retry loop now inspects each partition's `LastError` before deciding whether to reuse `$existingQueryId` — when the prior failure matches `QUERY-GONE` / `404.*Not Found`, the dead QueryId is cleared and the retry CREATEs a fresh query. Previously every retry pass polled the same dead query and got the same 404, exhausting all retry passes with 0 records.
+
+- **(v1.10.9) Single-partition Graph API runs forced sequential path:** Fixed an activation gate that bypassed the parallel ThreadJob pipeline whenever a Graph API run had only one partition (e.g., a one-day query at the default 24-hour `PartitionHours`). The sequential path lacked the v1.10.8/v1.10.9 reliability fixes (worker-flush recovery, page-flush memory management, JSONL incremental persistence wiring). The `($degree -gt 1)` requirement is now scoped to EOM mode only — Graph API runs always take the parallel ThreadJob path regardless of partition count. Sequential is now reserved exclusively for `-UseEOM`.
+
+- **(v1.10.9) False data-loss warning on zero-record partitions:** Fixed the streaming-merge JSONL-file-count validation to cross-reference each "missing" partition against its `RecordCount`. Partitions that legitimately returned 0 records (and therefore produced no JSONL file) no longer trigger spurious `[DATA-LOSS]` warnings or `_PARTIAL` filename suffixes. The flag is now only raised when a partition with retrieved records has no corresponding JSONL file.
+
+- **(v1.10.9) Double `_PARTIAL` suffix on output CSV:** Fixed an output filename bug where the streaming-merge data-loss code re-appended `_PARTIAL` to a basename that already contained the suffix from checkpoint initialization, producing `filename_PARTIAL_PARTIAL.csv`. A regex guard now ensures the suffix is only added if not already present.
+
+- **(v1.10.9) Network retry recovery logging in ThreadJobs:** Added explicit `[NETWORK] ... Recovered after network error (Xs outage)` log lines at the two ThreadJob retry code paths (query creation POST, page-level fetch GET) that previously logged only the failure but never the successful recovery. Log files now provide full round-trip visibility for every transient 502/503/504 error: initial failure, retry attempts, and successful recovery with total outage duration. No behavioral changes — logging only.
+
+- **(v1.10.9) Log-quality fixes from run-log review:** Token expiry log now includes the date (`yyyy-MM-dd HH:mm:ss UTC`) instead of time-only. The parallel-launch log line now displays `partitions={N}, MaxConcurrency={N}, effective={N}` so the `[Math]::Min` derivation is visible (previously a single-partition run with `-MaxConcurrency 10` looked like throttling). The redundant duplicate EntraUsers CSV emission in `csvSeparateMode + IncludeUserInfo` runs is now skipped, and the split-block emission is reordered above the combined-CSV cleanup so log entries appear in the correct file-creation order. The closing `===` divider for the `-AppendFile` validation block is now scoped inside the `if ($AppendFile)` branch so it no longer fires on runs that don't use the parameter.
 
 ---
 
