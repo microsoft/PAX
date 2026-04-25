@@ -1,5 +1,5 @@
 ﻿# Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.10.8
+# Version: v1.10.9
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI: Microsoft Purview Data Security Posture Management integration
 #              MIXED FREE/PAYG Activity Types: AIInteraction (currently Microsoft platforms only), ConnectedAIAppInteraction (Microsoft + third-party)
@@ -20,19 +20,19 @@
     
 	Graph API Version Configuration:
 		- PAX automatically detects the correct Graph API security/auditLog endpoint version
-		- Configurable version variables near top of script (lines ~1519-1527):
+		- Configurable version variables near top of script (search for `$script:GraphAuditApiVersion_Current`):
 			$script:GraphAuditApiVersion_Current  = 'v1.0'  # Try this version first
 			$script:GraphAuditApiVersion_Previous = 'beta'  # Fallback if current unavailable
 		- Detection occurs once per session and is reused automatically
 		- Single-line terminal output shows which version is active
 		- Manual override: Edit the version variables if Microsoft releases new API versions
-		- Default: Tries v1.0 first (expected GA Q1 2026), falls back to beta if unavailable
+		- Default: Tries v1.0 first, falls back to beta if unavailable
 		- No command-line switches needed - fully automatic with manual override capability
     
 	Parallel Explosion Processing (PS7+ only):
 		- After data retrieval, explosion of records into rows can be parallelized
 		- Automatic on PS7+ with >500 records (uses job queue with ~1000 records per chunk)
-		- Control via -ExplosionThreads: 0=auto (2-16 threads), 1=serial, 2-32=explicit
+		- Control via -ExplosionThreads: 0=auto (2-8 threads, capped at min(ProcessorCount,8)), 1=serial, 2-32=explicit
 		- Output is identical to serial mode (same columns, data, row count; only order may differ)
 		- Falls back to serial processing on PowerShell 5.1
     
@@ -89,7 +89,9 @@
 				-UserIds "john.doe@contoso.com","jane.smith@contoso.com","bob.jones@contoso.com"
         
 		-GroupNames <string[]>      : Filter to members of distribution/security group(s)
-			LIVE MODE ONLY: Groups automatically expanded to individual users after authentication using Get-DistributionGroupMember
+			LIVE MODE ONLY: Groups automatically expanded to individual users after authentication.
+			  - EOM mode: uses Get-DistributionGroupMember (Exchange Online RBAC)
+			  - Graph API mode: uses Get-MgGroup + Get-MgGroupMember (requires GroupMember.Read.All)
 			REPLAY MODE: NOT SUPPORTED (requires authentication) - use -UserIds with explicit email addresses instead
             
 			Accepted formats (LIVE MODE only):
@@ -329,18 +331,18 @@
 			Example: PAX_Query_20241101_0000-20241101_0100_Part27/134
 
 	Concurrency Control:
-		- MaxConcurrency (default: 12): Single parameter for both modes
+		- MaxConcurrency (default: 10): Single parameter for both modes
 			• EOM mode: Limits concurrent serial queries
 			• Graph API mode: Limits concurrent partition execution
 		- Replaced previous MaxActivePartitions parameter (use MaxConcurrency instead)
-		- Example: -MaxConcurrency 8 (reduces from default 12 for rate-limit sensitive environments)
+		- Example: -MaxConcurrency 6 (reduces from default 10 for rate-limit sensitive environments)
 
 	Graph API Version Detection:
 		PAX automatically detects whether to use v1.0 (GA) or beta endpoints for the Microsoft Graph
 		security audit API. Detection occurs on first API call and is remembered for the session. This
-		ensures seamless transition when Microsoft promotes the API from beta to v1.0 (expected Q1 2026).
+		ensures seamless transition when Microsoft promotes the API from beta to v1.0.
 		
-		Version Configuration (near top of script, manually editable):
+		Version Configuration (near top of script, manually editable; search for `$script:GraphAuditApiVersion_Current`):
 			$script:GraphAuditApiVersion_Current  = 'v1.0'  # Try this version first
 			$script:GraphAuditApiVersion_Previous = 'beta'  # Fallback if current unavailable
 		
@@ -392,7 +394,7 @@
 			  - Attempts silent refresh first (using SDK cached refresh token)
 			  - Prompts user only if silent refresh fails
 			• 403 Forbidden errors: Indicates permissions issue, NOT token expiry
-			  - Token refresh will not help; check AuditLog.Read.All consent and roles
+			  - Token refresh will not help; check AuditLogsQuery.Read.All consent and roles
 		
 		Resume Mode (Standalone):
 			The -Resume switch restores ALL settings from the checkpoint file.
@@ -448,9 +450,9 @@
 				• Full schema discovery: scans ALL rows for 100% column coverage (not sampling)
 			
 			Control via -ExplosionThreads:
-				• 0 (default): Auto-detect based on CPU cores (2 to 8 threads)
+				• 0 (default): Auto-detect based on CPU cores (2 to min(ProcessorCount, 8) threads)
 				• 1: Force serial processing (for debugging or comparison)
-				• 2-8: Explicit thread count (capped at 8 for stability)
+				• 2-32: Explicit thread count (auto path caps at 8; manual override allows up to 32)
 			
 			Output Equivalence:
 				• Identical columns, data values, and row counts vs serial mode
@@ -615,9 +617,9 @@
 
 .PARAMETER ExplosionThreads
 	Number of threads for parallel explosion processing (post-retrieval phase).
-	0 (default): Auto-detect based on CPU cores (2 to 8 threads)
+	0 (default): Auto-detect based on CPU cores (2 to min(ProcessorCount, 8) threads)
 	1: Force serial processing (disable parallel explosion)
-	2-8: Explicit thread count (capped at 8 for stability)
+	2-32: Explicit thread count (ValidateRange 0-32; auto path caps at 8)
 	Requires PowerShell 7+. Falls back to serial on PS5.
 
 .PARAMETER DisableAdaptive
@@ -913,7 +915,9 @@
 
 	Requirements:
 	  • Graph API mode (not supported with -UseEOM)
-	  • Graph permissions: User.Read.All, Organization.Read.All
+	  • Graph permissions (consented at runtime only when this switch is set):
+	      - User.Read.All           (read /users for Entra directory + license map)
+	      - Organization.Read.All   (read /subscribedSkus for SKU lookup)
 	  • One-time directory + license fetch at startup (typ. +10–20s)
 
 	License Detection Logic:
@@ -994,9 +998,6 @@
 	  
 	  # Export to specific directory
 	  .\PAX_Purview_Audit_Log_Processor.ps1 -OnlyUserInfo -OutputPath "D:\UserData\"
-	.EXAMPLE
-		# Curated Microsoft 365 usage bundle (adds activity, record, and service filters automatically)
-		pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-11-01 -EndDate 2025-11-02 -IncludeM365Usage -CombineOutput -OutputFile C:\Temp\M365Usage.csv
 	  
 	  # Export as Excel workbook
 	  .\PAX_Purview_Audit_Log_Processor.ps1 -OnlyUserInfo -ExportWorkbook
@@ -1144,7 +1145,7 @@ param(
 	[string]$ParallelMode = 'Auto',
 	[Parameter(Mandatory = $false)]
 	[ValidateRange(0, 32)]
-	# 0=auto-detect (2-16 threads based on CPU), 1=serial, 2-32=explicit thread count. Requires PS7+.
+	# 0=auto-detect (2 to min(ProcessorCount, 8) threads), 1=serial, 2-32=explicit thread count. Requires PS7+.
 	[int]$ExplosionThreads = 0,
 	[Parameter(Mandatory = $false)]
 	[switch]$DisableAdaptive,  # Disable adaptive safeguards (memory/latency/concurrency smoothing)
@@ -1759,7 +1760,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.10.8'
+$ScriptVersion = '1.10.9'
 
 # --- Initialize/Clear persistent script variables to prevent cross-run contamination ---
 # Note: Script-scoped variables persist across multiple script invocations in the same PowerShell session
@@ -2537,7 +2538,7 @@ $script:Connected = $false
 # Manually configure these variables if Microsoft updates the API version
 # PAX will try CURRENT version first, then fallback to PREVIOUS version
 # ============================================================================
-$script:GraphAuditApiVersion_Current  = 'v1.0'  # Try this version first (expected GA in Q1 2026)
+$script:GraphAuditApiVersion_Current  = 'v1.0'  # Try this version first
 $script:GraphAuditApiVersion_Previous = 'beta'  # Fallback to this version if current unavailable
 $script:GraphAuditApiVersion = $null            # Runtime-detected version (do not edit)
 # ============================================================================
@@ -3051,7 +3052,7 @@ function Connect-PurviewAudit {
 		  - Serial processing only
 		
 		Graph API Mode (Default):
-		  - Uses Connect-MgGraph with AuditLog.Read.All scope
+		  - Uses Connect-MgGraph with AuditLogsQuery.Read.All scope
 		  - Requires Azure AD roles + Graph API permissions
 		  - Supports parallel processing
 	
@@ -3192,18 +3193,44 @@ function Connect-PurviewAudit {
 		
 		Write-LogHost "Connecting to Microsoft Graph Security API..." -ForegroundColor Cyan
 		
-		# Define required scopes for Purview audit log access via beta endpoint
-		# ThreatIntelligence.Read.All is required for GET operations on beta endpoint
-		# Service-specific AuditLogsQuery-*.Read.All permissions are required for record retrieval
-		$RequiredScopes = @(
-			'AuditLog.Read.All'                    # Primary scope for audit log queries
-			'ThreatIntelligence.Read.All'          # Required for GET operations (beta API)
-			'AuditLogsQuery-Entra.Read.All'        # Entra ID (Azure AD) audit logs
-			'AuditLogsQuery-Exchange.Read.All'     # Exchange Online audit logs
-			'AuditLogsQuery-OneDrive.Read.All'     # OneDrive audit logs
-			'AuditLogsQuery-SharePoint.Read.All'   # SharePoint Online audit logs
-			'Organization.Read.All'                # Required for tenant-level metadata (subscribedSkus, license fetch)
-		)
+		# Define required scopes for Purview audit log access via the Microsoft Graph
+		# Security API. The exact scope set is built dynamically based on which features
+		# the caller has activated, so users only consent to what they actually use.
+		#
+		# Conditional (added only when the relevant switch is set):
+		#   Audit query (skipped under -OnlyUserInfo since no audit calls are made):
+		#       AuditLogsQuery.Read.All - umbrella scope for /security/auditLog/queries
+		#                                 (covers CopilotInteraction and other workload-
+		#                                 agnostic record types)
+		#   -IncludeM365Usage:
+		#       AuditLogsQuery-Exchange.Read.All
+		#       AuditLogsQuery-OneDrive.Read.All
+		#       AuditLogsQuery-SharePoint.Read.All
+		#   -IncludeUserInfo / -OnlyUserInfo (Graph API mode only):
+		#       User.Read.All           (read /users for Entra directory + license map)
+		#       Organization.Read.All   (read /subscribedSkus for license SKU lookup)
+		#   -GroupNames (Graph API mode only):
+		#       GroupMember.Read.All    (least-privilege scope per Microsoft Graph docs
+		#                                for GET /groups and GET /groups/{id}/members;
+		#                                used by Expand-PurviewGroupMembership)
+		$RequiredScopes = [System.Collections.Generic.List[string]]::new()
+		if (-not $OnlyUserInfo) {
+			[void]$RequiredScopes.Add('AuditLogsQuery.Read.All')
+		}
+		if ($IncludeM365Usage) {
+			[void]$RequiredScopes.Add('AuditLogsQuery-Exchange.Read.All')
+			[void]$RequiredScopes.Add('AuditLogsQuery-OneDrive.Read.All')
+			[void]$RequiredScopes.Add('AuditLogsQuery-SharePoint.Read.All')
+		}
+		if ($IncludeUserInfo -or $OnlyUserInfo) {
+			if ($RequiredScopes -notcontains 'User.Read.All')         { [void]$RequiredScopes.Add('User.Read.All') }
+			if ($RequiredScopes -notcontains 'Organization.Read.All') { [void]$RequiredScopes.Add('Organization.Read.All') }
+		}
+		if ($GroupNames -and $GroupNames.Count -gt 0) {
+			if ($RequiredScopes -notcontains 'GroupMember.Read.All') { [void]$RequiredScopes.Add('GroupMember.Read.All') }
+		}
+		$RequiredScopes = $RequiredScopes.ToArray()
+		Write-LogHost ("  Graph scopes requested: {0}" -f ($RequiredScopes -join ', ')) -ForegroundColor DarkGray
 		
 		try {
 			switch ($AuthMethod.ToLower()) {
@@ -3373,7 +3400,7 @@ function Connect-PurviewAudit {
 				$script:SharedAuthState.ExpiresOn = $tokenInfo.ExpiresOn
 				$script:SharedAuthState.LastRefresh = Get-Date
 				$script:SharedAuthState.AuthMethod = $AuthMethod.ToLower()
-				Write-LogHost "  Token expires: $($tokenInfo.ExpiresOn.ToString('HH:mm:ss')) UTC (source: $($tokenInfo.Source))" -ForegroundColor Gray
+				Write-LogHost "  Token expires: $($tokenInfo.ExpiresOn.ToString('yyyy-MM-dd HH:mm:ss')) UTC (source: $($tokenInfo.Source))" -ForegroundColor Gray
 			}
 			
 			# Get and display current context
@@ -3381,7 +3408,11 @@ function Connect-PurviewAudit {
 			Write-LogHost "  Tenant ID: $($context.TenantId)" -ForegroundColor Gray
 			$maskedAccount = Get-MaskedUsername -Username $context.Account
 			Write-LogHost "  Account:   $maskedAccount" -ForegroundColor Gray
-			Write-LogHost "  Scopes:    $($context.Scopes -join ', ')" -ForegroundColor Gray
+			# Filter displayed scopes to those required by this script (avoids confusion when the
+			# user/app holds additional consented scopes unrelated to PAX). Granted required scopes
+			# are shown; any required scopes missing from the token are surfaced separately below.
+			$grantedRequired = @($RequiredScopes | Where-Object { $context.Scopes -contains $_ })
+			Write-LogHost "  Scopes:    $($grantedRequired -join ', ')" -ForegroundColor Gray
 			
 			# Trigger Graph API version detection early (before queries start)
 			$null = Get-GraphAuditApiUri -Path 'queries'
@@ -3412,7 +3443,7 @@ function Connect-PurviewAudit {
 			Write-LogHost "ERROR: Graph API authentication failed: $($_.Exception.Message)" -ForegroundColor Red
 			Write-LogHost ""
 			Write-LogHost "Troubleshooting:" -ForegroundColor Yellow
-			Write-LogHost "  1. Ensure you have AuditLog.Read.All permission" -ForegroundColor White
+			Write-LogHost "  1. Ensure you have AuditLogsQuery.Read.All permission" -ForegroundColor White
 			Write-LogHost "  2. Verify Azure AD role (Compliance/Security Administrator)" -ForegroundColor White
 			Write-LogHost "  3. Check network connectivity to Microsoft Graph API" -ForegroundColor White
 			Write-LogHost "  4. Try a different authentication method (-Auth parameter)" -ForegroundColor White
@@ -5213,14 +5244,14 @@ function ConvertTo-FlatEntraUsers {
 		
 		# Core Identity Properties (simple strings)
 		$flatUser['userPrincipalName'] = $user.userPrincipalName
-		$flatUser['DisplayName'] = $user.displayName
+		$flatUser['displayName'] = $user.displayName
 		$flatUser['id'] = $user.id
-		$flatUser['Email'] = $user.mail
+		$flatUser['mail'] = $user.mail
 		$flatUser['givenName'] = $user.givenName
 		$flatUser['surname'] = $user.surname
 		
 		# Job Properties
-		$flatUser['JobTitle'] = $user.jobTitle
+		$flatUser['jobTitle'] = $user.jobTitle
 		$flatUser['department'] = $user.department
 		$flatUser['employeeType'] = $user.employeeType
 		$flatUser['employeeId'] = $user.employeeId
@@ -5230,7 +5261,7 @@ function ConvertTo-FlatEntraUsers {
 		$flatUser['officeLocation'] = $user.officeLocation
 		$flatUser['city'] = $user.city
 		$flatUser['state'] = $user.state
-		$flatUser['Country'] = $user.country
+		$flatUser['country'] = $user.country
 		$flatUser['postalCode'] = $user.postalCode
 		$flatUser['companyName'] = $user.companyName
 		
@@ -5292,10 +5323,10 @@ function ConvertTo-FlatEntraUsers {
 		# =====================================================================
 		$flatUser['ManagerID'] = $flatUser['manager_id']
 		$flatUser['BusinessAreaLabel'] = $flatUser['employeeOrgData_division']
-		$flatUser['CountryofEmployment'] = $flatUser['Country']
+		$flatUser['CountryofEmployment'] = $flatUser['country']
 		$flatUser['CompanyCodeLabel'] = $flatUser['companyName']
 		$flatUser['CostCentreLabel'] = $flatUser['employeeOrgData_costCenter']
-		$flatUser['UserName'] = $flatUser['DisplayName']
+		$flatUser['UserName'] = $flatUser['displayName']
 		
 		# Viva Insights-specific columns (not available from Microsoft Graph API)
 		# These are placeholders for template compatibility - data must come from HR systems
@@ -5387,7 +5418,7 @@ function Get-EntraUsersData {
 				}
 			}
 			Add-Member -InputObject $u -NotePropertyName 'assignedLicenses' -NotePropertyValue $assignedNames -Force
-			Add-Member -InputObject $u -NotePropertyName 'HasLicense' -NotePropertyValue $hasCopilot -Force
+			Add-Member -InputObject $u -NotePropertyName 'hasLicense' -NotePropertyValue $hasCopilot -Force
 		}
 		$entraUsers = $flattened
 		# Validate schema (non-fatal)
@@ -5928,7 +5959,7 @@ function Test-PurviewAuditCapability {
 		
 		Graph API Mode:
 		  - Tests Graph API connectivity
-		  - Verifies AuditLog.Read.All permissions
+		  - Verifies AuditLogsQuery.Read.All permissions
 		  - Performs lightweight endpoint check
 	
 	.PARAMETER UseEOMMode
@@ -6032,7 +6063,7 @@ function Test-PurviewAuditCapability {
 			}
 			
 			# Check for required scopes
-			$requiredScope = 'AuditLog.Read.All'
+			$requiredScope = 'AuditLogsQuery.Read.All'
 			if ($context.Scopes -notcontains $requiredScope) {
 				Write-LogHost "  [!] WARNING: Missing required scope: $requiredScope" -ForegroundColor Yellow
 				Write-LogHost "  Queries may fail without this permission" -ForegroundColor Yellow
@@ -6147,7 +6178,7 @@ function Test-PurviewAuditCapability {
 				
 				if ($msg -match 'Forbidden|403|Access.*denied|Insufficient privileges') {
 					Write-LogHost "Likely Cause: Missing required permissions" -ForegroundColor Yellow
-					Write-LogHost "  Required: AuditLog.Read.All Graph API scope" -ForegroundColor White
+					Write-LogHost "  Required: AuditLogsQuery.Read.All Graph API scope" -ForegroundColor White
 					Write-LogHost "  Required: Azure AD role (Compliance/Security Administrator)" -ForegroundColor White
 				}
 				elseif ($msg -match 'Unauthorized|401') {
@@ -6156,7 +6187,7 @@ function Test-PurviewAuditCapability {
 				}
 				else {
 					Write-LogHost "General Guidance:" -ForegroundColor Yellow
-					Write-LogHost "  1. Verify admin has consented to AuditLog.Read.All scope" -ForegroundColor White
+					Write-LogHost "  1. Verify admin has consented to AuditLogsQuery.Read.All scope" -ForegroundColor White
 					Write-LogHost "  2. Check Azure AD role assignments" -ForegroundColor White
 					Write-LogHost "  3. Ensure network connectivity to graph.microsoft.com" -ForegroundColor White
 				}
@@ -6292,7 +6323,7 @@ function Expand-GroupToUsers {
 			Write-LogHost "      Warning: Failed to expand group '$GroupIdentity': $($_.Exception.Message)" -ForegroundColor Yellow
 			Write-LogHost "      Possible causes:" -ForegroundColor Yellow
 			Write-LogHost "        • Group does not exist or identifier is invalid" -ForegroundColor Gray
-			Write-LogHost "        • Insufficient permissions (need Group.Read.All or Directory.Read.All)" -ForegroundColor Gray
+			Write-LogHost "        • Insufficient permissions (need GroupMember.Read.All - or higher: Group.Read.All / Directory.Read.All)" -ForegroundColor Gray
 			Write-LogHost "        • Network connectivity issues with Graph API" -ForegroundColor Gray
 		}
 	}
@@ -7857,8 +7888,43 @@ else {
 	Write-LogHost "  Authentication:   $Auth (OAuth 2.0)" -ForegroundColor White
 	$parallelStatus = if ($PSVersionTable.PSVersion.Major -ge 7) { "AVAILABLE (PowerShell 7+)" } else { "LIMITED (PowerShell 5.1 detected)" }
 	Write-LogHost "  Parallel Support: $parallelStatus" -ForegroundColor Green
-	Write-LogHost "  Permissions:      AuditLog.Read.All Graph API scope" -ForegroundColor White
-	Write-LogHost "                    + Azure AD role (Compliance/Security Admin)" -ForegroundColor Gray
+	Write-LogHost "  Permissions:      Microsoft Graph application/delegated scopes (no Azure AD role required):" -ForegroundColor White
+	Write-LogHost "                    (Yellow = required for THIS run; DarkGray = not needed for THIS run)" -ForegroundColor White
+	if (-not $OnlyUserInfo) {
+		Write-LogHost "                    Audit query (required - this run reads audit logs):" -ForegroundColor White
+		Write-LogHost "                      AuditLogsQuery.Read.All        (umbrella - all audit record types)" -ForegroundColor Yellow
+	} else {
+		Write-LogHost "                    Audit query (not needed - -OnlyUserInfo skips audit queries):" -ForegroundColor White
+		Write-LogHost "                      AuditLogsQuery.Read.All        (umbrella - all audit record types)" -ForegroundColor DarkGray
+	}
+	if ($IncludeM365Usage) {
+		Write-LogHost "                    M365 usage bundle (required because -IncludeM365Usage is set):" -ForegroundColor White
+		Write-LogHost "                      AuditLogsQuery-Exchange.Read.All" -ForegroundColor Yellow
+		Write-LogHost "                      AuditLogsQuery-SharePoint.Read.All" -ForegroundColor Yellow
+		Write-LogHost "                      AuditLogsQuery-OneDrive.Read.All" -ForegroundColor Yellow
+	} else {
+		Write-LogHost "                    M365 usage bundle (only required with -IncludeM365Usage):" -ForegroundColor White
+		Write-LogHost "                      AuditLogsQuery-Exchange.Read.All" -ForegroundColor DarkGray
+		Write-LogHost "                      AuditLogsQuery-SharePoint.Read.All" -ForegroundColor DarkGray
+		Write-LogHost "                      AuditLogsQuery-OneDrive.Read.All" -ForegroundColor DarkGray
+	}
+	if ($IncludeUserInfo -or $OnlyUserInfo) {
+		$userInfoTrigger = if ($OnlyUserInfo) { '-OnlyUserInfo' } else { '-IncludeUserInfo' }
+		Write-LogHost ("                    Entra directory + license enrichment (required because {0} is set):" -f $userInfoTrigger) -ForegroundColor White
+		Write-LogHost "                      User.Read.All                  (read /users)" -ForegroundColor Yellow
+		Write-LogHost "                      Organization.Read.All          (read /subscribedSkus)" -ForegroundColor Yellow
+	} else {
+		Write-LogHost "                    Entra directory + license enrichment (only required with -IncludeUserInfo or -OnlyUserInfo):" -ForegroundColor White
+		Write-LogHost "                      User.Read.All                  (read /users)" -ForegroundColor DarkGray
+		Write-LogHost "                      Organization.Read.All          (read /subscribedSkus)" -ForegroundColor DarkGray
+	}
+	if ($GroupNames -and $GroupNames.Count -gt 0) {
+		Write-LogHost "                    Group expansion (required because -GroupNames is set):" -ForegroundColor White
+		Write-LogHost "                      GroupMember.Read.All           (read /groups + /groups/{id}/members)" -ForegroundColor Yellow
+	} else {
+		Write-LogHost "                    Group expansion (only required with -GroupNames):" -ForegroundColor White
+		Write-LogHost "                      GroupMember.Read.All           (read /groups + /groups/{id}/members)" -ForegroundColor DarkGray
+	}
 	Write-LogHost "═══════════════════════════════════════════════════════" -ForegroundColor Green
 }
 Write-LogHost ""
@@ -8213,10 +8279,14 @@ if ($AppendFile) {
 	Write-LogHost "  Explosion parameters compatible ($($validation.CurrentMode.DisplayName)) - safe to append" -ForegroundColor Green
 	
 	Write-LogHost "AppendFile mode: Appending to existing file: $OutputFile" -ForegroundColor Cyan
+
+	# Closing banner only emitted when AppendFile validation actually ran -- otherwise the
+	# initial banner above already provides the visual divider and a second one renders as
+	# an empty duplicate '======' block in the log.
+	Write-LogHost "=============================================" -ForegroundColor Cyan
+	Write-LogHost ""
 }
 
-Write-LogHost "=============================================" -ForegroundColor Cyan
-Write-LogHost ""
 if ($ExplodeDeep -and $ExplodeArrays) { Write-LogHost "Note: -ExplodeDeep takes precedence over -ExplodeArrays (arrays will still explode, plus deep flatten)." -ForegroundColor DarkYellow }
 if ($ForcedRawInputCsvExplosion -and -not $ExplodeDeep -and -not $ExplodeArrays.IsPresent) { Write-LogHost "RAWInputCSV provided -> forcing Purview array explosion (non-exploded mode disabled)." -ForegroundColor Yellow }
 if ($script:memoryFlushEnabled) { 
@@ -8871,12 +8941,12 @@ function Get-M365UsageWideHeader {
 # --- Entra Users Schema (47 columns) ---
 # 30 core + 5 manager + 2 license columns + 10 Power BI template compatibility columns
 $EntraUsersHeader = @(
-	'userPrincipalName','DisplayName','id','Email','givenName','surname','JobTitle','department','employeeType','employeeId','employeeHireDate',
-	'officeLocation','city','state','Country','postalCode','companyName','employeeOrgData_division','employeeOrgData_costCenter',
+	'userPrincipalName','displayName','id','mail','givenName','surname','jobTitle','department','employeeType','employeeId','employeeHireDate',
+	'officeLocation','city','state','country','postalCode','companyName','employeeOrgData_division','employeeOrgData_costCenter',
 	'accountEnabled','userType','createdDateTime','usageLocation','preferredLanguage','onPremisesSyncEnabled','onPremisesImmutableId','externalUserState',
 	'proxyAddresses_Primary','proxyAddresses_Count','proxyAddresses_All',
 	'manager_id','manager_displayName','manager_userPrincipalName','manager_mail','manager_jobTitle',
-	'assignedLicenses','HasLicense',
+	'assignedLicenses','hasLicense',
 	# Power BI template compatibility columns (alias mappings)
 	'ManagerID','BusinessAreaLabel','CountryofEmployment','CompanyCodeLabel','CostCentreLabel','UserName',
 	# Power BI template compatibility columns (null placeholders for Viva Insights fields)
@@ -10119,6 +10189,12 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		Write-LogHost "Resume mode initialized. Will continue from last checkpoint." -ForegroundColor Cyan
 		Write-LogHost ""
 		
+		# Re-compute date-range trim boundaries from checkpoint-restored dates.
+		# TrimStartDateUTC/TrimEndDateUTC were initially set from command-line defaults (yesterday)
+		# before the checkpoint restore overwrote $StartDate/$EndDate with the original run's dates.
+		$script:TrimStartDateUTC = if ($StartDate -ne '*') { [datetime]::SpecifyKind([datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null), [System.DateTimeKind]::Utc) } else { $null }
+		$script:TrimEndDateUTC   = if ($EndDate   -ne '*') { [datetime]::SpecifyKind([datetime]::ParseExact($EndDate,   'yyyy-MM-dd', $null), [System.DateTimeKind]::Utc) } else { $null }
+		
 		# Re-run MaxMemoryMB resolution after checkpoint restore (may have restored -1 for auto-detect)
 		$script:ResolvedMaxMemoryMB = $MaxMemoryMB
 		if ($MaxMemoryMB -eq -1) {
@@ -10831,7 +10907,12 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 				Write-LogHost "  Applying concurrency cap ($MaxConcurrency): requested $requestedDegree -> $maxConcurrentPartitions concurrent (all $totalPartitions queued)" -ForegroundColor Magenta
 			}
 			$withinCap = $groupIndex -le $MaxParallelGroups
-			$canParallel = $parallelOverallEnabled -and $withinCap -and ($PSVersionTable.PSVersion.Major -ge 7) -and ($degree -gt 1)
+			# Graph API mode: always use the parallel ThreadJob code path, even with a single partition
+			# (1 ThreadJob is still preferable to the sequential code path, and avoids the divergent
+			# sequential branch that caused worker-flush record loss in v1.10.8 and earlier).
+			# EOM mode: keep the single-partition shortcut to sequential (parallel is incompatible with
+			# Exchange Online implicit remoting, enforced again by the EOM gate inside the parallel block).
+			$canParallel = $parallelOverallEnabled -and $withinCap -and ($PSVersionTable.PSVersion.Major -ge 7) -and ((-not $UseEOM) -or ($degree -gt 1))
 			
 			# Update progress total now that we know parallel mode and partition count
 			# For parallel: each partition = 1 progress unit, For sequential: use BlockHours
@@ -10983,8 +11064,11 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 					$canParallel = $false
 				}
 				else {
-					# Graph API mode - parallel is safe
-					Write-LogHost "  Processing partitions in parallel (Graph API ThreadJobs, Max=$maxConcurrentPartitions)..." -ForegroundColor Cyan
+					# Graph API mode - parallel is safe.
+					# $maxConcurrentPartitions is the effective ThreadJob ceiling for this run, computed
+					# as min(MaxConcurrency, partition count). Show partition/cap separately so a small run
+					# (e.g. 1 partition) doesn't appear to have throttled MaxConcurrency.
+					Write-LogHost ("  Processing partitions in parallel (Graph API ThreadJobs; partitions={0}, MaxConcurrency={1}, effective={2})..." -f $partitions.Count, $MaxConcurrency, $maxConcurrentPartitions) -ForegroundColor Cyan
 				}
 				}
 				
@@ -11197,6 +11281,7 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 				Status = 'unknown'
 				SplitRequired = $false
 				PostFetch10KLimit = $false
+				PostFetch1MLimit = $false
 			PreemptiveSubdivision = $false
 			PreemptiveCount = 0
 			SubdivisionReason = $null
@@ -11312,6 +11397,12 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 				filterEndDateTime = $pEnd.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
 				operationFilters = @($queryActivities)
 			}
+			if ($activeRecordFilters -and $activeRecordFilters.Count -gt 0) {
+				$queryBody.recordTypeFilters = @($activeRecordFilters)
+			}
+			if ($activeServiceFilter) {
+				$queryBody.serviceFilter = $activeServiceFilter
+			}
 
 			$queryBodyJson = $queryBody | ConvertTo-Json -Depth 5
 			Write-GraphQueryDebug -Header "Graph API Query Body for partition $idx/$tot (Operations: $($queryActivities -join ', ')):" -Operations $queryActivities -RecordFilters $activeRecordFilters -ServiceFilter $activeServiceFilter -PayloadJson $queryBodyJson
@@ -11333,6 +11424,10 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 									Write-Output $sentMessage
 									
 									$createSuccess = $true
+									if ($networkErrorStart) {
+										$outageSeconds = [Math]::Round(((Get-Date) - $networkErrorStart).TotalSeconds, 1)
+										Write-Output "[NETWORK] Partition $idx/$tot - Recovered after network error (${outageSeconds}s outage)"
+									}
 									$networkErrorStart = $null  # Reset network error timer on success
 								}
 								catch {
@@ -11784,6 +11879,27 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 								}
 							}
 							
+							# Check for 404 Not Found (query vanished server-side - dead QueryId)
+							$is404Poll = $false
+							if ($_.Exception.Response) {
+								if ($statusCode -eq 404 -or $statusCode -eq 'NotFound' -or $statusCode.value__ -eq 404) {
+									$is404Poll = $true
+								}
+							}
+							if (-not $is404Poll -and ($pollErrMsg -match '404' -or $pollErrMsg -match 'Not Found')) {
+								$is404Poll = $true
+							}
+							
+							if ($is404Poll) {
+								# Query no longer exists on server - QueryId is dead, must CREATE a new one on retry
+								try {
+									$logMsg = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [QUERY-GONE] Partition $idx/$tot - 404 Not Found on status poll - QueryId $queryId is dead | client-request-id: $clientRequestId"
+									$logMsg | Add-Content -Path $logPath -Encoding UTF8 -ErrorAction SilentlyContinue
+								} catch {}
+								Write-Output "[QUERY-GONE] Partition $idx/$tot - 404 Not Found - Query $queryId no longer exists on server"
+								throw "[QUERY-GONE] 404 Not Found during status poll - QueryId $queryId is dead"
+							}
+							
 							# Detect transient network outage vs hard failure
 							$errMsg = $_.Exception.Message
 							if ($netPatterns | Where-Object { $errMsg.ToLower().Contains($_) }) {
@@ -11976,6 +12092,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 										$recordsResponse = Invoke-RestMethod -Method GET -Uri $recordsUri -Headers (Get-CurrentHeaders -ClientRequestId $clientRequestId) -ErrorAction Stop
 										$fetchSuccess = $true
 										# Reset network error tracking on success
+										if ($fetchNetworkErrorStart) {
+											$outageSeconds = [Math]::Round(((Get-Date) - $fetchNetworkErrorStart).TotalSeconds, 1)
+											Write-Output "[NETWORK] Partition $idx/$tot Page $($telemetry.PageCount + 1) - Recovered after network error (${outageSeconds}s outage)"
+										}
 										$fetchNetworkErrorStart = $null
 									}
 									catch {
@@ -12204,9 +12324,14 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 											# Normalize to EOM-compatible format inline
 											# PERF: Store _ParsedAuditData to avoid re-parsing JSON during explosion
 											# NOTE: Using InvariantCulture directly here since Parse-DateSafe isn't available in ThreadJob scope
+											# TIMEZONE: Graph API returns createdDateTime as ISO-8601 UTC (e.g., "2026-02-10T21:00:17Z").
+											# Use AssumeUniversal | AdjustToUniversal so the resulting DateTime has Kind=Utc; this
+											# guarantees ConvertTo-Json emits the Z suffix on JSONL flush, which downstream merge code
+											# (Parse-DateSafe + .ToUniversalTime()) needs to avoid silently re-interpreting the
+											# value as local time and trimming records out of range in non-UTC time zones.
 											$normalized = [PSCustomObject]@{
 												RecordType = $record.auditLogRecordType
-												CreationDate = if ($record.createdDateTime) { try { [datetime]::Parse($record.createdDateTime, [System.Globalization.CultureInfo]::InvariantCulture) } catch { $null } } else { $null }
+												CreationDate = if ($record.createdDateTime) { try { [datetime]::Parse($record.createdDateTime, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeUniversal -bor [System.Globalization.DateTimeStyles]::AdjustToUniversal) } catch { $null } } else { $null }
 												UserIds = $record.userPrincipalName
 												Operations = $record.operation
 												AuditData = if ($record.auditData) { $record.auditData | ConvertTo-Json -Depth 100 -Compress } else { '{}' }
@@ -13367,7 +13492,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 												# Don't set AuthFailureDetected - refresh won't help
 												Write-LogHost "  [AUTH] 403 Forbidden detected - this is a PERMISSIONS issue, not token expiration" -ForegroundColor Red
 												Write-LogHost "  [AUTH] Token refresh will NOT resolve this. Check:" -ForegroundColor Yellow
-												Write-LogHost "         • AuditLog.Read.All scope is granted" -ForegroundColor Yellow
+												Write-LogHost "         • AuditLogsQuery.Read.All scope is granted" -ForegroundColor Yellow
 												Write-LogHost "         • Admin consent has been provided" -ForegroundColor Yellow
 												Write-LogHost "         • Required Azure AD role is assigned" -ForegroundColor Yellow
 											}
@@ -14350,6 +14475,14 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 							# CRITICAL: Use $graphResultSize (0 for Graph API = unlimited) instead of $ResultSize (10000)
 							# Pass existing QueryId if available (for retry after 403 fetch failure)
 							$existingQueryId = $script:partitionStatus[$pt.Index].QueryId
+							# BUGFIX: Clear dead QueryId if partition failed due to 404 (query vanished server-side)
+							# A dead QueryId would cause infinite retry loops polling a non-existent query
+							$lastErr = $script:partitionStatus[$pt.Index].LastError
+							if ($existingQueryId -and $lastErr -and ($lastErr -match 'QUERY-GONE|404.*Not Found|404.*status poll')) {
+								Write-LogHost "    [QUERY-GONE] Clearing dead QueryId $existingQueryId for Partition $($pt.Index)/$($pt.Total) - will CREATE fresh query" -ForegroundColor Yellow
+								$script:partitionStatus[$pt.Index].QueryId = $null
+								$existingQueryId = $null
+							}
 							if ($existingQueryId) {
 								Write-LogHost "    [REUSE] Reusing existing QueryId: $existingQueryId" -ForegroundColor Cyan
 							}
@@ -14661,6 +14794,19 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 			$sequentialGroups++
 			Write-LogHost "  Processing $($partitions.Count) partitions sequentially..." -ForegroundColor DarkCyan
 			foreach ($pt in $partitions) {
+				# If circuit breaker is OPEN from a previous partition, wait for cooldown before proceeding.
+				# Without this, the next partition enters its block loop, finds the breaker still open
+				# (only milliseconds have elapsed), and immediately skips — cascading through all remaining partitions.
+				if ($script:circuitBreakerOpen -and $script:circuitBreakerOpenUntil -and (Get-Date) -lt $script:circuitBreakerOpenUntil) {
+					$waitSeconds = [math]::Ceiling(($script:circuitBreakerOpenUntil - (Get-Date)).TotalSeconds)
+					if ($waitSeconds -gt 0) {
+						Write-LogHost "  Circuit breaker cooldown: waiting $($waitSeconds)s before partition $($pt.Index)/$($pt.Total)..." -ForegroundColor DarkYellow
+						Start-Sleep -Seconds $waitSeconds
+					}
+					$script:circuitBreakerOpen = $false
+					$script:consecutiveBlockFailures = 0
+					Write-LogHost "  Circuit breaker cooldown elapsed – resuming with partition $($pt.Index)/$($pt.Total)" -ForegroundColor DarkGreen
+				}
 				$tq0 = Get-Date
 				if (-not $UseEOM) { Write-LogHost "  Querying partition $($pt.Index)/$($pt.Total) sequentially" -ForegroundColor DarkCyan }
 				$logs = Invoke-ActivityTimeWindowProcessing -ActivityType $pt.Activity -StartDate $pt.PStart -EndDate $pt.PEnd -PartitionIndex $pt.Index -TotalPartitions $pt.Total -UseEOMMode $UseEOM
@@ -14987,6 +15133,90 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 	$effectiveRecordCount = $allLogs.Count
 	if ($script:UseStreamingMergeForExport) {
 		$effectiveRecordCount += $(if ($script:StreamingMergeRecordCount -gt 0) { $script:StreamingMergeRecordCount } else { $mergedFromIncremental })
+	}
+	
+	# ============================================================================
+	# WORKER-FLUSH RECOVERY (v1.10.9): When workers page-flushed records to JSONL but the
+	# parent's $script:memoryFlushed flag never got set (e.g., due to a missed result-object
+	# event in the receive loop), $allLogs is empty even though completed partitions report
+	# RecordCount > 0 and have JSONL files on disk. Detect this and activate streaming merge
+	# so the records actually reach the final CSV.
+	#
+	# Excluded code paths:
+	#   - $UseEOM            : EOM path doesn't use Graph workers / JSONL flush
+	#   - $script:memoryFlushed already true : streaming merge already activated upstream
+	#   - Explosion modes    : explosion requires in-memory processing; streaming merge is
+	#                          incompatible (see line ~14988 guard in resume branch). For
+	#                          explosion, we instead load JSONL into $allLogs directly.
+	# ============================================================================
+	$isExplosionModeForRecovery = ($ExplodeDeep -or $ExplodeArrays -or $ForcedRawInputCsvExplosion)
+	if ($effectiveRecordCount -eq 0 -and $script:partitionStatus -and $script:partitionStatus.Count -gt 0 -and -not $UseEOM -and -not $script:memoryFlushed) {
+		$completedWithRecords = @($script:partitionStatus.Values | Where-Object {
+			$_.Status -eq 'Complete' -and [int]($_.RecordCount ?? 0) -gt 0
+		})
+		if ($completedWithRecords.Count -gt 0) {
+			$incrementalDir = Join-Path (Split-Path $script:PartialOutputPath -Parent) ".pax_incremental"
+			$jsonlFiles = @()
+			if (Test-Path $incrementalDir) {
+				$jsonlFiles = @(Get-ChildItem -Path $incrementalDir -Filter "Part*_${global:ScriptRunTimestamp}_*.jsonl" -ErrorAction SilentlyContinue)
+			}
+			if ($jsonlFiles.Count -gt 0) {
+				$totalFromPartitions = ($completedWithRecords | ForEach-Object { [int]($_.RecordCount ?? 0) } | Measure-Object -Sum).Sum
+				$completedIndices = @($completedWithRecords | ForEach-Object { $_.Partition.Index })
+
+				if ($isExplosionModeForRecovery) {
+					# Explosion mode: load JSONL into $allLogs directly (streaming merge incompatible with explosion)
+					Write-LogHost "" -ForegroundColor Yellow
+					Write-LogHost "============================================================" -ForegroundColor Yellow
+					Write-LogHost "[WORKER-FLUSH-RECOVERY] Detected $($completedWithRecords.Count) completed partition(s) reporting $($totalFromPartitions.ToString('N0')) record(s) but in-memory collection is empty" -ForegroundColor Yellow
+					Write-LogHost "[WORKER-FLUSH-RECOVERY] Explosion mode active - loading $($jsonlFiles.Count) JSONL file(s) into memory (streaming merge incompatible with explosion)" -ForegroundColor Yellow
+					Write-LogHost "============================================================" -ForegroundColor Yellow
+					$loadedCount = 0
+					$filesToLoad = $jsonlFiles | Where-Object {
+						$partMatch = [regex]::Match($_.Name, '^Part(\d+)_')
+						$partMatch.Success -and ([int]$partMatch.Groups[1].Value -in $completedIndices) -and ($_.Name -notmatch '_snapshot_page\d+_')
+					}
+					foreach ($file in $filesToLoad) {
+						try {
+							$lines = Get-Content -Path $file.FullName -Encoding utf8
+							foreach ($line in $lines) {
+								if (-not [string]::IsNullOrWhiteSpace($line)) {
+									try {
+										$record = $line | ConvertFrom-Json
+										[void]$allLogs.Add($record)
+										$loadedCount++
+									} catch {}
+								}
+							}
+						} catch {
+							Write-LogHost "  [WORKER-FLUSH-RECOVERY] Failed to load $($file.Name): $($_.Exception.Message)" -ForegroundColor Yellow
+						}
+					}
+					Write-LogHost "[WORKER-FLUSH-RECOVERY] Loaded $($loadedCount.ToString('N0')) record(s) from JSONL into memory for explosion processing" -ForegroundColor Green
+					$effectiveRecordCount = $loadedCount
+				} else {
+					# Non-explosion fast path: activate streaming export from JSONL.
+					# When $script:memoryFlushEnabled is true, workers flushing each page to JSONL
+					# and returning empty in-memory collections is the NORMAL finalize path - emit
+					# nothing to the terminal/log. Only emit the loud banner when memory flush was
+					# NOT enabled, which means an empty in-memory collection paired with on-disk
+					# JSONL is genuinely unexpected and worth flagging.
+					if (-not $script:memoryFlushEnabled) {
+						Write-LogHost "" -ForegroundColor Yellow
+						Write-LogHost "============================================================" -ForegroundColor Yellow
+						Write-LogHost "[WORKER-FLUSH-RECOVERY] Detected $($completedWithRecords.Count) completed partition(s) reporting $($totalFromPartitions.ToString('N0')) record(s) but in-memory collection is empty" -ForegroundColor Yellow
+						Write-LogHost "[WORKER-FLUSH-RECOVERY] Found $($jsonlFiles.Count) matching JSONL file(s) in .pax_incremental - activating streaming export" -ForegroundColor Yellow
+						Write-LogHost "============================================================" -ForegroundColor Yellow
+					}
+					$script:memoryFlushed = $true
+					$script:UseStreamingMergeForExport = $true
+					$script:StreamingMergeDirectory = Split-Path $script:PartialOutputPath -Parent
+					$script:StreamingMergePartitions = $completedIndices
+					$script:StreamingMergeRecordCount = $totalFromPartitions
+					$effectiveRecordCount = $totalFromPartitions
+				}
+			}
+		}
 	}
 	
 	if ($effectiveRecordCount -eq 0 -and $script:partitionStatus -and $script:partitionStatus.Count -gt 0 -and -not $UseEOM) {
@@ -15417,14 +15647,21 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 				# Identify which partition numbers have files vs which are missing
 				$partitionsWithFiles = @($actualJsonlFiles | ForEach-Object { if ($_.Name -match '^Part(\d+)_') { [int]$Matches[1] } } | Sort-Object -Unique)
 				$missingPartitions = @($script:StreamingMergePartitions | Where-Object { $_ -notin $partitionsWithFiles } | Sort-Object)
-				Write-LogHost "" -ForegroundColor Yellow
-				Write-LogHost "  [DATA-LOSS] WARNING: Only $actualFileCount of $expectedPartitionCount partition JSONL files found for this run" -ForegroundColor Yellow
-				Write-LogHost "  [DATA-LOSS] Missing partition data: $($missingPartitions -join ', ')" -ForegroundColor Yellow
-				Write-LogHost "  [DATA-LOSS] Output will be marked as PARTIAL due to incomplete data" -ForegroundColor Yellow
-				Write-LogHost "" -ForegroundColor Yellow
-				# Mark output as PARTIAL by updating the output file name
-				$script:StreamingMergeDataLoss = $true
-				$script:StreamingMergeMissingPartitions = $missingPartitions
+				# Exclude partitions that returned 0 records — a missing JSONL file is expected for those
+				$trulyMissingPartitions = @($missingPartitions | Where-Object { [int]($script:partitionStatus[$_].RecordCount ?? 0) -gt 0 })
+				if ($trulyMissingPartitions.Count -gt 0) {
+					Write-LogHost "" -ForegroundColor Yellow
+					Write-LogHost "  [DATA-LOSS] WARNING: Only $actualFileCount of $expectedPartitionCount partition JSONL files found for this run" -ForegroundColor Yellow
+					Write-LogHost "  [DATA-LOSS] Missing partition data: $($trulyMissingPartitions -join ', ')" -ForegroundColor Yellow
+					Write-LogHost "  [DATA-LOSS] Output will be marked as PARTIAL due to incomplete data" -ForegroundColor Yellow
+					Write-LogHost "" -ForegroundColor Yellow
+					# Mark output as PARTIAL by updating the output file name
+					$script:StreamingMergeDataLoss = $true
+					$script:StreamingMergeMissingPartitions = $trulyMissingPartitions
+				} else {
+					# All "missing" partitions returned 0 records — no actual data loss
+					$script:StreamingMergeDataLoss = $false
+				}
 			} else {
 				$script:StreamingMergeDataLoss = $false
 			}
@@ -15455,7 +15692,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 				$outDir = Split-Path $OutputFile -Parent
 				$outBase = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile)
 				$outExt = [System.IO.Path]::GetExtension($OutputFile)
-				$OutputFile = Join-Path $outDir "${outBase}_PARTIAL${outExt}"
+				# Only add _PARTIAL suffix if not already present (avoid _PARTIAL_PARTIAL)
+				if ($outBase -notmatch '_PARTIAL$') {
+					$OutputFile = Join-Path $outDir "${outBase}_PARTIAL${outExt}"
+				}
 				Write-LogHost "  [DATA-LOSS] Output file renamed to: $(Split-Path $OutputFile -Leaf)" -ForegroundColor Yellow
 				Write-LogHost "  [DATA-LOSS] Missing partitions: $($script:StreamingMergeMissingPartitions -join ', ')" -ForegroundColor Yellow
 			}
@@ -16503,20 +16743,28 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				
 				Write-LogHost "  • $activityType → $fileName ($($group.Count) records)" -ForegroundColor DarkCyan
 			}
-			
+
+		# Emit EntraUsers listing inline with the other split-file bullets so the visual
+		# split-summary group is contiguous BEFORE the "Removed combined CSV" closer.
+		# In csvSeparateMode + IncludeUserInfo, the dedicated EntraUsers CSV export above
+		# (around line ~16704) has already written the file. Re-running Export-Csv here would
+		# just rewrite the same data; only emit a fallback write if the file is missing.
+		if ($IncludeUserInfo -and $script:EntraUsersData) {
+			$entraFile = Join-Path $outputDir "EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.csv"
+			if (-not (Test-Path $entraFile)) {
+				try {
+					$script:EntraUsersData | Export-Csv -Path $entraFile -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
+				} catch { Write-LogHost "WARNING: Failed to export EntraUsers CSV: $($_.Exception.Message)" -ForegroundColor Yellow }
+			}
+			if (Test-Path $entraFile) {
+				Write-LogHost "  • EntraUsers → $(Split-Path -Leaf $entraFile) ($($script:EntraUsersData.Count) rows)" -ForegroundColor DarkCyan
+				$createdFiles += $entraFile
+			}
+		}
+
 			# Delete combined CSV file
 			Remove-Item -Path $OutputFile -Force -ErrorAction SilentlyContinue
 			Write-LogHost "Removed combined CSV (replaced with $($createdFiles.Count) separate files)" -ForegroundColor Gray
-			
-			# Export EntraUsers CSV in separated mode
-			if ($IncludeUserInfo -and $script:EntraUsersData) {
-				$entraFile = Join-Path $outputDir "EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.csv"
-				try {
-					$script:EntraUsersData | Export-Csv -Path $entraFile -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
-					Write-LogHost "  • EntraUsers → $(Split-Path -Leaf $entraFile) ($($script:EntraUsersData.Count) rows)" -ForegroundColor DarkCyan
-					$createdFiles += $entraFile
-				} catch { Write-LogHost "WARNING: Failed to export EntraUsers CSV: $($_.Exception.Message)" -ForegroundColor Yellow }
-			}
 			
 			# Update OutputFile to point to directory for summary message
 			$script:CsvSplitFiles = $createdFiles

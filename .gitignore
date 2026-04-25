@@ -1,11 +1,15 @@
 # Local working folders (not for repo)
 temp/
+_temp/
 output/
 scripts/
 changelogs/
 
 # Excluded script_archive subfolders (not for repo)
 script_archive/Purview_M365_Usage_Bundle_Explosion_Processor/
+script_archive/DSPMforAI_Audit_Log_Processor/
+release_notes/Core_Repo_Assets_Not_Related_To_Solutions/
+script_archive/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_v2.0.0.ps1
 
 # Ignore test suite (retain ability to run locally; prevent committing)
 tests/
