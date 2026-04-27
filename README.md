@@ -66,15 +66,33 @@ This is an experimental script. On occasion, you may notice small deviations fro
 
 ---
 
-> **🔍 Purview Audit Log Processor:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.9.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.9/PAX_Purview_Audit_Log_Processor_v1.10.9.ps1)
+> ## 🔍 Purview Audit Log Processor
+>
+> Download the script → [`PAX_Purview_Audit_Log_Processor_v1.10.9.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.10.9/PAX_Purview_Audit_Log_Processor_v1.10.9.ps1)
 >
 > **📖 Resources:** [Latest Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.10.0.md) | [Latest Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.10.0.md)
 >
 > **📚 Archives:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor) | [Previous Versions](https://github.com/microsoft/PAX/tree/release/script_archive/Purview_Audit_Log_Processor)
+>
+> ---
+>
+> > #### ⚠️ Action Required: Microsoft Graph Audit API Permission Change (April 2026)
+> >
+> > **Applies to the Purview Audit Log Processor only.**
+> >
+> > **Microsoft introduced a new dedicated permission, `AuditLogsQuery.Read.All`, for the Microsoft Graph audit query API and began enforcing it across all tenants in April 2026.** This is a Microsoft-platform-level change that affects every tenant retrieving Copilot audit data via the Graph API, regardless of which tool is used.
+> >
+> > - The legacy `AuditLog.Read.All` permission is **no longer sufficient** to retrieve `CopilotInteraction` records via the Graph audit query API.
+> > - Graph API calls made with only the legacy permission will appear to succeed but return **0 records** — silently — for affected record types.
+> > - **PAX v1.10.9 and later** request the correct scopes automatically. **Older PAX versions will not retrieve Copilot data correctly until you upgrade and grant admin consent for the new permission(s).**
+> >
+> > See the [v1.10.9 release notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.10.0.md) for the full permission list and migration details.
 
 ---
 
-> **💬 Copilot Interactions Content Audit Log Processor:** Download the script → [`PAX_CopilotInteractions_Content_Audit_Log_Processor_v2.0.0.ps1`](https://github.com/microsoft/PAX/releases/download/copilotinteractions-v2.0.0/PAX_CopilotInteractions_Content_Audit_Log_Processor_v2.0.0.ps1)
+> ## 💬 Copilot Interactions Content Audit Log Processor
+>
+> Download the script → [`PAX_CopilotInteractions_Content_Audit_Log_Processor_v2.0.0.ps1`](https://github.com/microsoft/PAX/releases/download/copilotinteractions-v2.0.0/PAX_CopilotInteractions_Content_Audit_Log_Processor_v2.0.0.ps1)
 >
 > **📖 Resources:** [Latest Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/CopilotInteractions_Content_Audit_Log_Processor/PAX_CopilotInteractions_Content_Audit_Log_Processor_Documentation_v2.0.0.md) | [Latest Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/CopilotInteractions_Content_Audit_Log_Processor/PAX_CopilotInteractions_Content_Audit_Log_Processor_Release_Note_v2.0.0.md)
 >
@@ -82,7 +100,9 @@ This is an experimental script. On occasion, you may notice small deviations fro
 
 ---
 
-> **📊 Graph Audit Log Processor:** Download the script → [`PAX_Graph_Audit_Log_Processor_v1.0.1.ps1`](https://github.com/microsoft/PAX/releases/download/graph-v1.0.1/PAX_Graph_Audit_Log_Processor_v1.0.1.ps1)
+> ## 📊 Graph Audit Log Processor
+>
+> Download the script → [`PAX_Graph_Audit_Log_Processor_v1.0.1.ps1`](https://github.com/microsoft/PAX/releases/download/graph-v1.0.1/PAX_Graph_Audit_Log_Processor_v1.0.1.ps1)
 >
 > **📖 Resources:** [Latest Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Graph_Audit_Log_Processor/PAX_Graph_Audit_Log_Processor_Documentation_v1.0.1.md) | [Latest Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Graph_Audit_Log_Processor/PAX_Graph_Audit_Log_Processor_Release_Note_v1.0.1.md)
 >
