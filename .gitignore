@@ -4,6 +4,7 @@ _temp/
 output/
 scripts/
 changelogs/
+.vscode/
 
 # Excluded script_archive subfolders (not for repo)
 script_archive/Purview_M365_Usage_Bundle_Explosion_Processor/
