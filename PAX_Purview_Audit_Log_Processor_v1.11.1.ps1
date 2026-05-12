@@ -1,5 +1,6 @@
-﻿# Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.10.9
+# Portable Audit eXporter (PAX) - Purview Audit Log Processor
+# Version: v1.11.1
+# Requirements: PowerShell 7+ for default Graph API mode; PowerShell 5.1 supported ONLY with -UseEOM (serial Exchange Online Management mode, no parallel query/explosion).
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI: Microsoft Purview Data Security Posture Management integration
 #              MIXED FREE/PAYG Activity Types: AIInteraction (currently Microsoft platforms only), ConnectedAIAppInteraction (Microsoft + third-party)
@@ -11,6 +12,34 @@
 <#
 .SYNOPSIS
 	Export Microsoft Purview audit logs for Microsoft 365 Copilot and DSPM for AI activity types with optional Purview-aligned row explosion and deep flattening.
+
+	*** WARNING: SENSITIVE DATA — CUSTOMER RESPONSIBILITY ***
+
+	The audit data exported by this script is highly sensitive. Output may contain user
+	identifiers (UPN, email, GUID), file/site/resource paths, conversation and message IDs,
+	agent identifiers, prompt/response metadata (timestamps, lengths, classifications), and
+	other personally identifiable information drawn directly from your tenant's Unified
+	Audit Log.
+
+	- Data is NOT hashed, masked, redacted, anonymized, or de-identified in any way.
+	  Records are exported in their raw, attributable form exactly as Microsoft Purview
+	  returns them.
+	- Outputs (CSV/Excel/JSON metrics, checkpoint files, logs) may contain confidential
+	  business content, regulated data (PII, PHI, financial, IP), and end-user
+	  communications.
+	- The customer (you / your organization) is solely responsible for the secure handling,
+	  storage, transmission, retention, disclosure, access control, and deletion of all
+	  data produced by this script, and for ensuring its use complies with all applicable
+	  laws, regulations, contractual obligations, and internal policies — including but
+	  not limited to GDPR, HIPAA, CCPA, employee monitoring laws, works-council
+	  agreements, and data-residency requirements.
+	- Microsoft has no visibility into, control over, or responsibility for the data
+	  customers extract using this tool or how that data is subsequently used, shared, or
+	  stored. Microsoft disclaims any and all liability arising from or related to
+	  customer use of this script and its output.
+	- Treat all output files as Highly Confidential. Restrict access to authorized
+	  personnel with a documented business need. Encrypt at rest and in transit. Apply
+	  tenant DLP / sensitivity labels as appropriate.
 
 .DESCRIPTION
 	Modes:
@@ -29,12 +58,11 @@
 		- Default: Tries v1.0 first, falls back to beta if unavailable
 		- No command-line switches needed - fully automatic with manual override capability
     
-	Parallel Explosion Processing (PS7+ only):
+	Parallel Explosion Processing:
 		- After data retrieval, explosion of records into rows can be parallelized
-		- Automatic on PS7+ with >500 records (uses job queue with ~1000 records per chunk)
+		- Automatic when >500 records (uses job queue with ~1000 records per chunk)
 		- Control via -ExplosionThreads: 0=auto (2-8 threads, capped at min(ProcessorCount,8)), 1=serial, 2-32=explicit
 		- Output is identical to serial mode (same columns, data, row count; only order may differ)
-		- Falls back to serial processing on PowerShell 5.1
     
 	Reliability & Resilience:
 		- Automatic retry logic: Up to 3 attempts per partition with smart cooldown
@@ -158,15 +186,17 @@
 			Use -UserIds with explicit email addresses instead of -GroupNames
 			Example: -RAWInputCSV "data.csv" -UserIds "user@contoso.com" -AgentsOnly -PromptFilter Both
 
-	PowerShell 5.1 & 7+ supported. Parallel query retrieval and explosion processing require 7+.
+	PowerShell 7+ required for default Graph API mode. PowerShell 5.1 is supported ONLY when running in -UseEOM mode (serial Exchange Online Management cmdlets, no parallelism).
 
 .EXECUTIONPOLICY
 	No internal execution policy bypass. Use external host invocation if needed:
-		powershell.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-		pwsh.exe       -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+		pwsh.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
+		# PS 5.1 host (EOM mode only):
+		powershell.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -UseEOM -StartDate 2025-10-01 -EndDate 2025-10-02
 
 .POWERSHELLVERSIONS
-	PS 5.1 & 7+. Query parallelization and explosion parallelization require PS 7+.
+	PowerShell 7+ required (default Graph API mode; download: https://aka.ms/powershell).
+	PowerShell 5.1 supported ONLY with -UseEOM (serial EOM mode; no parallel query/explosion).
 
 .EXAMPLE
 	# Basic export with auto-generated timestamped filename
@@ -178,8 +208,8 @@
 	# Deep column explosion with auto-generated filename
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputPath C:\Temp\
 .EXAMPLE
-	# PowerShell 5.1 compatible (no parallelization)
-	powershell -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputPath C:\Temp\
+	# PowerShell 5.1 (EOM mode only — serial, no parallelization)
+	powershell -File .\PAX_Purview_Audit_Log_Processor.ps1 -UseEOM -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputPath C:\Temp\
 .EXAMPLE
 	# Offline replay (simple forced explosion) of a previously exported raw CSV
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -RAWInputCSV .\output\Copilot_RAW_20251001.csv -OutputPath C:\Temp\
@@ -194,8 +224,8 @@
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 6000 -StreamingChunkSize 1500 -OutputPath C:\Temp\
 .EXAMPLE
 	# Fast header freeze (narrow schema expectation) – smaller sample, larger chunk for throughput
-	# NOTE: In parallel mode (PS7+), full schema discovery scans ALL rows regardless of StreamingSchemaSample.
-	#       These tuning examples primarily affect serial mode (PS5.1 or -ExplosionThreads 1).
+	# NOTE: In parallel mode, full schema discovery scans ALL rows regardless of StreamingSchemaSample.
+	#       These tuning examples primarily affect serial mode (-ExplosionThreads 1).
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -StreamingSchemaSample 800 -StreamingChunkSize 6000 -OutputPath C:\Temp\
 .EXAMPLE
 	# Filter to only records with agents present
@@ -239,6 +269,15 @@
 	# Microsoft 365 usage bundle (Exchange, SharePoint, OneDrive, Teams, Forms, Stream, Planner, PowerApps)
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-11-01 -EndDate 2025-11-02 -IncludeM365Usage -CombineOutput -OutputPath C:\Temp\
 .EXAMPLE
+	# Rollup: CopilotInteraction-only run, deletes raw CSVs after rolling up
+	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-11-01 -EndDate 2025-11-02 -Rollup -OutputPath C:\Temp\
+.EXAMPLE
+	# Rollup + Raw: CopilotInteraction-only run, keeps raw CSVs alongside rollup output
+	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-11-01 -EndDate 2025-11-02 -RollupPlusRaw -OutputPath C:\Temp\
+.EXAMPLE
+	# Rollup: M365 usage bundle run, deletes raw CSV after rolling up
+	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-11-01 -EndDate 2025-11-02 -IncludeM365Usage -Rollup -OutputPath C:\Temp\
+.EXAMPLE
 	# Export with execution telemetry for performance analysis
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-11-01 -EndDate 2025-11-02 -IncludeTelemetry -OutputPath C:\Temp\
 .EXAMPLE
@@ -272,6 +311,19 @@
 .EXAMPLE
 	# APPENDING: Append with single activity type to existing CSV
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-15 -EndDate 2025-10-16 -AppendFile "CopilotOnly.csv" -ActivityTypes CopilotInteraction -OutputPath C:\Temp\
+
+.EXAMPLE
+	# REMOTE OUTPUT: Upload all run artifacts to a SharePoint document library folder
+	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputPathSP "https://contoso.sharepoint.com/sites/Analytics/Shared Documents/PAX"
+.EXAMPLE
+	# REMOTE OUTPUT: Upload all run artifacts to a Microsoft Fabric Lakehouse Files folder (interactive auth)
+	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputPathFabric "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse/Files/audit"
+.EXAMPLE
+	# REMOTE OUTPUT: Headless run with managed identity uploading to OneLake (designed for Azure Container Apps Jobs / VMs / Functions)
+	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -Auth ManagedIdentity -TenantId "<tenant-guid>" -ClientId "<app-or-mi-client-id>" -OutputPathFabric "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse/Files/audit"
+.EXAMPLE
+	# REMOTE OUTPUT: Headless run with app registration uploading to SharePoint
+	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -Auth AppRegistration -TenantId "<tenant-guid>" -ClientId "<app-id>" -ClientCertificateThumbprint "<thumbprint>" -OutputPathSP "https://contoso.sharepoint.com/sites/Analytics/Shared Documents/PAX"
 
 .EXAMPLE
 	# Export to Excel workbook (multi-tab by activity type - default behavior)
@@ -314,12 +366,20 @@
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -Resume -OutputPath C:\Temp\ -Force
 
 .EXAMPLE
-	# Parallel explosion with explicit 8 threads (PS7+ only)
+	# Parallel explosion with explicit 8 threads
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ExplosionThreads 8 -OutputPath C:\Temp\
 
 .EXAMPLE
 	# Force serial explosion for debugging/comparison (disables parallel)
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -ExplosionThreads 1 -OutputPath C:\Temp\
+
+.EXAMPLE
+	# Microsoft Agent 365: enrich a normal audit run with the Agent 365 catalog CSV
+	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2026-04-01 -EndDate 2026-04-30 -IncludeAgent365Info -OutputPath C:\Temp\
+
+.EXAMPLE
+	# Microsoft Agent 365: ONLY export the Agent 365 catalog (skip all audit queries)
+	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -OnlyAgent365Info -Force -OutputPath C:\Temp\
 
 .NOTES
 	Reliability Features:
@@ -437,14 +497,164 @@
 			The Exchange Online Management (EOM) Search-UnifiedAuditLog cmdlet returns maximum 10,000
 			records per query. PAX automatically subdivides time windows when this limit is reached.
 
+	Required Permissions Matrix:
+		The runtime startup banner emits a tailored, per-run version of this matrix
+		(highlighting only what THIS invocation needs). The static reference below lists
+		every permission PAX may require, grouped by feature, with the trigger switch
+		that turns it on. Each line is tagged so you know WHERE to grant it:
+
+			[App-only]   = Microsoft Graph application permission, granted on the
+			               app registration (-Auth AppRegistration) or on the managed
+			               identity's service principal (-Auth ManagedIdentity).
+			               Requires admin consent.
+			[Delegated]  = Microsoft Graph delegated permission, consented at
+			               interactive sign-in by the signed-in user.
+			[Role]       = Entra ID directory role assigned to the signed-in user
+			               (NOT a Graph scope; granted in the Entra admin center).
+			[Azure RBAC] = Azure role assignment on an Azure resource (NOT a Graph
+			               scope; granted in the Azure portal / az role assignment).
+			[Exchange]   = Exchange Online RBAC role / role group (NOT a Graph scope;
+			               granted in the Exchange admin center).
+
+		Audit query (always required for normal runs; skipped only by -OnlyUserInfo / -OnlyAgent365Info):
+			[App-only / Delegated]  AuditLogsQuery.Read.All
+			                        (umbrella - all audit record types)
+
+		M365 usage bundle (only when -IncludeM365Usage is set):
+			[App-only / Delegated]  AuditLogsQuery-Exchange.Read.All
+			[App-only / Delegated]  AuditLogsQuery-SharePoint.Read.All
+			[App-only / Delegated]  AuditLogsQuery-OneDrive.Read.All
+
+		Entra directory + license enrichment (only when -IncludeUserInfo or -OnlyUserInfo is set):
+			[App-only / Delegated]  User.Read.All                  (read /users)
+			[App-only / Delegated]  Organization.Read.All          (read /subscribedSkus)
+
+		Group expansion (only when -GroupNames is set):
+			[App-only / Delegated]  GroupMember.Read.All           (read /groups + /groups/{id}/members)
+
+		DSPM for AI billing enrichment (only when -IncludeDSPMForAI is set):
+			[App-only / Delegated]  AuditLogsQuery.Read.All        (covered by audit query above)
+			(DSPM uses the same audit-query scope; no additional Graph scope required.)
+
+		Remote output - SharePoint (only when -OutputPathSP is set):
+			[App-only / Delegated]  Sites.ReadWrite.All            (resolve site/drive via /sites + /drives)
+			[App-only / Delegated]  Files.ReadWrite.All            (PUT / createUploadSession to /drives/{id}/items)
+			ALSO: the destination user / app / managed identity must have at least
+			      Member access on the target SharePoint site (granted in SharePoint,
+			      not via Graph permissions).
+
+		Remote output - Microsoft Fabric / OneLake (only when -OutputPathFabric is set):
+			[Azure RBAC]  Storage Blob Data Contributor on the Fabric workspace
+			              (assigned at workspace scope to the audit identity)
+			[Fabric]      Contributor on the Fabric workspace
+			              (granted in the Fabric portal: Workspace settings -> Manage access)
+			[Tenant]      "Service principals can use Fabric APIs" tenant setting must be
+			              enabled (Fabric Admin portal -> Tenant settings -> Developer settings)
+			              when running with -Auth AppRegistration or -Auth ManagedIdentity.
+			NOTE: OneLake uses an INDEPENDENT access token (audience https://storage.azure.com/)
+			      acquired via the Az.Accounts module. Microsoft Graph permissions do NOT
+			      apply to OneLake writes.
+
+		Microsoft Agent 365 enrichment (only when -IncludeAgent365Info or -OnlyAgent365Info is set):
+			[Delegated]   CopilotPackages.Read.All       (read /copilot/admin/catalog/packages)
+			[Delegated]   Application.Read.All           (resolve developer/owner via /applications)
+			[Role]        AI Administrator               (preferred - least privilege)
+			              -- OR --
+			[Role]        Global Administrator           (alternative)
+			NOTE: Agent 365 is delegated-only. Under -Auth AppRegistration the script runs
+			      a one-time interactive sign-in (Phase 2) up-front to acquire these scopes;
+			      under -Auth ManagedIdentity the combination is blocked outright.
+
+		EOM-mode audit query (only when -UseEOM is set):
+			[Exchange]    View-Only Audit Logs role
+			              -- OR --
+			[Exchange]    Compliance Management role group
+			              -- OR --
+			[Exchange]    Organization Management role group
+			              -- OR --
+			[Exchange]    Custom RBAC role granting the Search-UnifiedAuditLog cmdlet
+			NOTE: EOM mode does NOT use Microsoft Graph scopes for the audit query itself.
+
+		Managed identity bootstrap (only when -Auth ManagedIdentity is set):
+			All [App-only] scopes triggered by the switches above must be admin-consented
+			on the managed identity's service principal as APPLICATION permissions (not
+			delegated). The fabric_resources/Grant-PAXPermissions.ps1 script automates
+			this one-time grant, including the Storage Blob Data Contributor RBAC role
+			when -OutputPathFabric is in scope.
+
+	Remote Output Setup (-OutputPathSP / -OutputPathFabric):
+		PAX can write all run artifacts (CSV / XLSX / log / metrics / checkpoint) to either a
+		SharePoint document library folder or a Microsoft Fabric Lakehouse Files folder instead
+		of a local directory. The destination must already exist (or the parent must, for
+		SharePoint subfolder creation) before the run starts. PAX will not provision the
+		Fabric workspace, the Lakehouse, or the SharePoint site for you.
+
+		One-time setup for -OutputPathSP (SharePoint):
+			1. Identify (or create) the target SharePoint site and document library folder.
+			2. Grant the identity that runs PAX (the signed-in user for interactive auth, OR
+			   the app registration / managed identity for unattended auth) the following
+			   Microsoft Graph application or delegated permissions, matching your -Auth choice:
+			      • Sites.ReadWrite.All
+			      • Files.ReadWrite.All
+			3. For app-only auth (-Auth AppRegistration / ManagedIdentity), have an admin
+			   consent the permissions in the Entra ID portal.
+			4. Pass the folder URL exactly as it appears in the browser address bar:
+			      -OutputPathSP "https://<tenant>.sharepoint.com/sites/<site>/<library>[/<sub>]"
+			   Subfolders that do not yet exist below the document library root are created
+			   automatically on first use.
+
+		One-time setup for -OutputPathFabric (Microsoft Fabric / OneLake):
+			1. Install the Az.Accounts PowerShell module on the machine that runs PAX:
+			      Install-Module Az.Accounts -Scope CurrentUser
+			   (Already present on Azure Cloud Shell and the official PowerShell container
+			   image used by the ACA Job runbook.)
+			2. In the Microsoft Fabric portal (https://app.fabric.microsoft.com):
+			      a. Create or identify the target Fabric workspace.
+			      b. Inside that workspace, create or identify the target Lakehouse
+			         (or Warehouse). PAX writes to the item's Files area, not Tables.
+			      c. Add the identity that runs PAX (user, app registration, or managed
+			         identity) to the workspace as Contributor (or higher). Member,
+			         Admin, and workspace-owner roles also work; Viewer does NOT.
+			3. In the Azure portal (the Fabric workspace surfaces as an Azure resource
+			   under the Microsoft.Fabric provider):
+			      • Assign the same identity the Azure RBAC role
+			        "Storage Blob Data Contributor" on the Fabric workspace (or on the
+			        Fabric capacity / subscription scope, if you want it to apply more
+			        broadly). This role is what authorizes the underlying OneLake DFS
+			        write calls; the Fabric workspace role alone is not sufficient.
+			4. For service-principal or managed-identity runs (-Auth AppRegistration /
+			   ManagedIdentity) the Fabric tenant administrator must also enable, in the
+			   Fabric Admin portal under "Tenant settings → Developer settings":
+			      • "Service principals can use Fabric APIs"
+			   (scoped to the security group that contains your service principal /
+			   managed identity, or tenant-wide).
+			5. Pass the OneLake URL exactly in the form shown in the Lakehouse "Properties"
+			   pane, ABFS URL → switch the scheme to https and the host to the DFS endpoint:
+			      -OutputPathFabric "https://onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Lakehouse/Files[/<sub>]"
+			   Regional aliases of the form "https://<region>-onelake.dfs.fabric.microsoft.com/..."
+			   are also accepted.
+
+		Common pitfalls:
+			• Forgetting the "Storage Blob Data Contributor" Azure RBAC role: produces
+			  HTTP 403 (AuthorizationFailure) on the very first OneLake write. The Fabric
+			  Contributor role alone is not enough.
+			• Forgetting the tenant setting "Service principals can use Fabric APIs":
+			  produces HTTP 401 / 403 for app-only and managed-identity runs even when
+			  every other permission is correct.
+			• Pointing at a Lakehouse "Tables" path instead of "Files": PAX writes
+			  unstructured files (CSV / XLSX / JSON / log) and only supports the Files
+			  area of a Lakehouse / Warehouse.
+			• On long runs, the OneLake access token is refreshed automatically; no
+			  customer action is required to keep multi-hour runs alive.
+
 	Performance Optimization:
-		Parallel Explosion (PS7+ only):
+		Parallel Explosion:
 			After records are retrieved from Purview, the explosion phase (converting records
 			to rows with -ExplodeArrays or -ExplodeDeep) can be parallelized for significant
 			speedup on large datasets.
 			
 			Behavior:
-				• Automatic on PS7+ when >500 records retrieved
+				• Automatic when >500 records retrieved
 				• Uses job queue pattern: many small chunks (~1000 records) with N concurrent workers
 				• Better load balancing than fixed chunks when record complexity varies
 				• Full schema discovery: scans ALL rows for 100% column coverage (not sampling)
@@ -471,6 +681,54 @@
 	Directory path where all output files will be created with auto-generated timestamped filenames.
 	Default: C:\Temp\
 
+	Mutually exclusive with -OutputPathSP and -OutputPathFabric.
+
+.PARAMETER OutputPathSP
+	Remote output destination: a SharePoint Online document-library folder URL. When set,
+	all customer-visible artifacts produced by the run (CSV/XLSX, run log, metrics JSON,
+	checkpoint files when applicable) are uploaded to this SharePoint location instead of
+	being written to a local directory. PAX writes to a temporary local scratch folder
+	internally, then uploads each artifact via the Microsoft Graph drives API and removes
+	the scratch folder on successful completion.
+
+	Format:
+	  https://<tenant>.sharepoint.com/sites/<site>/<library-or-folder-path>
+
+	Folder hierarchy is created automatically if any segment does not yet exist.
+
+	Required Microsoft Graph permissions (in addition to the existing audit permissions):
+	  • Sites.ReadWrite.All
+	  • Files.ReadWrite.All
+	Both permissions must be consented to the same identity used for the audit phase
+	(application or delegated, matching -Auth).
+
+	Mutually exclusive with -OutputPath and -OutputPathFabric.
+
+.PARAMETER OutputPathFabric
+	Remote output destination: a Microsoft Fabric Lakehouse (or Warehouse) Files URL on
+	OneLake. When set, all customer-visible artifacts produced by the run are uploaded
+	to OneLake using the DFS endpoint instead of being written to a local directory.
+	PAX writes to a temporary local scratch folder internally, then uploads each artifact
+	and removes the scratch folder on successful completion.
+
+	Format:
+	  https://[<workspace>-]onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Lakehouse/Files[/<subpath>]
+	  https://[<workspace>-]onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Warehouse/Files[/<subpath>]
+
+	Required permissions on the identity used for the run (-Auth WebLogin / DeviceCode /
+	AppRegistration / ManagedIdentity all supported):
+	  • Azure RBAC role: Storage Blob Data Contributor on the Fabric workspace (or higher)
+	  • Fabric workspace role: Contributor (or higher) on the workspace containing the item
+	  • Tenant setting: "Service principals can use Fabric APIs" must be enabled
+	    when running with -Auth AppRegistration or -Auth ManagedIdentity
+
+	The storage-audience access token used for OneLake uploads is acquired via the Az
+	PowerShell module (Az.Accounts) and is automatically refreshed by PAX during long-
+	running runs so checkpoints, intermediate writes, and end-of-run artifacts continue
+	to upload reliably across the full audit window.
+
+	Mutually exclusive with -OutputPath and -OutputPathSP.
+
 .PARAMETER FlatDepth
 	Maximum JSON flatten depth for exploding CopilotEventData and AuditData (default 120).
 	
@@ -480,20 +738,43 @@
 	  • Current timestamp (yyyyMMdd_HHmmss format)
 	
 	Examples of auto-generated filenames:
-	  • Purview_Audit_CopilotInteraction_20251110_143022.csv
-	  • Purview_Audit_CombinedUsageActivity_20251110_143022.csv
+	  • Purview_Audit_UsageActivity_CopilotInteraction_20251110_143022.csv  (single activity type)
+	  • Purview_Audit_UsageActivity_CombinedActivityTypes_20251110_143022.csv  (multiple activity types with -CombineOutput)
 	  • Purview_Audit_MultiTab_20251110_143022.xlsx
+
+	When -OutputPathSP or -OutputPathFabric is specified, all output files, directory paths,
+	and log file paths are reported in the run banners and progress messages using the
+	remote SharePoint or Fabric URL — not the temporary local scratch path used internally
+	during the run.
 	
 	Note: OutputPath accepts ONLY directory paths, not filenames.
 	      Use -AppendFile parameter to specify a custom filename for appending to existing files.
 
 .PARAMETER Auth
 	Authentication method. Options:
-	  • WebLogin       – Interactive browser authentication
-	  • DeviceCode     – Device code flow for headless scenarios
-	  • Credential     – Legacy username/password prompt or GRAPH_* env vars
-	  • Silent         – Managed identity or pre-cached token
+	  • WebLogin        – Interactive browser authentication
+	  • DeviceCode      – Device code flow for headless scenarios
+	  • Credential      – Legacy username/password prompt or GRAPH_* env vars
+	  • Silent          – Managed identity or pre-cached token
 	  • AppRegistration – Service principal using client secret or certificate
+	  • ManagedIdentity – Azure-hosted managed identity (system-assigned by default;
+	                      pass the user-assigned client ID via the AZURE_CLIENT_ID
+	                      environment variable when applicable). Designed for headless
+	                      execution inside Azure (Container Apps Job, VM, App Service,
+	                      Functions, etc.). Requires the same Microsoft Graph application
+	                      permissions as -Auth AppRegistration consented to the managed
+	                      identity, and (for -OutputPathFabric) the Azure RBAC role
+	                      Storage Blob Data Contributor on the OneLake workspace.
+
+	NOTE on Microsoft Agent 365 enrichment:
+	  • -OnlyAgent365Info requires an interactive auth mode (WebLogin, DeviceCode,
+	    Credential, Silent). It is INCOMPATIBLE with -Auth AppRegistration and
+	    -Auth ManagedIdentity because the Agent Package Management API does not
+	    support app-only authentication.
+	  • -Auth AppRegistration -IncludeAgent365Info is supported via dual context:
+	    the audit phase runs app-only as usual, then a one-time interactive sign-in
+	    is launched at the start of the agent phase to acquire the user-bound
+	    CopilotPackages.Read.All / Application.Read.All scopes.
 
 .PARAMETER TenantId
 	Azure AD tenant ID (GUID). Required for -Auth AppRegistration unless GRAPH_TENANT_ID
@@ -798,6 +1079,43 @@
 	Include DSPM for AI activity types: ConnectedAIAppInteraction, AIInteraction, AIAppInteraction.
 	Note: Some activity types may trigger PAYG billing. See billing information prompt for details.
 
+.PARAMETER Rollup
+	Run an embedded Python post-processor against the audit run's final CSV
+	immediately after a successful export, then DELETE the raw CSV(s) so only the rolled-up
+	output remains. Mutually exclusive with -RollupPlusRaw.
+
+	PURPOSE: These switches exist solely to produce input files for the Microsoft Copilot
+	Growth ROI Advisory Team's Power BI templates at https://github.com/microsoft/Analytics-Hub.
+	The rolled-up CSVs are shaped specifically for those templates and are NOT intended for
+	any other downstream use. For generic analytics exports, omit -Rollup / -RollupPlusRaw
+	and consume the raw CSV directly.
+
+	The script auto-selects the correct embedded processor and target dashboard:
+	  • CopilotInteraction-only run (default activity type, or -ActivityTypes 'CopilotInteraction'):
+	    Purview_CopilotInteraction_Processor — also auto-enables -IncludeUserInfo and consumes
+	    both the Purview CSV and the Entra users CSV.
+	    Target Analytics-Hub dashboards: AI-in-One and AI Business Value.
+	  • -IncludeM365Usage run: Purview_M365_Usage_Bundle_Explosion_Processor — consumes the
+	    combined Purview CSV (-CombineOutput is auto-enabled by -IncludeM365Usage).
+	    Target Analytics-Hub dashboard: M365 Usage Analytics.
+
+	-IncludeAgent365Info is COMPATIBLE with rollup. The Agent365_<ts>.csv
+	produced by that switch is a point-in-time catalog snapshot (NOT date-range filtered)
+	and is consumed by the same Analytics-Hub dashboards as a companion input. It is
+	always retained — -Rollup never deletes it.
+
+	Requires PowerShell 7+ and Python 3.10+. If Python is not on PATH, the script attempts a
+	per-user silent install (winget Python.Python.3.13 → python.org installer fallback).
+
+	Blocked combinations (script exits with an error): -UseEOM, -ExportWorkbook, -OnlyUserInfo,
+	-OnlyAgent365Info, -IncludeDSPMForAI, -RAWInputCSV, -AppendFile, and -ExcludeCopilotInteraction
+	without -IncludeM365Usage.
+
+.PARAMETER RollupPlusRaw
+	Same as -Rollup (produces input files for the Microsoft Copilot Growth ROI
+	Advisory Team's Power BI templates at https://github.com/microsoft/Analytics-Hub) but
+	KEEPS the raw CSV(s) on disk alongside the rolled-up output. Mutually exclusive with -Rollup.
+
 .PARAMETER ExcludeCopilotInteraction
 	Exclude Microsoft 365 Copilot activity type (CopilotInteraction).
 	Overrides custom list and default behavior. Use with -IncludeDSPMForAI to query only DSPM activity types.
@@ -869,7 +1187,7 @@
 	  • Excel: Multi-tab workbook (one tab per activity type; EntraUsers tab appended last if -IncludeUserInfo)
 	
 	**With -CombineOutput switch:**
-	  • CSV: Single combined activity file named Purview_Audit_CombinedUsageActivity_<timestamp>.csv (plus separate EntraUsers_MAClicensing_<timestamp>.csv if -IncludeUserInfo)
+	  • CSV: Single combined activity file named Purview_Audit_UsageActivity_CombinedActivityTypes_<timestamp>.csv (or Purview_Audit_UsageActivity_<ActivityType>_<timestamp>.csv when only one activity type was queried; plus separate EntraUsers_MAClicensing_<timestamp>.csv if -IncludeUserInfo)
 	  • Excel: First tab named CombinedUsageActivity (no timestamp) with all activity rows; separate EntraUsers tab if -IncludeUserInfo
 
 	Entra user/org data is never merged into the combined activity dataset—always exported separately.
@@ -901,6 +1219,10 @@
 	  EOM mode is SERIAL-ONLY. Parallel processing is automatically disabled.
 	  If -EnableParallel or -ParallelMode is specified with -UseEOM, script will exit with error.
 
+	POWERSHELL VERSION:
+	  EOM mode is the only path supported on PowerShell 5.1. The default Graph API mode
+	  requires PowerShell 7+ (for ThreadJob-based parallel query execution).
+
 
 .PARAMETER IncludeUserInfo
 	Include Entra (Microsoft Entra ID) user directory & Copilot license enrichment (Graph API mode only).
@@ -921,8 +1243,11 @@
 	  • One-time directory + license fetch at startup (typ. +10–20s)
 
 	License Detection Logic:
-	  1. Match known Copilot SKU IDs (curated list)
-	  2. Fallback name pattern search containing "Copilot" for future SKUs
+	  Dynamic discovery (no hardcoded SKU GUIDs): Copilot service plan IDs are
+	  collected from /subscribedSkus where servicePlanName matches '*COPILOT*'.
+	  hasLicense = true when the user has any assignedPlan with
+	  capabilityStatus == 'Enabled' AND servicePlanId in the discovered set.
+	  Honors admin-disabled service plans inside otherwise-assigned SKUs.
 
 	Performance: Single batched fetch + hashtable lookups; no per-record calls.
 
@@ -1017,6 +1342,54 @@
 	
 	NOT AVAILABLE IN EOM MODE: Requires Microsoft Graph API (user directory/licenses not in EOM).
 
+.PARAMETER IncludeAgent365Info
+	Adds a Microsoft Agent 365 enrichment phase to the run, producing
+	Agent365_<timestamp>.csv (28 columns matching the
+	Microsoft Admin Center "Agent 365" export schema). When -ExportWorkbook
+	is also specified, an "Agents365" worksheet is appended to the workbook.
+	
+	BEHAVIOR:
+	  • Runs AFTER the main audit + EntraUsers phases
+	  • Calls the Microsoft Graph Agent Package Management API
+	    (https://graph.microsoft.com/beta/copilot/admin/catalog/packages)
+	  • Performs ONE additional narrow audit query to retrieve "Date created"
+	    and "Created by" fields for each agent (best-effort; blank when not found)
+	  • Empty cells stay empty when the API does not return a value (no fabrication)
+	
+	REQUIREMENTS:
+	  • Tenant must be enrolled in the Microsoft Agent 365 Frontier program
+	  • Signed-in caller must hold AI Admin or Global Admin role
+	    (the Agent Package Management API is user-bound; no app-only support)
+	  • -Auth AppRegistration: a one-time interactive sign-in is launched at
+	    the start of the agent phase to acquire CopilotPackages.Read.All and
+	    Application.Read.All scopes (the audit phase still runs app-only)
+	
+	INCOMPATIBLE PARAMETERS:
+	  • -RAWInputCSV (replay mode does not call live APIs)
+	  • -UseEOM (EOM does not expose the Graph endpoints used here)
+	  • -Resume (checkpoint files predate this feature)
+	
+	If the tenant is not Frontier-enrolled (HTTP 401/403/404 from the probe),
+	the agent phase is skipped with an explanatory banner and the rest of the
+	run completes normally.
+
+.PARAMETER OnlyAgent365Info
+	Export ONLY the Microsoft Agent 365 catalog data (skips all audit log
+	retrieval and EntraUsers/license enrichment).
+	
+	BEHAVIOR:
+	  • Authenticates to Microsoft Graph (interactive auth modes only)
+	  • Skips all Purview audit log queries
+	  • Produces only Agent365_<timestamp>.csv
+	
+	REQUIREMENTS / INCOMPATIBLE PARAMETERS: Same as -IncludeAgent365Info.
+	Additionally, -OnlyAgent365Info is INCOMPATIBLE with -Auth AppRegistration
+	(the Agent Package Management API does not support app-only auth and there
+	is no audit phase to justify falling back to a secondary interactive sign-in).
+	
+	A Y/N preflight prompt is displayed before any Graph call so users do not
+	accidentally skip a long audit run; pass -Force to auto-confirm.
+
 .PARAMETER MaxNetworkOutageMinutes
 	Maximum continuous network outage the script will tolerate during audit log operations (query creation, polling, record retrieval).
 	Applies to transient network errors: 502 Bad Gateway, 503 Service Unavailable, 504 Gateway Timeout, connection failures.
@@ -1051,6 +1424,9 @@
 	
 	CHECKPOINT LOCATION:
 	  Files are created in OutputPath with pattern: .pax_checkpoint_<timestamp>.json
+	  Checkpoint and partial-output files are always written to the LOCAL filesystem,
+	  even when -OutputPathSP or -OutputPathFabric is specified. Resume must be run
+	  from the same machine that produced the checkpoint.
 
 #>
 
@@ -1063,10 +1439,20 @@ param(
 
 	[Parameter(Mandatory = $false)]
 	[string]$OutputPath = "C:\Temp\",
-	
+
+	# Remote output destinations (mutually exclusive with each other and with -OutputPath).
+	# When set, customer-visible artifacts (CSV/XLSX/log) are written to the remote
+	# destination; local OutputPath is internally redirected to a temp scratch dir that is
+	# deleted on successful completion. Checkpoint and partial-output files remain LOCAL
+	# (resume is a same-host operation).
+	[Parameter(Mandatory = $false)]
+	[string]$OutputPathSP,
 
 	[Parameter(Mandatory = $false)]
-	[ValidateSet('WebLogin', 'DeviceCode', 'Credential', 'Silent', 'AppRegistration')]
+	[string]$OutputPathFabric,
+
+	[Parameter(Mandatory = $false)]
+	[ValidateSet('WebLogin', 'DeviceCode', 'Credential', 'Silent', 'AppRegistration', 'ManagedIdentity')]
 	[string]$Auth = 'WebLogin',
 
 	[Parameter(Mandatory = $false)]
@@ -1290,6 +1676,20 @@ param(
 	[Parameter(Mandatory = $false)]
 	[switch]$OnlyUserInfo,
 
+	# Include Microsoft Agent 365 enrichment in export (adds separate Agents365 CSV file/Excel tab).
+	# Sources data from the Microsoft Graph Agent Package Management API
+	# (https://graph.microsoft.com/beta/copilot/admin/catalog/packages).
+	# Requires AI Admin or Global Admin directory role; cannot be satisfied by app-only auth alone.
+	# When -Auth AppRegistration is used, an interactive sign-in is performed for the agent phase only.
+	[Parameter(Mandatory = $false)]
+	[switch]$IncludeAgent365Info,
+
+	# Export only Microsoft Agent 365 data (skips all audit log retrieval).
+	# Date created and Created by columns will be left blank (those rely on audit data).
+	# Not compatible with -Auth AppRegistration (Agent Package API requires interactive user auth).
+	[Parameter(Mandatory = $false)]
+	[switch]$OnlyAgent365Info,
+
 	# Maximum minutes to tolerate continuous network outage during Graph async polling & record retrieval (adaptive backoff). Default 30.
 	[Parameter(Mandatory = $false)]
 	[int]$MaxNetworkOutageMinutes = 30,
@@ -1298,6 +1698,20 @@ param(
 	[Parameter(Mandatory = $false)]
 	[switch]$IncludeTelemetry,
 
+	# Rollup post-processor: produce ONLY rolled-up CSV(s) and delete the raw CSV(s) after success.
+	# Mutually exclusive with -RollupPlusRaw. Requires PowerShell 7+. Auto-installs Python 3.10+ and
+	# the optional 'orjson' package on first use. Only valid for default (CopilotInteraction-only) runs,
+	# explicit -ActivityTypes 'CopilotInteraction', or -IncludeM365Usage runs. Not compatible with
+	# -UseEOM, -ExportWorkbook, -OnlyUserInfo, -OnlyAgent365Info, -IncludeDSPMForAI, -RAWInputCSV, or
+	# -AppendFile. See documentation for full gating matrix.
+	[Parameter(Mandatory = $false)]
+	[switch]$Rollup,
+
+	# Rollup post-processor: produce BOTH the raw CSV(s) AND the rolled-up CSV(s). Same gating rules
+	# as -Rollup. Mutually exclusive with -Rollup.
+	[Parameter(Mandatory = $false)]
+	[switch]$RollupPlusRaw,
+
 	# Resume from checkpoint file - HANDLED VIA $args (not param block) to support:
 	#   -Resume                    (auto-discover checkpoint in OutputPath)
 	#   -Resume "path/to/file"     (explicit checkpoint path)
@@ -1305,8 +1719,6 @@ param(
 	[Parameter(Mandatory = $false, ValueFromRemainingArguments = $true)]
 	[string[]]$RemainingArgs
 )
-
-# DEBUG MARKER (removed to reduce noise)
 
 # ============================================================
 # MANUAL -Resume PARAMETER PARSING
@@ -1381,6 +1793,15 @@ $script:ClientCertificatePassword = $ClientCertificatePassword
 	if ($IncludeM365Usage) {
 		$finalActivityTypes += $m365UsageActivityBundle
 		Write-LogHost ("M365 Usage bundle: Adding {0} activity types across Exchange/SharePoint/OneDrive/Teams" -f $m365UsageActivityBundle.Count) -ForegroundColor Cyan
+
+		# -IncludeM365Usage always implies -CombineOutput. The M365 usage bundle spans 30+
+		# activity types across 4 workloads; per-activity-type splits produce unmanageable file
+		# counts and are incompatible with the rollup post-processor (which consumes a single
+		# CSV). Auto-enable -CombineOutput once, with a one-line info message (no prompt).
+		if (-not $CombineOutput) {
+			$CombineOutput = [System.Management.Automation.SwitchParameter]::new($true)
+			Write-LogHost "M365 Usage mode: -CombineOutput auto-enabled (M365 bundle always produces a single combined output)." -ForegroundColor Cyan
+		}
 
 		$RecordTypes = @(
 			if ($RecordTypes) { $RecordTypes }
@@ -1760,7 +2181,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.10.9'
+$ScriptVersion = '1.11.1'
 
 # --- Initialize/Clear persistent script variables to prevent cross-run contamination ---
 # Note: Script-scoped variables persist across multiple script invocations in the same PowerShell session
@@ -1768,21 +2189,12 @@ $script:partitionStatus = $null
 $script:processedJobIds = $null
 $script:shownJobMessages = $null
 
-# --- Known Microsoft 365 Copilot SKU IDs ---
-# Source: PAX Graph Audit Log Processor + Microsoft official SKU documentation
-$script:CopilotSkuIds = @{
-    'c815c93d-0759-4bb8-b857-bc921a71be83' = 'Microsoft 365 Copilot'           # M365 Copilot
-    '06ebc4ee-1bb5-47dd-8120-11324bc54e06' = 'Microsoft 365 Copilot'           # M365 Copilot (alternative)
-    'a1c5e422-7c00-4433-a276-0f5b5f02e952' = 'Copilot Pro'                     # Copilot Pro
-    '4a51bca5-1eff-43f5-878c-177680f191af' = 'Microsoft Copilot for Microsoft 365' # Another variant
-    'f841e8a7-8d86-4eae-af8c-d14b2a4c7228' = 'Microsoft 365 Copilot'           # Additional variant
-    'd814ea5e-2d90-455a-8b9e-2e5e4f3e8e8d' = 'Microsoft Copilot for M365'      # Additional variant
-    '440eaaa8-b3e0-484b-a8be-62870b9ba70a' = 'Microsoft 365 Copilot'           # Detected from tenant usage
-    # Additional SKUs from Microsoft official documentation (https://learn.microsoft.com/licensing-service-plan-reference)
-    'ad9c22b3-52d7-4e7e-973c-88121ea96436' = 'Microsoft 365 Copilot (Education Faculty)' # EDU Faculty
-    '15f2e9fc-b782-4f73-bf51-81d8b7fff6f4' = 'Microsoft Copilot for Sales'    # Sales Copilot
-    '639dec6b-bb19-468b-871c-c5c441c4b0cb' = 'Copilot for Microsoft 365'       # Official product name variant
-}
+# --- Microsoft 365 Copilot license detection ---
+# No hardcoded SKU GUIDs. Copilot service plans are discovered dynamically at runtime
+# from /subscribedSkus by matching servicePlanName against the pattern '*COPILOT*'.
+# Per-user eligibility is then computed from the user's assignedPlans where
+# capabilityStatus == 'Enabled' and servicePlanId is in the discovered set.
+# See Get-UserLicenseData().
 
 # --- DSPM for AI: Synchronized Timestamp & OutputPath Validation ---
 
@@ -1795,10 +2207,23 @@ $script:LogFile = $null
 $script:LogBuffer = New-Object System.Collections.Generic.List[string]
 
 function Write-Log { 
-	param([Parameter(Mandatory = $true)][string]$Message, [string]$Level = "INFO") 
+	param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Message, [string]$Level = "INFO") 
 	$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 	$logEntry = "[$timestamp] [$Level] $Message"
 	Microsoft.PowerShell.Utility\Write-Host $Message
+	try {
+		if ($script:LogFile) { Add-Content -Path $script:LogFile -Value $logEntry -Encoding UTF8 -ErrorAction SilentlyContinue }
+		else { $script:LogBuffer.Add($logEntry) | Out-Null }
+	} catch {}
+}
+
+# Log-file-only writer: never echoes to host. Used for diagnostic detail (temp paths,
+# argument vectors, stack traces) that should be captured in the run log but not
+# clutter the customer-facing console.
+function Write-LogFile {
+	param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Message, [string]$Level = "INFO")
+	$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+	$logEntry = "[$timestamp] [$Level] $Message"
 	try {
 		if ($script:LogFile) { Add-Content -Path $script:LogFile -Value $logEntry -Encoding UTF8 -ErrorAction SilentlyContinue }
 		else { $script:LogBuffer.Add($logEntry) | Out-Null }
@@ -1957,10 +2382,14 @@ if ($AppendFile -and -not $ExportWorkbook -and -not $PSBoundParameters.ContainsK
 if ($ExportWorkbook) {
 	# Determine Excel output mode based on -CombineOutput parameter
 	if ($CombineOutput) {
-		Write-Host "Excel export mode: Combined activity tab + separate EntraUsers tab (if requested)" -ForegroundColor Cyan
+		$excelModeMsg = "Excel export mode: Combined activity tab + separate EntraUsers tab (if requested)"
+		if ($IncludeAgent365Info -or $OnlyAgent365Info) { $excelModeMsg += " + Agents365 tab" }
+		Write-Host $excelModeMsg -ForegroundColor Cyan
 	} else {
 		# Default for Excel: separated tabs
-		Write-Host "Excel export mode: Multi-tab workbook (one tab per activity type)" -ForegroundColor Cyan
+		$excelModeMsg = "Excel export mode: Multi-tab workbook (one tab per activity type)"
+		if ($IncludeAgent365Info -or $OnlyAgent365Info) { $excelModeMsg += " + Agents365 tab" }
+		Write-Host $excelModeMsg -ForegroundColor Cyan
 	}
 	
 	if ($AppendFile) {
@@ -1971,7 +2400,12 @@ if ($ExportWorkbook) {
 	# CSV export mode
 	if ($OnlyUserInfo) {
 		# OnlyUserInfo mode: No activity files, just Entra user data
-		Write-Host "CSV export mode: Entra user directory and licensing data only (no audit logs)" -ForegroundColor Cyan
+		$onlyUserMsg = "CSV export mode: Entra user directory and licensing data only (no audit logs)"
+		if ($IncludeAgent365Info) { $onlyUserMsg += " + separate Agents365 file" }
+		Write-Host $onlyUserMsg -ForegroundColor Cyan
+	} elseif ($OnlyAgent365Info) {
+		# OnlyAgent365Info mode: No activity files, just Agent 365 catalog data
+		Write-Host "CSV export mode: Microsoft Agent 365 catalog only (no audit logs, no Entra users)" -ForegroundColor Cyan
 	} else {
 		# Determine CSV output mode based on -CombineOutput parameter
 		if ($RAWInputCSV -and -not $CombineOutput.IsPresent) { $CombineOutput = [System.Management.Automation.SwitchParameter]::new($true) }
@@ -1979,11 +2413,13 @@ if ($ExportWorkbook) {
 			# User specified -CombineOutput switch: combine all activity types
 			$csvModeMsg = "Combined activity file"
 			if ($IncludeUserInfo) { $csvModeMsg += " + separate EntraUsers file" }
+			if ($IncludeAgent365Info) { $csvModeMsg += " + separate Agents365 file" }
 			Write-Host "CSV export mode: $csvModeMsg" -ForegroundColor Cyan
 		} else {
 			# Default for live CSV: separate files per activity type
 			$csvModeMsg = "Separate activity files (one per activity type)"
 			if ($IncludeUserInfo) { $csvModeMsg += " + EntraUsers file" }
+			if ($IncludeAgent365Info) { $csvModeMsg += " + Agents365 file" }
 			Write-Host "CSV export mode: $csvModeMsg" -ForegroundColor Cyan
 		}
 	}
@@ -2025,6 +2461,102 @@ if ($OutputPath) {
 	}
 }
 
+# ============================================================================
+# REMOTE OUTPUT DESTINATION VALIDATION (-OutputPathSP / -OutputPathFabric)
+# ----------------------------------------------------------------------------
+# These two destinations are mutually exclusive with each other AND with an
+# explicit -OutputPath. When set, customer-visible artifacts are written to
+# the remote destination; the local OutputPath is internally redirected to a
+# temp scratch dir that is deleted on successful completion.
+# ============================================================================
+$script:RemoteOutputMode = 'None'   # 'None' | 'SharePoint' | 'Fabric'
+$script:RemoteOutputUrl  = $null
+$script:RemoteScratchDir = $null
+
+$remoteOutputCount = 0
+if ($PSBoundParameters.ContainsKey('OutputPathSP'))     { $remoteOutputCount++ }
+if ($PSBoundParameters.ContainsKey('OutputPathFabric')) { $remoteOutputCount++ }
+$customOutputPathBound = $PSBoundParameters.ContainsKey('OutputPath')
+
+if ($remoteOutputCount -gt 1) {
+	Write-Host "ERROR: -OutputPathSP and -OutputPathFabric are mutually exclusive." -ForegroundColor Red
+	Write-Host "       Choose ONE remote destination per run." -ForegroundColor Yellow
+	exit 1
+}
+if ($remoteOutputCount -eq 1 -and $customOutputPathBound) {
+	Write-Host "ERROR: -OutputPath cannot be combined with -OutputPathSP or -OutputPathFabric." -ForegroundColor Red
+	Write-Host "       Remote modes redirect output to the remote destination automatically;" -ForegroundColor Yellow
+	Write-Host "       a local scratch dir is used internally and deleted on success." -ForegroundColor Yellow
+	exit 1
+}
+
+if ($PSBoundParameters.ContainsKey('OutputPathSP')) {
+	# Accept ANY SharePoint URL: any sharepoint.* host (sharepoint.com / -df.com / .us /
+	# .de / .cn / -mil.us / etc.) and any site-collection prefix (/sites/, /teams/,
+	# /personal/, or none for root site). Library/folder path may contain spaces and
+	# any number of segments. We do not pre-validate the site prefix here -- Graph's
+	# site lookup is the authoritative check.
+	if ([string]::IsNullOrWhiteSpace($OutputPathSP) -or
+		$OutputPathSP -notmatch '^https?://[^/]+\.sharepoint(?:-df|-mil)?\.[a-z]{2,3}(?:/.+)?') {
+		Write-Host "ERROR: -OutputPathSP must be a SharePoint URL, e.g.:" -ForegroundColor Red
+		Write-Host "       https://<tenant>.sharepoint.com/sites/<site>/<library>[/<sub>]"      -ForegroundColor Yellow
+		Write-Host "       https://<tenant>.sharepoint.com/teams/<team>/<library>[/<sub>]"     -ForegroundColor Yellow
+		Write-Host "       https://<tenant>.sharepoint-df.com/teams/<team>/<library>[/<sub>]"  -ForegroundColor Yellow
+		Write-Host "       (any sharepoint.* host and any /sites/, /teams/, or /personal/ prefix is supported)" -ForegroundColor DarkGray
+		exit 1
+	}
+	$script:RemoteOutputMode = 'SharePoint'
+	$script:RemoteOutputUrl  = $OutputPathSP.TrimEnd('/')
+}
+if ($PSBoundParameters.ContainsKey('OutputPathFabric')) {
+	if ([string]::IsNullOrWhiteSpace($OutputPathFabric) -or
+		$OutputPathFabric -notmatch '^https://([a-z0-9-]+-)?onelake\.dfs\.fabric\.microsoft\.com/[^/]+/[^/]+\.(Lakehouse|Warehouse)/Files(/.*)?$') {
+		Write-Host "ERROR: -OutputPathFabric must look like:" -ForegroundColor Red
+		Write-Host "       https://onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Lakehouse/Files[/<path>]" -ForegroundColor Yellow
+		exit 1
+	}
+	$script:RemoteOutputMode = 'Fabric'
+	$script:RemoteOutputUrl  = $OutputPathFabric.TrimEnd('/')
+}
+
+# Replay/EOM modes are not supported with remote output.
+if ($script:RemoteOutputMode -ne 'None') {
+	$remoteBlockers = @()
+	if ($UseEOM)      { $remoteBlockers += '-UseEOM' }
+	if ($RAWInputCSV) { $remoteBlockers += '-RAWInputCSV' }
+	if ($remoteBlockers.Count -gt 0) {
+		Write-Host ("ERROR: Remote output (-OutputPathSP/-OutputPathFabric) is not supported with: {0}" -f ($remoteBlockers -join ', ')) -ForegroundColor Red
+		Write-Host "       These modes operate on existing files and have no remote-write story." -ForegroundColor Yellow
+		exit 1
+	}
+}
+
+# Runbook context: if a managed-identity environment is detected, require -Auth ManagedIdentity explicitly.
+if ($env:IDENTITY_ENDPOINT -and $Auth -ne 'ManagedIdentity') {
+	Write-Host "ERROR: Detected a managed-identity environment (IDENTITY_ENDPOINT is set) but -Auth is '$Auth'." -ForegroundColor Red
+	Write-Host "       Re-run with -Auth ManagedIdentity to use the assigned identity." -ForegroundColor Yellow
+	exit 1
+}
+
+# Redirect OutputPath to a per-run scratch dir under the OS temp folder when remote mode is active.
+# Done BEFORE any downstream code derives paths from $OutputPath.
+if ($script:RemoteOutputMode -ne 'None') {
+	$baseTemp = [System.IO.Path]::GetTempPath()
+	$script:RemoteScratchDir = Join-Path $baseTemp ("PAX_" + (Get-Date -Format 'yyyyMMdd_HHmmss'))
+	try {
+		New-Item -Path $script:RemoteScratchDir -ItemType Directory -Force | Out-Null
+	} catch {
+		Write-Host ("ERROR: Failed to create scratch directory '{0}': {1}" -f $script:RemoteScratchDir, $_.Exception.Message) -ForegroundColor Red
+		exit 1
+	}
+	$OutputPath = $script:RemoteScratchDir
+	$sep = [System.IO.Path]::DirectorySeparatorChar
+	if (-not $OutputPath.EndsWith($sep)) { $OutputPath = $OutputPath + $sep }
+	Write-Host ("INFO: Remote output mode '{0}' active." -f $script:RemoteOutputMode) -ForegroundColor Cyan
+	Write-Host ("INFO: Remote destination : {0}" -f $script:RemoteOutputUrl) -ForegroundColor Cyan
+	Write-Host ("INFO: Local scratch dir  : {0}" -f $OutputPath) -ForegroundColor Cyan
+}
+
 # Validate AppendFile is not used with EntraUsers export modes
 if ($AppendFile -and ($IncludeUserInfo -or $OnlyUserInfo)) {
 	Write-Host "ERROR: -AppendFile cannot be used with EntraUsers export modes" -ForegroundColor Red
@@ -2037,6 +2569,89 @@ if ($AppendFile -and ($IncludeUserInfo -or $OnlyUserInfo)) {
 	Write-Host "  1. Remove -IncludeUserInfo or -OnlyUserInfo to append activity data only" -ForegroundColor Green
 	Write-Host "  2. Run without -AppendFile to create new timestamped files" -ForegroundColor Green
 	exit 1
+}
+
+# ============================================================
+# AGENT 365 SWITCH VALIDATION
+# Validates -IncludeAgent365Info / -OnlyAgent365Info parameter
+# combinations and prints informational banners where the
+# Microsoft Graph Agent Package Management API endpoint
+# limitations require user awareness.
+# ============================================================
+
+# Mutually exclusive
+if ($IncludeAgent365Info -and $OnlyAgent365Info) {
+	Write-Host "ERROR: -IncludeAgent365Info and -OnlyAgent365Info are mutually exclusive." -ForegroundColor Red
+	Write-Host "  Use -IncludeAgent365Info to add agents data to a normal Purview run." -ForegroundColor Yellow
+	Write-Host "  Use -OnlyAgent365Info to skip the audit pull and produce only the agents CSV." -ForegroundColor Yellow
+	exit 1
+}
+
+# -OnlyAgent365Info conflicts with audit-implying switches
+if ($OnlyAgent365Info) {
+	$conflictingSwitches = @()
+	if ($IncludeM365Usage)            { $conflictingSwitches += '-IncludeM365Usage' }
+	if ($IncludeCopilotInteraction)   { $conflictingSwitches += '-IncludeCopilotInteraction' }
+	if ($IncludeDSPMForAI)            { $conflictingSwitches += '-IncludeDSPMForAI' }
+	if ($AgentsOnly)                  { $conflictingSwitches += '-AgentsOnly' }
+	if ($ExcludeAgents)               { $conflictingSwitches += '-ExcludeAgents' }
+	if ($CombineOutput)               { $conflictingSwitches += '-CombineOutput' }
+	if ($OnlyUserInfo)                { $conflictingSwitches += '-OnlyUserInfo' }
+	if ($AppendFile)                  { $conflictingSwitches += '-AppendFile' }
+	if ($conflictingSwitches.Count -gt 0) {
+		Write-Host "ERROR: -OnlyAgent365Info cannot be combined with: $($conflictingSwitches -join ', ')" -ForegroundColor Red
+		Write-Host "" -ForegroundColor Yellow
+		Write-Host "  -OnlyAgent365Info skips the Purview audit pull entirely. Switches that imply" -ForegroundColor Yellow
+		Write-Host "  audit retrieval (or another 'Only' mode) are not compatible with it." -ForegroundColor Yellow
+		Write-Host "" -ForegroundColor Yellow
+		Write-Host "  -IncludeUserInfo is allowed (produces EntraUsers CSV alongside Agent 365 CSV)." -ForegroundColor Green
+		exit 1
+	}
+}
+
+# -OnlyAgent365Info is incompatible with replay (-RAWInputCSV), EOM mode, and Resume
+# (it skips the audit phase entirely - nothing to checkpoint or resume from).
+# -IncludeAgent365Info IS compatible with -Resume: the audit phase resumes from the
+# checkpoint and Agent 365 enrichment runs at end of run as it would have originally.
+if (($IncludeAgent365Info -or $OnlyAgent365Info)) {
+	$incompatModeSwitches = @()
+	if ($RAWInputCSV)     { $incompatModeSwitches += '-RAWInputCSV (replay mode)' }
+	if ($UseEOM)          { $incompatModeSwitches += '-UseEOM (Exchange Online Management mode)' }
+	if ($ResumeSpecified -and $OnlyAgent365Info) { $incompatModeSwitches += '-Resume' }
+	if ($incompatModeSwitches.Count -gt 0) {
+		$activeAgentSwitch = if ($OnlyAgent365Info) { '-OnlyAgent365Info' } else { '-IncludeAgent365Info' }
+		Write-Host "ERROR: $activeAgentSwitch is not supported with: $($incompatModeSwitches -join ', ')" -ForegroundColor Red
+		Write-Host "" -ForegroundColor Yellow
+		Write-Host "  Agent 365 enrichment requires a fresh live Microsoft Graph context and runs" -ForegroundColor Yellow
+		Write-Host "  end-to-end as a single pass. It is not compatible with replay/EOM/Resume modes." -ForegroundColor Yellow
+		exit 1
+	}
+}
+
+# -OnlyAgent365Info + -Auth AppRegistration: rejected with informational banner
+# Microsoft Graph Agent Package Management API does not support app-only application
+# permissions; it requires the AI Admin or Global Admin directory role (user-assignable only).
+if ($OnlyAgent365Info -and $Auth -eq 'AppRegistration') {
+	Write-Host ""
+	Write-Host "+----------------------------------------------------------------------+" -ForegroundColor Cyan
+	Write-Host "|  -OnlyAgent365Info is incompatible with -Auth AppRegistration        |" -ForegroundColor Cyan
+	Write-Host "+----------------------------------------------------------------------+" -ForegroundColor Cyan
+	Write-Host "|  The Microsoft Graph endpoint for Agent 365 data (Agent Package      |" -ForegroundColor Cyan
+	Write-Host "|  Management API) does not currently support app-only application    |" -ForegroundColor Cyan
+	Write-Host "|  permissions. It requires the AI Admin or Global Admin directory    |" -ForegroundColor Cyan
+	Write-Host "|  directory role, which can only be held by a signed-in user.        |" -ForegroundColor Cyan
+	Write-Host "|                                                                      |" -ForegroundColor Cyan
+	Write-Host "|  Re-run with one of the supported interactive auth modes:            |" -ForegroundColor Cyan
+	Write-Host "|      -Auth WebLogin     (default)                                    |" -ForegroundColor Cyan
+	Write-Host "|      -Auth DeviceCode                                                |" -ForegroundColor Cyan
+	Write-Host "|      -Auth Credential                                                |" -ForegroundColor Cyan
+	Write-Host "|      -Auth Silent                                                    |" -ForegroundColor Cyan
+	Write-Host "|                                                                      |" -ForegroundColor Cyan
+	Write-Host "|  Reference:                                                          |" -ForegroundColor Cyan
+	Write-Host "|  https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api|" -ForegroundColor Cyan
+	Write-Host "+----------------------------------------------------------------------+" -ForegroundColor Cyan
+	Write-Host ""
+	exit 0
 }
 
 # Validate AppendFile has proper filename format
@@ -2166,6 +2781,40 @@ if ($ExcludeCopilotInteraction -and ($explicitInclude -or $explicitIncludeViaSwi
 }
 
 # ==============================================
+# -OnlyAgent365Info preflight (Y/N, default Y)
+# ==============================================
+# Without -IncludeAgent365Info, audit-derived columns will be blank in the
+# Agent 365 CSV (Date created / Created by). Confirm the user wants to proceed.
+# -Force auto-continues without prompting.
+if ($OnlyAgent365Info) {
+	Write-Host ""
+	Write-Host "+----------------------------------------------------------------------+" -ForegroundColor Yellow
+	Write-Host "|  -OnlyAgent365Info: Audit-log enrichment will be SKIPPED             |" -ForegroundColor Yellow
+	Write-Host "+----------------------------------------------------------------------+" -ForegroundColor Yellow
+	Write-Host "|  These Agent 365 columns CANNOT be populated without Purview audit  |" -ForegroundColor Yellow
+	Write-Host "|  data and will be left blank in this run:                            |" -ForegroundColor Yellow
+	Write-Host "|                                                                      |" -ForegroundColor Yellow
+	Write-Host "|       - Date created                                                 |" -ForegroundColor Yellow
+	Write-Host "|       - Created by                                                   |" -ForegroundColor Yellow
+	Write-Host "|                                                                      |" -ForegroundColor Yellow
+	Write-Host "|  To populate them, re-run with -IncludeAgent365Info instead.         |" -ForegroundColor Yellow
+	Write-Host "+----------------------------------------------------------------------+" -ForegroundColor Yellow
+	Write-Host ""
+	if ($Force) {
+		Write-Host "  -Force specified: continuing without prompt." -ForegroundColor DarkGray
+		Write-Host ""
+	} else {
+		$resp = Read-Host "  Continue with -OnlyAgent365Info anyway? (Y/N) [default Y]"
+		if ([string]::IsNullOrWhiteSpace($resp)) { $resp = 'Y' }
+		if ($resp -notmatch '^(?i:y|yes)$') {
+			Write-Host "  Aborted by user." -ForegroundColor Red
+			exit 0
+		}
+		Write-Host ""
+	}
+}
+
+# ==============================================
 # ImportExcel Module Check (for Excel export)
 # ==============================================
 
@@ -2223,28 +2872,40 @@ if ($ExportWorkbook) {
 
 # --- Early parameter validation & environment sanity checks ---
 
-# PowerShell 5.1 requires -UseEOM mode (Graph API mode requires PS 7+ for ThreadJob parallelism)
-if ($PSVersionTable.PSVersion.Major -lt 7 -and -not $UseEOM -and -not $RAWInputCSV -and -not $Resume) {
+# PowerShell version gate.
+# The entire script requires PowerShell 7+ (pwsh.exe). The ONLY exception is -UseEOM
+# (which uses Exchange Online Management and runs on Windows PowerShell 5.1 / powershell.exe).
+# All other modes — including -RAWInputCSV and -Resume — require pwsh.exe because they
+# depend on PS 7-only features (ThreadJob parallelism, ForEach-Object -Parallel, JSON
+# parsing performance).
+if ($PSVersionTable.PSVersion.Major -lt 7 -and -not $UseEOM) {
 	Write-Host "" -ForegroundColor Red
 	Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
-	Write-Host "  ERROR: PowerShell 5.1 Detected - Graph API Mode Not Supported" -ForegroundColor Red
+	Write-Host "  ERROR: PowerShell 7+ Required (pwsh.exe)" -ForegroundColor Red
 	Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
 	Write-Host ""
-	Write-Host "  The default Microsoft Graph API mode requires PowerShell 7+ for parallel query execution." -ForegroundColor Yellow
-	Write-Host "  PowerShell 5.1 is supported, but requires -UseEOM (Exchange Online Management) mode." -ForegroundColor Yellow
+	Write-Host "  Detected: PowerShell $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))" -ForegroundColor Yellow
+	Write-Host "  Required: PowerShell 7.0 or later (pwsh.exe)" -ForegroundColor Yellow
 	Write-Host ""
-	Write-Host "  SOLUTION: Add the -UseEOM switch to your command:" -ForegroundColor Cyan
+	Write-Host "  PAX requires PowerShell 7+ for Microsoft Graph API mode, parallel query" -ForegroundColor White
+	Write-Host "  execution, JSON streaming performance, and post-processing features." -ForegroundColor White
+	Write-Host "  Windows PowerShell 5.1 (powershell.exe) is ONLY supported when running with" -ForegroundColor White
+	Write-Host "  the -UseEOM switch (Exchange Online Management mode)." -ForegroundColor White
 	Write-Host ""
-	Write-Host "    .\PAX_Purview_Audit_Log_Processor.ps1 -UseEOM [your other parameters]" -ForegroundColor White
+	Write-Host "  SOLUTIONS:" -ForegroundColor Cyan
 	Write-Host ""
-	Write-Host "  OR upgrade to PowerShell 7+ for Graph API mode (recommended for performance):" -ForegroundColor Cyan
-	Write-Host "    https://aka.ms/powershell" -ForegroundColor White
+	Write-Host "    1. Recommended: Install PowerShell 7+ and re-run with pwsh.exe:" -ForegroundColor White
+	Write-Host "         https://aka.ms/powershell" -ForegroundColor Gray
+	Write-Host "         pwsh.exe -File .\PAX_Purview_Audit_Log_Processor.ps1 [your parameters]" -ForegroundColor Gray
+	Write-Host ""
+	Write-Host "    2. Or run in EOM mode on Windows PowerShell 5.1 by adding -UseEOM:" -ForegroundColor White
+	Write-Host "         .\PAX_Purview_Audit_Log_Processor.ps1 -UseEOM [your other parameters]" -ForegroundColor Gray
 	Write-Host ""
 	Write-Host "  EOM MODE NOTES:" -ForegroundColor DarkCyan
 	Write-Host "    - Uses Search-UnifiedAuditLog cmdlet (serial processing)" -ForegroundColor Gray
 	Write-Host "    - Requires Exchange Online Management module" -ForegroundColor Gray
 	Write-Host "    - Requires Exchange Admin role or audit log read permissions" -ForegroundColor Gray
-	Write-Host "    - Some features (Entra user enrichment) not available in EOM mode" -ForegroundColor Gray
+	Write-Host "    - Some features (Entra user enrichment, rollup post-processing) not available" -ForegroundColor Gray
 	Write-Host ""
 	Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
 	exit 1
@@ -2257,6 +2918,4455 @@ if ($ExcludeAgents -and ($AgentId -or $AgentsOnly)) {
 	Write-Host "  -ExcludeAgents: Filter to ONLY records without agents" -ForegroundColor Yellow
 	Write-Host "Please use only one filtering approach and re-run." -ForegroundColor Yellow
 	exit 1
+}
+
+# ============================================================================
+# Rollup post-processor gating
+# ============================================================================
+# Validates -Rollup / -RollupPlusRaw against incompatible switches and
+# determines which embedded Python processor will be invoked at end-of-run.
+# Runs early so failures are surfaced BEFORE any Graph API calls or auth.
+#
+# Sets $script:RollupProcessorMode to one of:
+#   'None'                - rollup not requested
+#   'CopilotInteraction'  - run Purview_CopilotInteraction_Processor (needs Purview CSV + Entra CSV)
+#   'M365Bundle'          - run Purview_M365_Usage_Bundle_Explosion_Processor (needs Purview CSV only)
+# ============================================================================
+$script:RollupProcessorMode = 'None'
+if ($Rollup -or $RollupPlusRaw) {
+	# Mutually exclusive
+	if ($Rollup -and $RollupPlusRaw) {
+		Write-Host "ERROR: -Rollup and -RollupPlusRaw are mutually exclusive. Pick one." -ForegroundColor Red
+		Write-Host "  -Rollup         : produce ONLY rolled-up CSV(s); raw CSV(s) deleted on success." -ForegroundColor Yellow
+		Write-Host "  -RollupPlusRaw  : produce BOTH the raw CSV(s) AND the rolled-up CSV(s)." -ForegroundColor Yellow
+		exit 1
+	}
+
+	$rollupSwitchName = if ($Rollup) { '-Rollup' } else { '-RollupPlusRaw' }
+	$rollupBlockers = @()
+	if ($UseEOM)              { $rollupBlockers += '-UseEOM' }
+	if ($ExportWorkbook)      { $rollupBlockers += '-ExportWorkbook' }
+	if ($OnlyUserInfo)        { $rollupBlockers += '-OnlyUserInfo' }
+	if ($OnlyAgent365Info)    { $rollupBlockers += '-OnlyAgent365Info' }
+	if ($IncludeDSPMForAI)    { $rollupBlockers += '-IncludeDSPMForAI' }
+	if ($RAWInputCSV)         { $rollupBlockers += '-RAWInputCSV' }
+	if ($AppendFile)          { $rollupBlockers += '-AppendFile' }
+	if ($ExcludeCopilotInteraction -and -not $IncludeM365Usage) { $rollupBlockers += '-ExcludeCopilotInteraction' }
+
+	if ($rollupBlockers.Count -gt 0) {
+		Write-Host "ERROR: $rollupSwitchName is not supported with the following switch(es): $($rollupBlockers -join ', ')" -ForegroundColor Red
+		Write-Host "" -ForegroundColor Yellow
+		Write-Host "  $rollupSwitchName runs an embedded Python post-processor at the end of the run." -ForegroundColor Yellow
+		Write-Host "  It is only valid for the default CopilotInteraction-only run, an explicit" -ForegroundColor Yellow
+		Write-Host "  -ActivityTypes 'CopilotInteraction' run, or an -IncludeM365Usage run." -ForegroundColor Yellow
+		Write-Host "" -ForegroundColor Yellow
+		Write-Host "  Remove the conflicting switch(es) and re-run." -ForegroundColor Yellow
+		exit 1
+	}
+
+	# Determine processor mode based on requested activity types.
+	# Bind-time logic (mirrors the activity-type finalization that happens later):
+	#   - If -IncludeM365Usage is set, mode is M365Bundle.
+	#   - Else if user did NOT pass -ActivityTypes (default is CopilotInteraction), mode is CopilotInteraction.
+	#   - Else if user passed -ActivityTypes containing exactly the single value 'CopilotInteraction'
+	#     (case-insensitive), mode is CopilotInteraction.
+	#   - Otherwise: hard-fail (rollup is not defined for arbitrary activity-type combinations).
+	if ($IncludeM365Usage) {
+		$script:RollupProcessorMode = 'M365Bundle'
+	}
+	else {
+		$userPassedActivityTypes = $PSBoundParameters.ContainsKey('ActivityTypes')
+		$normalizedActivity = @()
+		if ($userPassedActivityTypes -and $ActivityTypes) {
+			$normalizedActivity = @($ActivityTypes | Where-Object { $_ } | ForEach-Object { $_.Trim() })
+		}
+		$isCopilotOnly = (-not $userPassedActivityTypes) -or
+			($normalizedActivity.Count -eq 1 -and $normalizedActivity[0] -ieq 'CopilotInteraction')
+
+		if ($isCopilotOnly) {
+			$script:RollupProcessorMode = 'CopilotInteraction'
+		}
+		else {
+			Write-Host "ERROR: $rollupSwitchName is only valid for CopilotInteraction-only runs or -IncludeM365Usage runs." -ForegroundColor Red
+			Write-Host "  Detected -ActivityTypes: $($normalizedActivity -join ', ')" -ForegroundColor Yellow
+			Write-Host "  Remove $rollupSwitchName, or restrict -ActivityTypes to 'CopilotInteraction', or use -IncludeM365Usage." -ForegroundColor Yellow
+			exit 1
+		}
+	}
+
+	# CopilotInteraction-mode rollup requires the Entra users CSV for the second processor input.
+	# Auto-enable -IncludeUserInfo if not already set (single info message; do not prompt).
+	if ($script:RollupProcessorMode -eq 'CopilotInteraction' -and -not $IncludeUserInfo) {
+		$IncludeUserInfo = [System.Management.Automation.SwitchParameter]::new($true)
+		Write-Host "INFO: $rollupSwitchName (CopilotInteraction mode) auto-enabled -IncludeUserInfo (Entra users CSV is required by the post-processor)." -ForegroundColor Cyan
+	}
+
+	# Rollup requires a single combined Purview CSV; auto-enable -CombineOutput when missing.
+	if (-not $CombineOutput) {
+		$CombineOutput = [System.Management.Automation.SwitchParameter]::new($true)
+		Write-Host "INFO: $rollupSwitchName auto-enabled -CombineOutput (rollup post-processor requires a single combined Purview CSV)." -ForegroundColor Cyan
+	}
+}
+
+# ============================================================================
+# EMBEDDED PYTHON POST-PROCESSORS
+# ============================================================================
+# Two Python source files are embedded verbatim as single-quoted here-strings
+# so the script is fully self-contained — no external .py files are required
+# at runtime. When -Rollup or -RollupPlusRaw is used, the relevant body is
+# materialized to a temp .py inside .pax_incremental, executed with the
+# resolved Python interpreter, and deleted in finally. Single-quoted here-
+# strings prevent any PowerShell variable expansion of the Python source.
+# ============================================================================
+$Script:EMBEDDED_PROCESSOR_COPILOT_VERSION = '3.0.0'
+$Script:EMBEDDED_PROCESSOR_M365_VERSION    = '2.1.0'
+
+# >>> BEGIN-EMBEDDED-COPILOT-PROCESSOR
+$Script:EMBEDDED_PROCESSOR_COPILOT = @'
+#!/usr/bin/env python3
+"""
+Purview CopilotInteraction Processor v3.0.0
+-------------------------------------------
+Two-input / two-output preprocessor for the AI Business Value Dashboard
+and AI-in-One Rollup PBIPs.
+
+Inputs:
+    --purview <raw Purview audit log CSV>     (required)
+    --entra   <Entra users CSV w/ licensing>  (required)
+
+Outputs (in --out-dir, default = directory of --purview):
+    <purview_stem>_Interactions_<YYYYMMDD_HHMMSS>.csv   (fact table)
+    <entra_stem>_Users_<YYYYMMDD_HHMMSS>.csv            (dim table)
+
+Grain (Option D):
+    One row per (16-column grain x Message_Id). DAX measures use
+    DISTINCTCOUNT(Message_Id) which yields exact BEFORE-PBIP parity at
+    every visual / slicer combination. Replaces the v3.0.0 PromptCount
+    grain (which inflated counts by ~2.25x via per-resource explosion).
+
+INT-surrogated columns (perf):
+    Message_Id, ThreadId, and UserKey (replaces Audit_UserId) are emitted
+    as 1-based INTs assigned in input encounter order. Cuts CSV size,
+    parse time, AND VertiPaq dictionary build time on the three highest-
+    cardinality GUID columns. UserKey is written to BOTH the fact CSV
+    and the Users dim CSV (same shared map keyed on normalized UPN), so
+    the fact↔Users relationship is INT-to-INT. DISTINCTCOUNT semantics
+    are identical between INT and string surrogates of the same set.
+    UserMonthKey stays string (cross-processor blast radius).
+
+Calc cols ported from DAX -> precomputed here for ingestion-time speedup:
+    Agent_TitleID, Behavior_Source, Value_Outcome, ActivityDate
+    (= InteractionDate alias).
+
+Stays in DAX (cross-table dependencies that cannot be precomputed without
+shipping Agents 365 / UserMonthMetrics / AgentMetrics into the processor):
+    Behavior_Enriched_Full (RELATED Agents 365),
+    User_Stage_Maturity / User_Stage (RELATED UserMonthMetrics),
+    Usage_Mode, Expertise_Role, Efficiency_Breakdown
+    (all depend on Behavior_Enriched_Full),
+    Agent Last Used Date (LOOKUPVALUE AgentMetrics).
+
+Requirements:
+    Python 3.9+
+    pip install orjson   (OPTIONAL - faster JSON parsing; falls back to stdlib json)
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import functools
+import os
+import re
+import sys
+import time
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+
+# Ensure stdout/stderr can emit non-ASCII characters (e.g., arrows) on Windows
+# consoles defaulting to cp1252. Safe no-op on already-UTF-8 streams.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+try:
+    import orjson
+
+    def json_loads(value: str | bytes) -> Any:
+        if isinstance(value, str):
+            value = value.encode("utf-8")
+        return orjson.loads(value)
+
+    _JSON_ENGINE = "orjson"
+except ImportError:
+    import json as _json
+
+    def json_loads(value: str | bytes) -> Any:
+        if isinstance(value, bytes):
+            value = value.decode("utf-8")
+        return _json.loads(value)
+
+    _JSON_ENGINE = "json (stdlib)"
+
+
+SCRIPT_VERSION = "3.0.0"
+
+# ---------------------------------------------------------------------------
+# Output schemas
+# ---------------------------------------------------------------------------
+
+# Grain keys used for rollup groupby. Mirrors the slicer/filter dimensions
+# that any AIO or AIBV BEFORE PBIP visual binds to. AccessedResource_*,
+# CreationDate, Resource_Count, etc. are NOT in the grain because they are
+# either per-resource (would fan rows back out and break parity) or
+# derivable / per-prompt-only.
+GRAIN_KEYS: tuple[str, ...] = (
+    "UserKey",
+    "InteractionDate",
+    "AgentId",
+    "AgentName",
+    "AppHost",
+    "Environment",
+    "License Status",
+    "Context_Type",
+    "Behavior_Category",
+    "Behavior_Enriched",
+    "AI_Model",
+    "Is_Sensitive",
+    "Autonomy_Pattern",
+    "AppIdentity_AppId",
+    "AISystemPlugin_Name",
+    "ThreadId",
+)
+
+# Per-(grain x Message_Id) attributes carried through to the output row.
+# Some are constant per Message_Id (CreationDate, Has license, Agent_TitleID,
+# WeekStart/MonthStart/UserMonthKey, AppIdentity_DisplayName, ModelName,
+# AISystemPlugin_Id, Audit_UserId_Normalized); a few may vary across the
+# resources collapsed into one row (SensitivityLabelId, AccessedResource_*)
+# for which last-resource-wins is the deterministic choice — same semantic
+# as the prior dict-overwrite behavior.
+_NONGRAIN_ATTRS: tuple[str, ...] = (
+    "CreationDate",
+    "WeekStart",
+    "MonthStart",
+    "UserMonthKey",
+    "Has license",
+    "Resource_Count",
+    "SensitivityLabelId",
+    "AccessedResource_Type",
+    "AccessedResource_Action",
+    "AccessedResource_SiteUrl",
+    "AccessedResource_SensitivityLabelId",
+    "AppIdentity_DisplayName",
+    "AISystemPlugin_Id",
+    "ModelTransparencyDetails_ModelName",
+    "Agent_TitleID",
+    "Message_isPrompt",
+    # Calc cols ported from DAX
+    "Behavior_Source",
+    "Value_Outcome",
+    "ActivityDate",
+)
+
+# Final fact CSV schema. One row per (grain x Message_Id). Message_Id is
+# emitted as a sequential INT surrogate (1-based, assigned in input order).
+FACT_HEADER: list[str] = list(GRAIN_KEYS) + ["Message_Id"] + list(_NONGRAIN_ATTRS)
+
+# Entra column-name aliases used by the existing PBIP M-code. We mirror the
+# same renaming so the dim CSV is drop-in compatible with all downstream DAX.
+UPN_VARIANTS_NORMALIZED = {"userprincipalname", "upn", "personid"}
+DEPARTMENT_VARIANT_NORMALIZED = "department"
+JOBTITLE_RAW_NAME = "jobTitle"  # exact-match rename to "JobTitle"
+HAS_LICENSE_VARIANTS = (
+    "Has license",
+    "Has License",
+    "hasLicense",
+    "HasLicense",
+    "Has Copilot License",
+    "Has Copilot license",
+    "HasCopilotLicense",
+    "Has Copilot License Assigned",
+    "Has Copilot license assigned",
+    "isUser",
+)
+
+# ---------------------------------------------------------------------------
+# Datetime helpers
+# ---------------------------------------------------------------------------
+
+_CREATION_TIME_FORMATS: tuple[str, ...] = (
+    "%Y-%m-%dT%H:%M:%S.%fZ",
+    "%Y-%m-%dT%H:%M:%SZ",
+    "%Y-%m-%dT%H:%M:%S.%f",
+    "%Y-%m-%dT%H:%M:%S",
+    "%m/%d/%Y %I:%M:%S %p",
+    "%m/%d/%Y %H:%M:%S",
+)
+
+
+def safe_get(obj: Any, key: str) -> Any:
+    if obj is None:
+        return None
+    if isinstance(obj, dict):
+        return obj.get(key)
+    return getattr(obj, key, None)
+
+
+def get_array(obj: Any, key: str) -> list[Any]:
+    value = safe_get(obj, key)
+    return value if isinstance(value, list) else []
+
+
+def to_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    return str(value)
+
+
+def normalize_user_id(value: Any) -> str:
+    return to_text(value).strip().lower()
+
+
+def parse_creation_time(value: Any) -> datetime | None:
+    raw = to_text(value).strip()
+    if not raw:
+        return None
+    return _parse_creation_time_cached(raw)
+
+
+@functools.lru_cache(maxsize=None)
+def _parse_creation_time_cached(raw: str) -> datetime | None:
+    # Fast path: ISO 8601 (covers ~100% of Purview audit timestamps).
+    # datetime.fromisoformat is ~10x faster than strptime and avoids the
+    # locale lookup that strptime performs on every call. Python 3.11+
+    # accepts a trailing "Z"; for 3.10 and earlier we strip it.
+    try:
+        if raw.endswith("Z"):
+            try:
+                return datetime.fromisoformat(raw)
+            except ValueError:
+                return datetime.fromisoformat(raw[:-1])
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        pass
+    # Slow path: legacy non-ISO formats kept for backwards compat with
+    # older / hand-edited audit exports.
+    for fmt in _CREATION_TIME_FORMATS:
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def format_creation_date(value: Any) -> str:
+    parsed = parse_creation_time(value)
+    if parsed is None:
+        raw = to_text(value).strip()
+        if len(raw) >= 10 and raw[4:5] == "-":
+            return raw[:10] + "T00:00:00.000Z"
+        return raw
+    return parsed.replace(tzinfo=timezone.utc).strftime("%Y-%m-%dT00:00:00.000Z")
+
+
+def interaction_date(parsed: datetime | None) -> str:
+    return parsed.strftime("%Y-%m-%d") if parsed else ""
+
+
+def week_start(parsed: datetime | None) -> str:
+    if parsed is None:
+        return ""
+    return (parsed - timedelta(days=parsed.weekday())).strftime("%Y-%m-%d")
+
+
+def month_start(parsed: datetime | None) -> str:
+    if parsed is None:
+        return ""
+    return parsed.replace(day=1).strftime("%Y-%m-%d")
+
+
+# Cached bundle: given a raw timestamp string, return all 4 derived date
+# strings in one shot. Avoids 4x strftime + tzinfo replace per record. The
+# distinct raw-timestamp count in a typical dataset is small relative to
+# input row count (many records share the same audit timestamp at the
+# second granularity), so this collapses ~4N strftime calls to ~K where
+# K is the distinct timestamp count.
+@functools.lru_cache(maxsize=None)
+def _date_strings_for_raw(raw: str) -> tuple[str, str, str, str]:
+    """
+    Returns (creation_date_iso_z, interaction_date, week_start, month_start)
+    for the given raw timestamp string. Empty string is returned for any
+    field that cannot be derived (matches non-cached helper semantics).
+    """
+    if not raw:
+        return ("", "", "", "")
+    parsed = _parse_creation_time_cached(raw)
+    if parsed is None:
+        if len(raw) >= 10 and raw[4:5] == "-":
+            return (raw[:10] + "T00:00:00.000Z", "", "", "")
+        return (raw, "", "", "")
+    # Direct f-string formatting is ~10x faster than strftime (which does
+    # locale lookup + format-string parsing on every call). Output bytes
+    # are byte-identical to the prior strftime("%Y-%m-%d") output for any
+    # year in [1000, 9999] (CreationTime range).
+    y = parsed.year
+    m = parsed.month
+    d = parsed.day
+    creation = f"{y:04d}-{m:02d}-{d:02d}T00:00:00.000Z"
+    interaction = f"{y:04d}-{m:02d}-{d:02d}"
+    # Week start (Monday-based, mirroring strftime((parsed-weekday).strftime))
+    ws = parsed - timedelta(days=parsed.weekday())
+    week = f"{ws.year:04d}-{ws.month:02d}-{ws.day:02d}"
+    month = f"{y:04d}-{m:02d}-01"
+    return (creation, interaction, week, month)
+
+
+def slugify(value: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", value.strip())
+    return slug.strip("-")
+
+
+# ---------------------------------------------------------------------------
+# Audit JSON shaping
+# ---------------------------------------------------------------------------
+
+
+def app_identity_values(audit_data: dict[str, Any]) -> tuple[str, str]:
+    app_identity = safe_get(audit_data, "AppIdentity")
+    if isinstance(app_identity, str):
+        return "", app_identity
+    if isinstance(app_identity, dict):
+        return (
+            to_text(safe_get(app_identity, "AppId")),
+            to_text(safe_get(app_identity, "DisplayName")),
+        )
+    return "", ""
+
+
+def derive_agent_name(agent_name: Any, app_identity_display: str, app_identity_app_id: str) -> str:
+    # Match the BEFORE PBIP behavior: AgentName comes straight from the audit JSON.
+    # Do NOT synthesize from AppIdentity when it's blank — that fabricates distinct
+    # agent identities (e.g. "Copilot-Studio-Default-<tenantGuid>-<agentGuid>") that
+    # don't exist in the raw data and inflate Active Agents / per-agent rollups.
+    return to_text(agent_name).strip()
+
+
+def derive_agent_title_id(agent_id: Any) -> str:
+    agent_id_text = to_text(agent_id).strip()
+    if not agent_id_text:
+        return ""
+    return agent_id_text.rsplit(".", 1)[-1]
+
+
+def first_dict_item(items: list[Any]) -> dict[str, Any]:
+    for item in items:
+        if isinstance(item, dict):
+            return item
+    return {}
+
+
+def prompt_messages(ced: dict[str, Any]) -> list[dict[str, Any]]:
+    prompts: list[dict[str, Any]] = []
+    for message in get_array(ced, "Messages"):
+        if isinstance(message, dict) and message.get("isPrompt") is True:
+            prompts.append(message)
+    return prompts
+
+
+def resource_rows(ced: dict[str, Any]) -> list[dict[str, Any]]:
+    resources = [item for item in get_array(ced, "AccessedResources") if isinstance(item, dict)]
+    return resources if resources else [{}]
+
+
+def is_copilot_interaction(audit_data: dict[str, Any], raw_row: dict[str, Any]) -> bool:
+    operation = to_text(
+        safe_get(audit_data, "Operation")
+        or raw_row.get("Operation")
+        or raw_row.get("Operations")
+    ).strip()
+    return operation == "CopilotInteraction"
+
+
+# ---------------------------------------------------------------------------
+# Classification logic (ports of the PBIP DAX calc columns)
+# ---------------------------------------------------------------------------
+
+_LICENSE_TRUTHY = {"YES", "TRUE", "Y", "1"}
+_ACTIVE_RES_ACTION_TOKENS = ("send", "draft", "create", "post", "invoke", "write", "patch", "execute")
+
+
+def normalize_has_license(raw: str) -> str:
+    """Normalize any truthy/falsy variant to canonical 'TRUE' / 'FALSE'.
+
+    Existing PBIP measures filter with literal `[Has license] = "FALSE"`, so
+    we canonicalize here to guarantee those filters match regardless of how
+    the upstream Entra/PAX export rendered the value.
+    """
+    val = (raw or "").strip().upper()
+    if val in _LICENSE_TRUTHY:
+        return "TRUE"
+    if val in {"NO", "FALSE", "N", "0"}:
+        return "FALSE"
+    return "FALSE"
+
+
+@functools.lru_cache(maxsize=None)
+def compute_license_status(has_license_raw: str) -> str:
+    val = (has_license_raw or "").strip().upper()
+    return "M365 Copilot Licensed" if val in _LICENSE_TRUTHY else "Unlicensed"
+
+
+@functools.lru_cache(maxsize=None)
+def compute_environment(has_license_raw: str, agent_name: str, agent_id: str, app_host: str) -> str:
+    host = (app_host or "").lower()
+    has_agent = bool((agent_name or "").strip()) or bool((agent_id or "").strip())
+    license_val = (has_license_raw or "").strip().upper()
+    if host in {"autonomous", "logic app"}:
+        return "Autonomous Agent"
+    if "cowork" in host:
+        return "Cowork"
+    if has_agent:
+        return "Agents"
+    if license_val in _LICENSE_TRUTHY:
+        return "Licensed M365 Copilot"
+    return "Unlicensed Chat"
+
+
+@functools.lru_cache(maxsize=None)
+def compute_is_sensitive(sens_label: str, resource_sens_label: str) -> str:
+    return "TRUE" if (sens_label or "").strip() or (resource_sens_label or "").strip() else "FALSE"
+
+
+@functools.lru_cache(maxsize=None)
+def compute_ai_model(model_name: str) -> str:
+    m = (model_name or "").upper()
+    if not m or m == "NULL":
+        return "Embedded App (no model logged)"
+    if "DEEP_LEO" in m:
+        return "GPT-4 (Standard)"
+    if "REASONING" in m:
+        return "Reasoning Model (o1/o3)"
+    if "OFFENSIVE" in m:
+        return "Safety Filter (blocked)"
+    if "GPT-41" in m or "GPT-4.1" in m:
+        return "GPT-4.1 (Next Gen)"
+    if "O3-MINI" in m or "O3MINI" in m:
+        return "o3-mini (Reasoning)"
+    if "O3" in m or "O1" in m:
+        return "Reasoning Model (o-series)"
+    if "GPT-5" in m or "GPT5" in m:
+        return "GPT-5 (Next Gen)"
+    if "CLAUDE" in m:
+        return "Claude (Anthropic)"
+    if "GEMINI" in m:
+        return "Gemini (Google)"
+    if "LLAMA" in m or "META" in m:
+        return "LLaMA (Meta)"
+    if "PHI" in m:
+        return "Phi (Microsoft Small Model)"
+    return model_name or ""
+
+
+def _resource_behavior(
+    res_type: str, res_action: str, site_url: str, is_active: bool
+) -> str:
+    if res_action in {"sendemailv2", "draftemail", "senddraftemail", "updatedraftemail"}:
+        return "Email Drafting"
+    if res_type == "emailmessage":
+        return "Email Drafting" if is_active else "Email Summarising"
+    if res_action == "mcp_meetingmanagement":
+        return "Meeting Scheduling"
+    if res_type in {"event", "teamsmeeting"}:
+        return "Meeting Prep"
+    if res_action in {"postmessagetoconversation", "createchat"}:
+        return "Teams Messaging"
+    if res_type in {"teamsmessage", "teamschat", "teamschannel"}:
+        return "Teams Messaging"
+    if res_type in {"flow", "connector", "http"}:
+        return "Workflow Execution"
+    if res_action in {"executedatasetquery", "getitems", "getalltables", "gettableviews"}:
+        return "Data Querying"
+    if res_type in {"xlsx", "csv", "xlsm", "xlsb", "xls"}:
+        return "Excel Assistance" if is_active else "Spreadsheet Review"
+    if res_type == "peopleinferenceanswer":
+        return "People Lookup"
+    if res_type in {"listitem", "aspx"}:
+        return "Enterprise Searching"
+    if res_type == "websearchquery":
+        return "Web Searching"
+    if res_type == "pdf":
+        return "PDF Analysis"
+    if res_type in {"py", "js", "java", "tsx", "jsx", "css", "php", "sh"} and is_active:
+        return "Code Writing"
+    if res_type in {"py", "sql", "js", "java", "json", "xml", "html", "yaml", "yml", "txt"}:
+        return "Code Analysis"
+    if res_type in {"png", "jpg", "jpeg", "svg", "gif"} and is_active:
+        return "Image Generation"
+    if res_type in {"png", "jpg", "jpeg", "gif"}:
+        return "Image / Media Analysis"
+    if res_type in {"streamvideo", "mp4", "mov", "webm", "mkv"}:
+        return "Video Summarising"
+    if res_type in {"planid", "taskids"}:
+        return "Task Management"
+    if res_type == "looppage":
+        return "Real-time Collaboration"
+    if res_type == "http://schema.skype.com/hyperlink":
+        for token in ("github.com", "stackoverflow.com", "npmjs.com", "pypi.org", "docker.com", "kubernetes.io", "leetcode.com"):
+            if token in site_url:
+                return "Code Analysis"
+        for token in ("learning.cloud.microsoft", "coursera.org", "udemy.com"):
+            if token in site_url:
+                return "Agent: Coaching"
+        if "sharepoint.com" in site_url:
+            return "Enterprise Searching"
+        return "Web Searching"
+    if res_type in {"external", "http"}:
+        return "Web Searching"
+    if res_type in {"docx", "doc", "rtf"}:
+        if is_active:
+            return "Document Drafting"
+        if res_action == "read":
+            return "File Retrieval"
+        return "Document Summarising"
+    if res_type in {"pptx", "ppt", "potx"}:
+        if is_active:
+            return "Presentation Creation"
+        if res_action == "read":
+            return "File Retrieval"
+        return "Presentation Summarising"
+    if "service-now.com" in site_url or "servicenow.com" in site_url:
+        return "Agent: IT & Service Desk"
+    if "dynamics.com" in site_url:
+        return "Agent: Sales & Customer"
+    return ""
+
+
+def _context_behavior(app_host: str, ctx_type: str, is_active: bool) -> str:
+    if ctx_type == "teamsmeeting":
+        return "Meeting Prep"
+    if ctx_type == "streamvideo":
+        return "Video Summarising"
+    if ctx_type == "docx":
+        return "Document Drafting" if (app_host == "word" and is_active) else "Document Summarising"
+    if ctx_type in {"xlsx", "xlsm", "xlsb", "xls", "csv"}:
+        return "Spreadsheet Review"
+    if ctx_type in {"pptx", "pptm"}:
+        return "Presentation Creation" if (app_host == "powerpoint" and is_active) else "Presentation Summarising"
+    if ctx_type in {"teamschat", "teamschannel"}:
+        return "Teams Messaging"
+    if ctx_type == "aspx":
+        return "Enterprise Searching"
+    if app_host in {"outlook", "outlooksidepane"}:
+        return "Email Drafting" if is_active else "Email Summarising"
+    if app_host == "excel":
+        return "Excel Assistance"
+    if app_host == "word":
+        return "Document Drafting" if is_active else "Document Summarising"
+    if app_host == "powerpoint":
+        return "Presentation Creation" if is_active else "Presentation Summarising"
+    if app_host == "stream":
+        return "Video Summarising"
+    if app_host == "sharepoint":
+        return "SharePoint Access"
+    if app_host == "designer":
+        return "Image Generation"
+    if app_host == "onenote":
+        return "Note Taking"
+    if app_host == "forms":
+        return "Form / Survey Work"
+    if app_host == "planner":
+        return "Task Management"
+    if app_host in {"loop", "whiteboard", "vivaengage"}:
+        return "Real-time Collaboration"
+    if app_host == "copilot studio":
+        return "Domain-Specific Agent"
+    if app_host in {"autonomous", "logic app"}:
+        return "Workflow Execution"
+    if app_host in {"datawarehousing core", "power bi"}:
+        return "Data Querying"
+    return "General Chat"
+
+
+@functools.lru_cache(maxsize=None)
+def compute_behavior_category(
+    app_host: str,
+    ctx_type: str,
+    res_type: str,
+    res_action: str,
+    site_url: str,
+    plugin_id: str,
+) -> str:
+    app_host_l = (app_host or "").lower()
+    ctx_l = (ctx_type or "").lower()
+    res_t_l = (res_type or "").lower()
+    res_a_l = (res_action or "").lower()
+    site_l = (site_url or "").lower()
+    plugin_l = (plugin_id or "").lower()
+    is_active = any(tok in res_a_l for tok in _ACTIVE_RES_ACTION_TOKENS)
+
+    from_resource = _resource_behavior(res_t_l, res_a_l, site_l, is_active)
+    if from_resource:
+        return from_resource
+    if plugin_l == "enterprisesearch":
+        return "Enterprise Searching"
+    return _context_behavior(app_host_l, ctx_l, is_active)
+
+
+_GENERIC_QA_BEHAVIORS = {"General Q&A", "M365 Chat Q&A", "Teams Q&A", "Browser Q&A", "General Chat"}
+_AGENT_NAME_RULES: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("coach", "mentor", "learning", "career"), "Agent: Coaching"),
+    (("research", "analyst", "analy"), "Agent: Research & Analysis"),
+    (("sales", "commercial", "customer", "crm", "revenue"), "Agent: Sales & Customer"),
+    (("hr", "recruit", "talent", "onboard", "people"), "Agent: HR & People"),
+    (("policy", "compliance", "legal", "audit", "risk"), "Agent: Compliance & Policy"),
+    (("service", "support", "help", "ticket", "incident"), "Agent: IT & Service Desk"),
+    (("summar", "draft", "translat", "editor"), "Agent: Content Generation"),
+    (("data", "report", "dashboard", "metric"), "Agent: Data & Reporting"),
+    (("knowledge", "faq", "wiki", "buddy", "guide"), "Agent: Knowledge Base"),
+    (("idea", "brainstorm", "creative", "design"), "Agent: Ideation & Creative"),
+)
+
+
+@functools.lru_cache(maxsize=None)
+def compute_behavior_enriched(behavior_category: str, agent_name: str, environment: str) -> str:
+    if environment not in {"Agents", "Autonomous Agent"}:
+        return behavior_category
+    if behavior_category not in _GENERIC_QA_BEHAVIORS:
+        return behavior_category
+    name_l = (agent_name or "").lower()
+    for tokens, label in _AGENT_NAME_RULES:
+        if any(t in name_l for t in tokens):
+            return label
+    return "Agent: General Purpose"
+
+
+@functools.lru_cache(maxsize=None)
+def compute_autonomy_pattern(environment: str) -> str:
+    if environment == "Licensed M365 Copilot":
+        return "1 - Copilot"
+    if environment == "Agents":
+        return "2 - Agent-Assisted"
+    if environment == "Autonomous Agent":
+        return "3 - Autonomous"
+    return ""
+
+
+# Verbatim port of AIBV BEFORE DAX calc col `Behavior_Source`.
+@functools.lru_cache(maxsize=None)
+def compute_behavior_source(
+    behavior_category: str,
+    environment: str,
+    agent_name: str,
+    plugin_name: str,
+    app_host: str,
+) -> str:
+    agent = (agent_name or "").strip()
+    plugin = (plugin_name or "").strip()
+    app = (app_host or "").strip()
+    if environment == "Autonomous Agent":
+        source = "Autonomous Agent" + (f": {agent}" if agent else "")
+    elif environment == "Agents" and agent:
+        source = f"Agent: {agent}"
+    elif plugin:
+        source = f"{app} ({plugin})"
+    elif app:
+        source = app
+    else:
+        source = "Copilot Chat"
+    return f"{behavior_category} → {source}"
+
+
+# Verbatim port of AIBV BEFORE DAX calc col `Value_Outcome`.
+_VO_TIME_EMAIL = frozenset({"Email Summarising", "Email Triage", "Email Thread Summary"})
+_VO_TIME_MEET = frozenset({"Meeting Prep", "Video Summarising"})
+_VO_TIME_DOC = frozenset({"Document Summarising", "Presentation Summarising", "Note Taking"})
+_VO_SEARCH = frozenset({
+    "Web Searching", "Enterprise Searching", "File Retrieval", "PDF Analysis",
+    "SharePoint Access", "People Lookup", "Agent: Knowledge Base",
+})
+_VO_COMM = frozenset({"Teams Messaging", "Meeting Scheduling"})
+_VO_SHEET = frozenset({"Spreadsheet Review", "Spreadsheet Analysis", "Excel Assistance"})
+_VO_CONTENT = frozenset({
+    "Email Drafting", "Document Drafting", "Presentation Creation",
+    "Image Generation", "Image / Media Analysis", "Image/Media Analysis",
+    "Agent: Content Generation", "Agent: Ideation & Creative",
+})
+_VO_TEAMCOLLAB = frozenset({"Real-time Collaboration", "Form / Survey Work"})
+_VO_DATA = frozenset({"Data Querying", "Agent: Data & Reporting", "Agent: Research & Analysis"})
+_VO_CODE = frozenset({"Code Writing", "Code Analysis", "Code Analysis (URL)"})
+_VO_COACH = frozenset({"Agent: Coaching", "Agent: Coaching (URL)"})
+_VO_DOMAIN = frozenset({"Domain-Specific Agent", "Cross-Org Agent"})
+
+
+@functools.lru_cache(maxsize=None)
+def compute_value_outcome(
+    behavior_enriched: str, environment: str, is_sensitive_str: str
+) -> str:
+    b = behavior_enriched or ""
+    if b in _VO_TIME_EMAIL:
+        return "Time Saved (Email)"
+    if b in _VO_TIME_MEET:
+        return "Time Saved (Meetings)"
+    if b in _VO_TIME_DOC:
+        return "Time Saved (Documents)"
+    if b in _VO_SEARCH:
+        return "Search Time Saved"
+    if b in _VO_COMM:
+        return "Communication Time Saved"
+    if b in _VO_SHEET:
+        return "Spreadsheet Time Saved"
+    if b in _VO_CONTENT:
+        return "Content Output"
+    if b in _VO_TEAMCOLLAB:
+        return "Team Collaboration"
+    if b == "Workflow Execution" or environment == "Autonomous Agent":
+        return "Workflow Automation"
+    if b == "Task Management":
+        return "Task Coordination"
+    if (
+        is_sensitive_str == "TRUE"
+        and environment != "Agents"
+        and environment != "Autonomous Agent"
+    ):
+        return "Compliance & Risk"
+    if b in _VO_DATA:
+        return "Data-Driven Decisions"
+    if b in _VO_CODE:
+        return "Coding Capability"
+    if b in _VO_COACH:
+        return "Skills Development"
+    if b == "Agent: Sales & Customer":
+        return "Revenue Enablement"
+    if b == "Agent: IT & Service Desk":
+        return "Service Desk Deflection"
+    if b == "Agent: Compliance & Policy":
+        return "Compliance & Risk"
+    if b == "Agent: HR & People":
+        return "HR Expertise"
+    if b in _VO_DOMAIN:
+        return "Specialist Expertise"
+    return "General AI Productivity"
+
+
+def compute_user_month_key(audit_user_id: str, month_start_str: str) -> str:
+    if not audit_user_id or not month_start_str:
+        return ""
+    # MonthStart is YYYY-MM-DD; format key as YYYY-MM (mirrors DAX FORMAT(...,"yyyy-MM"))
+    return f"{audit_user_id}|{month_start_str[:7]}"
+
+
+# ---------------------------------------------------------------------------
+# Entra loader / Users dim CSV writer
+# ---------------------------------------------------------------------------
+
+
+def _normalize_col_name(name: str) -> str:
+    return re.sub(r"[\s_\-.()\[\]]", "", (name or "").lower())
+
+
+def detect_has_license_column(headers: list[str]) -> str | None:
+    for variant in HAS_LICENSE_VARIANTS:
+        if variant in headers:
+            return variant
+    return None
+
+
+def detect_upn_column(headers: list[str]) -> str | None:
+    for h in headers:
+        if _normalize_col_name(h) in UPN_VARIANTS_NORMALIZED:
+            return h
+    return None
+
+
+def detect_department_column(headers: list[str]) -> str | None:
+    for h in headers:
+        if _normalize_col_name(h) == DEPARTMENT_VARIANT_NORMALIZED:
+            return h
+    return None
+
+
+def load_entra_and_write_users(
+    entra_csv: str,
+    users_out_csv: str,
+    user_key_map: dict[str, int],
+    quiet: bool = False,
+) -> dict[str, dict[str, str]]:
+    """
+    Read the Entra CSV, write the Users dim CSV (with PBIP-compatible renames +
+    precomputed License Status + UserKey INT surrogate), and return a dict
+    keyed on PersonId_Normalized -> {"Has license": ..., "License Status": ...}
+    for fact-row lookup.
+
+    Mutates `user_key_map` (normalized_upn -> int) in place — every Entra row
+    with a non-empty PersonId_Normalized is assigned a UserKey (1-based, in
+    Entra-file order). The same map is reused by the fact path so any audit
+    user already in Entra resolves to the same INT.
+
+    Mirrors the rename/normalization logic in the existing PBIP M-code:
+      userPrincipalName/upn/personid -> PersonId
+      department                     -> Organization
+      jobTitle                       -> JobTitle
+      Has license variants           -> "Has license"
+      adds PersonId_Normalized (lower+trim of PersonId)
+      adds License Status (precomputed)
+      adds TotalEmployees (row count, repeated per row)
+    """
+    with open(entra_csv, "r", encoding="utf-8-sig", newline="") as fin:
+        # Sniff via a generous quote-aware reader; encoding="utf-8-sig" eats BOM if present.
+        reader = csv.DictReader(fin)
+        original_headers = reader.fieldnames or []
+        if not original_headers:
+            raise ValueError(f"Entra CSV has no header row: {entra_csv}")
+
+        upn_col = detect_upn_column(original_headers)
+        dept_col = detect_department_column(original_headers)
+        has_license_col = detect_has_license_column(original_headers)
+        has_jobtitle_raw = JOBTITLE_RAW_NAME in original_headers
+
+        # Build rename map: source_header -> target_header
+        rename_map: dict[str, str] = {}
+        if upn_col and upn_col != "PersonId":
+            rename_map[upn_col] = "PersonId"
+        if dept_col and dept_col != "Organization":
+            rename_map[dept_col] = "Organization"
+        if has_jobtitle_raw:
+            rename_map[JOBTITLE_RAW_NAME] = "JobTitle"
+        if has_license_col and has_license_col != "Has license":
+            rename_map[has_license_col] = "Has license"
+
+        # Final header list for users CSV — preserve original order, apply renames,
+        # then append injected columns. UserKey is the INT surrogate that joins
+        # to the fact table.
+        renamed_headers = [rename_map.get(h, h) for h in original_headers]
+        injected = ["UserKey", "PersonId_Normalized", "License Status", "TotalEmployees"]
+        if "Has license" not in renamed_headers:
+            renamed_headers.append("Has license")
+        for inj in injected:
+            if inj not in renamed_headers:
+                renamed_headers.append(inj)
+
+        rows = list(reader)
+
+    total_rows = len(rows)
+    user_lookup: dict[str, dict[str, str]] = {}
+
+    out_dir = Path(users_out_csv).parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    pax_licensed = 0
+    pax_unlicensed = 0
+    no_license_col = 0
+    seen_normalized_keys: set[str] = set()
+
+    with open(users_out_csv, "w", encoding="utf-8", newline="") as fout:
+        writer = csv.DictWriter(fout, fieldnames=renamed_headers, lineterminator="\n")
+        writer.writeheader()
+
+        for src_row in rows:
+            # Apply renames + ensure all renamed_headers keys exist in the out row.
+            out_row: dict[str, str] = {h: "" for h in renamed_headers}
+            for src_h, value in src_row.items():
+                tgt_h = rename_map.get(src_h, src_h)
+                if tgt_h in out_row:
+                    out_row[tgt_h] = "" if value is None else str(value)
+
+            # PersonId_Normalized
+            person_id = out_row.get("PersonId", "")
+            person_id_norm = person_id.strip().lower() if person_id else ""
+            out_row["PersonId_Normalized"] = person_id_norm
+
+            # UserKey (INT surrogate; assigned in Entra-file order)
+            if person_id_norm:
+                user_key = user_key_map.get(person_id_norm)
+                if user_key is None:
+                    user_key = len(user_key_map) + 1
+                    user_key_map[person_id_norm] = user_key
+                out_row["UserKey"] = str(user_key)
+            else:
+                out_row["UserKey"] = ""
+
+            # License Status (mirrors PBIP DAX exactly).
+            # We also normalize Has license to canonical TRUE/FALSE so existing
+            # measures that filter `[Has license] = "FALSE"` match regardless
+            # of source casing.
+            has_license_raw = out_row.get("Has license", "")
+            normalized_has_license = normalize_has_license(has_license_raw)
+            if has_license_col is None:
+                no_license_col += 1
+            elif (has_license_raw or "").strip().upper() in _LICENSE_TRUTHY:
+                pax_licensed += 1
+            else:
+                pax_unlicensed += 1
+            out_row["Has license"] = normalized_has_license
+            out_row["License Status"] = compute_license_status(normalized_has_license)
+
+            # TotalEmployees (matches M-code: row count repeated per row)
+            out_row["TotalEmployees"] = str(total_rows)
+
+            writer.writerow(out_row)
+
+            # Build fact-lookup dict (dedupe on normalized key, last-wins matches
+            # M-code Table.Distinct behavior on the licensed-users path).
+            if person_id_norm:
+                user_lookup[person_id_norm] = {
+                    "Has license": normalized_has_license,
+                    "License Status": out_row["License Status"],
+                }
+                seen_normalized_keys.add(person_id_norm)
+
+    if not quiet:
+        print(f"  Entra rows:            {total_rows:,}")
+        print(f"  Unique users (norm):   {len(seen_normalized_keys):,}")
+        if has_license_col:
+            print(f"  License col detected:  '{has_license_col}'")
+            print(f"  Licensed (PAX):        {pax_licensed:,}")
+            print(f"  Unlicensed (PAX):      {pax_unlicensed:,}")
+        else:
+            print(f"  License col detected:  NO RECOGNIZED LICENSE COLUMN FOUND IN ENTRA CSV")
+            print(f"     Fallback: every user will be tagged 'Unlicensed' until a recognized column is present.")
+
+    return user_lookup
+
+
+# ---------------------------------------------------------------------------
+# Fact row explosion + output
+# ---------------------------------------------------------------------------
+
+
+def explode_record(
+    audit_data: dict[str, Any],
+    user_lookup: dict[str, dict[str, str]],
+    user_key_map: dict[str, int],
+    thread_key_map: dict[str, int],
+) -> list[dict[str, Any]]:
+    creation_time_raw = audit_data.get("CreationTime")
+    creation_time_raw_str = to_text(creation_time_raw).strip()
+    # Cached bundle: 4 derived date strings in one shot, keyed on the raw
+    # timestamp string (~K distinct values across N records).
+    creation_date_str, interaction_date_str, week_start_str, month_start_str = (
+        _date_strings_for_raw(creation_time_raw_str)
+    )
+    app_identity_app_id, app_identity_display = app_identity_values(audit_data)
+    agent_id = to_text(audit_data.get("AgentId"))
+    agent_name = derive_agent_name(audit_data.get("AgentName"), app_identity_display, app_identity_app_id)
+
+    ced = audit_data.get("CopilotEventData")
+    if not isinstance(ced, dict):
+        return []
+
+    prompts = prompt_messages(ced)
+    if not prompts:
+        return []
+
+    resources = resource_rows(ced)
+    real_resource_count = sum(1 for item in get_array(ced, "AccessedResources") if isinstance(item, dict))
+    resource_count_value = real_resource_count if real_resource_count > 0 else 1
+    first_context = first_dict_item(get_array(ced, "Contexts"))
+    first_plugin = first_dict_item(get_array(ced, "AISystemPlugin"))
+    first_model = first_dict_item(get_array(ced, "ModelTransparencyDetails"))
+
+    audit_user_id_raw = to_text(audit_data.get("UserId"))
+    audit_user_id_norm = normalize_user_id(audit_user_id_raw)
+    # UserKey INT surrogate. If this audit user wasn't in Entra, mint a new
+    # INT and stash so subsequent rows for the same user reuse it. The
+    # caller tracks unmatched-vs-Entra via the lookup membership check.
+    if audit_user_id_norm:
+        user_key = user_key_map.get(audit_user_id_norm)
+        if user_key is None:
+            user_key = len(user_key_map) + 1
+            user_key_map[audit_user_id_norm] = user_key
+    else:
+        user_key = ""
+    # ThreadId INT surrogate.
+    thread_id_raw = to_text(ced.get("ThreadId"))
+    if thread_id_raw:
+        thread_key = thread_key_map.get(thread_id_raw)
+        if thread_key is None:
+            thread_key = len(thread_key_map) + 1
+            thread_key_map[thread_id_raw] = thread_key
+    else:
+        thread_key = ""
+    app_host_str = to_text(ced.get("AppHost"))
+    sens_label_str = to_text(ced.get("SensitivityLabelId"))
+    ctx_type_str = to_text(first_context.get("Type")) if first_context else ""
+    plugin_id_str = to_text(first_plugin.get("Id")) if first_plugin else ""
+    model_name_str = to_text(first_model.get("ModelName")) if first_model else ""
+
+    # User-level lookups (constant per record)
+    user_rec = user_lookup.get(audit_user_id_norm) or {}
+    has_license_raw = user_rec.get("Has license", "")
+    license_status = user_rec.get("License Status") or compute_license_status(has_license_raw)
+    environment = compute_environment(has_license_raw, agent_name, agent_id, app_host_str)
+    autonomy_pattern = compute_autonomy_pattern(environment)
+    ai_model = compute_ai_model(model_name_str)
+    user_month_key = compute_user_month_key(audit_user_id_raw, month_start_str)
+
+    # Per-record constants hoisted out of the (prompt x resource) inner loop.
+    # All grain values are pre-stringified via to_text() exactly once so the
+    # rollup loop can use the tuple directly as the dict key.
+    user_key_text = to_text(user_key)
+    thread_key_text = to_text(thread_key)
+    agent_title_id = derive_agent_title_id(agent_id)
+    aisystem_plugin_name_str = to_text(first_plugin.get("Name")) if first_plugin else ""
+    in_entra = (audit_user_id_norm in user_lookup) if audit_user_id_norm else True
+
+    # Stable portion of the nongrain dict (everything that does NOT depend on
+    # the per-resource fields). Built once per record; copied per emitted
+    # row and updated with the resource-varying keys. Values mirror the
+    # prior base_row exactly (same types, same to_text() handling) so the
+    # final flushed CSV bytes are identical.
+    base_nongrain: dict[str, Any] = {
+        "CreationDate": creation_date_str,
+        "WeekStart": week_start_str,
+        "MonthStart": month_start_str,
+        "UserMonthKey": user_month_key,
+        "Has license": has_license_raw,
+        "Resource_Count": resource_count_value,
+        "SensitivityLabelId": sens_label_str,
+        # AccessedResource_* injected per-resource below.
+        "AccessedResource_Type": "",
+        "AccessedResource_Action": "",
+        "AccessedResource_SiteUrl": "",
+        "AccessedResource_SensitivityLabelId": "",
+        "AppIdentity_DisplayName": app_identity_display,
+        "AISystemPlugin_Id": plugin_id_str,
+        "ModelTransparencyDetails_ModelName": model_name_str,
+        "Agent_TitleID": agent_title_id,
+        "Message_isPrompt": "TRUE",
+        # Behavior_Source / Value_Outcome injected per-resource below.
+        "Behavior_Source": "",
+        "Value_Outcome": "",
+        "ActivityDate": interaction_date_str,
+    }
+
+    # Output schema: list of tuples
+    #   (grain_tuple, message_id_str, nongrain_dict, in_entra, audit_user_id_norm)
+    # consumed directly by run_processor's rollup loop (no per-row dict
+    # rebuild, no transient _audit_user_* keys).
+    rows: list[tuple[tuple[str, ...], str, dict[str, Any], bool, str]] = []
+    for message in prompts:
+        message_id = to_text(message.get("Id"))
+        for resource in resources:
+            res_type_str = to_text(resource.get("Type"))
+            res_action_str = to_text(resource.get("Action"))
+            res_site_str = to_text(resource.get("SiteUrl"))
+            res_sens_label_str = to_text(resource.get("SensitivityLabelId"))
+            behavior_category = compute_behavior_category(
+                app_host_str, ctx_type_str, res_type_str, res_action_str, res_site_str, plugin_id_str
+            )
+            behavior_enriched = compute_behavior_enriched(behavior_category, agent_name, environment)
+            is_sensitive_str = compute_is_sensitive(sens_label_str, res_sens_label_str)
+            behavior_source = compute_behavior_source(
+                behavior_category, environment, agent_name,
+                aisystem_plugin_name_str, app_host_str,
+            )
+            value_outcome = compute_value_outcome(
+                behavior_enriched, environment, is_sensitive_str,
+            )
+
+            # Grain tuple in EXACT GRAIN_KEYS order (verified at module load
+            # via _assert_grain_order below). All values are already
+            # pre-stringified.
+            grain_tuple = (
+                user_key_text,
+                interaction_date_str,
+                agent_id,
+                agent_name,
+                app_host_str,
+                environment,
+                license_status,
+                ctx_type_str,
+                behavior_category,
+                behavior_enriched,
+                ai_model,
+                is_sensitive_str,
+                autonomy_pattern,
+                app_identity_app_id,
+                aisystem_plugin_name_str,
+                thread_key_text,
+            )
+
+            nongrain = dict(base_nongrain)
+            nongrain["AccessedResource_Type"] = res_type_str
+            nongrain["AccessedResource_Action"] = res_action_str
+            nongrain["AccessedResource_SiteUrl"] = res_site_str
+            nongrain["AccessedResource_SensitivityLabelId"] = res_sens_label_str
+            nongrain["Behavior_Source"] = behavior_source
+            nongrain["Value_Outcome"] = value_outcome
+
+            rows.append((grain_tuple, message_id, nongrain, in_entra, audit_user_id_norm))
+
+    return rows
+
+
+def run_processor(
+    purview_csv: str,
+    entra_csv: str,
+    fact_out_csv: str,
+    users_out_csv: str,
+    quiet: bool = False,
+) -> dict[str, Any]:
+    start_time = time.perf_counter()
+    stats: dict[str, Any] = {
+        "input_records": 0,
+        "skipped_non_copilot": 0,
+        "output_rows": 0,
+        "errors": 0,
+        "unmatched_users": 0,
+    }
+
+    if not quiet:
+        print(f"Purview CopilotInteraction Processor v{SCRIPT_VERSION}")
+        print(f"  JSON engine:    {_JSON_ENGINE}")
+        print(f"  Purview input:  {purview_csv}")
+        print(f"  Entra input:    {entra_csv}")
+        print(f"  Purview output: {fact_out_csv}")
+        print(f"  Entra output:   {users_out_csv}")
+        print()
+        print("Loading Entra users + writing Users dim CSV...")
+
+    # Shared INT-surrogate maps. UserKey is populated first by the Entra
+    # loader (so Entra-known users get the lowest INTs / lowest dictionary
+    # offsets in VertiPaq); the fact path then reuses + extends the map.
+    user_key_map: dict[str, int] = {}
+    thread_key_map: dict[str, int] = {}
+
+    user_lookup = load_entra_and_write_users(
+        entra_csv, users_out_csv, user_key_map, quiet=quiet
+    )
+
+    if not quiet:
+        print()
+        print("Flattening CopilotInteraction records...")
+
+    # v3.0.0 (Option D): one row per (grain x distinct Message_Id). Replaces
+    # the old PromptCount accumulator (which inflated counts ~2.25x by
+    # incrementing per (prompt x AccessedResource) iteration). Downstream
+    # measures use DISTINCTCOUNT(Message_Id) for exact BEFORE-PBIP parity.
+    #
+    # Message_Id is INT-surrogated (1-based, encounter order) for CSV size
+    # and parse-time win on the highest-cardinality column.
+    #
+    # Key:    (grain_tuple, message_id_int)
+    # Value:  dict of non-grain attrs (last-write-wins on a per-resource
+    #         basis for AccessedResource_* / SensitivityLabelId — same
+    #         semantic as the prior dict-overwrite behavior).
+    rollup: dict[tuple[Any, ...], dict[str, Any]] = {}
+    mid_to_int: dict[str, int] = {}
+    unmatched: set[str] = set()
+
+    with open(purview_csv, "r", encoding="utf-8-sig", newline="") as fin:
+        reader = csv.DictReader(fin)
+
+        for raw_row in reader:
+            stats["input_records"] += 1
+
+            audit_raw = raw_row.get("AuditData", "") or ""
+            try:
+                audit_data = json_loads(audit_raw) if audit_raw.strip() else {}
+            except Exception:
+                stats["errors"] += 1
+                continue
+
+            if not isinstance(audit_data, dict):
+                stats["errors"] += 1
+                continue
+
+            if not is_copilot_interaction(audit_data, raw_row):
+                stats["skipped_non_copilot"] += 1
+                continue
+
+            try:
+                rows = explode_record(audit_data, user_lookup, user_key_map, thread_key_map)
+            except Exception:
+                stats["errors"] += 1
+                continue
+
+            for grain_key, message_id_str, nongrain, in_entra, audit_user_norm in rows:
+                stats["output_rows"] += 1
+                if not in_entra and audit_user_norm:
+                    unmatched.add(audit_user_norm)
+                mid_int = mid_to_int.get(message_id_str)
+                if mid_int is None:
+                    mid_int = len(mid_to_int) + 1
+                    mid_to_int[message_id_str] = mid_int
+                rollup[(grain_key, mid_int)] = nongrain
+
+    if not quiet:
+        print(f"  Input records:         {stats['input_records']:,}")
+        print(f"  Skipped (non-Copilot): {stats['skipped_non_copilot']:,}")
+        print(f"  Raw prompt rows:       {stats['output_rows']:,}")
+        print(f"  Errors:                {stats['errors']:,}")
+        print()
+        print("Writing rolled-up fact CSV...")
+
+    with open(fact_out_csv, "w", encoding="utf-8", newline="") as fout:
+        writer = csv.writer(fout, lineterminator="\n")
+        writer.writerow(FACT_HEADER)
+        # Pre-compute the index of Message_Id within FACT_HEADER so we can
+        # splice the INT surrogate into a list-of-attrs in one shot. The
+        # list-based csv.writer.writerow path is materially faster than
+        # DictWriter (skips dict-to-list translation + per-row genexpr).
+        nongrain_attrs = _NONGRAIN_ATTRS  # local rebind
+        grain_len = len(GRAIN_KEYS)
+        for (grain_key, mid_int), attrs in rollup.items():
+            # FACT_HEADER = GRAIN_KEYS + ("Message_Id",) + _NONGRAIN_ATTRS
+            row_out = list(grain_key)
+            row_out.append(mid_int)
+            row_out.extend(attrs[k] for k in nongrain_attrs)
+            writer.writerow(row_out)
+
+    stats["output_rows_rollup"] = len(rollup)
+    stats["distinct_message_ids"] = len(mid_to_int)
+    stats["distinct_thread_ids"] = len(thread_key_map)
+    stats["distinct_user_keys"] = len(user_key_map)
+    stats["unmatched_users"] = len(unmatched)
+    elapsed = time.perf_counter() - start_time
+    if not quiet:
+        reduction_pct = (1 - len(rollup) / stats["output_rows"]) * 100 if stats["output_rows"] else 0
+        print(f"  Rollup rows:           {len(rollup):,}  ({reduction_pct:.1f}% reduction)")
+        print(f"  Distinct Message_Ids:  {len(mid_to_int):,}")
+        print(f"  Distinct ThreadIds:    {len(thread_key_map):,}")
+        print(f"  Distinct UserKeys:     {len(user_key_map):,}")
+        print(f"  Unmatched users:       {stats['unmatched_users']:,}")
+        print(f"  Elapsed:               {elapsed:.2f}s")
+
+    return stats
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=(
+            f"Purview CopilotInteraction Processor v{SCRIPT_VERSION} - "
+            "Two-input/two-output preprocessor that produces a rolled-up "
+            "Interactions fact CSV (~85% row reduction via PromptCount grain) "
+            "and a Users dim CSV for the AI Business Value Dashboard PBIP."
+        )
+    )
+    parser.add_argument(
+        "--purview",
+        required=True,
+        help="Path to the raw Purview audit log CSV (must contain AuditData column).",
+    )
+    parser.add_argument(
+        "--entra",
+        required=True,
+        help="Path to the Entra users CSV (must contain UPN + license columns).",
+    )
+    parser.add_argument(
+        "--out-dir",
+        "-o",
+        default=None,
+        help="Directory for output files. Default: same directory as the Purview file.",
+    )
+    parser.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        default=False,
+        help="Suppress progress output.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {SCRIPT_VERSION}",
+    )
+
+    args = parser.parse_args()
+
+    purview_path = os.path.abspath(args.purview)
+    entra_path = os.path.abspath(args.entra)
+    for label, p in (("Purview", purview_path), ("Entra", entra_path)):
+        if not os.path.isfile(p):
+            print(f"ERROR: {label} input file not found: {p}", file=sys.stderr)
+            sys.exit(1)
+
+    out_dir = Path(os.path.abspath(args.out_dir)) if args.out_dir else Path(purview_path).parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    purview_stem = Path(purview_path).stem
+    entra_stem = Path(entra_path).stem
+    # Output stems intentionally inherit the timestamp already baked into the input
+    # filenames (e.g. Purview_Audit_*_<ts>.csv, EntraUsers_MAClicensing_<ts>.csv) so the
+    # rollup outputs share the same run timestamp without duplicating it.
+    fact_out = str(out_dir / f"{purview_stem}_Interactions.csv")
+    users_out = str(out_dir / f"{entra_stem}_Users.csv")
+
+    stats = run_processor(
+        purview_csv=purview_path,
+        entra_csv=entra_path,
+        fact_out_csv=fact_out,
+        users_out_csv=users_out,
+        quiet=args.quiet,
+    )
+    sys.exit(1 if stats["errors"] > 0 else 0)
+
+
+if __name__ == "__main__":
+    main()
+'@
+# <<< END-EMBEDDED-COPILOT-PROCESSOR
+
+# >>> BEGIN-EMBEDDED-M365-PROCESSOR
+$Script:EMBEDDED_PROCESSOR_M365 = @'
+#!/usr/bin/env python3
+"""
+Purview M365 Usage Bundle Explosion Processor v2.1.0
+=====================================================
+Two-mode processor for Purview audit log CSV exports:
+
+  ROLLUP MODE (default):  Aggregates exploded events into rolled-up rows keyed by
+      (UserId, CreationDate, Operation, Workload, SourceFileExtension, AppHost)
+      with EventCount, MIN(CreationTime), MAX(CreationTime).  Targets 80%+ row
+      reduction for Power BI ingestion.  Streaming — no exploded rows held in memory.
+
+      After the rollup CSV is written, a second pass streams through it to produce
+      two additional analytics files (unless --no-userstats is specified):
+        - UserStats:      One row per user with 27 columns of pre-computed metrics
+                          (Copilot/M365 event counts, tier classifications, priority
+                          scores, usage ranks, active-day counts, activity segments).
+        - SessionCohort:  One row per (UserId, App) pair with a session-count bucket
+                          (1-5, 6-10, 11-20, 21-40, 41-60, 61-80, 81+).
+
+      These files allow Power Query to join pre-computed results instead of
+      recalculating expensive DAX/M expressions, cutting dashboard load times.
+
+  EVENT-LEVEL MODE (--mode event-level):  153-column row-per-event explosion output.
+      Used for debugging and reconciliation against the raw audit log.
+      UserStats and SessionCohort files are NOT generated in this mode.
+
+Requirements:
+    Python 3.9+
+    pip install orjson   (OPTIONAL - 5-10x faster JSON parsing; falls back to stdlib json)
+
+Usage:
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.1.0.py --input <CSV>
+        [--output-dir <DIR>] [--mode rollup|event-level]
+        [--prompt-filter Prompt|Response|Both|Null]
+        [--reconcile] [--no-userstats] [--quiet] [--version]
+
+Output files (rollup mode — all share the same timestamp):
+    <input_stem>_Rollup_<YYYYMMDD_HHMMSS>.csv          9 columns — aggregated events
+    <input_stem>_UserStats_<YYYYMMDD_HHMMSS>.csv       27 columns — per-user metrics
+    <input_stem>_SessionCohort_<YYYYMMDD_HHMMSS>.csv    3 columns — (UserId, App, Bucket)
+
+Output file (event-level mode):
+    <input_stem>_Exploded_<YYYYMMDD_HHMMSS>.csv       153 columns — one row per event
+
+Arguments:
+    --input, -i           Path to Purview audit log CSV (required).
+    --output-dir, -o      Directory for output files (default: input file's directory).
+    --mode, -m            Processing mode: rollup (default) or event-level.
+    --reconcile           Run sample-based reconciliation after rollup processing.
+    --prompt-filter       Filter Copilot messages: Prompt|Response|Both|Null.
+    --no-userstats        Skip UserStats and SessionCohort generation (rollup only).
+    --quiet, -q           Suppress progress output (only errors are printed).
+    --version             Show version and exit.
+
+Examples:
+    # Default rollup (9-column output + UserStats + SessionCohort)
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.1.0.py -i Purview_Export.csv
+
+    # Rollup with output in a different directory
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.1.0.py -i Purview_Export.csv --output-dir ./output
+
+    # Rollup only — skip UserStats and SessionCohort generation
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.1.0.py -i Purview_Export.csv --no-userstats
+
+    # v1-compatible event-level explosion (153-column output)
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.1.0.py -i Purview_Export.csv --mode event-level
+
+    # Rollup with sample-based reconciliation check
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.1.0.py -i Purview_Export.csv --reconcile
+
+Author:  Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
+Version: 2.1.0
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import os
+import random
+import sys
+import time
+from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+# Ensure stdout/stderr can emit non-ASCII characters (e.g., arrows) on Windows
+# consoles defaulting to cp1252. Safe no-op on already-UTF-8 streams.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+# ─── Fast JSON: prefer orjson, fall back to stdlib ───────────────────────────
+try:
+    import orjson
+
+    def json_loads(s: str | bytes) -> Any:
+        if isinstance(s, str):
+            s = s.encode("utf-8")
+        return orjson.loads(s)
+
+    def json_dumps_compact(obj: Any) -> str:
+        return orjson.dumps(obj, option=orjson.OPT_NON_STR_KEYS).decode("utf-8")
+
+    _JSON_ENGINE = "orjson"
+except ImportError:
+    import json as _json
+
+    def json_loads(s: str | bytes) -> Any:  # type: ignore[misc]
+        if isinstance(s, bytes):
+            s = s.decode("utf-8")
+        return _json.loads(s)
+
+    def json_dumps_compact(obj: Any) -> str:  # type: ignore[misc]
+        return _json.dumps(obj, separators=(",", ":"), default=str)
+
+    _JSON_ENGINE = "json (stdlib)"
+
+# ═════════════════════════════════════════════════════════════════════════════
+# CONSTANTS
+# ═════════════════════════════════════════════════════════════════════════════
+
+SCRIPT_VERSION = "2.1.0"
+
+EXPLOSION_PER_RECORD_ROW_CAP = 1000
+STREAMING_CHUNK_SIZE = 5000
+
+# Unified 153-column header matching Power BI M code schema exactly.
+# Order matches the #"Changed Type" step in M365Usage.tmdl.
+# AuditData is intentionally excluded — raw JSON is never written to output.
+M365_UNIFIED_HEADER: list[str] = [
+    "RecordId", "CreationDate", "RecordType", "Operation", "UserId",
+    "AssociatedAdminUnits", "AssociatedAdminUnitsNames",
+    "@odata.type", "CreationTime", "Id", "OrganizationId",
+    "ResultStatus", "UserKey", "UserType", "Version", "Workload",
+    "ClientIP", "ObjectId", "AzureActiveDirectoryEventType",
+    "ActorContextId", "ActorIpAddress", "InterSystemsId", "IntraSystemId",
+    "SupportTicketId", "TargetContextId", "ApplicationId",
+    "DeviceProperties.OS", "DeviceProperties.BrowserType",
+    "ErrorNumber",
+    "SiteUrl", "SourceRelativeUrl", "SourceFileName", "SourceFileExtension",
+    "ListId", "ListItemUniqueId", "WebId", "ApplicationDisplayName", "EventSource",
+    "ItemType", "SiteSensitivityLabelId", "GeoLocation", "IsManagedDevice",
+    "DeviceDisplayName", "ListBaseType", "ListServerTemplate",
+    "AuthenticationType", "Site", "DoNotDistributeEvent", "HighPriorityMediaProcessing",
+    "BrowserName", "BrowserVersion", "CorrelationId", "Platform", "UserAgent",
+    "ActorInfoString", "AppId", "AuthType", "ClientAppId", "ClientIPAddress",
+    "ClientInfoString", "ExternalAccess", "InternalLogonType", "LogonType",
+    "LogonUserSid", "MailboxGuid", "MailboxOwnerSid", "MailboxOwnerUPN",
+    "OrganizationName", "OriginatingServer", "SessionId",
+    "TokenObjectId", "TokenTenantId", "TokenType", "SaveToSentItems",
+    "OperationCount", "FileSizeBytes",
+    "MeetingId", "MeetingType", "EventSignature", "EventData",
+    "Permission", "SensitivityLabelId", "SharingLinkScope",
+    "TargetUserOrGroupType", "TargetUserOrGroupName",
+    "MeetingURL", "ChatId", "MessageId", "MessageSizeInBytes", "MessageType",
+    "FormId", "FormName", "VideoId", "VideoName", "ChannelId", "ViewDuration",
+    "ClientRegion", "CopilotLogVersion", "TargetId",
+    "TeamName", "TeamGuid", "ResponseId", "IsAnonymous", "DeviceType",
+    "ChannelName", "ChannelGuid", "ChannelType", "AppName", "EnvironmentName",
+    "PlanId", "PlanName", "TaskId", "TaskName", "PercentComplete",
+    "CrossMailboxOperation",
+    "RecordTypeNum", "ResultStatus_Audit",
+    "ModelId", "ModelProvider", "ModelFamily",
+    "TokensTotal", "TokensInput", "TokensOutput", "DurationMs", "OutcomeStatus",
+    "ConversationId", "TurnNumber", "RetryCount", "ClientVersion", "ClientPlatform",
+    "AgentId", "AgentName", "AgentVersion", "AgentCategory", "ApplicationName",
+    "AppHost", "ThreadId",
+    "Context_Id", "Context_Type",
+    "Message_Id", "Message_isPrompt",
+    "AccessedResource_Action", "AccessedResource_PolicyDetails", "AccessedResource_SiteUrl",
+    "AISystemPlugin_Id", "AISystemPlugin_Name",
+    "ModelTransparencyDetails_ModelName", "MessageIds",
+    "AccessedResource_Name", "AccessedResource_SensitivityLabel",
+    "AccessedResource_ResourceType", "SensitivityLabel", "Context_Item",
+]
+
+# Rollup output header (9 columns)
+ROLLUP_HEADER: list[str] = [
+    "UserId", "CreationDate", "Operation", "Workload",
+    "SourceFileExtension", "AppHost",
+    "EventCount", "CreationTime", "MaxCreationTime",
+]
+
+# Reconciliation sample size
+RECONCILE_SAMPLE_SIZE = 10_000
+
+# ── UserStats classification sets (match Power Query logic exactly) ──────────
+WORD_EXTS: set[str] = {"docx", "doc", "dotx"}
+EXCEL_EXTS: set[str] = {"xlsx", "xls", "xlsm", "csv"}
+PPT_EXTS: set[str] = {"pptx", "ppt", "ppsx"}
+OFFICE_EXTS: set[str] = WORD_EXTS | EXCEL_EXTS | PPT_EXTS
+
+FILE_OPS: set[str] = {"FileViewed", "FileModified", "FileDownloaded", "FileUploaded"}
+OUTLOOK_OPS: set[str] = {"Send", "MailItemsAccessed", "MailboxLogin"}           # active-DAY counting
+OUTLOOK_ACT_OPS: set[str] = {"Send", "MailItemsAccessed", "MailboxLogin"}      # event COUNT
+TEAMS_OPS: set[str] = {"MessageSent", "MessageRead", "MeetingParticipantJoined"}
+
+USERSTATS_HEADER: list[str] = [
+    "UserId",
+    "CopilotEC", "M365EC", "ExCopEC", "ExM365EC",
+    "IsCopilotUser", "CopilotTierColumn", "M365TierColumn",
+    "PriorityScatterColumn", "ExcelPriority",
+    "CopilotUsageRankColumn", "M365UsageRankColumn",
+    "TeamsActiveDays", "OutlookActiveDays", "WordActiveDays",
+    "ExcelActiveDays", "PowerPointActiveDays",
+    "TeamsActivityCount", "OutlookActivityCount", "OfficeFilesActivityCount",
+    "TeamsActivitySegment", "OutlookActivitySegment", "WordActivitySegment",
+    "ExcelActivitySegment", "PowerPointActivitySegment",
+    "OfficeFilesActivitySegment", "OverallM365ActivitySegment",
+]
+
+SESSIONCOHORT_HEADER: list[str] = ["UserId", "AppColumn", "SessionCohort"]
+
+# Date formats accepted for CreationDate normalization (broadest to narrowest)
+_CREATION_DATE_FORMATS: tuple[str, ...] = (
+    "%Y-%m-%dT%H:%M:%S.%fZ",
+    "%Y-%m-%dT%H:%M:%SZ",
+    "%Y-%m-%dT%H:%M:%S.%f",
+    "%Y-%m-%dT%H:%M:%S",
+    "%m/%d/%Y %I:%M:%S %p",
+    "%m/%d/%Y %H:%M:%S",
+    "%Y-%m-%d",
+    "%m/%d/%Y",
+)
+
+# GroupKey type: (user_id_lower, creation_date_normalized, operation, workload, sfe_lower, app_host)
+GroupKey = tuple[str, str, str, str, str, str]
+
+
+class RollupAccum:
+    """Lightweight accumulator for one rollup group — avoids dataclass import overhead."""
+    __slots__ = ("event_count", "min_creation_time", "max_creation_time", "original_user_id")
+
+    def __init__(self, event_count: int, min_ct: str, max_ct: str, original_uid: str) -> None:
+        self.event_count = event_count
+        self.min_creation_time = min_ct
+        self.max_creation_time = max_ct
+        self.original_user_id = original_uid  # first-seen casing for output
+
+
+def normalize_creation_date(raw: str) -> str:
+    """Parse any Purview date format → 'YYYY-MM-DDT00:00:00.000Z' (midnight UTC)."""
+    if not raw or not isinstance(raw, str):
+        return ""
+    raw = raw.strip()
+    if not raw:
+        return ""
+    for fmt in _CREATION_DATE_FORMATS:
+        try:
+            dt = datetime.strptime(raw, fmt)
+            return dt.strftime("%Y-%m-%d") + "T00:00:00.000Z"
+        except ValueError:
+            continue
+    # Fallback: try extracting date portion from ISO-like string
+    if len(raw) >= 10 and raw[4:5] == "-":
+        return raw[:10] + "T00:00:00.000Z"
+    return raw  # unparseable — pass through
+
+
+def _norm_key_str(val: Any) -> str:
+    """Normalize a string value for use as a rollup key: strip whitespace, empty if None."""
+    if val is None:
+        return ""
+    if not isinstance(val, str):
+        val = str(val)
+    val = val.strip()
+    if val.lower() in ("null", "none"):
+        return ""
+    return val
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# UTILITY FUNCTIONS
+# ═════════════════════════════════════════════════════════════════════════════
+
+def safe_get(obj: Any, key: str) -> Any:
+    """Safely retrieve a property from a dict-like object."""
+    if obj is None:
+        return None
+    if isinstance(obj, dict):
+        return obj.get(key)
+    return getattr(obj, key, None)
+
+
+def select_first_non_null(values: list[Any]) -> Any:
+    """Return the first non-None, non-empty-string value."""
+    for v in values:
+        if v is not None and v != "":
+            return v
+    return None
+
+
+def to_num(val: Any) -> float | None:
+    """Convert to number, return None on failure."""
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, str):
+        val = val.strip()
+        if not val:
+            return None
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def format_date_purview(val: Any) -> str:
+    """Format a date value to ISO 8601 UTC string."""
+    if val is None:
+        return ""
+    if isinstance(val, str):
+        val = val.strip()
+        if not val:
+            return ""
+        # Try common Purview date formats
+        for fmt in (
+            "%Y-%m-%dT%H:%M:%S.%fZ",
+            "%Y-%m-%dT%H:%M:%SZ",
+            "%Y-%m-%dT%H:%M:%S.%f",
+            "%Y-%m-%dT%H:%M:%S",
+            "%m/%d/%Y %I:%M:%S %p",
+            "%m/%d/%Y %H:%M:%S",
+        ):
+            try:
+                dt = datetime.strptime(val, fmt)
+                return dt.replace(tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+            except ValueError:
+                continue
+        return val  # Return as-is if no format matches
+    return str(val)
+
+
+def to_json_if_object(val: Any) -> str:
+    """Serialize non-scalars to compact JSON, pass scalars through as strings."""
+    if val is None:
+        return ""
+    if isinstance(val, (str, int, float, bool)):
+        return str(val)
+    try:
+        return json_dumps_compact(val)
+    except Exception:
+        return ""
+
+
+def bool_tf(val: Any) -> str:
+    """Convert bool-like value to 'TRUE'/'FALSE' string."""
+    if val is None:
+        return ""
+    if isinstance(val, bool):
+        return "TRUE" if val else "FALSE"
+    if isinstance(val, str):
+        low = val.strip().lower()
+        if low in ("true", "1", "yes"):
+            return "TRUE"
+        if low in ("false", "0", "no"):
+            return "FALSE"
+    return str(val)
+
+
+def get_array_fast(obj: Any, key: str) -> list:
+    """Extract an array property, always returning a list."""
+    if obj is None:
+        return []
+    val = safe_get(obj, key)
+    if val is None:
+        return []
+    if isinstance(val, list):
+        return val
+    if isinstance(val, (str, int, float, bool)):
+        return []
+    try:
+        return list(val)
+    except (TypeError, ValueError):
+        return []
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# AGENT CATEGORIZATION
+# ═════════════════════════════════════════════════════════════════════════════
+
+def categorize_agent(agent_id: Any) -> str:
+    """Categorize agent based on AgentId pattern."""
+    if not agent_id or not isinstance(agent_id, str):
+        return ""
+    if agent_id.startswith("CopilotStudio.Declarative."):
+        return "Declarative Agent"
+    if agent_id.startswith("CopilotStudio.CustomEngine."):
+        return "Custom Engine Agent"
+    if agent_id.startswith("P_"):
+        return "Declarative Agent (Purview)"
+    return "Other Agent"
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# USERSTATS CLASSIFICATION & COMPUTATION HELPERS
+# ═════════════════════════════════════════════════════════════════════════════
+
+def is_copilot(op: str, wl: str) -> bool:
+    """True if the row represents a Copilot event."""
+    return wl == "Copilot" or op == "CopilotInteraction"
+
+
+def is_excel_file_op(ext: str, op: str) -> bool:
+    """True if the row is a file operation on an Excel-family extension."""
+    return (ext or "").lower() in EXCEL_EXTS and op in FILE_OPS
+
+
+def app_column(ext: str, op: str, wl: str) -> str:
+    """Classify a row into an application column for session cohort grouping."""
+    e = (ext or "").lower()
+    if e in WORD_EXTS and op in FILE_OPS:
+        return "Word"
+    if e in EXCEL_EXTS and op in FILE_OPS:
+        return "Excel"
+    if e in PPT_EXTS and op in FILE_OPS:
+        return "PowerPoint"
+    if wl == "Exchange" and op in OUTLOOK_ACT_OPS:
+        return "Outlook"
+    if wl == "MicrosoftTeams" and op in TEAMS_OPS:
+        return "Teams"
+    if wl == "Copilot" or op == "CopilotInteraction":
+        return "Copilot"
+    return "M365 All Apps"
+
+
+def percentile_inc(values: list[float], p: float) -> float:
+    """Inclusive linear interpolation — matches PQ List.Percentile and numpy 'linear'."""
+    if not values:
+        return 0.0
+    sorted_vals = sorted(values)
+    n = len(sorted_vals)
+    idx = p * (n - 1)
+    lo, hi = int(idx), min(int(idx) + 1, n - 1)
+    return sorted_vals[lo] + (idx - lo) * (sorted_vals[hi] - sorted_vals[lo])
+
+
+def tier_fn(cnt: float, p90: float, p75: float, p50: float, zero_is_bottom: bool) -> str:
+    """Assign a percentile-tier label."""
+    if zero_is_bottom and cnt == 0:
+        return "Bottom 50%"
+    if cnt >= p90:
+        return "Top 10%"
+    if cnt >= p75:
+        return "10-25%"
+    if cnt >= p50:
+        return "25-50%"
+    return "Bottom 50%"
+
+
+def priority_fn(m365_tier: str, cop_tier: str) -> str:
+    """Map (M365 tier, Copilot tier) pair to a priority label."""
+    top2 = {"Top 10%", "10-25%"}
+    if m365_tier in top2 and cop_tier in top2:
+        return "Promoter"
+    if m365_tier == "Top 10%" and cop_tier == "25-50%":
+        return "High"
+    if m365_tier == "Top 10%" and cop_tier == "Bottom 50%":
+        return "Critical"
+    if m365_tier == "10-25%" and cop_tier == "25-50%":
+        return "Medium"
+    if m365_tier == "10-25%" and cop_tier == "Bottom 50%":
+        return "High"
+    if m365_tier in {"25-50%", "Bottom 50%"} and cop_tier in top2:
+        return "Promoter"
+    if m365_tier == "25-50%" and cop_tier == "25-50%":
+        return "Medium"
+    if m365_tier == "25-50%" and cop_tier == "Bottom 50%":
+        return "Medium"
+    return "Low"
+
+
+def seg_fn(days: int) -> str:
+    """Map active-day count to an activity-segment label."""
+    if days <= 5:
+        return "1. 1-5 Days (Infrequent)"
+    if days <= 10:
+        return "2. 6-10 Days (Moderate)"
+    if days <= 19:
+        return "3. 11-19 Days (Frequent)"
+    return "4. 20+ Days (Daily)"
+
+
+def compute_ranks(values_by_uid: dict[str, float]) -> dict[str, int]:
+    """
+    0-based ascending rank via stable sort.  Ties get different sequential
+    indices (matches PQ Table.Sort + Table.AddIndexColumn behaviour).
+    """
+    sorted_uids = sorted(values_by_uid.items(), key=lambda x: x[1])
+    return {uid: i for i, (uid, _) in enumerate(sorted_uids)}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ROLLUP KEY EXTRACTION (lightweight — no row dicts built)
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _compute_copilot_event_count(
+    ced: dict,
+    operation: str,
+    prompt_filter: str | None,
+) -> int:
+    """
+    Compute the number of exploded rows a Copilot record would produce,
+    using the same array-length logic as v1 (explode_copilot_record),
+    but WITHOUT materializing any row dicts.
+    Returns 0 if prompt_filter eliminates all messages (record skipped).
+    """
+    messages = get_array_fast(ced, "Messages")
+    contexts = get_array_fast(ced, "Contexts")
+    resources = get_array_fast(ced, "AccessedResources")
+    plugins_raw = get_array_fast(ced, "AISystemPlugin")
+    model_det_raw = get_array_fast(ced, "ModelTransparencyDetails")
+    sensitivity_labels = get_array_fast(ced, "SensitivityLabels")
+
+    # Prompt filtering (same logic as v1 lines 571-581)
+    if prompt_filter:
+        pf_lower = prompt_filter.lower()
+        if pf_lower == "null":
+            messages = [m for m in messages if safe_get(m, "isPrompt") is None]
+        elif pf_lower == "both":
+            messages = [m for m in messages if safe_get(m, "isPrompt") is not None]
+        elif pf_lower == "prompt":
+            messages = [m for m in messages if safe_get(m, "isPrompt") is True]
+        elif pf_lower == "response":
+            messages = [m for m in messages if safe_get(m, "isPrompt") is False]
+        if not messages:
+            return 0  # record filtered out entirely
+
+    # Context items max for CopilotInteraction
+    context_items_max: int = 0
+    if operation == "CopilotInteraction" and contexts:
+        for ctx in contexts:
+            if ctx:
+                items = get_array_fast(ctx, "Items")
+                if items and len(items) > context_items_max:
+                    context_items_max = len(items)
+
+    if prompt_filter:
+        row_count = max(1, len(messages))
+    else:
+        array_counts = [
+            1, len(messages), len(contexts), len(resources),
+            len(sensitivity_labels), len(plugins_raw), len(model_det_raw),
+        ]
+        if context_items_max > 0:
+            array_counts.append(context_items_max)
+        row_count = max(array_counts)
+
+    return min(max(row_count, 1), EXPLOSION_PER_RECORD_ROW_CAP)
+
+
+def _extract_rollup_keys(
+    record: dict,
+    audit_data: dict,
+    ced: dict | None,
+    prompt_filter: str | None = None,
+) -> tuple[GroupKey, int, str, str] | None:
+    """
+    Extract rollup group key + event count + creation_time + original UserId.
+
+    Returns None if the record is filtered out (e.g. prompt_filter eliminates all messages).
+    Returns:
+        (group_key, event_count, creation_time_iso, original_user_id)
+    where group_key uses lowercased UserId for case-insensitive grouping.
+    """
+    # UserId: original casing preserved for output; lowered for grouping key
+    raw_uid = _norm_key_str(safe_get(audit_data, "UserId") or record.get("UserId", ""))
+    uid_lower = raw_uid.lower()
+
+    # CreationDate: from CSV, normalized to midnight
+    creation_date = normalize_creation_date(record.get("CreationDate", ""))
+
+    # Operation: from audit_data → CSV fallback, preserve case
+    operation = _norm_key_str(
+        safe_get(audit_data, "Operation") or record.get("Operation", "") or record.get("Operations", "")
+    )
+
+    # Workload: from audit_data, preserve case
+    workload = _norm_key_str(safe_get(audit_data, "Workload"))
+
+    # SourceFileExtension: lowercased for DAX LOWER() compatibility
+    sfe = _norm_key_str(safe_get(audit_data, "SourceFileExtension")).lower()
+
+    # AppHost: from CED for Copilot, empty otherwise, preserve case
+    if ced:
+        app_host = _norm_key_str(
+            safe_get(ced, "AppHost") or safe_get(audit_data, "AppHost")
+        )
+    else:
+        app_host = ""
+
+    # CreationTime: from audit_data, ISO formatted for lexicographic MIN/MAX
+    creation_time = format_date_purview(safe_get(audit_data, "CreationTime"))
+
+    # Event count
+    if ced:
+        event_count = _compute_copilot_event_count(ced, operation, prompt_filter)
+        if event_count == 0:
+            return None  # filtered out
+    else:
+        event_count = 1  # Non-Copilot: always 1:1
+
+    group_key: GroupKey = (uid_lower, creation_date, operation, workload, sfe, app_host)
+    return group_key, event_count, creation_time, raw_uid
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PATH A: NON-COPILOT M365 EXTRACTION
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+def _get_nv_prop(nv_list: Any, prop_name: str) -> Any:
+    """Extract a value from a Name/Value pair list by Name — matches M code's GetNVProp."""
+    if not nv_list or not isinstance(nv_list, list):
+        return None
+    for item in nv_list:
+        if isinstance(item, dict) and safe_get(item, "Name") == prop_name:
+            return safe_get(item, "Value")
+    return None
+
+
+def _build_unified_row(record: dict, audit_data: dict) -> dict:
+    """
+    Build a complete row dict with all 153 M code columns populated.
+    Extracts fields from the CSV record and AuditData JSON.
+    DeviceProperties uses NV-pivot for .OS and .BrowserType only (matches M code).
+    RecordTypeNum and ResultStatus_Audit are computed aliases.
+    """
+    # CSV-level fields
+    record_id = (
+        record.get("RecordId")
+        or record.get("Identity")
+        or record.get("Id")
+        or safe_get(audit_data, "Id")
+        or ""
+    )
+    # Read from singular first, fall back to plural for backwards-compatible input
+    op_val = safe_get(audit_data, "Operation") or record.get("Operation") or record.get("Operations", "")
+    uid_val = safe_get(audit_data, "UserId") or record.get("UserId") or record.get("UserIds", "")
+    record_type = record.get("RecordType", "")
+    result_status = safe_get(audit_data, "ResultStatus") or ""
+
+    # CreationTime formatting
+    creation_time_raw = safe_get(audit_data, "CreationTime")
+    creation_time = format_date_purview(creation_time_raw) if creation_time_raw else ""
+
+    # DeviceProperties NV-pivot (matches M code's GetNVProp — only .OS and .BrowserType)
+    dev_props = safe_get(audit_data, "DeviceProperties")
+    dp_os = _get_nv_prop(dev_props, "OS") or ""
+    dp_browser = _get_nv_prop(dev_props, "BrowserType") or ""
+
+    # Computed alias: RecordTypeNum = int(RecordType)
+    try:
+        record_type_num = int(record_type) if record_type else ""
+    except (ValueError, TypeError):
+        record_type_num = ""
+
+    # ApplicationId with fallback chain
+    app_id_resolved = select_first_non_null([
+        safe_get(audit_data, "ApplicationId"),
+        safe_get(audit_data, "AppId"),
+        safe_get(audit_data, "ClientAppId"),
+    ]) or ""
+
+    # AgentCategory is computed
+    agent_id_val = safe_get(audit_data, "AgentId") or ""
+    agent_category = categorize_agent(agent_id_val) if agent_id_val else ""
+
+    row = {
+        "RecordId": record_id,
+        "CreationDate": record.get("CreationDate", ""),
+        "RecordType": record_type,
+        "Operation": op_val,
+        "UserId": uid_val,
+        "AssociatedAdminUnits": record.get("AssociatedAdminUnits", "") or safe_get(audit_data, "AssociatedAdminUnits") or "",
+        "AssociatedAdminUnitsNames": record.get("AssociatedAdminUnitsNames", "") or safe_get(audit_data, "AssociatedAdminUnitsNames") or "",
+        "@odata.type": safe_get(audit_data, "@odata.type") or "",
+        "CreationTime": creation_time,
+        "Id": safe_get(audit_data, "Id") or "",
+        "OrganizationId": safe_get(audit_data, "OrganizationId") or "",
+        "ResultStatus": result_status,
+        "UserKey": safe_get(audit_data, "UserKey") or "",
+        "UserType": safe_get(audit_data, "UserType") or "",
+        "Version": safe_get(audit_data, "Version") or "",
+        "Workload": safe_get(audit_data, "Workload") or "",
+        "ClientIP": safe_get(audit_data, "ClientIP") or "",
+        "ObjectId": safe_get(audit_data, "ObjectId") or "",
+        "AzureActiveDirectoryEventType": safe_get(audit_data, "AzureActiveDirectoryEventType") or "",
+        "ActorContextId": safe_get(audit_data, "ActorContextId") or "",
+        "ActorIpAddress": safe_get(audit_data, "ActorIpAddress") or "",
+        "InterSystemsId": safe_get(audit_data, "InterSystemsId") or "",
+        "IntraSystemId": safe_get(audit_data, "IntraSystemId") or "",
+        "SupportTicketId": safe_get(audit_data, "SupportTicketId") or "",
+        "TargetContextId": safe_get(audit_data, "TargetContextId") or "",
+        "ApplicationId": app_id_resolved,
+        "DeviceProperties.OS": dp_os,
+        "DeviceProperties.BrowserType": dp_browser,
+        "ErrorNumber": safe_get(audit_data, "ErrorNumber") or "",
+        "SiteUrl": safe_get(audit_data, "SiteUrl") or "",
+        "SourceRelativeUrl": safe_get(audit_data, "SourceRelativeUrl") or "",
+        "SourceFileName": safe_get(audit_data, "SourceFileName") or "",
+        "SourceFileExtension": safe_get(audit_data, "SourceFileExtension") or "",
+        "ListId": safe_get(audit_data, "ListId") or "",
+        "ListItemUniqueId": safe_get(audit_data, "ListItemUniqueId") or "",
+        "WebId": safe_get(audit_data, "WebId") or "",
+        "ApplicationDisplayName": safe_get(audit_data, "ApplicationDisplayName") or "",
+        "EventSource": safe_get(audit_data, "EventSource") or "",
+        "ItemType": safe_get(audit_data, "ItemType") or "",
+        "SiteSensitivityLabelId": safe_get(audit_data, "SiteSensitivityLabelId") or "",
+        "GeoLocation": safe_get(audit_data, "GeoLocation") or "",
+        "IsManagedDevice": safe_get(audit_data, "IsManagedDevice") or "",
+        "DeviceDisplayName": safe_get(audit_data, "DeviceDisplayName") or "",
+        "ListBaseType": safe_get(audit_data, "ListBaseType") or "",
+        "ListServerTemplate": safe_get(audit_data, "ListServerTemplate") or "",
+        "AuthenticationType": safe_get(audit_data, "AuthenticationType") or "",
+        "Site": safe_get(audit_data, "Site") or "",
+        "DoNotDistributeEvent": safe_get(audit_data, "DoNotDistributeEvent") or "",
+        "HighPriorityMediaProcessing": safe_get(audit_data, "HighPriorityMediaProcessing") or "",
+        "BrowserName": safe_get(audit_data, "BrowserName") or "",
+        "BrowserVersion": safe_get(audit_data, "BrowserVersion") or "",
+        "CorrelationId": safe_get(audit_data, "CorrelationId") or "",
+        "Platform": safe_get(audit_data, "Platform") or "",
+        "UserAgent": safe_get(audit_data, "UserAgent") or "",
+        "ActorInfoString": safe_get(audit_data, "ActorInfoString") or "",
+        "AppId": safe_get(audit_data, "AppId") or "",
+        "AuthType": safe_get(audit_data, "AuthType") or "",
+        "ClientAppId": safe_get(audit_data, "ClientAppId") or "",
+        "ClientIPAddress": safe_get(audit_data, "ClientIPAddress") or "",
+        "ClientInfoString": safe_get(audit_data, "ClientInfoString") or "",
+        "ExternalAccess": safe_get(audit_data, "ExternalAccess") or "",
+        "InternalLogonType": safe_get(audit_data, "InternalLogonType") or "",
+        "LogonType": safe_get(audit_data, "LogonType") or "",
+        "LogonUserSid": safe_get(audit_data, "LogonUserSid") or "",
+        "MailboxGuid": safe_get(audit_data, "MailboxGuid") or "",
+        "MailboxOwnerSid": safe_get(audit_data, "MailboxOwnerSid") or "",
+        "MailboxOwnerUPN": safe_get(audit_data, "MailboxOwnerUPN") or "",
+        "OrganizationName": safe_get(audit_data, "OrganizationName") or "",
+        "OriginatingServer": safe_get(audit_data, "OriginatingServer") or "",
+        "SessionId": safe_get(audit_data, "SessionId") or "",
+        "TokenObjectId": safe_get(audit_data, "TokenObjectId") or "",
+        "TokenTenantId": safe_get(audit_data, "TokenTenantId") or "",
+        "TokenType": safe_get(audit_data, "TokenType") or "",
+        "SaveToSentItems": safe_get(audit_data, "SaveToSentItems") or "",
+        "OperationCount": safe_get(audit_data, "OperationCount") or "",
+        "FileSizeBytes": safe_get(audit_data, "FileSizeBytes") or "",
+        # Teams / Meetings / Chat
+        "MeetingId": safe_get(audit_data, "MeetingId") or "",
+        "MeetingType": safe_get(audit_data, "MeetingType") or "",
+        "EventSignature": safe_get(audit_data, "EventSignature") or "",
+        "EventData": safe_get(audit_data, "EventData") or "",
+        "Permission": safe_get(audit_data, "Permission") or "",
+        "SensitivityLabelId": safe_get(audit_data, "SensitivityLabelId") or "",
+        "SharingLinkScope": safe_get(audit_data, "SharingLinkScope") or "",
+        "TargetUserOrGroupType": safe_get(audit_data, "TargetUserOrGroupType") or "",
+        "TargetUserOrGroupName": safe_get(audit_data, "TargetUserOrGroupName") or "",
+        "MeetingURL": safe_get(audit_data, "MeetingURL") or "",
+        "ChatId": safe_get(audit_data, "ChatId") or "",
+        "MessageId": safe_get(audit_data, "MessageId") or "",
+        "MessageSizeInBytes": safe_get(audit_data, "MessageSizeInBytes") or "",
+        "MessageType": safe_get(audit_data, "MessageType") or "",
+        # Forms
+        "FormId": safe_get(audit_data, "FormId") or "",
+        "FormName": safe_get(audit_data, "FormName") or "",
+        # Video / Stream
+        "VideoId": safe_get(audit_data, "VideoId") or "",
+        "VideoName": safe_get(audit_data, "VideoName") or "",
+        "ChannelId": safe_get(audit_data, "ChannelId") or "",
+        "ViewDuration": safe_get(audit_data, "ViewDuration") or "",
+        "ClientRegion": safe_get(audit_data, "ClientRegion") or "",
+        "CopilotLogVersion": safe_get(audit_data, "CopilotLogVersion") or "",
+        "TargetId": safe_get(audit_data, "TargetId") or "",
+        # Teams details
+        "TeamName": safe_get(audit_data, "TeamName") or "",
+        "TeamGuid": safe_get(audit_data, "TeamGuid") or "",
+        "ResponseId": safe_get(audit_data, "ResponseId") or "",
+        "IsAnonymous": safe_get(audit_data, "IsAnonymous") or "",
+        "DeviceType": safe_get(audit_data, "DeviceType") or "",
+        "ChannelName": safe_get(audit_data, "ChannelName") or "",
+        "ChannelGuid": safe_get(audit_data, "ChannelGuid") or "",
+        "ChannelType": safe_get(audit_data, "ChannelType") or "",
+        "AppName": safe_get(audit_data, "AppName") or "",
+        "EnvironmentName": safe_get(audit_data, "EnvironmentName") or "",
+        # Planner
+        "PlanId": safe_get(audit_data, "PlanId") or "",
+        "PlanName": safe_get(audit_data, "PlanName") or "",
+        "TaskId": safe_get(audit_data, "TaskId") or "",
+        "TaskName": safe_get(audit_data, "TaskName") or "",
+        "PercentComplete": safe_get(audit_data, "PercentComplete") or "",
+        "CrossMailboxOperation": safe_get(audit_data, "CrossMailboxOperation") or "",
+        # Computed aliases
+        "RecordTypeNum": record_type_num,
+        "ResultStatus_Audit": result_status,
+        # Copilot model/token fields (populated from CED for Copilot records; from root for non-Copilot)
+        "ModelId": safe_get(audit_data, "ModelId") or "",
+        "ModelProvider": safe_get(audit_data, "ModelProvider") or "",
+        "ModelFamily": safe_get(audit_data, "ModelFamily") or "",
+        "TokensTotal": safe_get(audit_data, "TokensTotal") or "",
+        "TokensInput": safe_get(audit_data, "TokensInput") or "",
+        "TokensOutput": safe_get(audit_data, "TokensOutput") or "",
+        "DurationMs": safe_get(audit_data, "DurationMs") or "",
+        "OutcomeStatus": safe_get(audit_data, "OutcomeStatus") or "",
+        "ConversationId": safe_get(audit_data, "ConversationId") or "",
+        "TurnNumber": safe_get(audit_data, "TurnNumber") or "",
+        "RetryCount": safe_get(audit_data, "RetryCount") or "",
+        "ClientVersion": safe_get(audit_data, "ClientVersion") or "",
+        "ClientPlatform": safe_get(audit_data, "ClientPlatform") or "",
+        "AgentId": agent_id_val,
+        "AgentName": safe_get(audit_data, "AgentName") or "",
+        "AgentVersion": safe_get(audit_data, "AgentVersion") or "",
+        "AgentCategory": agent_category,
+        "ApplicationName": safe_get(audit_data, "ApplicationName") or "",
+        "SensitivityLabel": safe_get(audit_data, "SensitivityLabel") or "",
+        # CED sub-fields — empty for non-Copilot records, populated by Copilot path
+        "AppHost": "",
+        "ThreadId": "",
+        "Context_Id": "",
+        "Context_Type": "",
+        "Message_Id": "",
+        "Message_isPrompt": "",
+        "AccessedResource_Action": "",
+        "AccessedResource_PolicyDetails": "",
+        "AccessedResource_SiteUrl": "",
+        "AISystemPlugin_Id": "",
+        "AISystemPlugin_Name": "",
+        "ModelTransparencyDetails_ModelName": "",
+        "MessageIds": "",
+        "AccessedResource_Name": "",
+        "AccessedResource_SensitivityLabel": "",
+        "AccessedResource_ResourceType": "",
+        "Context_Item": "",
+    }
+    return row
+
+
+def explode_m365_record(record: dict, audit_data: dict) -> list[dict]:
+    """
+    Extract a non-Copilot M365 record (Path A).
+    Produces exactly 1 row per record with all 153 M code columns.
+    No array explosion — M code does not explode non-Copilot arrays.
+    """
+    return [_build_unified_row(record, audit_data)]
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PATH B: COPILOT EXPLOSION
+# ═════════════════════════════════════════════════════════════════════════════
+
+def explode_copilot_record(
+    record: dict,
+    audit_data: dict,
+    ced: dict,
+    prompt_filter: str | None = None,
+) -> list[dict]:
+    """
+    Explode a Copilot record (Path B).
+    Starts from the unified 153-column base row, then overrides CED-specific fields.
+    Extracts Messages, Contexts, AccessedResources, AISystemPlugin,
+    ModelTransparencyDetails, SensitivityLabels and builds N parallel-indexed rows.
+    """
+    # Extract array fields from CopilotEventData
+    messages = get_array_fast(ced, "Messages")
+    contexts = get_array_fast(ced, "Contexts")
+    resources = get_array_fast(ced, "AccessedResources")
+    plugins_raw = get_array_fast(ced, "AISystemPlugin")
+    model_det_raw = get_array_fast(ced, "ModelTransparencyDetails")
+    message_ids = get_array_fast(ced, "MessageIds")
+    sensitivity_labels = get_array_fast(ced, "SensitivityLabels")
+
+    # Prompt filtering
+    if prompt_filter:
+        filtered: list = []
+        pf_lower = prompt_filter.lower()
+        if pf_lower == "null":
+            filtered = [m for m in messages if safe_get(m, "isPrompt") is None]
+        elif pf_lower == "both":
+            filtered = [m for m in messages if safe_get(m, "isPrompt") is not None]
+        elif pf_lower == "prompt":
+            filtered = [m for m in messages if safe_get(m, "isPrompt") is True]
+        elif pf_lower == "response":
+            filtered = [m for m in messages if safe_get(m, "isPrompt") is False]
+        messages = filtered
+        if not messages:
+            return []
+
+    # Detect activity type for 2-level explosion
+    activity_type = safe_get(audit_data, "Operation") or ""
+
+    # Context items max for CopilotInteraction
+    context_items_max: int = 0
+    if activity_type == "CopilotInteraction" and contexts:
+        for ctx in contexts:
+            if ctx:
+                items = get_array_fast(ctx, "Items")
+                if items and len(items) > context_items_max:
+                    context_items_max = len(items)
+
+    # Calculate row count
+    if prompt_filter:
+        row_count = max(1, len(messages))
+    else:
+        array_counts = [
+            1, len(messages), len(contexts), len(resources),
+            len(sensitivity_labels), len(plugins_raw), len(model_det_raw),
+        ]
+        if context_items_max > 0:
+            array_counts.append(context_items_max)
+        row_count = max(array_counts)
+
+    row_count = min(row_count, EXPLOSION_PER_RECORD_ROW_CAP)
+    if row_count < 1:
+        row_count = 1
+
+    # ── Build unified base row with all 153 M code columns ───────────────
+    base = _build_unified_row(record, audit_data)
+
+    # ── Override CED-specific scalar fields with deep CED extraction ─────
+    # AppHost: prefer CED → audit_data → Workload
+    base["AppHost"] = select_first_non_null([
+        safe_get(ced, "AppHost"),
+        safe_get(audit_data, "AppHost"),
+        safe_get(audit_data, "Workload"),
+    ]) or ""
+
+    base["ThreadId"] = safe_get(ced, "ThreadId") or ""
+
+    # AgentVersion: prefer audit_data → CED fallbacks
+    base["AgentVersion"] = select_first_non_null([
+        safe_get(audit_data, "AgentVersion"),
+        safe_get(ced, "AgentVersion"),
+        safe_get(ced, "Version"),
+    ]) or ""
+
+    # ApplicationName: prefer audit_data → CED fallbacks
+    base["ApplicationName"] = select_first_non_null([
+        safe_get(audit_data, "ApplicationName"),
+        safe_get(ced, "HostAppName"),
+        safe_get(ced, "ClientAppName"),
+    ]) or ""
+
+    # Model fields from CED with fallbacks
+    base["ModelId"] = select_first_non_null([
+        safe_get(ced, "ModelId"), safe_get(ced, "ModelID"), safe_get(audit_data, "ModelId"),
+    ]) or ""
+    base["ModelProvider"] = select_first_non_null([
+        safe_get(ced, "ModelProvider"), safe_get(ced, "Provider"), safe_get(ced, "ModelVendor"),
+    ]) or ""
+    base["ModelFamily"] = select_first_non_null([
+        safe_get(ced, "ModelFamily"), safe_get(ced, "ModelType"),
+    ]) or ""
+
+    # Token usage from CED
+    usage_node = select_first_non_null([
+        safe_get(ced, "Usage"), safe_get(ced, "TokenUsage"),
+        safe_get(ced, "Tokens"), safe_get(audit_data, "Usage"),
+    ])
+    tokens_total: Any = None
+    tokens_input: Any = None
+    tokens_output: Any = None
+    if usage_node and isinstance(usage_node, dict):
+        tokens_total = to_num(select_first_non_null([
+            safe_get(usage_node, "Total"), safe_get(usage_node, "TotalTokens"),
+            safe_get(usage_node, "TokensTotal"),
+        ]))
+        tokens_input = to_num(select_first_non_null([
+            safe_get(usage_node, "Input"), safe_get(usage_node, "Prompt"),
+            safe_get(usage_node, "InputTokens"), safe_get(usage_node, "TokensInput"),
+        ]))
+        tokens_output = to_num(select_first_non_null([
+            safe_get(usage_node, "Output"), safe_get(usage_node, "Completion"),
+            safe_get(usage_node, "OutputTokens"), safe_get(usage_node, "TokensOutput"),
+        ]))
+    if not tokens_total and (tokens_input or tokens_output):
+        try:
+            tokens_total = (tokens_input or 0) + (tokens_output or 0)
+        except Exception:
+            pass
+    base["TokensTotal"] = tokens_total if tokens_total is not None else ""
+    base["TokensInput"] = tokens_input if tokens_input is not None else ""
+    base["TokensOutput"] = tokens_output if tokens_output is not None else ""
+
+    # Duration, outcome, conversation from CED
+    duration_ms = to_num(select_first_non_null([
+        safe_get(ced, "DurationMs"), safe_get(ced, "ElapsedMs"),
+        safe_get(ced, "ProcessingTimeMs"), safe_get(ced, "LatencyMs"),
+    ]))
+    base["DurationMs"] = duration_ms if duration_ms is not None else ""
+
+    outcome_status: Any = select_first_non_null([
+        safe_get(ced, "OutcomeStatus"), safe_get(ced, "Outcome"),
+        safe_get(ced, "Result"), safe_get(ced, "Status"),
+    ])
+    if isinstance(outcome_status, bool):
+        outcome_status = "Success" if outcome_status else "Failure"
+    base["OutcomeStatus"] = outcome_status or ""
+
+    base["ConversationId"] = select_first_non_null([
+        safe_get(ced, "ConversationId"), safe_get(ced, "ConversationID"),
+        safe_get(ced, "SessionId"),
+    ]) or ""
+
+    turn_number = to_num(select_first_non_null([
+        safe_get(ced, "TurnNumber"), safe_get(ced, "TurnIndex"),
+        safe_get(ced, "MessageIndex"),
+    ]))
+    base["TurnNumber"] = turn_number if turn_number is not None else ""
+
+    retry_count = to_num(select_first_non_null([
+        safe_get(ced, "RetryCount"), safe_get(ced, "Retries"),
+    ]))
+    base["RetryCount"] = retry_count if retry_count is not None else ""
+
+    base["ClientVersion"] = select_first_non_null([
+        safe_get(ced, "ClientVersion"), safe_get(ced, "Version"), safe_get(ced, "Build"),
+    ]) or ""
+    base["ClientPlatform"] = select_first_non_null([
+        safe_get(ced, "ClientPlatform"), safe_get(ced, "Platform"), safe_get(ced, "OS"),
+    ]) or ""
+
+    # MessageIds: semicolon-joined (matches M code's Text.Combine)
+    base["MessageIds"] = ";".join(str(m) for m in message_ids) if message_ids else ""
+
+    # ── Build rows with indexed array access ─────────────────────────────
+    rows: list[dict] = []
+    for i in range(row_count):
+        row = dict(base)  # shallow copy of all 153 columns
+
+        # Indexed array access — Contexts
+        if i < len(contexts) and contexts[i]:
+            row["Context_Id"] = safe_get(contexts[i], "Id") or ""
+            row["Context_Type"] = safe_get(contexts[i], "Type") or ""
+        else:
+            row["Context_Id"] = ""
+            row["Context_Type"] = ""
+
+        # Messages
+        if i < len(messages):
+            msg = messages[i]
+            if isinstance(msg, dict):
+                row["Message_Id"] = safe_get(msg, "Id") or ""
+                row["Message_isPrompt"] = bool_tf(safe_get(msg, "isPrompt"))
+            else:
+                row["Message_Id"] = str(msg) if msg is not None else ""
+                row["Message_isPrompt"] = ""
+        else:
+            row["Message_Id"] = ""
+            row["Message_isPrompt"] = ""
+
+        # AccessedResources
+        if i < len(resources) and resources[i]:
+            res = resources[i]
+            row["AccessedResource_Action"] = safe_get(res, "Action") or ""
+            row["AccessedResource_PolicyDetails"] = to_json_if_object(safe_get(res, "PolicyDetails"))
+            row["AccessedResource_SiteUrl"] = safe_get(res, "SiteUrl") or ""
+            row["AccessedResource_Name"] = safe_get(res, "Name") or ""
+            row["AccessedResource_SensitivityLabel"] = safe_get(res, "SensitivityLabel") or ""
+            row["AccessedResource_ResourceType"] = safe_get(res, "ResourceType") or ""
+        else:
+            row["AccessedResource_Action"] = ""
+            row["AccessedResource_PolicyDetails"] = ""
+            row["AccessedResource_SiteUrl"] = ""
+            row["AccessedResource_Name"] = ""
+            row["AccessedResource_SensitivityLabel"] = ""
+            row["AccessedResource_ResourceType"] = ""
+
+        # AISystemPlugin
+        if i < len(plugins_raw) and plugins_raw[i]:
+            row["AISystemPlugin_Id"] = safe_get(plugins_raw[i], "Id") or ""
+            row["AISystemPlugin_Name"] = safe_get(plugins_raw[i], "Name") or ""
+        else:
+            row["AISystemPlugin_Id"] = ""
+            row["AISystemPlugin_Name"] = ""
+
+        # ModelTransparencyDetails
+        if i < len(model_det_raw) and model_det_raw[i]:
+            row["ModelTransparencyDetails_ModelName"] = safe_get(model_det_raw[i], "ModelName") or ""
+        else:
+            row["ModelTransparencyDetails_ModelName"] = ""
+
+        # SensitivityLabel (from CED SensitivityLabels array)
+        if i < len(sensitivity_labels):
+            row["SensitivityLabel"] = str(sensitivity_labels[i]) if sensitivity_labels[i] is not None else ""
+
+        # Context_Item — full mode: one item per row across all contexts
+        if activity_type == "CopilotInteraction":
+            found_item = None
+            for ctx in contexts:
+                if ctx:
+                    items = get_array_fast(ctx, "Items")
+                    if items and i < len(items):
+                        found_item = items[i]
+                        break
+            row["Context_Item"] = to_json_if_object(found_item) if found_item else ""
+        else:
+            row["Context_Item"] = ""
+
+        rows.append(row)
+
+    return rows
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ROUTER: Dispatch to Path A or Path B
+# ═════════════════════════════════════════════════════════════════════════════
+
+def explode_record(
+    record: dict,
+    prompt_filter: str | None = None,
+) -> list[dict]:
+    """
+    Parse AuditData and route to appropriate explosion path.
+    Returns list of flattened row dicts, or empty list on error.
+    """
+    audit_data_raw = record.get("AuditData", "")
+    if not audit_data_raw or not isinstance(audit_data_raw, str) or not audit_data_raw.strip():
+        return []
+
+    try:
+        audit_data = json_loads(audit_data_raw)
+    except Exception:
+        return []
+
+    if not isinstance(audit_data, dict):
+        return []
+
+    ced = safe_get(audit_data, "CopilotEventData")
+    if ced and isinstance(ced, dict):
+        return explode_copilot_record(record, audit_data, ced, prompt_filter=prompt_filter)
+    else:
+        return explode_m365_record(record, audit_data)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# HEADER — Fixed schema, no dynamic discovery needed
+# ═════════════════════════════════════════════════════════════════════════════
+# Output columns are exactly M365_UNIFIED_HEADER (153 columns in M code order).
+# No schema discovery pass is needed because both Path A and Path B produce
+# row dicts that contain exactly these keys.
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# CHUNK PROCESSOR (unit of parallel work)
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _process_chunk(args: tuple) -> tuple[list[dict], int, int]:
+    """
+    Process a chunk of CSV rows → exploded row dicts.
+    Returns (exploded_rows, input_count, error_count).
+    """
+    chunk, prompt_filter = args
+    results: list[dict] = []
+    errors = 0
+
+    for record in chunk:
+        try:
+            rows = explode_record(record, prompt_filter=prompt_filter)
+            results.extend(rows)
+        except Exception:
+            errors += 1
+
+    return results, len(chunk), errors
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# MAIN EXPLOSION ORCHESTRATOR
+# ═════════════════════════════════════════════════════════════════════════════
+
+def run_explosion(
+    input_csv: str,
+    output_csv: str,
+    prompt_filter: str | None = None,
+    workers: int = 0,
+    chunk_size: int = STREAMING_CHUNK_SIZE,
+    quiet: bool = False,
+) -> dict[str, Any]:
+    """
+    Main entry point: reads input CSV, explodes all records, writes output CSV.
+    Uses multiprocessing for large files, single-process for small ones.
+
+    Returns a stats dict with counts and timing.
+    """
+    if not os.path.isfile(input_csv):
+        print(f"ERROR: Input file not found: {input_csv}", file=sys.stderr)
+        sys.exit(1)
+
+    if workers <= 0:
+        workers = min(os.cpu_count() or 1, 8)
+
+    t_start = time.perf_counter()
+    stats = {
+        "input_records": 0,
+        "output_rows": 0,
+        "errors": 0,
+        "chunks_processed": 0,
+    }
+
+    if not quiet:
+        print(f"Purview M365 Usage Bundle Explosion Processor v{SCRIPT_VERSION}")
+        print(f"  JSON engine:    {_JSON_ENGINE}")
+        print(f"  Input:          {input_csv}")
+        print(f"  Output:         {output_csv}")
+        print(f"  Prompt filter:  {prompt_filter or 'None'}")
+        print(f"  Workers:        {workers}")
+        print(f"  Chunk size:     {chunk_size}")
+        print()
+
+    # ── Phase 1: Fixed schema ─────────────────────────────────────────────
+    final_header = list(M365_UNIFIED_HEADER)  # 153 columns in M code order
+    if not quiet:
+        print(f"Phase 1: Using fixed {len(final_header)}-column M code schema")
+
+    # ── Phase 2: Process chunks ──────────────────────────────────────────
+    if not quiet:
+        print("Phase 2: Processing records...")
+
+    # Accumulate all exploded rows (we need dynamic columns before writing header)
+    all_rows: list[dict] = []
+
+    # Read CSV in chunks
+    chunks: list[list[dict]] = []
+    current_chunk: list[dict] = []
+
+    with open(input_csv, "r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            current_chunk.append(row)
+            if len(current_chunk) >= chunk_size:
+                chunks.append(current_chunk)
+                current_chunk = []
+        if current_chunk:
+            chunks.append(current_chunk)
+
+    total_input = sum(len(c) for c in chunks)
+    stats["input_records"] = total_input
+
+    if not quiet:
+        print(f"  Loaded {total_input:,} input records in {len(chunks)} chunk(s)")
+
+    # Determine whether to use multiprocessing
+    use_parallel = workers > 1 and len(chunks) > 1
+
+    if use_parallel:
+        chunk_args = [(chunk, prompt_filter) for chunk in chunks]
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(_process_chunk, arg): idx for idx, arg in enumerate(chunk_args)}
+            for future in as_completed(futures):
+                try:
+                    exploded, _in_count, err_count = future.result()
+                    all_rows.extend(exploded)
+                    stats["errors"] += err_count
+                    stats["chunks_processed"] += 1
+                    if not quiet and stats["chunks_processed"] % 5 == 0:
+                        print(f"    Chunks completed: {stats['chunks_processed']}/{len(chunks)}")
+                except Exception as exc:
+                    stats["errors"] += 1
+                    if not quiet:
+                        print(f"    Chunk failed: {exc}", file=sys.stderr)
+    else:
+        for chunk in chunks:
+            exploded, _in_count, err_count = _process_chunk((chunk, prompt_filter))
+            all_rows.extend(exploded)
+            stats["errors"] += err_count
+            stats["chunks_processed"] += 1
+            if not quiet and stats["chunks_processed"] % 5 == 0:
+                print(f"    Chunks completed: {stats['chunks_processed']}/{len(chunks)}")
+
+    stats["output_rows"] = len(all_rows)
+
+    # ── Phase 3: Write output CSV with fixed header ──────────────────────
+    if not quiet:
+        print("Phase 3: Writing output CSV...")
+
+    # Write output using fixed M code-ordered header
+    os.makedirs(os.path.dirname(os.path.abspath(output_csv)), exist_ok=True)
+    with open(output_csv, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=final_header, extrasaction="ignore", lineterminator="\n")
+        writer.writeheader()
+        for row in all_rows:
+            writer.writerow(row)
+
+    t_elapsed = time.perf_counter() - t_start
+
+    # ── Summary ──────────────────────────────────────────────────────────
+    if not quiet:
+        print()
+        print("=== EXPLOSION SUMMARY ===")
+        print(f"  Input records:  {stats['input_records']:,}")
+        print(f"  Output rows:    {stats['output_rows']:,}")
+        if stats["output_rows"] > stats["input_records"] and stats["input_records"] > 0:
+            ratio = round(stats["output_rows"] / stats["input_records"], 2)
+            extra = stats["output_rows"] - stats["input_records"]
+            print(f"  Expansion:      {ratio}x ({extra:,} additional rows from array explosion)")
+        elif stats["output_rows"] == stats["input_records"]:
+            print("  Expansion:      1:1 (no arrays exploded)")
+        elif stats["input_records"] > 0:
+            filtered = stats["input_records"] - stats["output_rows"]
+            print(f"  Reduction:      {filtered:,} records filtered out")
+        if stats["errors"] > 0:
+            print(f"  Errors:         {stats['errors']:,} record(s) failed to process")
+        print(f"  Columns:        {len(final_header):,}")
+        print(f"  Elapsed:        {t_elapsed:.2f}s")
+        if stats["output_rows"] > 0 and t_elapsed > 0:
+            print(f"  Throughput:     {stats['output_rows'] / t_elapsed:,.0f} rows/sec")
+        print(f"  Output file:    {output_csv}")
+        print()
+
+    return stats
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ROLLUP ORCHESTRATOR (streaming — no exploded rows in memory)
+# ═════════════════════════════════════════════════════════════════════════════
+
+def run_rollup(
+    input_csv: str,
+    output_csv: str,
+    prompt_filter: str | None = None,
+    quiet: bool = False,
+) -> dict[str, Any]:
+    """
+    Streaming rollup: read CSV row-by-row → parse AuditData → extract 6 keys +
+    CreationTime → accumulate into dict[GroupKey, RollupAccum] → write 9-column CSV.
+
+    No exploded row dicts are ever stored in memory.
+    """
+    if not os.path.isfile(input_csv):
+        print(f"ERROR: Input file not found: {input_csv}", file=sys.stderr)
+        sys.exit(1)
+
+    t_start = time.perf_counter()
+    rollup: dict[GroupKey, RollupAccum] = {}
+    stats: dict[str, Any] = {
+        "input_records": 0,
+        "virtual_exploded_event_count": 0,
+        "output_rows": 0,
+        "parse_errors": 0,
+    }
+
+    if not quiet:
+        print(f"Purview M365 Usage Bundle Explosion Processor v{SCRIPT_VERSION} [ROLLUP MODE]")
+        print(f"  JSON engine:    {_JSON_ENGINE}")
+        print(f"  Input:          {input_csv}")
+        print(f"  Output:         {output_csv}")
+        print(f"  Prompt filter:  {prompt_filter or 'None'}")
+        print()
+        print("Processing records (streaming rollup)...")
+
+    # ── Streaming read + accumulate ──────────────────────────────────────
+    with open(input_csv, "r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        for record in reader:
+            stats["input_records"] += 1
+
+            # Progress indicator
+            if not quiet and stats["input_records"] % 500_000 == 0:
+                print(f"  {stats['input_records']:>12,} records processed, "
+                      f"{len(rollup):,} groups...")
+
+            # Parse AuditData JSON
+            audit_data_raw = record.get("AuditData", "")
+            if not audit_data_raw or not isinstance(audit_data_raw, str) or not audit_data_raw.strip():
+                stats["parse_errors"] += 1
+                continue
+            try:
+                audit_data = json_loads(audit_data_raw)
+            except Exception:
+                stats["parse_errors"] += 1
+                continue
+            if not isinstance(audit_data, dict):
+                stats["parse_errors"] += 1
+                continue
+
+            ced = safe_get(audit_data, "CopilotEventData")
+            if ced and not isinstance(ced, dict):
+                ced = None
+
+            # Extract rollup keys (lightweight — no row dict built)
+            result = _extract_rollup_keys(record, audit_data, ced, prompt_filter)
+            if result is None:
+                continue  # filtered out by prompt_filter
+
+            group_key, event_count, creation_time, original_uid = result
+            stats["virtual_exploded_event_count"] += event_count
+
+            # Accumulate into rollup dict
+            if group_key in rollup:
+                acc = rollup[group_key]
+                acc.event_count += event_count
+                if creation_time:
+                    if not acc.min_creation_time or creation_time < acc.min_creation_time:
+                        acc.min_creation_time = creation_time
+                    if not acc.max_creation_time or creation_time > acc.max_creation_time:
+                        acc.max_creation_time = creation_time
+            else:
+                rollup[group_key] = RollupAccum(
+                    event_count=event_count,
+                    min_ct=creation_time,
+                    max_ct=creation_time,
+                    original_uid=original_uid,
+                )
+
+    # ── Write rollup output CSV ──────────────────────────────────────────
+    stats["output_rows"] = len(rollup)
+
+    if not quiet:
+        print(f"  {stats['input_records']:>12,} records processed (done)")
+        print(f"  Writing {stats['output_rows']:,} rollup rows...")
+
+    os.makedirs(os.path.dirname(os.path.abspath(output_csv)), exist_ok=True)
+    with open(output_csv, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f, lineterminator="\n")
+        writer.writerow(ROLLUP_HEADER)
+        for (uid_lower, cdate, op, wl, sfe, ah), acc in rollup.items():
+            writer.writerow([
+                acc.original_user_id,  # output original casing, NOT lowered key
+                cdate,
+                op,
+                wl,
+                sfe,
+                ah,
+                acc.event_count,
+                acc.min_creation_time,   # CreationTime = MIN
+                acc.max_creation_time,   # MaxCreationTime = MAX
+            ])
+
+    t_elapsed = time.perf_counter() - t_start
+
+    # ── Summary report ───────────────────────────────────────────────────
+    if not quiet:
+        pct = 0.0
+        if stats["virtual_exploded_event_count"] > 0:
+            pct = (1 - stats["output_rows"] / stats["virtual_exploded_event_count"]) * 100
+        print()
+        print("=== ROLLUP SUMMARY ===")
+        print(f"  Input records:              {stats['input_records']:>14,}")
+        print(f"  Virtual exploded events:    {stats['virtual_exploded_event_count']:>14,}")
+        print(f"  Rollup output rows:         {stats['output_rows']:>14,}")
+        print(f"  Row reduction:              {pct:>13.1f}%"
+              f"  ({stats['virtual_exploded_event_count']:,} -> {stats['output_rows']:,})")
+        if stats["parse_errors"] > 0:
+            print(f"  Parse errors:               {stats['parse_errors']:>14,}")
+        print(f"  Columns:                    {len(ROLLUP_HEADER):>14}")
+        print(f"  Elapsed:                    {t_elapsed:>13.2f}s")
+        if stats["input_records"] > 0 and t_elapsed > 0:
+            print(f"  Throughput:                 {stats['input_records'] / t_elapsed:>12,.0f} input records/sec")
+        print(f"  Output file:                {output_csv}")
+        print()
+
+    return stats
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# RECONCILIATION (sample-based validation of rollup correctness)
+# ═════════════════════════════════════════════════════════════════════════════
+
+def run_reconcile(
+    input_csv: str,
+    prompt_filter: str | None = None,
+    sample_size: int = RECONCILE_SAMPLE_SIZE,
+    quiet: bool = False,
+) -> bool:
+    """
+    Sample-based reconciliation: read a sample of records, run both rollup-key
+    extraction and full event-level explosion, compare total and filtered counts.
+
+    Returns True if all checks pass, False otherwise.
+    """
+    if not os.path.isfile(input_csv):
+        print(f"ERROR: Input file not found: {input_csv}", file=sys.stderr)
+        return False
+
+    if not quiet:
+        print(f"\n=== RECONCILIATION CHECK (sample {sample_size:,} records) ===\n")
+
+    # ── Read sample ──────────────────────────────────────────────────────
+    all_records: list[dict] = []
+    with open(input_csv, "r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        for record in reader:
+            all_records.append(record)
+
+    if len(all_records) > sample_size:
+        sample = random.sample(all_records, sample_size)
+    else:
+        sample = all_records
+        sample_size = len(sample)
+
+    if not quiet:
+        print(f"  Total input records: {len(all_records):,}")
+        print(f"  Sample size:         {sample_size:,}")
+
+    # ── Run event-level explosion on sample ──────────────────────────────
+    event_rows: list[dict] = []
+    event_errors = 0
+    for record in sample:
+        try:
+            rows = explode_record(record, prompt_filter=prompt_filter)
+            event_rows.extend(rows)
+        except Exception:
+            event_errors += 1
+
+    # ── Run rollup-key extraction on same sample ─────────────────────────
+    rollup_sample: dict[GroupKey, RollupAccum] = {}
+    rollup_errors = 0
+    for record in sample:
+        audit_data_raw = record.get("AuditData", "")
+        if not audit_data_raw or not isinstance(audit_data_raw, str) or not audit_data_raw.strip():
+            rollup_errors += 1
+            continue
+        try:
+            audit_data = json_loads(audit_data_raw)
+        except Exception:
+            rollup_errors += 1
+            continue
+        if not isinstance(audit_data, dict):
+            rollup_errors += 1
+            continue
+
+        ced = safe_get(audit_data, "CopilotEventData")
+        if ced and not isinstance(ced, dict):
+            ced = None
+
+        result = _extract_rollup_keys(record, audit_data, ced, prompt_filter)
+        if result is None:
+            continue
+        group_key, event_count, creation_time, original_uid = result
+
+        if group_key in rollup_sample:
+            acc = rollup_sample[group_key]
+            acc.event_count += event_count
+            if creation_time:
+                if not acc.min_creation_time or creation_time < acc.min_creation_time:
+                    acc.min_creation_time = creation_time
+                if not acc.max_creation_time or creation_time > acc.max_creation_time:
+                    acc.max_creation_time = creation_time
+        else:
+            rollup_sample[group_key] = RollupAccum(
+                event_count=event_count,
+                min_ct=creation_time,
+                max_ct=creation_time,
+                original_uid=original_uid,
+            )
+
+    # ── Compare totals ───────────────────────────────────────────────────
+    rollup_total = sum(acc.event_count for acc in rollup_sample.values())
+    event_total = len(event_rows)
+    all_pass = True
+
+    def _check(label: str, rollup_val: Any, event_val: Any) -> bool:
+        nonlocal all_pass
+        match = rollup_val == event_val
+        symbol = "PASS" if match else "FAIL"
+        if not quiet:
+            print(f"  {label}")
+            print(f"    Rollup: {rollup_val}   Event-level: {event_val}   [{symbol}]")
+        if not match:
+            all_pass = False
+        return match
+
+    _check("Total event count (SUM(EventCount) vs COUNTROWS)",
+           rollup_total, event_total)
+
+    # ── Filter-specific checks ───────────────────────────────────────────
+    # Helper: count event-level rows matching a filter
+    def _ev_count(**filters: str | set) -> int:
+        count = 0
+        for row in event_rows:
+            match = True
+            for col, val in filters.items():
+                row_val = row.get(col, "")
+                if isinstance(val, set):
+                    if row_val.lower() not in val:
+                        match = False
+                        break
+                else:
+                    if row_val != val:
+                        match = False
+                        break
+            if match:
+                count += 1
+        return count
+
+    # Helper: sum EventCount from rollup for matching groups
+    def _ru_count(**filters: str | set) -> int:
+        total = 0
+        for (uid_l, cdate, op, wl, sfe, ah), acc in rollup_sample.items():
+            match = True
+            key_map = {"Operation": op, "Workload": wl,
+                       "SourceFileExtension": sfe, "AppHost": ah}
+            for col, val in filters.items():
+                key_val = key_map.get(col, "")
+                if isinstance(val, set):
+                    if key_val.lower() not in val:
+                        match = False
+                        break
+                else:
+                    if key_val != val:
+                        match = False
+                        break
+            if match:
+                total += acc.event_count
+        return total
+
+    # Check 1: Teams MessageSent
+    _check("Teams MessageSent (Workload=MicrosoftTeams, Operation=MessageSent)",
+           _ru_count(Workload="MicrosoftTeams", Operation="MessageSent"),
+           _ev_count(Workload="MicrosoftTeams", Operation="MessageSent"))
+
+    # Check 2: Exchange Send
+    _check("Exchange Send (Workload=Exchange, Operation=Send)",
+           _ru_count(Workload="Exchange", Operation="Send"),
+           _ev_count(Workload="Exchange", Operation="Send"))
+
+    # Check 3: CopilotInteraction + AppHost=Teams
+    _check("Copilot Teams (Operation=CopilotInteraction, AppHost=Teams)",
+           _ru_count(Operation="CopilotInteraction", AppHost="Teams"),
+           _ev_count(Operation="CopilotInteraction", AppHost="Teams"))
+
+    # Check 4: Excel FileViewed
+    _check("Excel FileViewed (Operation=FileViewed, SourceFileExtension in xlsx/xls/xlsm/csv)",
+           _ru_count(Operation="FileViewed", SourceFileExtension={"xlsx", "xls", "xlsm", "csv"}),
+           _ev_count(Operation="FileViewed", SourceFileExtension={"xlsx", "xls", "xlsm", "csv"}))
+
+    # ── Temporal checks ──────────────────────────────────────────────────
+    rollup_min_ct = min((acc.min_creation_time for acc in rollup_sample.values() if acc.min_creation_time), default="")
+    rollup_max_ct = max((acc.max_creation_time for acc in rollup_sample.values() if acc.max_creation_time), default="")
+    event_times = [r.get("CreationTime", "") for r in event_rows if r.get("CreationTime")]
+    event_min_ct = min(event_times) if event_times else ""
+    event_max_ct = max(event_times) if event_times else ""
+
+    _check("MIN(CreationTime)", rollup_min_ct, event_min_ct)
+    _check("MAX(CreationTime)", rollup_max_ct, event_max_ct)
+
+    if not quiet:
+        print()
+        reduction_pct = 0.0
+        if event_total > 0:
+            reduction_pct = (1 - len(rollup_sample) / event_total) * 100
+        print(f"  Event-level rows: {event_total:,}  →  Rollup groups: {len(rollup_sample):,}"
+              f"  ({reduction_pct:.1f}% reduction)")
+        print(f"  Overall: {'ALL CHECKS PASSED' if all_pass else 'SOME CHECKS FAILED'}")
+        print()
+
+    return all_pass
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# USERSTATS & SESSION COHORT WRITER
+# ═════════════════════════════════════════════════════════════════════════════
+
+def write_userstats_files(
+    aggregated_csv_path: str | Path,
+    userstats_csv_path: str | Path,
+    session_csv_path: str | Path,
+    quiet: bool,
+) -> tuple[int, int]:
+    """
+    Read the just-written aggregated rollup CSV and produce two additional files:
+      *_UserStats.csv     — one row per unique UserId with pre-computed metrics
+      *_SessionCohort.csv — one row per (UserId, AppColumn) with session cohort label
+
+    Returns (user_count, session_cohort_row_count).
+    """
+    agg_path = Path(aggregated_csv_path)
+    if not agg_path.is_file():
+        if not quiet:
+            print(f"[UserStats] WARNING: Aggregated CSV not found: {agg_path} — skipping.",
+                  file=sys.stderr)
+        return 0, 0
+
+    userstats_path = Path(userstats_csv_path)
+    session_path = Path(session_csv_path)
+
+    t_start = time.perf_counter()
+
+    # ── Per-user accumulators ────────────────────────────────────────────
+    uid_original: dict[str, str] = {}          # uid_lower → first-seen casing
+    cop_ec: dict[str, int] = defaultdict(int)
+    m365_ec: dict[str, int] = defaultdict(int)
+    ex_cop_ec: dict[str, int] = defaultdict(int)
+    ex_m365_ec: dict[str, int] = defaultdict(int)
+
+    t_days: dict[str, set[str]] = defaultdict(set)
+    o_days: dict[str, set[str]] = defaultdict(set)
+    w_days: dict[str, set[str]] = defaultdict(set)
+    x_days: dict[str, set[str]] = defaultdict(set)
+    p_days: dict[str, set[str]] = defaultdict(set)
+
+    t_ec: dict[str, int] = defaultdict(int)
+    o_ec: dict[str, int] = defaultdict(int)
+    off_ec: dict[str, int] = defaultdict(int)
+
+    session_ops: dict[tuple[str, str], set[str]] = defaultdict(set)
+
+    # ── Stream through aggregated CSV ────────────────────────────────────
+    row_count = 0
+    with open(agg_path, "r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            row_count += 1
+
+            user_id = row.get("UserId", "")
+            uid_lower = user_id.lower()
+            if uid_lower not in uid_original:
+                uid_original[uid_lower] = user_id
+
+            date_key = row.get("CreationDate", "")[:10]   # YYYY-MM-DD
+            op = row.get("Operation", "")
+            wl = row.get("Workload", "")
+            ext = (row.get("SourceFileExtension", "") or "").lower()
+            app_host = (row.get("AppHost", "") or "").lower()
+
+            try:
+                event_count = int(row.get("EventCount", "1") or "1")
+            except (ValueError, TypeError):
+                event_count = 1
+
+            copilot = is_copilot(op, wl)
+            excel_file = is_excel_file_op(ext, op)
+
+            # Core event counts
+            if copilot:
+                cop_ec[uid_lower] += event_count
+            else:
+                m365_ec[uid_lower] += event_count
+
+            # ExCopEC: Copilot interactions in Excel (via AppHost); ExM365EC: Excel file ops by non-Copilot
+            if copilot and app_host == "excel":
+                ex_cop_ec[uid_lower] += 1        # row count, not EventCount
+            if excel_file and not copilot:
+                ex_m365_ec[uid_lower] += 1       # row count, not EventCount
+
+            # Active days (distinct CreationDate values)
+            if wl == "MicrosoftTeams" and op in TEAMS_OPS:
+                t_days[uid_lower].add(date_key)
+            if wl == "Exchange" and op in OUTLOOK_OPS:
+                o_days[uid_lower].add(date_key)
+            if ext in WORD_EXTS and op in FILE_OPS:
+                w_days[uid_lower].add(date_key)
+            if ext in EXCEL_EXTS and op in FILE_OPS:
+                x_days[uid_lower].add(date_key)
+            if ext in PPT_EXTS and op in FILE_OPS:
+                p_days[uid_lower].add(date_key)
+
+            # Activity event counts
+            if wl == "MicrosoftTeams" and op in TEAMS_OPS:
+                t_ec[uid_lower] += event_count
+            if wl == "Exchange" and op in OUTLOOK_ACT_OPS:
+                o_ec[uid_lower] += event_count
+            if ext in OFFICE_EXTS and op in FILE_OPS:
+                off_ec[uid_lower] += event_count
+
+            # Session cohort: distinct active dates per (user, app)
+            app = app_column(ext, op, wl)
+            if app != "M365 All Apps":
+                session_ops[(uid_lower, app)].add(date_key)
+
+    if row_count == 0:
+        if not quiet:
+            print("[UserStats] Aggregated CSV has 0 rows — skipping.")
+        return 0, 0
+
+    # ── Percentile thresholds ────────────────────────────────────────────
+    all_uids = sorted(uid_original.keys())
+    total_users = len(all_uids)
+
+    cop_vals = [cop_ec.get(u, 0) for u in all_uids]
+    m365_vals = [m365_ec.get(u, 0) for u in all_uids]
+    ex_cop_vals = [ex_cop_ec.get(u, 0) for u in all_uids]
+    ex_m365_vals = [ex_m365_ec.get(u, 0) for u in all_uids]
+
+    cop_p90 = percentile_inc(cop_vals, 0.90)
+    cop_p75 = percentile_inc(cop_vals, 0.75)
+    cop_p50 = percentile_inc(cop_vals, 0.50)
+
+    m365_p90 = percentile_inc(m365_vals, 0.90)
+    m365_p75 = percentile_inc(m365_vals, 0.75)
+    m365_p50 = percentile_inc(m365_vals, 0.50)
+
+    exc_p90 = percentile_inc(ex_cop_vals, 0.90)
+    exc_p75 = percentile_inc(ex_cop_vals, 0.75)
+    exc_p50 = percentile_inc(ex_cop_vals, 0.50)
+
+    exm_p90 = percentile_inc(ex_m365_vals, 0.90)
+    exm_p75 = percentile_inc(ex_m365_vals, 0.75)
+    exm_p50 = percentile_inc(ex_m365_vals, 0.50)
+
+    # ── Ranks ────────────────────────────────────────────────────────────
+    # Copilot rank: computed only among Copilot users so the range maps to [0, 1]
+    # within that group. Non-Copilot users are hardcoded to 0.0 downstream.
+    copilot_uids = [u for u in all_uids if cop_ec.get(u, 0) > 0]
+    copilot_user_count = len(copilot_uids)
+    cop_rank = compute_ranks({u: cop_ec.get(u, 0) for u in copilot_uids})
+    m365_rank = compute_ranks({u: m365_ec.get(u, 0) for u in all_uids})
+
+    # ── Write *_UserStats.csv ────────────────────────────────────────────
+    with open(userstats_path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f, lineterminator="\n")
+        writer.writerow(USERSTATS_HEADER)
+
+        for uid in all_uids:
+            c_ec = cop_ec.get(uid, 0)
+            m_ec = m365_ec.get(uid, 0)
+            exc_ec = ex_cop_ec.get(uid, 0)
+            exm_ec = ex_m365_ec.get(uid, 0)
+
+            is_cop_user = "Copilot User" if c_ec > 0 else "Non-Copilot User"
+            cop_tier = tier_fn(c_ec, cop_p90, cop_p75, cop_p50, zero_is_bottom=True)
+            m365_tier = tier_fn(m_ec, m365_p90, m365_p75, m365_p50, zero_is_bottom=False)
+            priority = priority_fn(m365_tier, cop_tier)
+
+            ex_m365_tier = tier_fn(exm_ec, exm_p90, exm_p75, exm_p50, zero_is_bottom=False)
+            ex_cop_tier = tier_fn(exc_ec, exc_p90, exc_p75, exc_p50, zero_is_bottom=False)
+            excel_pri = priority_fn(ex_m365_tier, ex_cop_tier)
+
+            cop_rank_val = 0.0 if c_ec == 0 else cop_rank[uid] / max(copilot_user_count, 1)
+            m365_rank_val = m365_rank[uid] / total_users
+
+            td = len(t_days.get(uid, set()))
+            od = len(o_days.get(uid, set()))
+            wd = len(w_days.get(uid, set()))
+            xd = len(x_days.get(uid, set()))
+            pd_ = len(p_days.get(uid, set()))
+
+            t_act = t_ec.get(uid, 0)
+            o_act = o_ec.get(uid, 0)
+            off_act = off_ec.get(uid, 0)
+
+            t_seg = "0. No Usage" if td == 0 else seg_fn(td)
+            o_seg = "0. No Usage" if od == 0 else seg_fn(od)
+            w_seg = "0. No Usage" if wd == 0 else seg_fn(wd)
+            x_seg = "0. No Usage" if xd == 0 else seg_fn(xd)
+            p_seg = "0. No Usage" if pd_ == 0 else seg_fn(pd_)
+
+            office_days = wd + xd + pd_
+            off_seg = "0. No Usage" if office_days == 0 else seg_fn(office_days)
+
+            overall_days = len(
+                t_days.get(uid, set()) | o_days.get(uid, set()) |
+                w_days.get(uid, set()) | x_days.get(uid, set()) |
+                p_days.get(uid, set())
+            )
+            overall_seg = "0. No Usage" if overall_days == 0 else seg_fn(overall_days)
+
+            writer.writerow([
+                uid_original[uid],
+                c_ec, m_ec, exc_ec, exm_ec,
+                is_cop_user, cop_tier, m365_tier,
+                priority, excel_pri,
+                f"{cop_rank_val:.6f}", f"{m365_rank_val:.6f}",
+                td, od, wd, xd, pd_,
+                t_act, o_act, off_act,
+                t_seg, o_seg, w_seg, x_seg, p_seg,
+                off_seg, overall_seg,
+            ])
+
+    # ── Write *_SessionCohort.csv ────────────────────────────────────────
+    session_count = 0
+    with open(session_path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f, lineterminator="\n")
+        writer.writerow(SESSIONCOHORT_HEADER)
+
+        for (uid, app), ops in sorted(session_ops.items()):
+            n = len(ops)
+            if n == 0:
+                continue
+            if n <= 5:
+                cohort = "1-5 sessions"
+            elif n <= 10:
+                cohort = "6-10 sessions"
+            elif n <= 20:
+                cohort = "11-20 sessions"
+            elif n <= 40:
+                cohort = "21-40 sessions"
+            elif n <= 60:
+                cohort = "41-60 sessions"
+            elif n <= 80:
+                cohort = "61-80 sessions"
+            else:
+                cohort = "81+ sessions"
+            writer.writerow([uid_original[uid], app, cohort])
+            session_count += 1
+
+    t_elapsed = time.perf_counter() - t_start
+
+    if not quiet:
+        print(f"[UserStats]     {total_users:,} users \u2192 {userstats_path.name} "
+              f"({len(USERSTATS_HEADER)} columns)")
+        print(f"[SessionCohort] {session_count:,} (user, app) pairs \u2192 {session_path.name}")
+        print(f"[UserStats]     Elapsed: {t_elapsed:.2f}s")
+
+    return total_users, session_count
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# CLI ENTRY POINT
+# ═════════════════════════════════════════════════════════════════════════════
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=f"Purview M365 Usage Bundle Explosion Processor v{SCRIPT_VERSION} — "
+        "Rollup-aggregated or event-level export of Purview audit log CSV for Power BI.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\
+examples (rollup — default, 80%%+ row reduction):
+  python %(prog)s --input Purview_Export.csv
+  python %(prog)s -i Purview_Export.csv --output-dir ./output
+
+examples (event-level — v1-compatible 153-column output):
+  python %(prog)s --mode event-level -i Purview_Export.csv
+  python %(prog)s --mode event-level -i Purview_Export.csv --output-dir ./output
+
+reconciliation (validate rollup correctness on a sample):
+  python %(prog)s -i Purview_Export.csv --reconcile
+""",
+    )
+    parser.add_argument(
+        "--input", "-i",
+        required=True,
+        help="Path to the input Purview audit log CSV file (must contain AuditData column).",
+    )
+    parser.add_argument(
+        "--output-dir", "-o",
+        default=None,
+        help="Directory for output files. Default: same directory as the input file.",
+    )
+    parser.add_argument(
+        "--mode", "-m",
+        choices=["rollup", "event-level"],
+        default="rollup",
+        help="Processing mode. 'rollup' (default): 9-column aggregated output with 80%%+ row reduction. "
+             "'event-level': v1-compatible 153-column output with one row per event.",
+    )
+    parser.add_argument(
+        "--reconcile",
+        action="store_true",
+        default=False,
+        help="Run sample-based reconciliation after processing to validate rollup correctness.",
+    )
+    parser.add_argument(
+        "--prompt-filter",
+        choices=["Prompt", "Response", "Both", "Null"],
+        default=None,
+        help="Filter Copilot messages: Prompt (user only), Response (AI only), Both (non-null), Null (null isPrompt).",
+    )
+    parser.add_argument(
+        "--no-userstats",
+        action="store_true",
+        default=False,
+        help="Skip generating *_UserStats.csv and *_SessionCohort.csv (rollup mode only).",
+    )
+    parser.add_argument(
+        "--quiet", "-q",
+        action="store_true",
+        default=False,
+        help="Suppress progress output (only errors are printed).",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {SCRIPT_VERSION}",
+    )
+
+    args = parser.parse_args()
+
+    input_path = os.path.abspath(args.input)
+    if not os.path.isfile(input_path):
+        print(f"ERROR: Input file not found: {input_path}", file=sys.stderr)
+        sys.exit(1)
+
+    # ── Determine output directory & build filenames ─────────────────────
+    stem = Path(input_path).stem
+    output_dir = Path(os.path.abspath(args.output_dir)) if args.output_dir else Path(input_path).parent
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Output stems inherit the timestamp already in the input filename
+    # (Purview_Audit_*_<ts>.csv) so the rollup outputs share the run timestamp
+    # without duplicating it.
+
+    if args.mode == "rollup":
+        rollup_path = str(output_dir / f"{stem}_Rollup.csv")
+        userstats_path = str(output_dir / f"{stem}_UserStats.csv")
+        session_path = str(output_dir / f"{stem}_SessionCohort.csv")
+    else:
+        rollup_path = str(output_dir / f"{stem}_Exploded.csv")
+
+    # ── Dispatch ─────────────────────────────────────────────────────────
+    if args.mode == "rollup":
+        stats = run_rollup(
+            input_csv=input_path,
+            output_csv=rollup_path,
+            prompt_filter=args.prompt_filter,
+            quiet=args.quiet,
+        )
+        exit_code = 1 if stats["parse_errors"] > stats["input_records"] * 0.1 else 0
+
+        # ── UserStats & SessionCohort (derived from aggregated output) ───
+        if not args.no_userstats:
+            write_userstats_files(rollup_path, userstats_path, session_path, args.quiet)
+    else:
+        stats = run_explosion(
+            input_csv=input_path,
+            output_csv=rollup_path,
+            prompt_filter=args.prompt_filter,
+            quiet=args.quiet,
+        )
+        exit_code = 1 if stats["errors"] > 0 else 0
+
+    # ── Optional reconciliation ──────────────────────────────────────────
+    if args.reconcile:
+        reconcile_passed = run_reconcile(
+            input_csv=input_path,
+            prompt_filter=args.prompt_filter,
+            quiet=args.quiet,
+        )
+        if not reconcile_passed:
+            exit_code = 1
+
+    sys.exit(exit_code)
+
+
+if __name__ == "__main__":
+    main()
+'@
+# <<< END-EMBEDDED-M365-PROCESSOR
+
+# ============================================================================
+# ROLLUP POST-PROCESSOR HELPER FUNCTIONS
+# ============================================================================
+# Resolve-PythonExe         -> locates a Python 3.10+ interpreter (auto-installs via winget,
+#                              falls back to the python.org installer if winget unavailable).
+# Install-OrjsonIfMissing   -> installs the optional 'orjson' package; warn-and-continue
+#                              on failure (both processors auto-fallback to stdlib json).
+# Invoke-EmbeddedProcessor  -> materializes the embedded .py to .pax_incremental,
+#                              runs it with the provided argument list, captures stderr,
+#                              and deletes the temp file in finally.
+# All three functions log via Write-LogHost / Write-Log (defined earlier in the script).
+# These functions are only invoked when -Rollup or -RollupPlusRaw is used.
+# Minimum required Python version is 3.10 (the embedded processors use PEP 604 unions).
+# ============================================================================
+
+$Script:ROLLUP_PYTHON_MIN_MAJOR = 3
+$Script:ROLLUP_PYTHON_MIN_MINOR = 10
+
+function Resolve-PythonExe {
+	[CmdletBinding()]
+	param([switch]$AllowAutoInstall)
+
+	# Returns: hashtable @{ Path=<full path or 'py'>; Args=<launcher args, e.g. '-3.13'>; Version='3.13.1' }
+	# Throws on hard failure (no usable interpreter even after install attempts).
+
+	$candidates = @(
+		@{ Cmd = 'python';  LauncherArgs = @() }
+		@{ Cmd = 'py';      LauncherArgs = @('-3.13') }
+		@{ Cmd = 'py';      LauncherArgs = @('-3.12') }
+		@{ Cmd = 'py';      LauncherArgs = @('-3.11') }
+		@{ Cmd = 'py';      LauncherArgs = @('-3.10') }
+		@{ Cmd = 'python3'; LauncherArgs = @() }
+	)
+
+	foreach ($c in $candidates) {
+		try {
+			$cmdInfo = Get-Command -Name $c.Cmd -ErrorAction SilentlyContinue
+			if (-not $cmdInfo) { continue }
+			$probeArgs = @($c.LauncherArgs) + @('-c', 'import sys; print("{}.{}.{}".format(sys.version_info.major, sys.version_info.minor, sys.version_info.micro))')
+			$verOutput = & $c.Cmd @probeArgs 2>$null
+			if ($LASTEXITCODE -ne 0 -or -not $verOutput) { continue }
+			$verText = ($verOutput | Select-Object -First 1).Trim()
+			if ($verText -notmatch '^(\d+)\.(\d+)\.(\d+)') { continue }
+			$maj = [int]$Matches[1]
+			$min = [int]$Matches[2]
+			if ($maj -lt $Script:ROLLUP_PYTHON_MIN_MAJOR) { continue }
+			if ($maj -eq $Script:ROLLUP_PYTHON_MIN_MAJOR -and $min -lt $Script:ROLLUP_PYTHON_MIN_MINOR) { continue }
+			return @{ Path = $c.Cmd; Args = $c.LauncherArgs; Version = $verText }
+		}
+		catch { continue }
+	}
+
+	if (-not $AllowAutoInstall) {
+		throw "No Python $($Script:ROLLUP_PYTHON_MIN_MAJOR).$($Script:ROLLUP_PYTHON_MIN_MINOR)+ interpreter found on PATH."
+	}
+
+	# Auto-install path: try winget first, then python.org installer.
+	Write-LogHost "Rollup: no Python $($Script:ROLLUP_PYTHON_MIN_MAJOR).$($Script:ROLLUP_PYTHON_MIN_MINOR)+ found. Attempting auto-install..." -ForegroundColor Yellow
+
+	$winget = Get-Command -Name 'winget' -ErrorAction SilentlyContinue
+	$installed = $false
+	if ($winget) {
+		Write-LogHost "Rollup: installing Python 3.13 via winget (Python.Python.3.13)..." -ForegroundColor Cyan
+		try {
+			$wingetArgs = @('install', '--id', 'Python.Python.3.13', '-e', '--accept-source-agreements', '--accept-package-agreements', '--scope', 'user', '--silent')
+			& winget @wingetArgs | Out-Host
+			if ($LASTEXITCODE -eq 0) { $installed = $true }
+		}
+		catch {
+			Write-LogHost "Rollup: winget install failed: $($_.Exception.Message)" -ForegroundColor Yellow
+		}
+	}
+	else {
+		Write-LogHost "Rollup: winget is not available on this host; falling back to python.org installer." -ForegroundColor Yellow
+	}
+
+	if (-not $installed) {
+		# python.org per-user silent install
+		try {
+			$tmpDir = Join-Path ([IO.Path]::GetTempPath()) ("PAX_PythonInstaller_" + [guid]::NewGuid().ToString('N'))
+			New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+			$installerUrl = 'https://www.python.org/ftp/python/3.13.1/python-3.13.1-amd64.exe'
+			$installerPath = Join-Path $tmpDir 'python-3.13.1-amd64.exe'
+			Write-LogHost "Rollup: downloading $installerUrl ..." -ForegroundColor Cyan
+			Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing
+			Write-LogHost "Rollup: running silent per-user install (PrependPath=1)..." -ForegroundColor Cyan
+			$proc = Start-Process -FilePath $installerPath -ArgumentList @('/quiet', 'InstallAllUsers=0', 'PrependPath=1', 'Include_launcher=1', 'Include_pip=1') -Wait -PassThru
+			if ($proc.ExitCode -eq 0) { $installed = $true }
+			else { Write-LogHost "Rollup: python.org installer exited with code $($proc.ExitCode)." -ForegroundColor Yellow }
+		}
+		catch {
+			Write-LogHost "Rollup: python.org install failed: $($_.Exception.Message)" -ForegroundColor Yellow
+		}
+	}
+
+	if (-not $installed) {
+		throw "Rollup: failed to auto-install Python $($Script:ROLLUP_PYTHON_MIN_MAJOR).$($Script:ROLLUP_PYTHON_MIN_MINOR)+. Install Python manually from https://www.python.org/downloads/ and re-run."
+	}
+
+	# Refresh PATH from process + machine + user scopes so new install is visible without restart.
+	$paths = @(
+		[Environment]::GetEnvironmentVariable('Path', 'Machine'),
+		[Environment]::GetEnvironmentVariable('Path', 'User'),
+		$env:Path
+	) | Where-Object { $_ }
+	$env:Path = ($paths -join ';')
+
+	# Recurse once with auto-install disabled to prevent loops.
+	return Resolve-PythonExe -AllowAutoInstall:$false
+}
+
+function Install-OrjsonIfMissing {
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)] [string]   $PythonExe,
+		[Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $LauncherArgs
+	)
+
+	# Best-effort install. Both embedded processors fall back to stdlib json on import failure,
+	# so we warn-and-continue on any error here rather than throwing.
+	$showArgs = @($LauncherArgs) + @('-m', 'pip', 'show', 'orjson')
+	& $PythonExe @showArgs 2>$null | Out-Null
+	if ($LASTEXITCODE -eq 0) { return $true }
+
+	Write-LogHost "Rollup: 'orjson' not installed; installing for faster JSON parsing (~5-10x). Falls back to stdlib json on failure." -ForegroundColor Cyan
+	$installArgs = @($LauncherArgs) + @('-m', 'pip', 'install', '--quiet', '--disable-pip-version-check', '--user', 'orjson')
+	try {
+		& $PythonExe @installArgs 2>&1 | ForEach-Object { Write-Log $_ }
+		if ($LASTEXITCODE -eq 0) { return $true }
+		Write-LogHost "Rollup: 'orjson' install returned exit code $LASTEXITCODE. Continuing with stdlib json." -ForegroundColor Yellow
+		return $false
+	}
+	catch {
+		Write-LogHost "Rollup: 'orjson' install threw: $($_.Exception.Message). Continuing with stdlib json." -ForegroundColor Yellow
+		return $false
+	}
+}
+
+# ============================================================================
+# REMOTE OUTPUT HELPERS — SharePoint (Graph drives API) and Fabric (OneLake DFS)
+# ----------------------------------------------------------------------------
+# All helpers are no-ops when $script:RemoteOutputMode -eq 'None'. They are
+# invoked from a single dispatch point: Invoke-OutputUpload.
+#
+# SharePoint path:
+#   - Reuses the existing Connect-MgGraph token (Graph audience).
+#   - Resolves the SP URL to siteId/driveId/folder via Graph site lookup.
+#   - Small files (<= 4 MB): PUT /drives/{driveId}/root:/path:/content
+#   - Large files: createUploadSession + 5 MB chunked PUT (must be 320 KB-aligned).
+#
+# Fabric/OneLake path:
+#   - Uses a SEPARATE token with audience https://storage.azure.com/ (Az.Accounts).
+#   - DFS Create -> Append (chunked) -> Flush. Path = /<workspace>/<item>.Lakehouse/Files/<rel>
+# ============================================================================
+
+function Get-DisplayPath {
+	<#
+	.SYNOPSIS
+		Returns the user-visible path to display for an output artifact, accounting for
+		-OutputPathSP / -OutputPathFabric. Local-output runs see the local path unchanged;
+		remote-output runs see the destination URL the file is uploaded to.
+
+	.DESCRIPTION
+		Every "Output File: ...", "Output Directory: ...", "Log file: ..." line in the
+		console / log banner should be filtered through this helper. The local scratch
+		path is irrelevant to a customer who passed -OutputPathSP / -OutputPathFabric;
+		showing it implies the artifact lives there, which it does not (it is uploaded
+		then, on success, the local copy is reaped).
+
+		File mode (default): appends the local file's leaf name to the remote root URL.
+		-Directory mode: returns the remote root URL with no leaf appended.
+
+		When $script:RemoteOutputMode -eq 'None' (or remote URL not yet set), the input
+		path is returned verbatim — making this safe to call unconditionally at every
+		display site.
+
+	.PARAMETER LocalPath
+		The local scratch path of the artifact. Required. Can be empty/null.
+
+	.PARAMETER Directory
+		If set, treats LocalPath as a directory and returns the remote root URL alone
+		(no leaf appended). Use for "Output Directory: <path>" lines.
+	#>
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $LocalPath,
+		[switch] $Directory
+	)
+	if ($script:RemoteOutputMode -eq 'None' -or [string]::IsNullOrWhiteSpace($LocalPath) -or [string]::IsNullOrWhiteSpace($script:RemoteOutputUrl)) {
+		return $LocalPath
+	}
+	$base = $script:RemoteOutputUrl.TrimEnd('/')
+	if ($Directory) { return $base }
+	$leaf = [System.IO.Path]::GetFileName($LocalPath.TrimEnd('\','/'))
+	if ([string]::IsNullOrWhiteSpace($leaf)) { return $base }
+	return ($base + '/' + $leaf)
+}
+
+function Resolve-SharePointTarget {
+	[CmdletBinding()]
+	param([Parameter(Mandatory)] [string] $Url)
+
+	# Accepts any of:
+	#   https://<host>/sites/<site>/<library>[/<sub>]
+	#   https://<host>/teams/<team>/<library>[/<sub>]
+	#   https://<host>/personal/<user>/<library>[/<sub>]
+	#   https://<host>/<library>[/<sub>]                  (root site collection)
+	# where <host> can be any sharepoint.* tenant variant (sharepoint.com,
+	# sharepoint-df.com, sharepoint.us, sharepoint.de, sharepoint.cn,
+	# sharepoint-mil.us, ...).
+	#
+	# The first one or two URL segments identify the site collection; the remainder
+	# is library + (optional) folder path. Graph's site-lookup endpoint is the
+	# authoritative resolver -- we just hand it the server-relative site path.
+	$u = [Uri]$Url
+	$hostName = $u.Host
+	$segments = ($u.AbsolutePath.TrimStart('/') -split '/') | Where-Object { $_ -ne '' }
+	if (-not $segments -or $segments.Count -lt 1) {
+		throw "SharePoint URL has no path; expected https://<host>/<sites|teams|personal>/<name>/<library>[/<sub>] : '$Url'"
+	}
+
+	# Determine where the site collection ends and the library begins.
+	$prefixed = @('sites','teams','personal') -contains $segments[0].ToLower()
+	if ($prefixed) {
+		if ($segments.Count -lt 3) {
+			throw "SharePoint URL is missing a library/folder after the site name: '$Url'"
+		}
+		$sitePathSegs   = $segments[0..1]   # e.g. sites/Analytics  or  teams/MyTeam
+		$libAndFolder   = $segments[2..($segments.Count-1)]
+		$siteName       = $segments[1]
+	} else {
+		# Root site collection: no /sites/ or /teams/ prefix; first segment is the library.
+		$sitePathSegs   = @()
+		$libAndFolder   = $segments
+		$siteName       = '(root)'
+	}
+	$libraryName     = $libAndFolder[0]
+	$folderInLibrary = if ($libAndFolder.Count -gt 1) { ($libAndFolder[1..($libAndFolder.Count-1)]) -join '/' } else { '' }
+
+	# Resolve site via Graph. Site path is server-relative; if root, omit the colon-path.
+	if ($sitePathSegs.Count -gt 0) {
+		$sitePath      = ($sitePathSegs -join '/')
+		$siteLookupUri = "https://graph.microsoft.com/v1.0/sites/${hostName}:/${sitePath}"
+	} else {
+		$siteLookupUri = "https://graph.microsoft.com/v1.0/sites/${hostName}"
+	}
+	try {
+		$site = Invoke-MgGraphRequest -Method GET -Uri $siteLookupUri -ErrorAction Stop
+	} catch {
+		# Classify the failure so customers see actionable guidance instead of raw Graph plumbing.
+		# We inspect the HTTP status, current Graph context state, and granted scopes to decide
+		# the most likely cause. The structured message is consumed by Test-RemoteDestination's
+		# error block (which formats the banner with permissions-table back-reference).
+		$status = 0
+		try { $status = [int]$_.Exception.Response.StatusCode.value__ } catch {}
+		if ($status -eq 0) { try { if ($_.Exception.Response.StatusCode -is [System.Net.HttpStatusCode]) { $status = [int]$_.Exception.Response.StatusCode } } catch {} }
+
+		$mgCtx = $null
+		try { $mgCtx = Get-MgContext -ErrorAction SilentlyContinue } catch {}
+		$hasToken = [bool]$mgCtx
+		$grantedScopes = @()
+		if ($mgCtx -and $mgCtx.Scopes) { $grantedScopes = @($mgCtx.Scopes) }
+		$isAppOnly = $false
+		if ($mgCtx) { $isAppOnly = ([string]::IsNullOrWhiteSpace($mgCtx.Account)) -or ($mgCtx.AuthType -eq 'AppOnly') }
+
+		# Surface the raw response body for context (truncated; appended to the classified message).
+		$rawDetail = $_.Exception.Message
+		try {
+			if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $rawDetail = $_.ErrorDetails.Message }
+			elseif ($_.Exception.Response) {
+				$resp = $_.Exception.Response
+				$reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
+				$body = $reader.ReadToEnd(); $reader.Close()
+				if ($body) { $rawDetail = "HTTP $status $body" }
+			}
+		} catch {}
+		if ($rawDetail.Length -gt 600) { $rawDetail = $rawDetail.Substring(0, 600) + '...(truncated)' }
+
+		# Build the classified diagnosis. Lines are joined with newline so Test-RemoteDestination
+		# can split and indent them under its banner.
+		$diagLines = New-Object System.Collections.Generic.List[string]
+		$diagLines.Add("SharePoint site lookup failed (host '$hostName', site path '$($sitePathSegs -join '/')').")
+
+		if (-not $hasToken) {
+			$diagLines.Add('Cause: Microsoft Graph is not connected (no MgContext present).')
+			$diagLines.Add('Action: This is unexpected at this point in the script — please report it as a bug.')
+		}
+		elseif ($status -eq 401) {
+			if (-not $isAppOnly -and ($grantedScopes -notcontains 'Sites.ReadWrite.All')) {
+				$diagLines.Add('Cause: The Graph access token is missing the Sites.ReadWrite.All scope.')
+				$diagLines.Add('Action: Re-run after granting/consenting Sites.ReadWrite.All. See the')
+				$diagLines.Add('        "Permissions Required for THIS run" table earlier in this output')
+				$diagLines.Add('        for the full list of required scopes for SharePoint output.')
+			} else {
+				$diagLines.Add('Cause: Graph rejected the token (401). For app-only auth this usually means')
+				$diagLines.Add('       application permissions (Sites.ReadWrite.All / Files.ReadWrite.All)')
+				$diagLines.Add('       have not been ADMIN-CONSENTED on the app registration / managed identity.')
+				$diagLines.Add('Action: Have a Global Administrator grant admin consent to the application')
+				$diagLines.Add('        permissions listed in the "Permissions Required for THIS run" table above.')
+			}
+		}
+		elseif ($status -eq 403) {
+			$signedIn = if ($mgCtx -and $mgCtx.Account) { $mgCtx.Account } else { '(app identity)' }
+			$diagLines.Add("Cause: The signed-in identity ('$signedIn') is authenticated but does not have")
+			$diagLines.Add('       access to the target SharePoint site (HTTP 403 Forbidden).')
+			$diagLines.Add('Action: In SharePoint, add this identity to the target site as at least Member,')
+			$diagLines.Add('        OR re-run with an identity that already has access to the site.')
+		}
+		elseif ($status -eq 404) {
+			$diagLines.Add("Cause: The site was not found on host '$hostName' (HTTP 404).")
+			$diagLines.Add('Action: Verify the URL was copied via SharePoint Details -> Path -> Copy.')
+			$diagLines.Add('        Check spelling of the /sites/<name> or /teams/<name> segment.')
+		}
+		elseif ($status -ge 500) {
+			$diagLines.Add("Cause: Microsoft Graph returned a server error (HTTP $status). This is usually transient.")
+			$diagLines.Add('Action: Wait a minute and retry. If it persists, check https://status.cloud.microsoft.')
+		}
+		else {
+			# Includes name-resolution failures (no HTTP status) — typically dogfood/PPE hostnames.
+			if ($hostName -match 'sharepoint-(df|ppe)\.com$') {
+				$diagLines.Add("Cause: Host '$hostName' is a Microsoft-internal dogfood/PPE SharePoint endpoint")
+				$diagLines.Add('       and is not reachable from the public Microsoft Graph service. This script')
+				$diagLines.Add('       does not currently support dogfood/PPE SharePoint targets.')
+				$diagLines.Add('Action: Use a production SharePoint URL (*.sharepoint.com) instead.')
+			} else {
+				$diagLines.Add("Cause: Graph site lookup failed (HTTP status: $status).")
+				$diagLines.Add('Action: Verify the URL is correct and reachable, and that the signed-in identity')
+				$diagLines.Add('        has the required Graph scopes and SharePoint site access.')
+			}
+		}
+		$diagLines.Add('')
+		$diagLines.Add("Graph response: $rawDetail")
+
+		throw ($diagLines -join "`n")
+	}
+	$siteId = $site.id
+	if (-not $siteId) { throw "Unable to resolve SharePoint site '$Url' (Graph returned no id)." }
+
+	# Resolve drive (document library) by name
+	$drivesUri = "https://graph.microsoft.com/v1.0/sites/${siteId}/drives"
+	$drives = Invoke-MgGraphRequest -Method GET -Uri $drivesUri -ErrorAction Stop
+	$drive = $drives.value | Where-Object { $_.name -eq $libraryName -or $_.webUrl -match "/$libraryName(/|$)" } | Select-Object -First 1
+	if (-not $drive) {
+		# Fallback: default drive
+		$drive = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/sites/${siteId}/drive" -ErrorAction Stop
+		# If the URL named a non-default library, treat the entire path-after-site as folder under default drive
+		$folderInLibrary = ($libAndFolder -join '/')
+	}
+
+	return [pscustomobject]@{
+		HostName     = $hostName
+		SiteName     = $siteName
+		SiteId       = $siteId
+		DriveId      = $drive.id
+		LibraryName  = $libraryName
+		FolderPath   = $folderInLibrary.TrimEnd('/')
+		WebUrl       = $drive.webUrl
+	}
+}
+
+function Resolve-FabricTarget {
+	[CmdletBinding()]
+	param([Parameter(Mandatory)] [string] $Url)
+
+	# Expected: https://onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Lakehouse/Files[/<rel>]
+	$u = [Uri]$Url
+	$accountUrl = "{0}://{1}" -f $u.Scheme, $u.Host
+	$segments = ($u.AbsolutePath.TrimStart('/') -split '/')
+	if ($segments.Count -lt 3) {
+		throw "Fabric URL must include workspace, item, and Files segment: '$Url'"
+	}
+	$workspace = $segments[0]
+	$itemFull  = $segments[1]   # e.g. MyLakehouse.Lakehouse
+	if ($itemFull -notmatch '\.(Lakehouse|Warehouse)$') {
+		throw "Fabric item must end with .Lakehouse or .Warehouse: '$itemFull'"
+	}
+	$itemType  = $Matches[1]
+	$itemName  = $itemFull.Substring(0, $itemFull.Length - ($itemType.Length + 1))
+	if ($segments[2] -ne 'Files') {
+		throw "Fabric URL must include the 'Files' segment: '$Url'"
+	}
+	$rel = if ($segments.Count -gt 3) { ($segments | Select-Object -Skip 3) -join '/' } else { '' }
+
+	return [pscustomobject]@{
+		AccountUrl = $accountUrl
+		Workspace  = $workspace
+		ItemName   = $itemName
+		ItemType   = $itemType
+		ItemFull   = $itemFull
+		FilesPath  = $rel.TrimEnd('/')
+		FilesystemBase = "$accountUrl/$workspace"
+	}
+}
+
+# ==============================================
+# AZURE (FABRIC/ONELAKE) TOKEN INFRASTRUCTURE
+# ==============================================
+# Mirrors the Graph token refresh design ($script:SharedAuthState +
+# Refresh-GraphTokenIfNeeded + Invoke-TokenRefresh) but for the OneLake DFS
+# audience (https://storage.azure.com/), which is acquired through Az.Accounts.
+#
+# Layers:
+#   Get-FabricStorageTokenRaw   - private; runs Connect-AzAccount/Get-AzAccessToken;
+#                                 normalizes ExpiresOn to UTC DateTime; tags AuthMethod.
+#   Invoke-AzTokenAcquire       - private; calls Raw + stale-token rejection +
+#                                 updates $script:AzAuthState + emits log line.
+#   Refresh-FabricTokenIfNeeded - public; proactive (5-min buffer + 50-min age cap),
+#                                 cooldown (auth-mode aware), -Force for 401 reactive.
+#   Get-FabricStorageToken      - public; backward-compatible string-returning wrapper
+#                                 (always returns a refresh-checked token).
+#   Invoke-FabricWebRequest     - public; wraps Invoke-WebRequest for OneLake calls.
+#                                 Pre-flight refresh + transparent 401 retry once.
+# Reactive triggers: 401 detected by Invoke-FabricWebRequest -> -Force refresh + retry.
+# Proactive triggers: BufferMinutes (5) or token age >50 min, whichever comes first.
+# Cooldown: 45s for app-only/MI (silent client_credentials/IMDS); 5min for interactive
+#           (avoids re-prompt spam on long upload phases).
+function Get-FabricStorageTokenRaw {
+	[CmdletBinding()]
+	param()
+	$resource = 'https://storage.azure.com/'
+	if (-not (Get-Module -Name Az.Accounts -ListAvailable -ErrorAction SilentlyContinue)) {
+		throw "Az.Accounts module not installed. Install with: Install-Module Az.Accounts -Scope CurrentUser"
+	}
+	Import-Module Az.Accounts -ErrorAction Stop | Out-Null
+
+	$authMethodTag = 'Interactive'
+	$ctx = Get-AzContext -ErrorAction SilentlyContinue
+	if (-not $ctx) {
+		if ($Auth -eq 'ManagedIdentity') {
+			$authMethodTag = 'ManagedIdentity'
+			if ($env:AZURE_CLIENT_ID) {
+				Connect-AzAccount -Identity -AccountId $env:AZURE_CLIENT_ID -ErrorAction Stop | Out-Null
+			} else {
+				Connect-AzAccount -Identity -ErrorAction Stop | Out-Null
+			}
+		}
+		elseif ($Auth -eq 'AppRegistration' -and $script:TenantId -and $script:ClientId -and $script:ClientSecret) {
+			$authMethodTag = 'AppRegistration'
+			$secureSecret = ConvertTo-SecureString -String $script:ClientSecret -AsPlainText -Force
+			$cred = New-Object System.Management.Automation.PSCredential($script:ClientId, $secureSecret)
+			Connect-AzAccount -ServicePrincipal -Tenant $script:TenantId -Credential $cred -ErrorAction Stop | Out-Null
+		}
+		else {
+			Connect-AzAccount -ErrorAction Stop | Out-Null
+		}
+	} else {
+		# Reuse existing context; classify by account type so cooldown/log lines stay accurate.
+		if ($ctx.Account -and $ctx.Account.Type -eq 'ManagedService') { $authMethodTag = 'ManagedIdentity' }
+		elseif ($ctx.Account -and $ctx.Account.Type -eq 'ServicePrincipal') { $authMethodTag = 'AppRegistration' }
+	}
+
+	$tokenObj = Get-AzAccessToken -ResourceUrl $resource -ErrorAction Stop
+	# Token shape: newer Az returns SecureString; older returns plain string.
+	$tokenStr = if ($tokenObj.Token -is [System.Security.SecureString]) {
+		[System.Net.NetworkCredential]::new('', $tokenObj.Token).Password
+	} else {
+		[string]$tokenObj.Token
+	}
+	# ExpiresOn shape: newer Az returns DateTimeOffset; older returns DateTime; defensive parse for string.
+	$expiresUtc = if ($tokenObj.ExpiresOn -is [System.DateTimeOffset]) {
+		$tokenObj.ExpiresOn.UtcDateTime
+	} elseif ($tokenObj.ExpiresOn -is [datetime]) {
+		if ($tokenObj.ExpiresOn.Kind -eq [System.DateTimeKind]::Utc) { $tokenObj.ExpiresOn } else { $tokenObj.ExpiresOn.ToUniversalTime() }
+	} else {
+		([datetime]$tokenObj.ExpiresOn).ToUniversalTime()
+	}
+
+	return [pscustomobject]@{
+		Token      = $tokenStr
+		ExpiresOn  = $expiresUtc
+		AuthMethod = $authMethodTag
+	}
+}
+
+function Invoke-AzTokenAcquire {
+	[CmdletBinding()]
+	param([string] $Reason = 'initial')
+	try {
+		$tokenObj = Get-FabricStorageTokenRaw
+		# Stale-token rejection: refuse a token that is already at/near expiry. Protects
+		# against MSAL cache returning a stale entry after process suspension or system sleep.
+		$nowUtc = (Get-Date).ToUniversalTime()
+		$minutesValid = ($tokenObj.ExpiresOn - $nowUtc).TotalMinutes
+		if ($minutesValid -le 2) {
+			throw ("Acquired OneLake storage token is already expired or near-expiry (expires in {0:N1} min)." -f $minutesValid)
+		}
+
+		$script:AzAuthState.Token              = $tokenObj.Token
+		$script:AzAuthState.ExpiresOn          = $tokenObj.ExpiresOn
+		$script:AzAuthState.AcquiredAt         = Get-Date
+		$script:AzAuthState.LastRefresh        = Get-Date
+		$script:AzAuthState.RefreshCount++
+		$script:AzAuthState.AuthMethod         = $tokenObj.AuthMethod
+		# Mirror to legacy $script:FabricToken so any cached references stay in sync.
+		$script:FabricToken                    = $tokenObj.Token
+
+		$verb = if ($script:AzAuthState.RefreshCount -eq 1) { 'acquired' } else { 'refreshed' }
+		Write-LogHost ("  [AZ-TOKEN] OneLake storage token {0} ({1}); auth: {2}; expires {3} UTC; refresh #{4}" -f $verb, $Reason, $tokenObj.AuthMethod, $tokenObj.ExpiresOn.ToString('yyyy-MM-dd HH:mm:ss'), $script:AzAuthState.RefreshCount) -ForegroundColor Gray
+		return $true
+	}
+	catch {
+		Write-LogHost ("  [AZ-TOKEN] [!] Failed to acquire OneLake storage token ({0}): {1}" -f $Reason, $_.Exception.Message) -ForegroundColor Red
+		return $false
+	}
+}
+
+function Refresh-FabricTokenIfNeeded {
+	<#
+	.SYNOPSIS
+		Proactively refreshes the Fabric/OneLake storage token if nearing expiry.
+	.PARAMETER BufferMinutes
+		Refresh if token expires within this many minutes. Default: 5.
+	.PARAMETER Force
+		Bypass cooldown and force re-acquisition (used by 401 reactive retry).
+	.OUTPUTS
+		$true  - token is valid (either still-valid or freshly refreshed)
+		$false - acquisition/refresh failed; caller must surface the error
+	#>
+	[CmdletBinding()]
+	param(
+		[int]    $BufferMinutes = 5,
+		[switch] $Force
+	)
+	$now = (Get-Date).ToUniversalTime()
+
+	# First-time acquisition: no state yet.
+	if (-not $script:AzAuthState.Token -or -not $script:AzAuthState.ExpiresOn) {
+		return (Invoke-AzTokenAcquire -Reason 'initial')
+	}
+
+	$minutesRemaining = ($script:AzAuthState.ExpiresOn - $now).TotalMinutes
+	$tokenAge = if ($script:AzAuthState.AcquiredAt) {
+		((Get-Date) - $script:AzAuthState.AcquiredAt).TotalMinutes
+	} else { 999 }
+
+	# Trigger conditions:
+	#   - Forced (typically 401 reactive)
+	#   - Within BufferMinutes of expiry (proactive)
+	#   - Token age > 50 min (belt-and-suspenders for any auth mode where ExpiresOn might be optimistic)
+	$needRefresh = $Force.IsPresent -or ($minutesRemaining -le $BufferMinutes) -or ($tokenAge -gt 50)
+	if (-not $needRefresh) { return $true }
+
+	# Cooldown: app-only / MI refresh silently via client_credentials or IMDS (cheap),
+	# so 45s is enough. Interactive may prompt the user, so 5 min keeps that bearable.
+	$isAppOnly = ($script:AzAuthState.AuthMethod -in @('ManagedIdentity', 'AppRegistration'))
+	$cooldownMinutes = if ($isAppOnly) { 0.75 } else { 5.0 }
+	if (-not $Force -and $script:AzAuthState.LastRefreshAttempt) {
+		$sinceLast = ((Get-Date) - $script:AzAuthState.LastRefreshAttempt).TotalMinutes
+		if ($sinceLast -lt $cooldownMinutes) {
+			# Still in cooldown; report current token as valid only if it actually is.
+			return ($minutesRemaining -gt 0)
+		}
+	}
+	$script:AzAuthState.LastRefreshAttempt = Get-Date
+
+	$reason = if ($Force.IsPresent) {
+		'forced (401 retry or explicit)'
+	} elseif ($minutesRemaining -le $BufferMinutes) {
+		("near-expiry ({0:N1} min remaining)" -f $minutesRemaining)
+	} else {
+		("age cap ({0:N1} min)" -f $tokenAge)
+	}
+	return (Invoke-AzTokenAcquire -Reason $reason)
+}
+
+function Get-FabricStorageToken {
+	<#
+	.SYNOPSIS
+		Returns a valid OneLake storage-audience bearer token (string) for OneLake DFS calls.
+	.DESCRIPTION
+		Backward-compatible wrapper around the Az token state machine. Always invokes
+		Refresh-FabricTokenIfNeeded first so callers receive a token guaranteed to have at
+		least BufferMinutes of validity (or a fresh one). Throws if acquisition fails.
+	#>
+	[CmdletBinding()] param()
+	$ok = Refresh-FabricTokenIfNeeded
+	if (-not $ok -or -not $script:AzAuthState.Token) {
+		throw "Failed to acquire Fabric/OneLake storage token (see prior [AZ-TOKEN] messages)."
+	}
+	return $script:AzAuthState.Token
+}
+
+function Invoke-FabricWebRequest {
+	<#
+	.SYNOPSIS
+		Invoke-WebRequest wrapper for OneLake DFS calls with proactive token refresh
+		and transparent 401 reactive retry.
+	.DESCRIPTION
+		Before each call: ensures token is fresh via Refresh-FabricTokenIfNeeded.
+		During the call: if a 401 Unauthorized is returned, forces a refresh and
+		retries the request once with the new token. Any other status (429, 5xx,
+		403, 404, etc.) is re-thrown unchanged so the caller's existing retry/error
+		handling (e.g., chunk-upload 429/5xx backoff loops) continues to work.
+	.PARAMETER Headers
+		Caller-supplied headers. The Authorization header is ALWAYS overwritten with
+		the current $script:AzAuthState.Token. x-ms-version defaults to '2021-06-08'
+		if the caller does not supply it.
+	#>
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)] [string]   $Uri,
+		[Parameter(Mandatory)] [string]   $Method,
+		[hashtable] $Headers,
+		$Body,
+		[string]    $ContentType,
+		[string]    $OutFile
+	)
+	# Pre-flight refresh.
+	$null = Refresh-FabricTokenIfNeeded
+	if (-not $script:AzAuthState.Token) {
+		throw "Invoke-FabricWebRequest: no OneLake storage token available."
+	}
+
+	# Build effective headers; always set Authorization from current state.
+	$h = @{}
+	if ($Headers) {
+		foreach ($k in $Headers.Keys) {
+			if ($k -ne 'Authorization') { $h[$k] = $Headers[$k] }
+		}
+	}
+	$h['Authorization'] = "Bearer $($script:AzAuthState.Token)"
+	if (-not $h.ContainsKey('x-ms-version')) { $h['x-ms-version'] = '2021-06-08' }
+
+	$invokeParams = @{
+		Uri             = $Uri
+		Method          = $Method
+		Headers         = $h
+		UseBasicParsing = $true
+		ErrorAction     = 'Stop'
+	}
+	if ($PSBoundParameters.ContainsKey('Body')) { $invokeParams.Body = $Body }
+	if ($ContentType)                           { $invokeParams.ContentType = $ContentType }
+	if ($OutFile)                               { $invokeParams.OutFile = $OutFile }
+
+	try {
+		return Invoke-WebRequest @invokeParams
+	}
+	catch {
+		$status = try { $_.Exception.Response.StatusCode.value__ } catch { 0 }
+		if ($status -eq 401) {
+			Write-LogHost "  [AZ-TOKEN] OneLake returned 401 Unauthorized - forcing token refresh and retrying once..." -ForegroundColor Yellow
+			$refreshed = Refresh-FabricTokenIfNeeded -Force
+			if (-not $refreshed) {
+				throw ("OneLake 401 Unauthorized and token refresh failed: {0}" -f $_.Exception.Message)
+			}
+			$h['Authorization'] = "Bearer $($script:AzAuthState.Token)"
+			$invokeParams.Headers = $h
+			return Invoke-WebRequest @invokeParams
+		}
+		throw
+	}
+}
+
+function Test-RemoteDestination {
+	[CmdletBinding()] param()
+	if ($script:RemoteOutputMode -eq 'None') { return }
+	if ($script:RemoteOutputMode -eq 'SharePoint') {
+		$resolved = Resolve-SharePointTarget -Url $script:RemoteOutputUrl
+		$script:SPResolved = $resolved
+		# Ensure folder exists (create if missing)
+		if ($resolved.FolderPath) {
+			$folderUri = "https://graph.microsoft.com/v1.0/drives/$($resolved.DriveId)/root:/$($resolved.FolderPath)"
+			try {
+				Invoke-MgGraphRequest -Method GET -Uri $folderUri -ErrorAction Stop | Out-Null
+			} catch {
+				# Create folder hierarchy
+				$parts = $resolved.FolderPath -split '/'
+				$accumulated = ''
+				foreach ($p in $parts) {
+					$parentUri = if ($accumulated) { "https://graph.microsoft.com/v1.0/drives/$($resolved.DriveId)/root:/${accumulated}:/children" } else { "https://graph.microsoft.com/v1.0/drives/$($resolved.DriveId)/root/children" }
+					$body = @{ name = $p; folder = @{}; '@microsoft.graph.conflictBehavior' = 'replace' } | ConvertTo-Json
+					try { Invoke-MgGraphRequest -Method POST -Uri $parentUri -Body $body -ContentType 'application/json' -ErrorAction Stop | Out-Null } catch {}
+					$accumulated = if ($accumulated) { "$accumulated/$p" } else { $p }
+				}
+			}
+		}
+	}
+	elseif ($script:RemoteOutputMode -eq 'Fabric') {
+		$resolved = Resolve-FabricTarget -Url $script:RemoteOutputUrl
+		$script:FabricResolved = $resolved
+		# Initial token acquisition (populates $script:AzAuthState). Classify Az/auth
+		# failures here so customers see Cause/Action lines instead of raw exceptions.
+		try {
+			$null = Get-FabricStorageToken
+		} catch {
+			$tokenErr = $_.Exception.Message
+			$tokenDiag = New-Object System.Collections.Generic.List[string]
+			$tokenDiag.Add("OneLake storage token acquisition failed for workspace '$($resolved.Workspace)'.")
+			if ($tokenErr -match 'Az\.Accounts module not installed') {
+				$tokenDiag.Add('Cause: The Az.Accounts PowerShell module is not installed.')
+				$tokenDiag.Add('Action: Install-Module Az.Accounts -Scope CurrentUser')
+			} elseif ($tokenErr -match 'AADSTS' -or $tokenErr -match 'consent' -or $tokenErr -match 'admin') {
+				$tokenDiag.Add('Cause: Azure AD rejected the sign-in for the storage.azure.com audience.')
+				$tokenDiag.Add('Action: Verify the identity has Azure AD sign-in to your tenant, and that')
+				$tokenDiag.Add('        any conditional access / MFA requirements are satisfied.')
+			} elseif ($tokenErr -match 'IDENTITY|managed identity|MSI|IMDS') {
+				$tokenDiag.Add('Cause: Managed identity token acquisition failed (no IMDS endpoint reachable,')
+				$tokenDiag.Add('       or AZURE_CLIENT_ID points to an identity not assigned to this host).')
+				$tokenDiag.Add('Action: Re-run from a host with an assigned managed identity, or use')
+				$tokenDiag.Add('        -Auth Interactive / -Auth AppRegistration instead.')
+			} else {
+				$tokenDiag.Add('Cause: Az.Accounts could not acquire a token for https://storage.azure.com/.')
+				$tokenDiag.Add('Action: Verify your authentication mode (-Auth) and that you can sign in via')
+				$tokenDiag.Add('        Connect-AzAccount manually.')
+			}
+			$tokenDiag.Add('')
+			$tokenDiag.Add("Az response: $tokenErr")
+			throw ($tokenDiag -join "`n")
+		}
+		# HEAD the filesystem (workspace) to verify access. Invoke-FabricWebRequest sets
+		# Authorization + x-ms-version automatically and handles 401 reactive refresh.
+		$probeUri = "$($resolved.FilesystemBase)?resource=filesystem"
+		try {
+			$null = Invoke-FabricWebRequest -Uri $probeUri -Method HEAD
+		} catch {
+			# Classify OneLake DFS responses. Unlike Graph, OneLake rarely returns a JSON
+			# body on auth failures — the HTTP status is the primary signal.
+			$status = 0
+			try { $status = [int]$_.Exception.Response.StatusCode.value__ } catch {}
+			if ($status -eq 0) { try { if ($_.Exception.Response.StatusCode -is [System.Net.HttpStatusCode]) { $status = [int]$_.Exception.Response.StatusCode } } catch {} }
+			$rawDetail = $_.Exception.Message
+			if ($rawDetail.Length -gt 600) { $rawDetail = $rawDetail.Substring(0, 600) + '...(truncated)' }
+
+			$diagLines = New-Object System.Collections.Generic.List[string]
+			$diagLines.Add("OneLake filesystem probe failed (workspace '$($resolved.Workspace)', item '$($resolved.ItemFull)').")
+
+			if ($status -eq 401) {
+				$diagLines.Add('Cause: OneLake rejected the storage token (401). The token audience is correct')
+				$diagLines.Add('       but the identity is not recognized by this Fabric workspace.')
+				$diagLines.Add('Action: Verify the identity is signed in to the same tenant that owns the Fabric')
+				$diagLines.Add('        workspace, and that the storage.azure.com token is not expired/blocked.')
+			}
+			elseif ($status -eq 403) {
+				$diagLines.Add('Cause: The identity is authenticated but lacks permissions on the Fabric workspace')
+				$diagLines.Add('       (HTTP 403 Forbidden from OneLake DFS).')
+				$diagLines.Add('Action: In the Fabric portal -> Workspace settings -> Manage access, grant the')
+				$diagLines.Add('        identity at least Contributor. See the "Permissions Required for THIS run"')
+				$diagLines.Add('        table earlier in this output for the exact Azure RBAC roles required.')
+			}
+			elseif ($status -eq 404) {
+				$diagLines.Add("Cause: Workspace or item not found (HTTP 404). One of these is wrong:")
+				$diagLines.Add("         workspace = '$($resolved.Workspace)'")
+				$diagLines.Add("         item      = '$($resolved.ItemFull)' (must exist as a Lakehouse/Warehouse)")
+				$diagLines.Add('Action: Verify the URL by opening the lakehouse in the Fabric portal and using')
+				$diagLines.Add('        the OneLake "Copy ABFS path" option, then converting to https:// form.')
+			}
+			elseif ($status -ge 500) {
+				$diagLines.Add("Cause: OneLake returned a server error (HTTP $status). This is usually transient.")
+				$diagLines.Add('Action: Wait a minute and retry. If it persists, check Fabric service health.')
+			}
+			else {
+				$diagLines.Add("Cause: OneLake DFS probe failed (HTTP status: $status).")
+				$diagLines.Add('Action: Verify the Fabric workspace URL is correct and that the identity has')
+				$diagLines.Add('        the Azure RBAC roles listed in the "Permissions Required for THIS run" table.')
+			}
+			$diagLines.Add('')
+			$diagLines.Add("OneLake response: $rawDetail")
+
+			throw ($diagLines -join "`n")
+		}
+	}
+}
+
+function Send-FileToSharePoint {
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)] [string] $LocalPath,
+		[string] $RemoteFileName
+	)
+	if (-not (Test-Path -LiteralPath $LocalPath)) { throw "Send-FileToSharePoint: source not found: $LocalPath" }
+	if (-not $script:SPResolved) { $script:SPResolved = Resolve-SharePointTarget -Url $script:RemoteOutputUrl }
+	$resolved = $script:SPResolved
+	$fileName = if ($RemoteFileName) { $RemoteFileName } else { Split-Path -Leaf $LocalPath }
+	$relPath  = if ($resolved.FolderPath) { "$($resolved.FolderPath)/$fileName" } else { $fileName }
+	$fileInfo = Get-Item -LiteralPath $LocalPath
+	$sizeMb = $fileInfo.Length / 1MB
+
+	if ($fileInfo.Length -le 4MB) {
+		$putUri = "https://graph.microsoft.com/v1.0/drives/$($resolved.DriveId)/root:/${relPath}:/content"
+		$bytes  = [System.IO.File]::ReadAllBytes($LocalPath)
+		Invoke-MgGraphRequest -Method PUT -Uri $putUri -Body $bytes -ContentType 'application/octet-stream' -ErrorAction Stop | Out-Null
+	}
+	else {
+		# Create upload session
+		$sessUri = "https://graph.microsoft.com/v1.0/drives/$($resolved.DriveId)/root:/${relPath}:/createUploadSession"
+		$sessBody = @{ item = @{ '@microsoft.graph.conflictBehavior' = 'replace'; name = $fileName } } | ConvertTo-Json -Depth 4
+		$session = Invoke-MgGraphRequest -Method POST -Uri $sessUri -Body $sessBody -ContentType 'application/json' -ErrorAction Stop
+		$uploadUrl = $session.uploadUrl
+		if (-not $uploadUrl) { throw "SharePoint createUploadSession returned no uploadUrl for '$relPath'." }
+
+		$chunkSize = 5MB   # multiple of 320 KB
+		$fs = [System.IO.File]::OpenRead($LocalPath)
+		try {
+			$buffer = New-Object byte[] $chunkSize
+			$offset = 0L
+			while ($offset -lt $fileInfo.Length) {
+				$toRead = [Math]::Min([int64]$chunkSize, $fileInfo.Length - $offset)
+				$read   = $fs.Read($buffer, 0, [int]$toRead)
+				if ($read -le 0) { break }
+				$end = $offset + $read - 1
+				$range = "bytes $offset-$end/$($fileInfo.Length)"
+				$slice = if ($read -eq $chunkSize) { $buffer } else { $buffer[0..($read-1)] }
+				$attempt = 0
+				while ($true) {
+					try {
+						$null = Invoke-WebRequest -Uri $uploadUrl -Method PUT -Body $slice -Headers @{ 'Content-Range' = $range } -ContentType 'application/octet-stream' -UseBasicParsing -ErrorAction Stop
+						break
+					}
+					catch {
+						$status = try { $_.Exception.Response.StatusCode.value__ } catch { 0 }
+						$retryAfter = try { [int]$_.Exception.Response.Headers['Retry-After'] } catch { 0 }
+						$attempt++
+						if (($status -eq 429 -or $status -ge 500) -and $attempt -lt 5) {
+							$wait = if ($retryAfter -gt 0) { $retryAfter } else { [Math]::Min(60, [Math]::Pow(2, $attempt)) }
+							Start-Sleep -Seconds $wait
+							continue
+						}
+						throw
+					}
+				}
+				$offset += $read
+			}
+		}
+		finally { $fs.Dispose() }
+	}
+	Write-LogHost ("  -> SharePoint upload OK: {0} ({1:N2} MB)" -f $relPath, $sizeMb) -ForegroundColor DarkGray
+}
+
+function Send-FileToOneLake {
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)] [string] $LocalPath,
+		[string] $RemoteFileName
+	)
+	if (-not (Test-Path -LiteralPath $LocalPath)) { throw "Send-FileToOneLake: source not found: $LocalPath" }
+	if (-not $script:FabricResolved) { $script:FabricResolved = Resolve-FabricTarget -Url $script:RemoteOutputUrl }
+	$resolved = $script:FabricResolved
+	$fileName = if ($RemoteFileName) { $RemoteFileName } else { Split-Path -Leaf $LocalPath }
+	$relInItem = if ($resolved.FilesPath) { "$($resolved.FilesPath)/$fileName" } else { $fileName }
+	$dfsPath   = "$($resolved.FilesystemBase)/$($resolved.ItemFull)/Files/$relInItem"
+	$fileInfo  = Get-Item -LiteralPath $LocalPath
+	$sizeMb    = $fileInfo.Length / 1MB
+
+	# Authorization + x-ms-version are set per-request by Invoke-FabricWebRequest using the
+	# current $script:AzAuthState. Do not cache headers locally - the token may rotate.
+
+	# Step 1: Create (PUT ?resource=file) - overwrites any existing file.
+	$createUri = "$dfsPath`?resource=file"
+	$null = Invoke-FabricWebRequest -Uri $createUri -Method PUT
+
+	# Step 2: Append in chunks (PATCH ?action=append&position=N).
+	# Inner retry loop handles 429/5xx with exponential backoff. 401 is handled transparently
+	# inside Invoke-FabricWebRequest (force-refresh + retry once); any 401 that escapes here
+	# means refresh itself failed, which is fatal for this upload and propagates up.
+	$chunkSize = 4MB
+	$fs = [System.IO.File]::OpenRead($LocalPath)
+	try {
+		$buffer = New-Object byte[] $chunkSize
+		$position = 0L
+		while ($position -lt $fileInfo.Length) {
+			$toRead = [Math]::Min([int64]$chunkSize, $fileInfo.Length - $position)
+			$read   = $fs.Read($buffer, 0, [int]$toRead)
+			if ($read -le 0) { break }
+			$slice = if ($read -eq $chunkSize) { $buffer } else { $buffer[0..($read-1)] }
+			$appendUri = "$dfsPath`?action=append&position=$position"
+			$attempt = 0
+			while ($true) {
+				try {
+					$null = Invoke-FabricWebRequest -Uri $appendUri -Method PATCH -Body $slice -ContentType 'application/octet-stream'
+					break
+				}
+				catch {
+					$status = try { $_.Exception.Response.StatusCode.value__ } catch { 0 }
+					$retryAfter = try { [int]$_.Exception.Response.Headers['Retry-After'] } catch { 0 }
+					$attempt++
+					if (($status -eq 429 -or $status -ge 500) -and $attempt -lt 5) {
+						$wait = if ($retryAfter -gt 0) { $retryAfter } else { [Math]::Min(60, [Math]::Pow(2, $attempt)) }
+						Start-Sleep -Seconds $wait
+						continue
+					}
+					throw
+				}
+			}
+			$position += $read
+		}
+	}
+	finally { $fs.Dispose() }
+
+	# Step 3: Flush (PATCH ?action=flush&position=<size>)
+	$flushUri = "$dfsPath`?action=flush&position=$($fileInfo.Length)"
+	$null = Invoke-FabricWebRequest -Uri $flushUri -Method PATCH
+
+	Write-LogHost ("  -> OneLake upload OK: {0} ({1:N2} MB)" -f $relInItem, $sizeMb) -ForegroundColor DarkGray
+}
+
+function Get-RemoteFile-SharePoint {
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)] [string] $RelativeName,
+		[Parameter(Mandatory)] [string] $DestinationPath
+	)
+	if (-not $script:SPResolved) { $script:SPResolved = Resolve-SharePointTarget -Url $script:RemoteOutputUrl }
+	$resolved = $script:SPResolved
+	$relPath  = if ($resolved.FolderPath) { "$($resolved.FolderPath)/$RelativeName" } else { $RelativeName }
+	$dlUri    = "https://graph.microsoft.com/v1.0/drives/$($resolved.DriveId)/root:/${relPath}:/content"
+	Invoke-MgGraphRequest -Method GET -Uri $dlUri -OutputFilePath $DestinationPath -ErrorAction Stop | Out-Null
+}
+
+function Get-RemoteFile-OneLake {
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)] [string] $RelativeName,
+		[Parameter(Mandatory)] [string] $DestinationPath
+	)
+	if (-not $script:FabricResolved) { $script:FabricResolved = Resolve-FabricTarget -Url $script:RemoteOutputUrl }
+	$resolved = $script:FabricResolved
+	$relInItem = if ($resolved.FilesPath) { "$($resolved.FilesPath)/$RelativeName" } else { $RelativeName }
+	$dfsPath   = "$($resolved.FilesystemBase)/$($resolved.ItemFull)/Files/$relInItem"
+	# Invoke-FabricWebRequest handles Authorization, x-ms-version, proactive refresh, 401 retry.
+	$null = Invoke-FabricWebRequest -Uri $dfsPath -Method GET -OutFile $DestinationPath
+}
+
+function Invoke-OutputUpload {
+	[CmdletBinding()]
+	param([Parameter(Mandatory)] [string] $LocalPath)
+	if ($script:RemoteOutputMode -eq 'None') { return }
+	if (-not (Test-Path -LiteralPath $LocalPath)) {
+		Write-Verbose "Invoke-OutputUpload: skipping (file not found): $LocalPath"
+		return
+	}
+	# NOTE: No catch wrapper here — every caller either (a) has its own try/catch with a
+	# context-specific WARNING (upload sweep / metrics / log file) or (b) wants silent
+	# best-effort behavior with Write-Verbose only (checkpoint mirror). An inner WARNING
+	# would always be either redundant or unwanted. Let exceptions propagate untouched.
+	switch ($script:RemoteOutputMode) {
+		'SharePoint' { Send-FileToSharePoint -LocalPath $LocalPath }
+		'Fabric'     { Send-FileToOneLake    -LocalPath $LocalPath }
+	}
+}
+
+function Invoke-EmbeddedProcessor {
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)] [ValidateSet('CopilotInteraction', 'M365Bundle')]
+		[string] $ProcessorMode,
+
+		[Parameter(Mandatory)] [string]   $PythonExe,
+		[Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $LauncherArgs,
+		[Parameter(Mandatory)] [string[]] $ProcessorArgs,
+		[Parameter(Mandatory)] [string]   $IncrementalDir
+	)
+
+	# Materialize the appropriate embedded source as a temp .py inside .pax_incremental,
+	# named with the global run timestamp so it is auto-reaped by the end-of-run cleanup
+	# AND the finally-block safety-net even if we crash. Returns the processor's exit code.
+
+	if (-not (Test-Path -LiteralPath $IncrementalDir -PathType Container)) {
+		New-Item -ItemType Directory -Path $IncrementalDir -Force | Out-Null
+	}
+
+	switch ($ProcessorMode) {
+		'CopilotInteraction' {
+			$label  = 'CopilotInteractionProcessor'
+			$source = $Script:EMBEDDED_PROCESSOR_COPILOT
+			$ver    = $Script:EMBEDDED_PROCESSOR_COPILOT_VERSION
+		}
+		'M365Bundle' {
+			$label  = 'M365BundleProcessor'
+			$source = $Script:EMBEDDED_PROCESSOR_M365
+			$ver    = $Script:EMBEDDED_PROCESSOR_M365_VERSION
+		}
+	}
+
+	$tempPyName = "PAX_${label}_$($global:ScriptRunTimestamp).py"
+	$tempPyPath = Join-Path $IncrementalDir $tempPyName
+
+	$utf8NoBom = [Text.UTF8Encoding]::new($false)
+	[IO.File]::WriteAllText($tempPyPath, $source, $utf8NoBom)
+
+	Write-LogHost "Rollup: invoking embedded $label v$ver ($PythonExe)" -ForegroundColor Cyan
+	Write-LogFile "Rollup: temp script -> $tempPyPath"
+	Write-LogFile "Rollup: args        -> $($ProcessorArgs -join ' ')"
+
+	$exitCode = 1
+	try {
+		$fullArgs = @($LauncherArgs) + @($tempPyPath) + @($ProcessorArgs)
+		# In remote-output mode, suppress the Python processors' echoed input/output PATH
+		# lines (e.g. "Purview input:", "Output file:"). Those values are LOCAL scratch
+		# paths; surfacing them to the customer when -OutputPathSP / -OutputPathFabric is
+		# in effect is misleading. The remote-aware path summary is emitted by the
+		# PowerShell wrapper after the processor returns. All other Python output
+		# (header, counts, timing, errors) is preserved verbatim.
+		$pathLineRegex = if ($script:RemoteOutputMode -ne 'None') {
+			'^\s*(Purview input:|Entra input:|Purview output:|Entra output:|Input:|Output:|Output file:)\s'
+		} else { $null }
+		& $PythonExe @fullArgs 2>&1 | ForEach-Object {
+			$line = [string]$_
+			if ($pathLineRegex -and $line -match $pathLineRegex) { return }
+			# Stream stdout+stderr through Write-Log (which mirrors to host AND log file).
+			Write-Log $line
+		}
+		$exitCode = $LASTEXITCODE
+	}
+	catch {
+		Write-LogHost "Rollup: $label threw an exception: $($_.Exception.Message)" -ForegroundColor Red
+		$exitCode = 1
+	}
+	finally {
+		try {
+			if (Test-Path -LiteralPath $tempPyPath) { Remove-Item -LiteralPath $tempPyPath -Force -ErrorAction SilentlyContinue }
+		}
+		catch { }
+	}
+
+	return $exitCode
 }
 
 # Validate MaxConcurrency range (Microsoft Purview enforces 10 concurrent search job limit per user account)
@@ -2903,6 +8013,42 @@ trap {
 # ==============================================
 # Load required modules based on mode selection (-UseEOM vs Graph API default)
 
+# Emit PAX banner + sensitive-data warning to terminal/log BEFORE any other startup output
+Write-LogHost "=== Portable Audit eXporter (PAX) - Purview Audit Log Exporter ===" -ForegroundColor Cyan
+Write-LogHost ("Script Version: v$ScriptVersion") -ForegroundColor White
+Write-LogHost ""
+Write-LogHost "=========================================================================" -ForegroundColor Yellow
+Write-LogHost "  !! SENSITIVE DATA WARNING - CUSTOMER RESPONSIBILITY !!" -ForegroundColor Yellow
+Write-LogHost "=========================================================================" -ForegroundColor Yellow
+Write-LogHost "The audit data exported by this script is HIGHLY SENSITIVE. Output may" -ForegroundColor Yellow
+Write-LogHost "contain user identifiers (UPN, email, GUID), file/site/resource paths," -ForegroundColor Yellow
+Write-LogHost "conversation and message IDs, agent identifiers, prompt/response metadata" -ForegroundColor Yellow
+Write-LogHost "(timestamps, lengths, classifications), and other personally identifiable" -ForegroundColor Yellow
+Write-LogHost "information drawn directly from your tenant's Unified Audit Log." -ForegroundColor Yellow
+Write-LogHost ""
+Write-LogHost "  * Data is NOT hashed, masked, redacted, anonymized, or de-identified." -ForegroundColor Yellow
+Write-LogHost "    Records are exported in raw, attributable form as Purview returns them." -ForegroundColor Yellow
+Write-LogHost "  * Outputs (CSV/Excel/JSON metrics, checkpoint files, logs) may contain" -ForegroundColor Yellow
+Write-LogHost "    confidential business content, regulated data (PII, PHI, financial," -ForegroundColor Yellow
+Write-LogHost "    IP), and end-user communications." -ForegroundColor Yellow
+Write-LogHost "  * The customer (you / your organization) is SOLELY RESPONSIBLE for the" -ForegroundColor Yellow
+Write-LogHost "    secure handling, storage, transmission, retention, disclosure, access" -ForegroundColor Yellow
+Write-LogHost "    control, and deletion of all data produced by this script, and for" -ForegroundColor Yellow
+Write-LogHost "    ensuring its use complies with all applicable laws, regulations," -ForegroundColor Yellow
+Write-LogHost "    contractual obligations, and internal policies - including but not" -ForegroundColor Yellow
+Write-LogHost "    limited to GDPR, HIPAA, CCPA, employee monitoring laws, works-council" -ForegroundColor Yellow
+Write-LogHost "    agreements, and data-residency requirements." -ForegroundColor Yellow
+Write-LogHost "  * Microsoft has no visibility into, control over, or responsibility" -ForegroundColor Yellow
+Write-LogHost "    for the data customers extract using this tool or how that data is" -ForegroundColor Yellow
+Write-LogHost "    subsequently used, shared, or stored. Microsoft disclaims any and all" -ForegroundColor Yellow
+Write-LogHost "    liability arising from or related to customer use of this script and" -ForegroundColor Yellow
+Write-LogHost "    its output." -ForegroundColor Yellow
+Write-LogHost "  * Treat all output files as HIGHLY CONFIDENTIAL. Restrict access to" -ForegroundColor Yellow
+Write-LogHost "    authorized personnel with a documented business need. Encrypt at rest" -ForegroundColor Yellow
+Write-LogHost "    and in transit. Apply tenant DLP / sensitivity labels as appropriate." -ForegroundColor Yellow
+Write-LogHost "=========================================================================" -ForegroundColor Yellow
+Write-LogHost ""
+
 if ($RAWInputCSV) {
 	# Set replay mode flag for graceful exit handling (skip Graph disconnect messaging)
 	$env:PAX_REPLAY_MODE = "1"
@@ -2911,7 +8057,8 @@ if ($RAWInputCSV) {
 elseif (-not $UseEOM) {
 	# DEFAULT MODE: Microsoft Graph Security API
 	# Requires Microsoft.Graph.Authentication and Microsoft.Graph.Security modules
-	Write-LogHost "`nLoading Microsoft Graph modules..." -ForegroundColor Cyan
+	Write-LogHost ""
+	Write-LogHost "Loading Microsoft Graph modules..." -ForegroundColor Cyan
 
 	try {
 		# ============================================
@@ -3065,7 +8212,7 @@ function Connect-PurviewAudit {
 	
 	param(
 		[Parameter(Mandatory = $true)]
-		[ValidateSet('WebLogin', 'DeviceCode', 'Credential', 'Silent', 'AppRegistration')]
+		[ValidateSet('WebLogin', 'DeviceCode', 'Credential', 'Silent', 'AppRegistration', 'ManagedIdentity')]
 		[string]$AuthMethod,
 		
 		[Parameter(Mandatory = $false)]
@@ -3154,6 +8301,12 @@ function Connect-PurviewAudit {
 						}
 					}
 				}
+				'managedidentity' {
+					Write-LogHost "ERROR: -Auth ManagedIdentity is not supported with -UseEOM." -ForegroundColor Red
+					Write-LogHost "       Exchange Online Management does not accept managed-identity auth." -ForegroundColor Yellow
+					Write-LogHost "       Use -Auth ManagedIdentity without -UseEOM (Graph API path)." -ForegroundColor Yellow
+					throw "ManagedIdentity auth is not supported with -UseEOM"
+				}
 			}
 			
 			$script:Connected = $true
@@ -3214,7 +8367,7 @@ function Connect-PurviewAudit {
 		#                                for GET /groups and GET /groups/{id}/members;
 		#                                used by Expand-PurviewGroupMembership)
 		$RequiredScopes = [System.Collections.Generic.List[string]]::new()
-		if (-not $OnlyUserInfo) {
+		if (-not $OnlyUserInfo -and -not $OnlyAgent365Info) {
 			[void]$RequiredScopes.Add('AuditLogsQuery.Read.All')
 		}
 		if ($IncludeM365Usage) {
@@ -3229,9 +8382,21 @@ function Connect-PurviewAudit {
 		if ($GroupNames -and $GroupNames.Count -gt 0) {
 			if ($RequiredScopes -notcontains 'GroupMember.Read.All') { [void]$RequiredScopes.Add('GroupMember.Read.All') }
 		}
+		# Microsoft Agent 365 enrichment scopes (interactive auth modes only).
+		# AppRegistration path takes a separate interactive context for the agent phase
+		# (see banner 7a near Connect-PurviewAudit), so these are not added there.
+		if (($IncludeAgent365Info -or $OnlyAgent365Info) -and $AuthMethod -ne 'AppRegistration') {
+			if ($RequiredScopes -notcontains 'CopilotPackages.Read.All') { [void]$RequiredScopes.Add('CopilotPackages.Read.All') }
+			if ($RequiredScopes -notcontains 'Application.Read.All')    { [void]$RequiredScopes.Add('Application.Read.All') }
+		}
+		# SharePoint remote-output destination needs delegated/app drive write scopes.
+		# Fabric/OneLake uses a separate storage-audience token (Az.Accounts), not a Graph scope.
+		if ($script:RemoteOutputMode -eq 'SharePoint') {
+			if ($RequiredScopes -notcontains 'Sites.ReadWrite.All') { [void]$RequiredScopes.Add('Sites.ReadWrite.All') }
+			if ($RequiredScopes -notcontains 'Files.ReadWrite.All') { [void]$RequiredScopes.Add('Files.ReadWrite.All') }
+		}
 		$RequiredScopes = $RequiredScopes.ToArray()
-		Write-LogHost ("  Graph scopes requested: {0}" -f ($RequiredScopes -join ', ')) -ForegroundColor DarkGray
-		
+
 		try {
 			switch ($AuthMethod.ToLower()) {
 				'weblogin' {
@@ -3278,6 +8443,15 @@ function Connect-PurviewAudit {
 				'silent' {
 					Write-LogHost "Using managed identity or existing token..." -ForegroundColor Gray
 					Connect-MgGraph -Identity -NoWelcome -ErrorAction Stop
+				}
+				'managedidentity' {
+					Write-LogHost "Using managed identity (system-assigned or user-assigned)..." -ForegroundColor Gray
+					if ($env:AZURE_CLIENT_ID) {
+						Write-LogHost ("  -> User-assigned MI client id: {0}" -f $env:AZURE_CLIENT_ID) -ForegroundColor DarkGray
+						Connect-MgGraph -Identity -ClientId $env:AZURE_CLIENT_ID -NoWelcome -ErrorAction Stop
+					} else {
+						Connect-MgGraph -Identity -NoWelcome -ErrorAction Stop
+					}
 				}
 				'appregistration' {
 					Write-LogHost "Using app registration authentication..." -ForegroundColor Gray
@@ -3355,23 +8529,39 @@ function Connect-PurviewAudit {
 					}
 					elseif (-not [string]::IsNullOrWhiteSpace($certPath)) {
 						Write-LogHost "  -> Authenticating with certificate file $certPath" -ForegroundColor Gray
-						$flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
+						# CRITICAL: EphemeralKeySet keeps the private key in process memory only (no temp
+						# .pfx-key file in %APPDATA%\Microsoft\Crypto\) and ties the SafeCertContext lifetime
+						# to the X509Certificate2 object itself. Without this flag, default DefaultKeySet/UserKeySet
+						# storage causes Azure.Identity's ClientCertificateCredential to throw
+						# 'm_safeCertContext is an invalid handle' on every token request after the first.
+						# Exportable is required so the SDK can re-export the key for token signing.
+						$flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet `
+							-bor [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
 						$cert = $null
 						try {
 							if ($certPasswordPlain) {
 								$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certPath, $certPasswordPlain, $flags)
 							}
 							else {
-								$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certPath)
+								# 3-arg ctor with empty password is required so the explicit flags apply.
+								$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certPath, [string]'', $flags)
 							}
 							# Store cert path and password for re-authentication
 							$script:AuthConfig.CertPath = $certPath
 							if ($certPasswordSecure) { $script:AuthConfig.CertPassword = $certPasswordSecure.Copy() }
+							# CRITICAL: Pin the cert object on $script: scope so it lives for the entire run.
+							# Azure.Identity's ClientCertificateCredential keeps a managed reference but does
+							# NOT clone the SafeCertContext - if the cert is GC'd or Disposed, every later
+							# token request fails with 'invalid handle'. The cert MUST NOT be disposed in
+							# the finally block; it is released at script exit when $script:AuthConfig is torn down.
+							$script:AuthConfig.CertObject = $cert
 							$script:AuthConfig.CanReauthenticate = $true
 							Connect-MgGraph -TenantId $appTenantId -ClientId $appClientId -Certificate $cert -NoWelcome -ErrorAction Stop
 						}
 						finally {
-							if ($cert) { $cert.Dispose() }
+							# Intentionally NOT disposing $cert here - it must outlive Connect-MgGraph for the
+							# duration of the script run. EphemeralKeySet ensures no on-disk artifacts to clean up;
+							# the cert is fully released at script exit when $script:AuthConfig is torn down.
 							if ($certPasswordPlain) {
 								Clear-Variable -Name certPasswordPlain -Force -ErrorAction SilentlyContinue
 							}
@@ -3388,7 +8578,17 @@ function Connect-PurviewAudit {
 				}
 			}
 			
-			Write-LogHost "Successfully connected to Microsoft Graph" -ForegroundColor Green
+			# Build a context-aware connection-success message
+			$connectMsg = if ($AuthMethod.ToLower() -eq 'appregistration') {
+				if ($IncludeAgent365Info -or $OnlyAgent365Info) {
+					"Successfully connected to Microsoft Graph (Phase 1 of 2: app-only audit context). The Phase 2 (Agent 365) interactive sign-in will be requested NEXT, up-front, before audit work begins."
+				} else {
+					"Successfully connected to Microsoft Graph (app-only context)."
+				}
+			} else {
+				"Successfully connected to Microsoft Graph (delegated user context)."
+			}
+			Write-LogHost $connectMsg -ForegroundColor Green
 			
 			# Record token issue time for proactive refresh tracking
 			$script:AuthConfig.TokenIssueTime = Get-Date
@@ -3405,23 +8605,59 @@ function Connect-PurviewAudit {
 			
 			# Get and display current context
 			$context = Get-MgContext
-			Write-LogHost "  Tenant ID: $($context.TenantId)" -ForegroundColor Gray
-			$maskedAccount = Get-MaskedUsername -Username $context.Account
-			Write-LogHost "  Account:   $maskedAccount" -ForegroundColor Gray
-			# Filter displayed scopes to those required by this script (avoids confusion when the
-			# user/app holds additional consented scopes unrelated to PAX). Granted required scopes
-			# are shown; any required scopes missing from the token are surfaced separately below.
-			$grantedRequired = @($RequiredScopes | Where-Object { $context.Scopes -contains $_ })
-			Write-LogHost "  Scopes:    $($grantedRequired -join ', ')" -ForegroundColor Gray
+			# Detect dual-context run: AppRegistration audit phase + delegated Agent 365 phase.
+			# In that case, defer the per-line Tenant/Account/Scopes display until AFTER Phase 2
+			# sign-in completes, so the log shows BOTH phases honestly side-by-side. Capture the
+			# Phase 1 context now into script-scope vars so the combined emitter can use them.
+			$script:DeferAuthContextDisplay = ($AuthMethod -eq 'AppRegistration') -and ($IncludeAgent365Info -or $OnlyAgent365Info)
+			if ($script:DeferAuthContextDisplay) {
+				$script:Phase1Context = [pscustomobject]@{
+					TenantId        = $context.TenantId
+					Account         = $context.Account
+					GrantedRequired = @($RequiredScopes | Where-Object { $context.Scopes -contains $_ })
+					RequiredScopes  = @($RequiredScopes)
+				}
+				Write-LogHost "  Phase 1 (audit) connected." -ForegroundColor Gray
+			} else {
+				Write-LogHost "  Tenant ID: $($context.TenantId)" -ForegroundColor Gray
+				$maskedAccount = Get-MaskedUsername -Username $context.Account
+				if ([string]::IsNullOrWhiteSpace($maskedAccount)) {
+					# App-only contexts have no signed-in user; surface the auth mode instead of a blank value.
+					$maskedAccount = if ($AuthMethod -eq 'AppRegistration') { '(app-only / AppRegistration - no interactive user)' }
+									 elseif ($AuthMethod -eq 'ManagedIdentity') {
+										if ($env:AZURE_CLIENT_ID) { "(app-only / ManagedIdentity - clientId $env:AZURE_CLIENT_ID)" }
+										else                      { '(app-only / ManagedIdentity - system-assigned)' }
+									 }
+									 else { '(no signed-in user)' }
+				}
+				Write-LogHost "  Account:   $maskedAccount" -ForegroundColor Gray
+				# Filter displayed scopes to those required by this script (avoids confusion when the
+				# user/app holds additional consented scopes unrelated to PAX). Granted required scopes
+				# are shown; any required scopes missing from the token are surfaced separately below.
+				$grantedRequired = @($RequiredScopes | Where-Object { $context.Scopes -contains $_ })
+				Write-LogHost "  Scopes:    $($grantedRequired -join ', ')" -ForegroundColor Gray
+			}
 			
 			# Trigger Graph API version detection early (before queries start)
 			$null = Get-GraphAuditApiUri -Path 'queries'
 			
 			# Validate required scopes are present
+			# NOTE: For app-only (AppRegistration) contexts, the access token carries permissions
+			# in the 'roles' claim (application permissions), not the 'scp' claim. The Graph SDK
+			# only populates $context.Scopes from 'scp', so $context.Scopes is empty/partial for
+			# app-only auth even when admin-consented application permissions are fully granted.
+			# A scope-membership check would falsely flag every required permission as missing.
+			# App permissions are validated server-side at API call time, so we skip the warning.
+			$isAppOnlyContext = $false
+			if ($context) {
+				$isAppOnlyContext = ([string]::IsNullOrWhiteSpace($context.Account)) -or ($context.AuthType -eq 'AppOnly')
+			}
 			$missingScopes = @()
-			foreach ($scope in $RequiredScopes) {
-				if ($context.Scopes -notcontains $scope) {
-					$missingScopes += $scope
+			if (-not $isAppOnlyContext) {
+				foreach ($scope in $RequiredScopes) {
+					if ($context.Scopes -notcontains $scope) {
+						$missingScopes += $scope
+					}
 				}
 			}
 			
@@ -3678,32 +8914,41 @@ function Invoke-TokenRefresh {
 		# Try certificate file
 		elseif ($script:AuthConfig.CertPath) {
 			Write-LogHost "  [TOKEN-REFRESH] Reconnecting with certificate file..." -ForegroundColor Gray
-			$flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
-			$cert = $null
-			try {
+			# Prefer the cert object pinned at initial login - it already has the correct
+			# EphemeralKeySet+Exportable storage flags applied, and reusing it avoids any
+			# chance of leaking a second key file or invalidating the credential's handle.
+			$cert = $script:AuthConfig.CertObject
+			if (-not $cert) {
+				$flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet `
+					-bor [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
 				if ($script:AuthConfig.CertPassword) {
 					$plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
 						[Runtime.InteropServices.Marshal]::SecureStringToBSTR($script:AuthConfig.CertPassword)
 					)
-					$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
-						$script:AuthConfig.CertPath, $plainPassword, $flags
-					)
-					Clear-Variable -Name plainPassword -Force -ErrorAction SilentlyContinue
+					try {
+						$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
+							$script:AuthConfig.CertPath, $plainPassword, $flags
+						)
+					}
+					finally {
+						Clear-Variable -Name plainPassword -Force -ErrorAction SilentlyContinue
+					}
 				}
 				else {
 					$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
-						$script:AuthConfig.CertPath
+						$script:AuthConfig.CertPath, [string]'', $flags
 					)
 				}
-				Connect-MgGraph -TenantId $script:AuthConfig.TenantId `
-					-ClientId $script:AuthConfig.ClientId `
-					-Certificate $cert `
-					-NoWelcome -ErrorAction Stop
-				$reconnected = $true
+				# Re-pin so subsequent refreshes can reuse this same instance.
+				$script:AuthConfig.CertObject = $cert
 			}
-			finally {
-				if ($cert) { $cert.Dispose() }
-			}
+			Connect-MgGraph -TenantId $script:AuthConfig.TenantId `
+				-ClientId $script:AuthConfig.ClientId `
+				-Certificate $cert `
+				-NoWelcome -ErrorAction Stop
+			# Intentionally NOT disposing $cert - must outlive Connect-MgGraph for the rest
+			# of the run. Cleanup happens at script exit when $script:AuthConfig is released.
+			$reconnected = $true
 		}
 		
 		if ($reconnected) {
@@ -3963,6 +9208,8 @@ function Initialize-CheckpointForNewRun {
 			includeDSPMForAI = [bool]$AllParameters.IncludeDSPMForAI
 			includeCopilotInteraction = [bool]$AllParameters.IncludeCopilotInteraction
 			excludeCopilotInteraction = [bool]$AllParameters.ExcludeCopilotInteraction
+			includeAgent365Info = [bool]$AllParameters.IncludeAgent365Info
+			onlyAgent365Info = [bool]$AllParameters.OnlyAgent365Info
 			
 			# Partitioning
 			blockHours = if ($AllParameters.BlockHours) { $AllParameters.BlockHours } else { 0.5 }
@@ -3973,6 +9220,14 @@ function Initialize-CheckpointForNewRun {
 			outputPath = $OutputPath
 			exportWorkbook = [bool]$AllParameters.ExportWorkbook
 			combineOutput = [bool]$AllParameters.CombineOutput
+
+			# Rollup post-processor mode (None|Rollup|RollupPlusRaw) and the resolved
+			# embedded-processor mode (None|CopilotInteraction|M365Bundle). Persisted so resume
+			# runs can restore the original rollup intent when the user does not pass a switch
+			# on the resume command line. If a rollup switch IS passed on resume, the resume
+			# value wins (last-write-wins) and these fields are overwritten on the next save.
+			rollupMode = if ([bool]$AllParameters.Rollup) { 'Rollup' } elseif ([bool]$AllParameters.RollupPlusRaw) { 'RollupPlusRaw' } else { 'None' }
+			processorMode = if ($script:RollupProcessorMode) { $script:RollupProcessorMode } else { 'None' }
 			
 			# Auth (method only - no secrets)
 			auth = if ($AllParameters.Auth) { $AllParameters.Auth } else { 'WebLogin' }
@@ -4052,6 +9307,13 @@ function Save-CheckpointToDisk {
 		
 		# Rename to final (atomic on most filesystems)
 		Move-Item -Path $tempPath -Destination $script:CheckpointPath -Force
+
+		# Checkpoint files are intentionally LOCAL-ONLY. The full set of resume artifacts
+		# (.pax_checkpoint_*.json, .pax_incremental/*.jsonl, *_PARTIAL.csv) all live on the
+		# local disk; mirroring just the checkpoint to SP/Fabric would create an inconsistent
+		# resume surface (checkpoint says "resume from partition 17" but the partial CSV with
+		# rows 1..16 is on a different machine). Resume is a same-host operation; remote
+		# mode only mirrors customer-visible final artifacts at end-of-run.
 	}
 	catch {
 		Write-LogHost "  Warning: Failed to save checkpoint: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -5011,45 +10273,47 @@ function Complete-CheckpointRun {
 		[string]$FinalOutputPath
 	)
 	
-	if (-not $script:PartialOutputPath -or -not (Test-Path $script:PartialOutputPath)) {
-		return
+	# Rename _PARTIAL output (and log) to final names ONLY if the _PARTIAL file still exists.
+	# In CSV-split / ExportWorkbook modes the intermediate _PARTIAL.csv may already have
+	# been deleted by upstream code paths; in that case skip the rename but STILL proceed
+	# with checkpoint deletion below so the checkpoint file is not orphaned.
+	if ($script:PartialOutputPath -and (Test-Path $script:PartialOutputPath)) {
+		try {
+			# Rename _PARTIAL to final
+			if (Test-Path $FinalOutputPath) {
+				# Final file already exists - add timestamp to avoid overwrite
+				$dir = Split-Path $FinalOutputPath -Parent
+				$name = [System.IO.Path]::GetFileNameWithoutExtension($FinalOutputPath)
+				$ext = [System.IO.Path]::GetExtension($FinalOutputPath)
+				$timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+				$FinalOutputPath = Join-Path $dir "${name}_${timestamp}${ext}"
+			}
+			
+			Move-Item -Path $script:PartialOutputPath -Destination $FinalOutputPath -Force
+			
+			# Rename log file (remove _PARTIAL suffix)
+			$partialLogPath = $script:LogFile
+			if ($partialLogPath -and (Test-Path $partialLogPath) -and $partialLogPath -match '_PARTIAL\.log$') {
+				$finalLogPath = $partialLogPath -replace '_PARTIAL\.log$', '.log'
+				if (Test-Path $finalLogPath) {
+					$logDir = Split-Path $finalLogPath -Parent
+					$logName = [System.IO.Path]::GetFileNameWithoutExtension($finalLogPath)
+					$timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+					$finalLogPath = Join-Path $logDir "${logName}_${timestamp}.log"
+				}
+				Move-Item -Path $partialLogPath -Destination $finalLogPath -Force
+				$script:LogFile = $finalLogPath
+			}
+			
+			$script:PartialOutputPath = $null
+		}
+		catch {
+			Write-LogHost "  Warning: Could not finalize output file: $($_.Exception.Message)" -ForegroundColor Yellow
+		}
 	}
 	
-	try {
-		# Rename _PARTIAL to final
-		if (Test-Path $FinalOutputPath) {
-			# Final file already exists - add timestamp to avoid overwrite
-			$dir = Split-Path $FinalOutputPath -Parent
-			$name = [System.IO.Path]::GetFileNameWithoutExtension($FinalOutputPath)
-			$ext = [System.IO.Path]::GetExtension($FinalOutputPath)
-			$timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-			$FinalOutputPath = Join-Path $dir "${name}_${timestamp}${ext}"
-		}
-		
-		Move-Item -Path $script:PartialOutputPath -Destination $FinalOutputPath -Force
-		
-		# Rename log file (remove _PARTIAL suffix)
-		$partialLogPath = $script:LogFile
-		if ($partialLogPath -and (Test-Path $partialLogPath) -and $partialLogPath -match '_PARTIAL\.log$') {
-			$finalLogPath = $partialLogPath -replace '_PARTIAL\.log$', '.log'
-			if (Test-Path $finalLogPath) {
-				$logDir = Split-Path $finalLogPath -Parent
-				$logName = [System.IO.Path]::GetFileNameWithoutExtension($finalLogPath)
-				$timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-				$finalLogPath = Join-Path $logDir "${logName}_${timestamp}.log"
-			}
-			Move-Item -Path $partialLogPath -Destination $finalLogPath -Force
-			$script:LogFile = $finalLogPath
-		}
-		
-		# Delete checkpoint
-		Remove-Checkpoint
-		
-		$script:PartialOutputPath = $null
-	}
-	catch {
-		Write-LogHost "  Warning: Could not finalize output file: $($_.Exception.Message)" -ForegroundColor Yellow
-	}
+	# Delete checkpoint (always — caller has determined the run succeeded).
+	Remove-Checkpoint
 }
 
 function Get-UserLicenseData {
@@ -5061,11 +10325,15 @@ function Get-UserLicenseData {
 		Queries Graph API for subscribedSkus and builds lookup hashtables for:
 		- User license assignments (userId -> list of SKU names)
 		- Copilot license detection (userId -> has Copilot license)
-		
-		Uses two-tier Copilot license detection:
-		1. Checks known Copilot SKU IDs (hardcoded list from $script:CopilotSkuIds)
-		2. Pattern matches SKU names containing "Copilot" (catches new/promotional variants)
-	
+
+		Dynamic Copilot license detection (no hardcoded SKU GUIDs):
+		1. From /subscribedSkus, collect every servicePlanId whose servicePlanName matches '*COPILOT*'.
+		2. For each user, scan assignedPlans for entries where capabilityStatus == 'Enabled'
+		   AND servicePlanId is in the discovered Copilot plan set.
+		This honors capability state (admin-disabled service plans are correctly excluded)
+		and auto-adapts to any current or future Copilot SKU (M365, EDU, Sales, Finance, GCC, etc.).
+		Requires only User.Read.All + Organization.Read.All (no additional permissions).
+
 	.OUTPUTS
 		Hashtable with two keys:
 		- UserLicenses: @{userId = @('SKU1', 'SKU2')}
@@ -5082,24 +10350,34 @@ function Get-UserLicenseData {
 		$skus = $response.value
 		
 		Write-LogHost "  Found $($skus.Count) SKU(s) in tenant" -ForegroundColor Gray
-		
+
 		# Build SKU lookup: skuId -> skuPartNumber
+		# Also dynamically discover Copilot service plan IDs by name pattern (no hardcoded GUIDs).
 		$skuLookup = @{}
-		$copilotSkuIds = $script:CopilotSkuIds.Keys
-		
+		$copilotPlanIds = New-Object System.Collections.Generic.HashSet[string]
+
 		foreach ($sku in $skus) {
 			$skuId = $sku.skuId
 			$skuName = $sku.skuPartNumber
 			$skuLookup[$skuId] = $skuName
+			if ($sku.servicePlans) {
+				foreach ($plan in $sku.servicePlans) {
+					if ($plan.servicePlanName -and $plan.servicePlanName -like '*COPILOT*' -and $plan.servicePlanId) {
+						[void]$copilotPlanIds.Add([string]$plan.servicePlanId)
+					}
+				}
+			}
 		}
-		
+		Write-LogHost "  Discovered $($copilotPlanIds.Count) Copilot service plan(s) in tenant" -ForegroundColor Gray
+
 		# Build user license hashtables
 		$userLicenses = @{}      # userId -> @('SKU1', 'SKU2')
 		$userHasCopilot = @{}    # userId -> $true/$false
-		
+
 		# Fetch all users with licenses in batches
+		# assignedPlans is required for capability-aware Copilot detection (still under User.Read.All).
 		Write-LogHost "  Fetching user license assignments..." -ForegroundColor Gray
-		$userUri = "https://graph.microsoft.com/v1.0/users?`$select=id,userPrincipalName,assignedLicenses&`$top=999"
+		$userUri = "https://graph.microsoft.com/v1.0/users?`$select=id,userPrincipalName,assignedLicenses,assignedPlans&`$top=999"
 		$userCount = 0
 		$copilotUserCount = 0
 		
@@ -5110,34 +10388,30 @@ function Get-UserLicenseData {
 			foreach ($user in $users) {
 				$userId = $user.id
 				$upn = $user.userPrincipalName
-				
+
 				if (-not $userId -or -not $upn) { continue }
-				
+
 				$userCount++
 				$licenses = @()
 				$hasCopilot = $false
-				
+
+				# Friendly SKU name list (unchanged): map assignedLicenses[].skuId -> skuPartNumber via $skuLookup
 				foreach ($license in $user.assignedLicenses) {
 					$skuId = $license.skuId
-					
-					# Get friendly SKU name
-					$skuName = if ($skuLookup.ContainsKey($skuId)) {
-						$skuLookup[$skuId]
-					} else {
-						$skuId  # Fallback to GUID if not in lookup
-					}
-					
+					$skuName = if ($skuLookup.ContainsKey($skuId)) { $skuLookup[$skuId] } else { $skuId }
 					$licenses += $skuName
-					
-					# Check if this is a Copilot license (two-tier detection)
-					$isCopilotSku = $copilotSkuIds -contains $skuId
-					$isCopilotName = $skuName -like "*Copilot*"
-					
-					if ($isCopilotSku -or $isCopilotName) {
-						$hasCopilot = $true
+				}
+
+				# Capability-aware Copilot detection: any assignedPlan that is Enabled AND a Copilot service plan.
+				if ($copilotPlanIds.Count -gt 0 -and $user.assignedPlans) {
+					foreach ($plan in $user.assignedPlans) {
+						if ($plan.capabilityStatus -eq 'Enabled' -and $plan.servicePlanId -and $copilotPlanIds.Contains([string]$plan.servicePlanId)) {
+							$hasCopilot = $true
+							break
+						}
 					}
 				}
-				
+
 				# Store license data keyed by both ID and UPN for flexible lookup
 				if ($licenses.Count -gt 0) {
 					$userLicenses[$userId] = $licenses
@@ -5874,6 +11148,665 @@ function ConvertFrom-GraphAuditRecord {
 	
 	return $normalized
 }
+
+# =============================================================================
+# MICROSOFT AGENT 365 ENRICHMENT FUNCTIONS
+# =============================================================================
+# Self-contained section. All functions are no-ops unless -IncludeAgent365Info
+# or -OnlyAgent365Info is set. Reuses existing Graph SDK plumbing
+# (Invoke-MgGraphRequest, Connect-MgGraph, token-refresh helpers, retry helpers).
+# Output schema must exactly match temp/Synthetic_Agent365_May2026.csv (28 cols).
+# Empty cells are intentional when the API does not return a value (no fabrication).
+# Reference: https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api
+# =============================================================================
+
+# Module-scope caches populated during the Agent 365 phase.
+$script:Agent365FrontierAvailable = $null   # $true / $false / $null = untested
+$script:Agent365DeveloperCache    = @{}     # appId/displayName -> resolved name
+$script:Agent365AuditEnrichment   = @{}     # titleId/appId      -> @{ Created=...; CreatedBy=... }
+$script:Agent365InteractiveCtx    = $false  # set $true after secondary interactive sign-in (AppReg path)
+$script:Agent365PreAuthCompleted  = $false  # set $true after eager up-front Agent 365 sign-in (AppReg + Agent365 combo)
+
+function Get-Agent365PackagesUri {
+	param([Parameter(Mandatory = $false)][string]$PackageId = '')
+	# Microsoft Agent 365 / Copilot package management API is currently published at /beta only.
+	# When/if the endpoint is also published at /v1.0, switch this constant.
+	$base = 'https://graph.microsoft.com/beta/copilot/admin/catalog/packages'
+	if ([string]::IsNullOrWhiteSpace($PackageId)) { return $base }
+	return ($base + '/' + [System.Uri]::EscapeDataString($PackageId))
+}
+
+function Connect-Agent365InteractiveContext {
+	<#
+	.SYNOPSIS
+		Establishes (or restores) a delegated Microsoft Graph context for the Agent 365 phase
+		when -Auth AppRegistration is in use (which cannot satisfy the Agent Package
+		Management API's user-bound role requirement).
+
+		Idempotent: safe to call multiple times. After Invoke-Agent365EarlyInteractiveSignIn
+		has run once at startup, subsequent calls re-issue Connect-MgGraph -Scopes which
+		normally completes silently from MSAL token cache (no second prompt).
+	#>
+	if ($Auth -ne 'AppRegistration') { return $true }   # all other modes already have the right scopes
+
+	$agent365Scopes = @('CopilotPackages.Read.All', 'Application.Read.All')
+
+	if ($script:Agent365PreAuthCompleted) {
+		# Token already acquired earlier in this run; restore the delegated context silently.
+		Write-LogHost ""
+		Write-LogHost "  Restoring Agent 365 interactive context (using cached credentials from earlier sign-in)..." -ForegroundColor Cyan
+	} else {
+		Write-LogHost ""
+		Write-LogHost "=== Phase 2: Agent 365 - Interactive sign-in ===" -ForegroundColor Cyan
+		Write-LogHost "  Reason: Agent 365 endpoint has no app-only Graph scope." -ForegroundColor Gray
+		Write-LogHost "  Requesting DELEGATED scopes:" -ForegroundColor White
+		Write-LogHost ("    [Delegated] {0}" -f ($agent365Scopes -join ', ')) -ForegroundColor Yellow
+		Write-LogHost "  Required Entra role on signed-in user:" -ForegroundColor White
+		Write-LogHost "    [Role]      AI Administrator  -OR-  Global Administrator" -ForegroundColor Yellow
+		Write-LogHost "  (Without the role, Graph returns 403 even after consent.)" -ForegroundColor Gray
+		Write-LogHost ""
+	}
+	try {
+		# Connect-MgGraph with new -Scopes establishes a delegated context layered
+		# on top of the existing AppReg context; no manual disconnect needed.
+		Connect-MgGraph -Scopes $agent365Scopes -NoWelcome -ErrorAction Stop
+		$script:Agent365InteractiveCtx = $true
+		if ($script:Agent365PreAuthCompleted) {
+			Write-LogHost "  Interactive context restored (no prompt needed)." -ForegroundColor Green
+		} else {
+			Write-LogHost "  Interactive context established." -ForegroundColor Green
+			# Dual-context runs deferred the Phase 1 Tenant/Account/Scopes display so we can
+			# emit BOTH phases together now that Phase 2 (delegated) is also live.
+			if ($script:DeferAuthContextDisplay -and $script:Phase1Context) {
+				try {
+					$delegCtx = Get-MgContext
+					Write-LogHost ""
+					Write-LogHost "  Effective auth context (dual-mode):" -ForegroundColor White
+					Write-LogHost "    Phase 1 (Audit / EntraUsers / M365) - APP-ONLY (AppRegistration):" -ForegroundColor Gray
+					Write-LogHost "      Tenant ID: $($script:Phase1Context.TenantId)" -ForegroundColor Gray
+					Write-LogHost "      Account:   (app-only / AppRegistration - no interactive user)" -ForegroundColor Gray
+					Write-LogHost "      Scopes:    $($script:Phase1Context.GrantedRequired -join ', ')" -ForegroundColor Gray
+					Write-LogHost "    Phase 2 (Agent 365 catalog) - DELEGATED (interactive sign-in):" -ForegroundColor Gray
+					if ($delegCtx) {
+						Write-LogHost "      Tenant ID: $($delegCtx.TenantId)" -ForegroundColor Gray
+						$delegAcct = Get-MaskedUsername -Username $delegCtx.Account
+						if ([string]::IsNullOrWhiteSpace($delegAcct)) { $delegAcct = '(unknown)' }
+						Write-LogHost "      Account:   $delegAcct" -ForegroundColor Gray
+						$delegGranted = @($agent365Scopes | Where-Object { $delegCtx.Scopes -contains $_ })
+						Write-LogHost "      Scopes:    $($delegGranted -join ', ')" -ForegroundColor Gray
+					} else {
+						Write-LogHost "      (delegated context not retrievable)" -ForegroundColor Gray
+					}
+					Write-LogHost ""
+					$script:DeferAuthContextDisplay = $false
+				} catch { }
+			}
+		}
+		return $true
+	} catch {
+		Write-LogHost ("  ERROR: Interactive sign-in for Agent 365 failed: {0}" -f $_.Exception.Message) -ForegroundColor Red
+		return $false
+	}
+}
+
+function Invoke-Agent365EarlyInteractiveSignIn {
+	<#
+	.SYNOPSIS
+		Eager up-front interactive sign-in for the Agent 365 phase.
+
+	.DESCRIPTION
+		When -Auth AppRegistration is combined with -IncludeAgent365Info, the Agent 365
+		phase requires a separate DELEGATED user sign-in (no app-only scope exists).
+		Without this helper, the user would only see the interactive prompt AFTER the
+		audit phase finishes - which can be hours into the run on large tenants.
+
+		This function performs the interactive prompt immediately after the Phase 1
+		AppReg connection is established, then probes the Agent 365 endpoint to validate
+		tenant enrollment + caller role, then restores the AppReg context for Phase 1.
+		The MSAL token cache lets the deferred Phase 2 re-Connect happen silently.
+
+	.OUTPUTS
+		$true  - early sign-in succeeded (or not applicable for this run)
+		$false - early sign-in failed; caller should treat Agent 365 phase as unavailable
+	#>
+	if ($Auth -ne 'AppRegistration') { return $true }
+	if (-not ($IncludeAgent365Info -or $OnlyAgent365Info)) { return $true }
+	if ($script:Agent365PreAuthCompleted) { return $true }
+
+	Write-LogHost ""
+	Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Cyan
+	Write-LogHost "|  Eager Agent 365 sign-in (Phase 2 prompt up-front)                   |" -ForegroundColor Cyan
+	Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Cyan
+	Write-LogHost "|  Prompting NOW so you do not have to babysit the run. After you      |" -ForegroundColor Cyan
+	Write-LogHost "|  sign in, Phase 1 (audit, app-only) starts and runs unattended.      |" -ForegroundColor Cyan
+	Write-LogHost "|  Phase 2 (Agent 365) reuses the cached delegated token at end of run.|" -ForegroundColor Cyan
+	Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Cyan
+
+	# Step 1: prompt for delegated credentials and switch to interactive context.
+	if (-not (Connect-Agent365InteractiveContext)) {
+		Write-LogHost "  Eager Agent 365 sign-in failed; the Agent 365 phase will be skipped at end of run." -ForegroundColor Red
+		$script:Agent365FrontierAvailable = $false
+		return $false
+	}
+
+	# Step 2: probe the Frontier endpoint while the interactive context is active.
+	#         This validates tenant enrollment + AI Admin/Global Admin role NOW,
+	#         instead of after a long audit run.
+	Write-LogHost "  Validating Agent 365 endpoint access (Frontier program + role)..." -ForegroundColor Gray
+	$frontierOk = Test-Agent365FrontierAccess
+	if (-not $frontierOk) {
+		Write-LogHost "  Agent 365 endpoint is not accessible from this tenant/user." -ForegroundColor Yellow
+		Write-LogHost "  The Agent 365 phase will be skipped, but the run will continue with audit data." -ForegroundColor Yellow
+		# leave $script:Agent365FrontierAvailable = $false so Invoke-Agent365Phase short-circuits
+	}
+
+	# Step 3: mark pre-auth complete BEFORE swapping back, so Phase 2 knows to use
+	#         abbreviated messaging when it re-establishes the delegated context.
+	$script:Agent365PreAuthCompleted = $true
+
+	# Step 4: restore the AppReg (app-only) context for Phase 1 audit work.
+	#         CRITICAL: do NOT use Invoke-TokenRefresh here - it calls Disconnect-MgGraph
+	#         first, which wipes the in-memory MSAL cache for the delegated context we
+	#         just established. That would force a SECOND interactive prompt at end of run.
+	#         Instead, call Connect-MgGraph directly for the AppReg credentials; the SDK
+	#         replaces the active context in place and the delegated MSAL cache survives.
+	Write-LogHost "  Restoring app-only context for Phase 1 (audit)..." -ForegroundColor Gray
+	$restored = $false
+	try {
+		if ($script:AuthConfig.ClientSecret) {
+			$cred = New-Object System.Management.Automation.PSCredential($script:AuthConfig.ClientId, $script:AuthConfig.ClientSecret)
+			Connect-MgGraph -TenantId $script:AuthConfig.TenantId -ClientSecretCredential $cred -NoWelcome -ErrorAction Stop
+			$restored = $true
+		} elseif ($script:AuthConfig.CertObject) {
+			Connect-MgGraph -TenantId $script:AuthConfig.TenantId -ClientId $script:AuthConfig.ClientId -Certificate $script:AuthConfig.CertObject -NoWelcome -ErrorAction Stop
+			$restored = $true
+		} elseif ($script:AuthConfig.CertThumbprint) {
+			Connect-MgGraph -TenantId $script:AuthConfig.TenantId -ClientId $script:AuthConfig.ClientId -CertificateThumbprint $script:AuthConfig.CertThumbprint -NoWelcome -ErrorAction Stop
+			$restored = $true
+		}
+	} catch {
+		Write-LogHost ("  ERROR: Could not restore app-only context after Agent 365 sign-in: {0}" -f $_.Exception.Message) -ForegroundColor Red
+	}
+	if (-not $restored) {
+		Write-LogHost "  ERROR: No AppRegistration credentials available to restore Phase 1 context." -ForegroundColor Red
+		throw "Failed to restore AppRegistration context after early Agent 365 sign-in."
+	}
+	# Refresh the shared token state so Phase 1 thread jobs use the new app-only token.
+	$tokenInfo = Get-GraphAccessTokenWithExpiry
+	if ($tokenInfo) {
+		$script:SharedAuthState.Token = $tokenInfo.Token
+		$script:SharedAuthState.ExpiresOn = $tokenInfo.ExpiresOn
+		$script:SharedAuthState.LastRefresh = Get-Date
+		$script:AuthConfig.TokenIssueTime = Get-Date
+	}
+	Write-LogHost "  App-only context restored. Phase 1 will run unattended." -ForegroundColor Green
+	Write-LogHost ""
+	return $true
+}
+
+function Test-Agent365FrontierAccess {
+	<#
+	.SYNOPSIS
+		Probes the Agent Package Management API with a minimal GET to confirm
+		tenant enrollment in the Frontier program and adequate caller role.
+	.OUTPUTS
+		$true  - access confirmed; agent phase may proceed
+		$false - access denied (403/404 or unsupported); banner 7d printed; phase skipped
+	#>
+	if ($null -ne $script:Agent365FrontierAvailable) { return $script:Agent365FrontierAvailable }
+
+	$uri = (Get-Agent365PackagesUri) + '?$top=1'
+	try {
+		$null = Invoke-MgGraphRequest -Method GET -Uri $uri -ErrorAction Stop
+		$script:Agent365FrontierAvailable = $true
+		return $true
+	} catch {
+		$status = $null
+		try { if ($_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode } } catch {}
+		if ($status -in @(401,403,404)) {
+			Write-LogHost "" 
+			Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Yellow
+			Write-LogHost "|  Microsoft Agent 365 - Tenant not enrolled in Frontier program       |" -ForegroundColor Yellow
+			Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Yellow
+			Write-LogHost ("|  The Agent Package Management API returned HTTP {0,-3}, indicating     |" -f $status) -ForegroundColor Yellow
+			Write-LogHost "|  this tenant is not enrolled in the Microsoft Agent 365 Frontier    |" -ForegroundColor Yellow
+			Write-LogHost "|  program (or the signed-in user lacks AI Admin / Global Admin role). |" -ForegroundColor Yellow
+			Write-LogHost "|  The Agent 365 CSV will be skipped for this run.                    |" -ForegroundColor Yellow
+			Write-LogHost "|                                                                      |" -ForegroundColor Yellow
+			Write-LogHost "|  Reference:                                                          |" -ForegroundColor Yellow
+			Write-LogHost "|  https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api|" -ForegroundColor Yellow
+			Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Yellow
+			Write-LogHost ""
+		} else {
+			Write-LogHost ("  Agent 365 probe failed (HTTP {0}): {1}" -f ($status, $_.Exception.Message)) -ForegroundColor Red
+		}
+		$script:Agent365FrontierAvailable = $false
+		return $false
+	}
+}
+
+function Get-Agent365Packages {
+	<#
+	.SYNOPSIS
+		Returns all Agent 365 catalog packages (list view) with paging.
+	#>
+	$results = New-Object System.Collections.Generic.List[object]
+	$uri = Get-Agent365PackagesUri
+	$pageNum = 0
+	while ($uri) {
+		$pageNum++
+		try {
+			Refresh-GraphTokenIfNeeded -ErrorAction SilentlyContinue
+		} catch {}
+		try {
+			$resp = Invoke-MgGraphRequest -Method GET -Uri $uri -ErrorAction Stop
+		} catch {
+			Write-LogHost ("  WARNING: Agent 365 list page {0} failed: {1}" -f $pageNum, $_.Exception.Message) -ForegroundColor Yellow
+			break
+		}
+		if ($resp -and $resp.value) {
+			foreach ($p in $resp.value) { [void]$results.Add($p) }
+		}
+		$uri = $resp.'@odata.nextLink'
+		if ($pageNum -gt 500) {
+			Write-LogHost "  WARNING: Agent 365 paging safety abort (>500 pages)" -ForegroundColor Yellow
+			break
+		}
+	}
+	return $results.ToArray()
+}
+
+function Get-Agent365PackageDetail {
+	<#
+	.SYNOPSIS
+		Returns the full detail object for a single agent package, including elementDetails.
+	#>
+	param([Parameter(Mandatory = $true)][string]$PackageId)
+	$uri = Get-Agent365PackagesUri -PackageId $PackageId
+	try {
+		Refresh-GraphTokenIfNeeded -ErrorAction SilentlyContinue
+	} catch {}
+	try {
+		return Invoke-MgGraphRequest -Method GET -Uri $uri -ErrorAction Stop
+	} catch {
+		Write-LogHost ("  WARNING: Agent 365 detail fetch failed for '{0}': {1}" -f $PackageId, $_.Exception.Message) -ForegroundColor Yellow
+		return $null
+	}
+}
+
+function Resolve-Agent365DeveloperName {
+	<#
+	.SYNOPSIS
+		Resolves a developer/publisher name. Tries package's developer.name first,
+		falls back to /applications + /owners lookup keyed on appId. Cached.
+	#>
+	param(
+		[Parameter(Mandatory = $false)][string]$DeveloperName,
+		[Parameter(Mandatory = $false)][string]$AppId
+	)
+	if ($DeveloperName) { return $DeveloperName }
+	if (-not $AppId) { return '' }
+	if ($script:Agent365DeveloperCache.ContainsKey($AppId)) {
+		return $script:Agent365DeveloperCache[$AppId]
+	}
+	$resolved = ''
+	try {
+		$appUri = "https://graph.microsoft.com/v1.0/applications?`$filter=appId eq '$AppId'&`$select=id,displayName,publisherDomain"
+		$appResp = Invoke-MgGraphRequest -Method GET -Uri $appUri -ErrorAction Stop
+		if ($appResp -and $appResp.value -and $appResp.value.Count -gt 0) {
+			$app = $appResp.value[0]
+			if ($app.publisherDomain) { $resolved = $app.publisherDomain }
+			elseif ($app.displayName) { $resolved = $app.displayName }
+			# Optional owner lookup (first owner UPN) only if still blank
+			if (-not $resolved -and $app.id) {
+				try {
+					$ownerUri = "https://graph.microsoft.com/v1.0/applications/$($app.id)/owners?`$select=userPrincipalName,displayName"
+					$ownerResp = Invoke-MgGraphRequest -Method GET -Uri $ownerUri -ErrorAction Stop
+					if ($ownerResp -and $ownerResp.value -and $ownerResp.value.Count -gt 0) {
+						$resolved = $ownerResp.value[0].displayName
+						if (-not $resolved) { $resolved = $ownerResp.value[0].userPrincipalName }
+					}
+				} catch { }
+			}
+		}
+	} catch {
+		# Application.Read.All may not be granted; degrade gracefully (no fabrication).
+	}
+	$script:Agent365DeveloperCache[$AppId] = $resolved
+	return $resolved
+}
+
+function Get-Agent365AuditEnrichment {
+	<#
+	.SYNOPSIS
+		Runs a single narrow Graph audit query to retrieve agent create/publish events
+		and returns a hashtable keyed on agent id (titleId/appId/lower-cased displayName)
+		with @{ Created = [datetime]; CreatedBy = [string] }. Skipped when -OnlyAgent365Info.
+	.NOTES
+		Best-effort enrichment. If the audit query fails or returns no records, both
+		fields stay blank in the output (no fabrication).
+	#>
+	$enrichment = @{}
+	if ($OnlyAgent365Info) { return $enrichment }
+	if (-not $script:GraphConnected -and -not (Get-MgContext -ErrorAction SilentlyContinue)) { return $enrichment }
+
+	# Resolve time window: prefer main-run StartDate/EndDate; else last 30 days.
+	$rangeStart = $null; $rangeEnd = $null
+	try {
+		if ($StartDate) { $rangeStart = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null) }
+		if ($EndDate)   { $rangeEnd   = [datetime]::ParseExact($EndDate,   'yyyy-MM-dd', $null) }
+	} catch {}
+	if (-not $rangeStart) { $rangeStart = (Get-Date).ToUniversalTime().AddDays(-30) }
+	if (-not $rangeEnd)   { $rangeEnd   = (Get-Date).ToUniversalTime() }
+
+	# Operation set covering agent/app create/publish/install. Conservative; missing
+	# operations simply mean blank columns for affected agents.
+	$ops = @(
+		'AppCatalogPublishedAppCreated',
+		'AppCatalogPublishedAppUpdated',
+		'AgentCreated',
+		'AgentPublished',
+		'CopilotAgentInstalled'
+	)
+
+	Write-LogHost "  Running narrow audit query for Agent 365 enrichment (Date created / Created by)..." -ForegroundColor DarkGray
+	$queryId = $null
+	try {
+		$queryId = Invoke-GraphAuditQuery `
+			-DisplayName ("PAX_Agents365_Enrichment_{0}" -f (Get-Date -Format 'yyyyMMddHHmmss')) `
+			-StartDate $rangeStart `
+			-EndDate $rangeEnd `
+			-Operations $ops
+	} catch {
+		Write-LogHost ("  WARNING: Agent 365 enrichment query submit failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+		return $enrichment
+	}
+	if (-not $queryId) {
+		Write-LogHost "  WARNING: Agent 365 enrichment query did not return a query id; columns will be blank." -ForegroundColor Yellow
+		return $enrichment
+	}
+
+	# Poll for query completion. Fortune-500 tenants routinely take 30-90 minutes
+	# for audit queries even on narrow operation/time filters. Use the same
+	# tolerance window the main audit phase uses (-MaxNetworkOutageMinutes is for
+	# transport errors only; query-completion timeout is a separate, longer cap).
+	# 4 hours is the documented Graph audit query SLA upper bound.
+	$pollTimeoutMinutes = 240
+	$pollDeadline = (Get-Date).AddMinutes($pollTimeoutMinutes)
+	$pollIntervalSeconds = 15
+	$lastLoggedMinute = -1
+	$status = $null
+	Write-LogHost ("  Polling enrichment query (timeout {0} min, refresh-token aware)..." -f $pollTimeoutMinutes) -ForegroundColor DarkGray
+	while ((Get-Date) -lt $pollDeadline) {
+		Start-Sleep -Seconds $pollIntervalSeconds
+		try { Refresh-GraphTokenIfNeeded -ErrorAction SilentlyContinue } catch {}
+		try { $status = Get-GraphAuditQueryStatus -QueryId $queryId } catch { $status = $null }
+		if ($status -and $status.Status -in @('succeeded','failed','cancelled')) { break }
+		# Heartbeat once per minute to keep long polls visible in logs.
+		$elapsedMin = [int]((Get-Date) - $pollDeadline.AddMinutes(-$pollTimeoutMinutes)).TotalMinutes
+		if ($elapsedMin -ne $lastLoggedMinute -and ($elapsedMin % 5) -eq 0) {
+			$lastLoggedMinute = $elapsedMin
+			$st = if ($status -and $status.Status) { $status.Status } else { 'pending' }
+			Write-LogHost ("    ... {0} min elapsed, status={1}" -f $elapsedMin, $st) -ForegroundColor DarkGray
+		}
+		# Gentle backoff: 15s -> 30s -> 60s after 2 and 10 minutes respectively.
+		if ($elapsedMin -ge 10 -and $pollIntervalSeconds -lt 60) { $pollIntervalSeconds = 60 }
+		elseif ($elapsedMin -ge 2 -and $pollIntervalSeconds -lt 30) { $pollIntervalSeconds = 30 }
+	}
+	if (-not $status -or $status.Status -ne 'succeeded') {
+		Write-LogHost ("  WARNING: Agent 365 enrichment query did not succeed (status={0}); columns will be blank." -f ($status.Status)) -ForegroundColor Yellow
+		return $enrichment
+	}
+
+	$records = @()
+	try { $records = Get-GraphAuditRecords -QueryId $queryId } catch { $records = @() }
+	if (-not $records -or $records.Count -eq 0) { return $enrichment }
+
+	foreach ($rec in $records) {
+		try {
+			$auditObj = $null
+			if ($rec.PSObject.Properties.Name -contains 'auditData') { $auditObj = $rec.auditData }
+			if ($auditObj -is [string]) { try { $auditObj = $auditObj | ConvertFrom-Json -ErrorAction Stop } catch { $auditObj = $null } }
+			$created = $null
+			if ($rec.PSObject.Properties.Name -contains 'createdDateTime' -and $rec.createdDateTime) {
+				try { $created = [datetime]$rec.createdDateTime } catch {}
+			}
+			$createdBy = $null
+			if ($rec.PSObject.Properties.Name -contains 'userPrincipalName' -and $rec.userPrincipalName) {
+				$createdBy = [string]$rec.userPrincipalName
+			}
+			# Pull keys from auditData defensively (preview schema may shift).
+			$keys = New-Object System.Collections.Generic.List[string]
+			if ($auditObj) {
+				foreach ($p in 'TitleId','titleId','AppId','appId','PackageId','packageId','TeamsAppId','teamsAppId','DisplayName','displayName','Name','name') {
+					try { if ($auditObj.$p) { [void]$keys.Add(([string]$auditObj.$p).ToLowerInvariant()) } } catch {}
+				}
+			}
+			foreach ($k in $keys) {
+				if (-not $enrichment.ContainsKey($k)) {
+					$enrichment[$k] = @{ Created = $created; CreatedBy = $createdBy }
+				}
+			}
+		} catch { continue }
+	}
+	Write-LogHost ("  Audit enrichment matched {0} agent identifier key(s)." -f $enrichment.Keys.Count) -ForegroundColor DarkGray
+	return $enrichment
+}
+
+function ConvertTo-Agent365Row {
+	<#
+	.SYNOPSIS
+		Maps one package detail object to the exact 28-column synthetic schema.
+		Empty cells stay empty when fields are absent (no fabrication).
+	#>
+	param(
+		[Parameter(Mandatory = $true)][object]$Package,
+		[Parameter(Mandatory = $false)][hashtable]$AuditEnrichment
+	)
+	function _g { param($obj, [string[]]$names) foreach ($n in $names) { try { if ($null -ne $obj.$n -and "$($obj.$n)" -ne '') { return $obj.$n } } catch {} } return '' }
+	function _gb { param($obj, [string[]]$names) foreach ($n in $names) { try { if ($null -ne $obj.$n) { return [bool]$obj.$n } } catch {} } return '' }
+	function _join { param($v, [string]$sep) if ($null -eq $v) { return '' }; if ($v -is [System.Collections.IEnumerable] -and -not ($v -is [string])) { return (@($v) -join $sep) } else { return [string]$v } }
+	function _fmtDate { param($v) if (-not $v) { return '' }; try { return ([datetime]$v).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ssZ') } catch { return [string]$v } }
+
+	$elem = $null
+	try { $elem = $Package.elementDetails } catch {}
+
+	$titleIdRaw = (_g $Package @('id','titleId','packageId'))
+	$titleId = ''
+	if ($titleIdRaw) { $titleId = if ($titleIdRaw -match '^T_') { [string]$titleIdRaw } else { 'T_' + [string]$titleIdRaw } }
+
+	# Audit enrichment lookup (lowercase keys). Try titleId raw, appId, displayName.
+	$dateCreated = ''
+	$createdBy   = ''
+	if ($AuditEnrichment) {
+		$probeKeys = @()
+		if ($titleIdRaw) { $probeKeys += ([string]$titleIdRaw).ToLowerInvariant() }
+		$appIdProbe = (_g $Package @('appId','applicationId'))
+		if ($appIdProbe) { $probeKeys += ([string]$appIdProbe).ToLowerInvariant() }
+		$dispProbe = (_g $Package @('displayName','name'))
+		if ($dispProbe) { $probeKeys += ([string]$dispProbe).ToLowerInvariant() }
+		foreach ($k in $probeKeys) {
+			if ($AuditEnrichment.ContainsKey($k)) {
+				$hit = $AuditEnrichment[$k]
+				if ($hit.Created)   { $dateCreated = (_fmtDate $hit.Created) }
+				if ($hit.CreatedBy) { $createdBy   = [string]$hit.CreatedBy }
+				break
+			}
+		}
+	}
+	# Fallback to package's own createdDateTime if audit didn't supply one
+	if (-not $dateCreated) {
+		$pkgCreated = (_g $Package @('createdDateTime','createdDate'))
+		if ($pkgCreated) { $dateCreated = (_fmtDate $pkgCreated) }
+	}
+
+	$developer = Resolve-Agent365DeveloperName -DeveloperName (_g $Package @('developer.name')) -AppId (_g $Package @('appId','applicationId'))
+	# fallback: try direct nested object access
+	if (-not $developer) {
+		try { if ($Package.developer -and $Package.developer.name) { $developer = [string]$Package.developer.name } } catch {}
+	}
+
+	[PSCustomObject][ordered]@{
+		'Name'                                  = (_g $Package @('displayName','name'))
+		'Supported in'                          = (_join (_g $Package @('supportedHosts','supportedClients')) ';')
+		'Date created'                          = $dateCreated
+		'Developer Name'                        = $developer
+		'Type'                                  = (_g $Package @('agentType','type'))
+		'Version'                               = (_g $Package @('version'))
+		'Availability'                          = (_g $Package @('availability','allowedUsersAndGroups'))
+		'Created by'                            = $createdBy
+		'Description'                           = (_g $Package @('description'))
+		'Created in'                            = (_g $Package @('source','origin','createdIn'))
+		'Last updated'                          = (_fmtDate (_g $Package @('lastModifiedDateTime','lastUpdatedDateTime')))
+		'Custom actions'                        = (_g $elem @('customActions'))
+		'Title ID'                              = $titleId
+		'Sensitivity'                           = (_g $Package @('sensitivity'))
+		'Can read OneDrive and Sharepoint items'= (_gb $elem @('canReadOneDriveAndSharepointItems'))
+		'OneDrive and Sharepoint items'         = (_g $elem @('oneDriveAndSharepointItems'))
+		'Can read OneDrive files'               = (_gb $elem @('canReadOneDriveFiles'))
+		'OneDrive files'                        = (_g $elem @('oneDriveFiles'))
+		'OneDrive sites'                        = (_g $elem @('oneDriveSites'))
+		'Can read Sharepoint sites and files'   = (_gb $elem @('canReadSharepointSitesAndFiles'))
+		'Sharepoint files'                      = (_g $elem @('sharepointFiles'))
+		'Sharepoint sites'                      = (_g $elem @('sharepointSites'))
+		'Can extend to Graph connector'         = (_gb $elem @('canExtendToGraphConnector'))
+		'Graph connector details'               = (_g $elem @('graphConnectorDetails'))
+		'Can generate images using user prompt' = (_gb $elem @('canGenerateImagesUsingUserPrompt'))
+		'Can use code interpreter'              = (_gb $elem @('canUseCodeInterpreter'))
+		'Contains uploaded files'               = (_gb $elem @('containsUploadedFiles'))
+		'Uploaded files'                        = (_g $elem @('uploadedFiles'))
+	}
+}
+
+function Export-Agent365Csv {
+	<#
+	.SYNOPSIS
+		Writes the Agent 365 CSV (UTF-8 BOM) to OutputPath using the run timestamp.
+	.OUTPUTS
+		Full path to written file, or $null if no rows.
+	#>
+	param(
+		[Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Rows
+	)
+	if (-not $Rows -or $Rows.Count -eq 0) {
+		Write-LogHost "  Agent 365: no rows to write." -ForegroundColor Yellow
+		return $null
+	}
+	$ts = $global:ScriptRunTimestamp
+	if (-not $ts) { $ts = (Get-Date).ToString('yyyyMMdd_HHmmss') }
+	$outFile = Join-Path $OutputPath ("Agent365_{0}.csv" -f $ts)
+	try {
+		$Rows | Export-Csv -Path $outFile -NoTypeInformation -Encoding UTF8 -Force
+		Write-LogHost ("  Agent 365 CSV written: {0} ({1} rows)" -f $outFile, $Rows.Count) -ForegroundColor Green
+		return $outFile
+	} catch {
+		Write-LogHost ("  ERROR: Failed to write Agent 365 CSV: {0}" -f $_.Exception.Message) -ForegroundColor Red
+		return $null
+	}
+}
+
+function Add-Agent365WorkbookTab {
+	<#
+	.SYNOPSIS
+		Appends an 'Agents365' worksheet to the existing workbook (after EntraUsers tab).
+		No-op when -ExportWorkbook is not set or ImportExcel is unavailable.
+	#>
+	param(
+		[Parameter(Mandatory = $true)][string]$WorkbookPath,
+		[Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Rows
+	)
+	if (-not $ExportWorkbook) { return }
+	if (-not $Rows -or $Rows.Count -eq 0) { return }
+	if (-not (Get-Module -ListAvailable -Name ImportExcel)) {
+		Write-LogHost "  Agent 365: ImportExcel not available; skipping workbook tab." -ForegroundColor Yellow
+		return
+	}
+	try {
+		Import-Module ImportExcel -Force -ErrorAction Stop
+		$Rows | Export-Excel -Path $WorkbookPath -WorksheetName 'Agents365' -AutoSize -BoldTopRow -FreezeTopRow -ErrorAction Stop
+		Write-LogHost ("  Agent 365 worksheet appended to: {0}" -f $WorkbookPath) -ForegroundColor Green
+	} catch {
+		Write-LogHost ("  WARNING: Could not append Agents365 worksheet: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+	}
+}
+
+function Invoke-Agent365Phase {
+	<#
+	.SYNOPSIS
+		Top-level orchestrator for the Agent 365 phase. Called once from the main
+		flow when -IncludeAgent365Info or -OnlyAgent365Info is set. No-op otherwise.
+	.OUTPUTS
+		Hashtable: @{ CsvPath = <string|$null>; Rows = <array> }
+	#>
+	if (-not ($IncludeAgent365Info -or $OnlyAgent365Info)) { return @{ CsvPath = $null; Rows = @() } }
+
+	Write-LogHost "" 
+	Write-LogHost "============================================================" -ForegroundColor Cyan
+	Write-LogHost " Microsoft Agent 365 enrichment phase" -ForegroundColor Cyan
+	Write-LogHost "============================================================" -ForegroundColor Cyan
+
+	# AppRegistration path: ensure the eager up-front delegated sign-in succeeded.
+	# (Connect-Agent365InteractiveContext is idempotent and will silently restore
+	# the cached delegated context here when Invoke-Agent365EarlyInteractiveSignIn
+	# already ran at startup.)
+	if ($Auth -eq 'AppRegistration') {
+		# If the eager sign-in already determined Frontier is unavailable (401/403/404),
+		# do NOT prompt again - the agent phase is permanently skipped for this run.
+		if ($script:Agent365PreAuthCompleted -and $script:Agent365FrontierAvailable -eq $false) {
+			Write-LogHost "  Agent 365 phase skipped (tenant not enrolled / role missing - detected at startup)." -ForegroundColor Yellow
+			return @{ CsvPath = $null; Rows = @() }
+		}
+		if (-not (Connect-Agent365InteractiveContext)) {
+			Write-LogHost "  Agent 365 phase aborted (interactive sign-in failed)." -ForegroundColor Red
+			return @{ CsvPath = $null; Rows = @() }
+		}
+	}
+
+	# Frontier probe (prints banner 7d on 401/403/404 and returns false).
+	if (-not (Test-Agent365FrontierAccess)) {
+		return @{ CsvPath = $null; Rows = @() }
+	}
+
+	# Audit enrichment (skipped when -OnlyAgent365Info).
+	$script:Agent365AuditEnrichment = Get-Agent365AuditEnrichment
+
+	# List + per-package detail
+	Write-LogHost "  Listing Agent 365 packages..." -ForegroundColor DarkGray
+	$listed = Get-Agent365Packages
+	if (-not $listed -or $listed.Count -eq 0) {
+		Write-LogHost "  No Agent 365 packages returned by the catalog." -ForegroundColor Yellow
+		return @{ CsvPath = $null; Rows = @() }
+	}
+	Write-LogHost ("  {0} package(s) listed; fetching details..." -f $listed.Count) -ForegroundColor DarkGray
+
+	$rows = New-Object System.Collections.Generic.List[object]
+	$idx = 0
+	foreach ($p in $listed) {
+		$idx++
+		$pid = $null
+		try { $pid = $p.id } catch {}
+		if (-not $pid) { try { $pid = $p.titleId } catch {} }
+		if (-not $pid) { continue }
+		$detail = Get-Agent365PackageDetail -PackageId $pid
+		if (-not $detail) { continue }
+		try {
+			$row = ConvertTo-Agent365Row -Package $detail -AuditEnrichment $script:Agent365AuditEnrichment
+			[void]$rows.Add($row)
+		} catch {
+			Write-LogHost ("  WARNING: Row build failed for package '{0}': {1}" -f $pid, $_.Exception.Message) -ForegroundColor Yellow
+		}
+		if (($idx % 25) -eq 0) {
+			Write-LogHost ("    ... {0}/{1} packages processed" -f $idx, $listed.Count) -ForegroundColor DarkGray
+		}
+	}
+
+	$csvPath = Export-Agent365Csv -Rows $rows.ToArray()
+	return @{ CsvPath = $csvPath; Rows = $rows.ToArray() }
+}
+
+# =============================================================================
+# END MICROSOFT AGENT 365 ENRICHMENT FUNCTIONS
+# =============================================================================
 
 #
 # Core live-mode functions providing connectivity and paged audit retrieval.
@@ -6937,6 +12870,21 @@ $script:SharedAuthState = [hashtable]::Synchronized(@{
 	AuthMethod = $null
 })
 
+# Azure (Fabric/OneLake) storage-audience token state. Independent of Graph because
+# OneLake DFS uses a separate audience (https://storage.azure.com/) and a separate SDK
+# (Az.Accounts), with its own MSAL token cache. Mirrors $script:SharedAuthState shape so
+# the refresh code paths read uniformly. Single-thread access (uploads run on main thread),
+# so a regular hashtable is sufficient.
+$script:AzAuthState = @{
+	Token              = $null
+	ExpiresOn          = $null   # UTC DateTime
+	AcquiredAt         = $null   # local DateTime, used for age-cap proactive refresh
+	LastRefresh        = $null
+	LastRefreshAttempt = $null   # cooldown anchor
+	RefreshCount       = 0
+	AuthMethod         = $null   # 'ManagedIdentity' | 'AppRegistration' | 'Interactive'
+}
+
 # Checkpoint/Resume state for long-running operations
 $script:CheckpointPath = $null              # Path to checkpoint JSON file
 $script:CheckpointData = $null              # Loaded/active checkpoint object
@@ -7122,10 +13070,10 @@ function Get-ParallelActivationDecision {
 	$ps7 = ($PSVersionTable.PSVersion.Major -ge 7)
 	$totalGroups = $QueryPlan.Count
 	$totalActivities = ($QueryPlan | ForEach-Object { $_.Activities.Count } | Measure-Object -Sum).Sum
-	# Auto parallel eligibility heuristic: previously required more than one group, causing single-activity
-	# multi-partition scenarios (e.g., CopilotInteraction with 3 partitions) to run sequentially.
-	# Adjust logic: allow auto parallel when there's at least one group AND either >1 group OR
-	# a single group whose planned concurrency would yield >1 partition.
+	# Auto parallel eligibility heuristic: allow auto parallel when there's at least one group
+	# AND either >1 group OR a single group whose planned concurrency would yield >1 partition.
+	# (Single-activity multi-partition scenarios — e.g., CopilotInteraction with 3 partitions —
+	# also benefit from parallelism.)
 	$singleGroupMultiPartition = ($totalGroups -eq 1) -and ($QueryPlan[0].Concurrency -gt 1)
 	$autoEligible = $ps7 -and ($MaxParallelGroups -gt 0) -and ($MaxConcurrency -gt 1) -and ($totalGroups -ge 1) -and (($totalGroups -gt 1) -or $singleGroupMultiPartition)
 
@@ -7450,14 +13398,12 @@ function Invoke-ActivityTimeWindowProcessing {
 			$script:progressBlocksCompleted = ($script:progressBlocksCompleted + 1)
 			$script:progressBlockHoursSum = ($script:progressBlockHoursSum + $actualBlockHours)
 			if ($script:progressBlocksCompleted -gt 0) {
-				# --- Progress Estimation Logic (Improved for multi-partition accuracy) ---
-				# Previously, the dynamic recalculation only considered the current partition's remaining hours.
-				# In multi-partition scenarios this allowed Query.Total to shrink between partitions, causing
-				# premature 100% completion when later partitions had not yet started.
-				# New approach:
-				#   1. Estimate remaining blocks in the CURRENT partition (as before).
+				# --- Progress Estimation Logic (multi-partition accurate) ---
+				#   1. Estimate remaining blocks in the CURRENT partition.
 				#   2. Add an estimate for yet-to-start partitions based on the average blocks/partition so far.
 				#   3. Enforce a monotonic (non-decreasing) Query.Total so percent cannot jump to 100% early.
+				# This prevents Query.Total from shrinking between partitions and reporting premature 100%
+				# completion when later partitions have not yet started.
 				$avgBlock = $script:progressBlockHoursSum / $script:progressBlocksCompleted
 				$elapsedHours = $script:progressBlockHoursSum
 				$currentPartitionRangeHours = ($EndDate - $StartDate).TotalHours
@@ -7702,9 +13648,11 @@ elseif ($ExportWorkbook) {
 		}
 	}
 } elseif ($isCsv -and $initialCsvCombine) {
-	# CSV combined activity naming; EntraUsers exported separately
-	# Initial default combined output filename (may be dynamically downgraded to single-activity later)
-	$OutputFile = Join-Path $OutputPath "Purview_Audit_CombinedUsageActivity_$global:ScriptRunTimestamp.csv"
+	# CSV combined-activity naming; EntraUsers exported separately.
+	# Initial default name uses 'CombinedActivityTypes'; if the run ultimately produces
+	# data for only one activity type, the dynamic single-activity downgrade further
+	# below renames the file to Purview_Audit_UsageActivity_<ActivityType>_<ts>.csv.
+	$OutputFile = Join-Path $OutputPath "Purview_Audit_UsageActivity_CombinedActivityTypes_$global:ScriptRunTimestamp.csv"
 } else {
 	$OutputFile = Join-Path $OutputPath "${filePrefix}_$global:ScriptRunTimestamp.$fileExtension"
 }
@@ -7800,7 +13748,7 @@ elseif ($script:CheckpointEnabled) {
 		AutoCompleteness = $AutoCompleteness.IsPresent
 		IncludeTelemetry = $IncludeTelemetry.IsPresent
 	}
-	Initialize-CheckpointForNewRun -OutputPath $OutputPath -BaseOutputFileName $baseFileName -RunTimestamp $global:ScriptRunTimestamp -StartDate (script:Parse-DateSafe $StartDate) -EndDate (script:Parse-DateSafe $EndDate) -AllParameters $allParams
+	Initialize-CheckpointForNewRun -OutputPath $OutputPath -BaseOutputFileName $baseFileName -RunTimestamp $global:ScriptRunTimestamp -StartDate (script:Parse-DateSafe $StartDate) -EndDate (script:Parse-DateSafe $EndDate) -AllParameters $allParams | Out-Null
 }
 else {
 	# No checkpoint needed (AppRegistration mode or RAWInputCSV or OnlyUserInfo)
@@ -7828,9 +13776,13 @@ if ($script:LogBuffer -and $script:LogBuffer.Count -gt 0) {
 # Note: $scriptMode already defined earlier for validation - reformat for display consistency
 $scriptModeDisplay = if ($ExplodeDeep) { "Deep Column Explosion" } elseif ($ExplodeArrays -or $ForcedRawInputCsvExplosion) { if ($ForcedRawInputCsvExplosion -and -not $ExplodeArrays.IsPresent -and -not $ExplodeDeep.IsPresent) { "Array Explosion (RAWInput implied)" } else { "Array Explosion" } } else { "Standard (1:1)" }
 
-# Clean display names — strip _PARTIAL suffix so the startup banner always shows the expected final filename
+# Clean display names — strip _PARTIAL suffix so the startup banner always shows the expected final filename.
+# Then route through Get-DisplayPath so -OutputPathSP / -OutputPathFabric runs show the remote
+# destination URL (where the artifact actually lives after upload), not the local scratch path.
 $displayOutputFile = $OutputFile -replace '_PARTIAL(?=\.[^.]+$)', ''
 $displayLogFile    = $LogFile    -replace '_PARTIAL(?=\.log$)',    ''
+$displayOutputFile = Get-DisplayPath -LocalPath $displayOutputFile
+$displayLogFile    = Get-DisplayPath -LocalPath $displayLogFile
 
 # Skip banner output to log file in resume mode (log file not set yet - will be set after checkpoint loads)
 if (-not $script:DeferLogFileSetup) {
@@ -7844,11 +13796,8 @@ Output File: $displayOutputFile
 Log File: $displayLogFile
 ========================================================
 
-"@ | Out-File -FilePath $LogFile -Encoding UTF8
+"@ | Out-File -FilePath $LogFile -Encoding UTF8 -Append
 }
-
-Write-LogHost "=== Portable Audit eXporter (PAX) - Purview Audit Log Exporter ===" -ForegroundColor Cyan
-Write-LogHost ("Script Version: v$ScriptVersion") -ForegroundColor White
 
 
 # Fast-path: ensure M365 usage bundle is applied before output summary in raw/replay scenarios
@@ -7880,6 +13829,19 @@ elseif ($UseEOM) {
 	Write-LogHost "═══════════════════════════════════════════════════════" -ForegroundColor Cyan
 }
 else {
+	# Determine effective auth context(s) for this run:
+	#   - audit phase context (app-only or delegated)
+	#   - agent 365 phase context (always delegated when -IncludeAgent365Info / -OnlyAgent365Info)
+	# When -Auth AppRegistration is combined with Agent 365, BOTH contexts apply (sequentially).
+	# ManagedIdentity is treated as app-only (Connect-MgGraph -Identity uses application permissions
+	# from the user-assigned MI's service principal); it cannot satisfy Agent 365 (no interactive user).
+	$isAppOnlyAuth   = ($Auth -eq 'AppRegistration' -or $Auth -eq 'ManagedIdentity')
+	$isManagedId     = ($Auth -eq 'ManagedIdentity')
+	$auditContextLbl = if ($isManagedId) { 'APP-ONLY (managed identity / application permissions)' }
+					   elseif ($isAppOnlyAuth) { 'APP-ONLY (application permissions)' }
+					   else { 'DELEGATED (interactive user sign-in)' }
+	$dualContextRun  = ($Auth -eq 'AppRegistration') -and ($IncludeAgent365Info -or $OnlyAgent365Info)
+
 	Write-LogHost "═══════════════════════════════════════════════════════" -ForegroundColor Green
 	Write-LogHost "  QUERY MODE: Microsoft Graph Security API (Default)" -ForegroundColor Green
 	Write-LogHost "═══════════════════════════════════════════════════════" -ForegroundColor Green
@@ -7888,55 +13850,274 @@ else {
 	Write-LogHost "  Authentication:   $Auth (OAuth 2.0)" -ForegroundColor White
 	$parallelStatus = if ($PSVersionTable.PSVersion.Major -ge 7) { "AVAILABLE (PowerShell 7+)" } else { "LIMITED (PowerShell 5.1 detected)" }
 	Write-LogHost "  Parallel Support: $parallelStatus" -ForegroundColor Green
-	Write-LogHost "  Permissions:      Microsoft Graph application/delegated scopes (no Azure AD role required):" -ForegroundColor White
-	Write-LogHost "                    (Yellow = required for THIS run; DarkGray = not needed for THIS run)" -ForegroundColor White
-	if (-not $OnlyUserInfo) {
-		Write-LogHost "                    Audit query (required - this run reads audit logs):" -ForegroundColor White
-		Write-LogHost "                      AuditLogsQuery.Read.All        (umbrella - all audit record types)" -ForegroundColor Yellow
+
+	# ---- Auth Context summary ----
+	Write-LogHost "" -ForegroundColor White
+	if ($dualContextRun) {
+		Write-LogHost "  Auth Context:     DUAL-CONTEXT RUN" -ForegroundColor Yellow
+		Write-LogHost "                      Phase 1 (Audit):     $auditContextLbl" -ForegroundColor White
+		Write-LogHost "                      Phase 2 (Agent 365): DELEGATED (interactive sign-in)" -ForegroundColor White
+		Write-LogHost "                    Reason: -Auth AppRegistration cannot satisfy the Agent 365" -ForegroundColor Gray
+		Write-LogHost "                    endpoint (no app-only Graph scope exists). The Phase 2" -ForegroundColor Gray
+		Write-LogHost "                    interactive sign-in is requested UP-FRONT (immediately after" -ForegroundColor Gray
+		Write-LogHost "                    Phase 1 connects) so the run can proceed unattended afterward." -ForegroundColor Gray
 	} else {
-		Write-LogHost "                    Audit query (not needed - -OnlyUserInfo skips audit queries):" -ForegroundColor White
-		Write-LogHost "                      AuditLogsQuery.Read.All        (umbrella - all audit record types)" -ForegroundColor DarkGray
+		Write-LogHost "  Auth Context:     $auditContextLbl" -ForegroundColor White
 	}
+
+	# ---- Permissions list ----
+	Write-LogHost "" -ForegroundColor White
+	Write-LogHost "  Permissions Required for THIS run:" -ForegroundColor White
+	Write-LogHost "                    (Yellow = required this run; DarkGray = not needed this run)" -ForegroundColor Gray
+
+	# Build conditional Tag legend so only relevant tags are shown:
+	#   [App-only]   appears under -Auth AppRegistration OR -Auth ManagedIdentity (both are app-only)
+	#   [Delegated]  appears under any non-app-only auth, OR under AppRegistration + Agent 365
+	#                (Agent 365 always uses delegated scopes even when audit is app-only)
+	#   [Role]       appears only when Agent 365 is in this run (it is the only section that needs a role)
+	#   [Azure RBAC] appears only when -OutputPathFabric is in this run (Fabric uses storage RBAC, not Graph)
+	$tagLegendLines = New-Object System.Collections.Generic.List[string]
+	if ($isAppOnlyAuth) {
+		if ($isManagedId) {
+			$tagLegendLines.Add('[App-only]   = application permission on managed identity service principal')
+		} else {
+			$tagLegendLines.Add('[App-only]   = grant on app registration as Application permission')
+		}
+	}
+	if ((-not $isAppOnlyAuth) -or $IncludeAgent365Info -or $OnlyAgent365Info) {
+		$tagLegendLines.Add('[Delegated]  = consented at interactive sign-in')
+	}
+	if ($IncludeAgent365Info -or $OnlyAgent365Info) {
+		$tagLegendLines.Add('[Role]       = Entra directory role on signed-in user')
+	}
+	if ($script:RemoteOutputMode -eq 'Fabric') {
+		$tagLegendLines.Add('[Azure RBAC] = Azure role assignment on Fabric workspace (not a Graph scope)')
+	}
+	if ($tagLegendLines.Count -gt 0) {
+		Write-LogHost ("                    Tag legend:  {0}" -f $tagLegendLines[0]) -ForegroundColor Gray
+		for ($legendIdx = 1; $legendIdx -lt $tagLegendLines.Count; $legendIdx++) {
+			Write-LogHost ("                                 {0}" -f $tagLegendLines[$legendIdx]) -ForegroundColor Gray
+		}
+	}
+
+	# Audit phase scopes (use the audit context tag)
+	$auditTag = if ($isAppOnlyAuth) { '[App-only] ' } else { '[Delegated]' }
+	if (-not $OnlyUserInfo -and -not $OnlyAgent365Info) {
+		Write-LogHost "" -ForegroundColor White
+		Write-LogHost "                    Audit query (REQUIRED - this run reads audit logs):" -ForegroundColor White
+		Write-LogHost ("                      {0} AuditLogsQuery.Read.All        (umbrella - all audit record types)" -f $auditTag) -ForegroundColor Yellow
+	} else {
+		$auditSkipReason = if ($OnlyAgent365Info) { '-OnlyAgent365Info' } else { '-OnlyUserInfo' }
+		Write-LogHost "" -ForegroundColor White
+		Write-LogHost ("                    Audit query (NOT NEEDED - {0} skips audit queries):" -f $auditSkipReason) -ForegroundColor White
+		Write-LogHost ("                      {0} AuditLogsQuery.Read.All        (umbrella - all audit record types)" -f $auditTag) -ForegroundColor DarkGray
+	}
+
+	# M365 usage bundle (audit context)
 	if ($IncludeM365Usage) {
-		Write-LogHost "                    M365 usage bundle (required because -IncludeM365Usage is set):" -ForegroundColor White
-		Write-LogHost "                      AuditLogsQuery-Exchange.Read.All" -ForegroundColor Yellow
-		Write-LogHost "                      AuditLogsQuery-SharePoint.Read.All" -ForegroundColor Yellow
-		Write-LogHost "                      AuditLogsQuery-OneDrive.Read.All" -ForegroundColor Yellow
+		Write-LogHost "" -ForegroundColor White
+		Write-LogHost "                    M365 usage bundle (REQUIRED - because -IncludeM365Usage is set):" -ForegroundColor White
+		Write-LogHost ("                      {0} AuditLogsQuery-Exchange.Read.All" -f $auditTag) -ForegroundColor Yellow
+		Write-LogHost ("                      {0} AuditLogsQuery-SharePoint.Read.All" -f $auditTag) -ForegroundColor Yellow
+		Write-LogHost ("                      {0} AuditLogsQuery-OneDrive.Read.All" -f $auditTag) -ForegroundColor Yellow
 	} else {
+		Write-LogHost "" -ForegroundColor White
 		Write-LogHost "                    M365 usage bundle (only required with -IncludeM365Usage):" -ForegroundColor White
-		Write-LogHost "                      AuditLogsQuery-Exchange.Read.All" -ForegroundColor DarkGray
-		Write-LogHost "                      AuditLogsQuery-SharePoint.Read.All" -ForegroundColor DarkGray
-		Write-LogHost "                      AuditLogsQuery-OneDrive.Read.All" -ForegroundColor DarkGray
+		Write-LogHost ("                      {0} AuditLogsQuery-Exchange.Read.All" -f $auditTag) -ForegroundColor DarkGray
+		Write-LogHost ("                      {0} AuditLogsQuery-SharePoint.Read.All" -f $auditTag) -ForegroundColor DarkGray
+		Write-LogHost ("                      {0} AuditLogsQuery-OneDrive.Read.All" -f $auditTag) -ForegroundColor DarkGray
 	}
+
+	# Entra directory + license enrichment (audit context)
 	if ($IncludeUserInfo -or $OnlyUserInfo) {
 		$userInfoTrigger = if ($OnlyUserInfo) { '-OnlyUserInfo' } else { '-IncludeUserInfo' }
-		Write-LogHost ("                    Entra directory + license enrichment (required because {0} is set):" -f $userInfoTrigger) -ForegroundColor White
-		Write-LogHost "                      User.Read.All                  (read /users)" -ForegroundColor Yellow
-		Write-LogHost "                      Organization.Read.All          (read /subscribedSkus)" -ForegroundColor Yellow
+		Write-LogHost "" -ForegroundColor White
+		Write-LogHost ("                    Entra directory + license enrichment (REQUIRED - {0} is set):" -f $userInfoTrigger) -ForegroundColor White
+		Write-LogHost ("                      {0} User.Read.All                  (read /users)" -f $auditTag) -ForegroundColor Yellow
+		Write-LogHost ("                      {0} Organization.Read.All          (read /subscribedSkus)" -f $auditTag) -ForegroundColor Yellow
 	} else {
+		Write-LogHost "" -ForegroundColor White
 		Write-LogHost "                    Entra directory + license enrichment (only required with -IncludeUserInfo or -OnlyUserInfo):" -ForegroundColor White
-		Write-LogHost "                      User.Read.All                  (read /users)" -ForegroundColor DarkGray
-		Write-LogHost "                      Organization.Read.All          (read /subscribedSkus)" -ForegroundColor DarkGray
+		Write-LogHost ("                      {0} User.Read.All                  (read /users)" -f $auditTag) -ForegroundColor DarkGray
+		Write-LogHost ("                      {0} Organization.Read.All          (read /subscribedSkus)" -f $auditTag) -ForegroundColor DarkGray
 	}
+
+	# Group expansion (audit context)
 	if ($GroupNames -and $GroupNames.Count -gt 0) {
-		Write-LogHost "                    Group expansion (required because -GroupNames is set):" -ForegroundColor White
-		Write-LogHost "                      GroupMember.Read.All           (read /groups + /groups/{id}/members)" -ForegroundColor Yellow
+		Write-LogHost "" -ForegroundColor White
+		Write-LogHost "                    Group expansion (REQUIRED - because -GroupNames is set):" -ForegroundColor White
+		Write-LogHost ("                      {0} GroupMember.Read.All           (read /groups + /groups/{{id}}/members)" -f $auditTag) -ForegroundColor Yellow
 	} else {
+		Write-LogHost "" -ForegroundColor White
 		Write-LogHost "                    Group expansion (only required with -GroupNames):" -ForegroundColor White
-		Write-LogHost "                      GroupMember.Read.All           (read /groups + /groups/{id}/members)" -ForegroundColor DarkGray
+		Write-LogHost ("                      {0} GroupMember.Read.All           (read /groups + /groups/{{id}}/members)" -f $auditTag) -ForegroundColor DarkGray
 	}
+
+	# Remote output - SharePoint (audit context: same Graph token reused for SP drives API)
+	if ($script:RemoteOutputMode -eq 'SharePoint') {
+		Write-LogHost "" -ForegroundColor White
+		Write-LogHost "                    Remote output - SharePoint (REQUIRED - because -OutputPathSP is set):" -ForegroundColor White
+		Write-LogHost ("                      {0} Sites.ReadWrite.All            (resolve site/drive via /sites + /drives)" -f $auditTag) -ForegroundColor Yellow
+		Write-LogHost ("                      {0} Files.ReadWrite.All            (PUT/createUploadSession to /drives/{{id}}/items)" -f $auditTag) -ForegroundColor Yellow
+		Write-LogHost "                    Destination user/identity ALSO needs at least Member access on the" -ForegroundColor Gray
+		Write-LogHost "                    target SharePoint site (granted via SharePoint, not Graph)." -ForegroundColor Gray
+	} else {
+		Write-LogHost "" -ForegroundColor White
+		Write-LogHost "                    Remote output - SharePoint (only required with -OutputPathSP):" -ForegroundColor White
+		Write-LogHost ("                      {0} Sites.ReadWrite.All            (resolve site/drive via /sites + /drives)" -f $auditTag) -ForegroundColor DarkGray
+		Write-LogHost ("                      {0} Files.ReadWrite.All            (PUT/createUploadSession to /drives/{{id}}/items)" -f $auditTag) -ForegroundColor DarkGray
+	}
+
+	# Remote output - Fabric / OneLake (separate token: storage.azure.com audience via Az.Accounts;
+	# Azure RBAC, not Graph scopes — this is the only section that uses the [Azure RBAC] tag)
+	if ($script:RemoteOutputMode -eq 'Fabric') {
+		Write-LogHost "" -ForegroundColor White
+		Write-LogHost "                    Remote output - Fabric/OneLake (REQUIRED - because -OutputPathFabric is set):" -ForegroundColor White
+		Write-LogHost "                      [Azure RBAC] Storage Blob Data Contributor on the Fabric workspace" -ForegroundColor Yellow
+		Write-LogHost "                                   (assign at workspace scope to the audit identity)" -ForegroundColor Yellow
+		Write-LogHost "                      [Azure RBAC] Contributor on the Fabric workspace (Fabric portal)" -ForegroundColor Yellow
+		Write-LogHost "                                   (Workspace settings -> Manage access; required by some" -ForegroundColor Yellow
+		Write-LogHost "                                    tenants for OneLake DFS write access)" -ForegroundColor Yellow
+		Write-LogHost "                    NOTE: OneLake uses an INDEPENDENT token (audience https://storage.azure.com/)" -ForegroundColor Gray
+		Write-LogHost "                    acquired via Az.Accounts. Microsoft Graph scopes do NOT apply here." -ForegroundColor Gray
+	} else {
+		Write-LogHost "" -ForegroundColor White
+		Write-LogHost "                    Remote output - Fabric/OneLake (only required with -OutputPathFabric):" -ForegroundColor White
+		Write-LogHost "                      [Azure RBAC] Storage Blob Data Contributor on Fabric workspace" -ForegroundColor DarkGray
+		Write-LogHost "                      [Azure RBAC] Contributor on Fabric workspace (Fabric portal)" -ForegroundColor DarkGray
+	}
+
+	# Managed identity advisory - shown only under -Auth ManagedIdentity
+	if ($isManagedId) {
+		Write-LogHost "" -ForegroundColor White
+		Write-LogHost "                    Managed identity bootstrap (REQUIRED - because -Auth ManagedIdentity is set):" -ForegroundColor White
+		Write-LogHost "                      All scopes above must be ADMIN-CONSENTED on the managed identity's" -ForegroundColor Yellow
+		Write-LogHost "                      service principal as APPLICATION permissions (not delegated). One-time" -ForegroundColor Yellow
+		Write-LogHost "                      bootstrap via fabric_resources/.../Prereqs/Grant-PAXPermissions.ps1." -ForegroundColor Yellow
+		if ($env:AZURE_CLIENT_ID) {
+			Write-LogHost ("                      AZURE_CLIENT_ID is set: {0}" -f $env:AZURE_CLIENT_ID) -ForegroundColor Gray
+		} else {
+			Write-LogHost "                      AZURE_CLIENT_ID is NOT set; system-assigned MI will be used (if any)." -ForegroundColor Gray
+		}
+	}
+
+	# Agent 365 enrichment - ALWAYS uses delegated scopes; ALSO requires Entra role
+	if ($IncludeAgent365Info -or $OnlyAgent365Info) {
+		$agent365Trigger = if ($OnlyAgent365Info) { '-OnlyAgent365Info' } else { '-IncludeAgent365Info' }
+		Write-LogHost "" -ForegroundColor White
+		Write-LogHost ("                    Agent 365 enrichment (REQUIRED - {0} is set):" -f $agent365Trigger) -ForegroundColor White
+		if ($dualContextRun) {
+			Write-LogHost "                    NOTE: Performed in a SEPARATE delegated context (Phase 2)," -ForegroundColor Gray
+			Write-LogHost "                          prompted UP-FRONT immediately after Phase 1 connects." -ForegroundColor Gray
+			Write-LogHost "                          Your app registration is NOT used for these scopes." -ForegroundColor Gray
+		}
+		Write-LogHost "                      [Delegated] CopilotPackages.Read.All     (read /copilot/admin/catalog/packages)" -ForegroundColor Yellow
+		Write-LogHost "                      [Delegated] Application.Read.All         (resolve developer/owner via /applications)" -ForegroundColor Yellow
+		Write-LogHost "                      [Role]      AI Administrator              (preferred - least privilege)" -ForegroundColor Yellow
+		Write-LogHost "                                  -- OR --" -ForegroundColor Gray
+		Write-LogHost "                      [Role]      Global Administrator          (alternative)" -ForegroundColor Yellow
+		Write-LogHost "                    The signed-in user MUST hold the Entra directory role above;" -ForegroundColor Gray
+		Write-LogHost "                    delegated Graph consent ALONE is not sufficient (returns 403)." -ForegroundColor Gray
+	} else {
+		Write-LogHost "" -ForegroundColor White
+		Write-LogHost "                    Agent 365 enrichment (only required with -IncludeAgent365Info or -OnlyAgent365Info):" -ForegroundColor White
+		Write-LogHost "                      [Delegated] CopilotPackages.Read.All     (read /copilot/admin/catalog/packages)" -ForegroundColor DarkGray
+		Write-LogHost "                      [Delegated] Application.Read.All         (resolve developer/owner via /applications)" -ForegroundColor DarkGray
+		Write-LogHost "                      [Role]      AI Administrator OR Global Administrator (signed-in user)" -ForegroundColor DarkGray
+	}
+
 	Write-LogHost "═══════════════════════════════════════════════════════" -ForegroundColor Green
 }
 Write-LogHost ""
+
+# Remote-output banner. Emitted only when -OutputPathSP or -OutputPathFabric is in effect.
+# Sits between the permissions banner and the rollup banner so users can see at a glance
+# where customer-visible artifacts (CSV/XLSX/log/checkpoint) will land.
+if ($script:RemoteOutputMode -ne 'None') {
+	$remoteUrlDisplay   = if ($script:RemoteOutputUrl.Length -le 70) { $script:RemoteOutputUrl } else { $script:RemoteOutputUrl.Substring(0, 67) + '...' }
+	$scratchDirDisplay  = if ($OutputPath.Length -le 70) { $OutputPath } else { $OutputPath.Substring(0, 67) + '...' }
+	Write-LogHost "═══════════════════════════════════════════════════════" -ForegroundColor Cyan
+	Write-LogHost "  REMOTE OUTPUT MODE: $script:RemoteOutputMode" -ForegroundColor Cyan
+	Write-LogHost "═══════════════════════════════════════════════════════" -ForegroundColor Cyan
+	Write-LogHost "    Destination : $remoteUrlDisplay" -ForegroundColor White
+	Write-LogHost "    Auth        : $Auth" -ForegroundColor White
+	Write-LogHost "    Scratch dir : $scratchDirDisplay" -ForegroundColor White
+	Write-LogHost "    Behavior    : All customer-visible output (CSV/XLSX/log/checkpoint) is uploaded" -ForegroundColor White
+	Write-LogHost "                  to the remote destination. Local scratch is deleted on success." -ForegroundColor White
+	Write-LogHost "═══════════════════════════════════════════════════════" -ForegroundColor Cyan
+	Write-LogHost ""
+}
+
+# Rollup post-processor banner. Emitted only when -Rollup or -RollupPlusRaw is in effect
+# (either passed on the CLI or restored from checkpoint on resume). Sits immediately after
+# the permissions banner so users see at a glance that an embedded Python post-processor
+# will run at end-of-run, what mode, and what raw-CSV retention behavior to expect.
+if ($Rollup -or $RollupPlusRaw) {
+	$rollupSwitchBannerName = if ($Rollup) { '-Rollup' } else { '-RollupPlusRaw' }
+	$rollupRetention = if ($Rollup) {
+		switch ($script:RollupProcessorMode) {
+			'CopilotInteraction' { 'Raw Purview CSV and Entra users CSV will be DELETED on processor success (only rolled-up output kept).' }
+			'M365Bundle'         {
+				if ($IncludeUserInfo) {
+					'Raw Purview CSV will be DELETED on processor success; Entra users CSV will be KEPT (not consumed by this processor).'
+				} else {
+					'Raw Purview CSV will be DELETED on processor success (only rolled-up output kept).'
+				}
+			}
+			default              { 'Raw CSV(s) will be DELETED on processor success (only rolled-up output kept).' }
+		}
+	}
+	else {
+		switch ($script:RollupProcessorMode) {
+			'CopilotInteraction' { 'Raw Purview CSV and Entra users CSV will be KEPT alongside the rolled-up output.' }
+			'M365Bundle'         {
+				if ($IncludeUserInfo) {
+					'Raw Purview CSV and Entra users CSV will be KEPT alongside the rolled-up output.'
+				} else {
+					'Raw Purview CSV will be KEPT alongside the rolled-up output.'
+				}
+			}
+			default              { 'Raw CSV(s) will be KEPT alongside the rolled-up output.' }
+		}
+	}
+	$processorLabel = switch ($script:RollupProcessorMode) {
+		'CopilotInteraction' { "Purview_CopilotInteraction_Processor v$($Script:EMBEDDED_PROCESSOR_COPILOT_VERSION) (inputs: Purview CSV + Entra users CSV)" }
+		'M365Bundle'         { "Purview_M365_Usage_Bundle_Explosion_Processor v$($Script:EMBEDDED_PROCESSOR_M365_VERSION) (input: Purview CSV)" }
+		default              { 'unresolved' }
+	}
+	$rollupTargetDashboard = switch ($script:RollupProcessorMode) {
+		'CopilotInteraction' { 'AI-in-One + AI Business Value (Analytics-Hub)' }
+		'M365Bundle'         { 'M365 Usage Analytics (Analytics-Hub)' }
+		default              { 'unresolved' }
+	}
+	Write-LogHost "═══════════════════════════════════════════════════════" -ForegroundColor Cyan
+	Write-LogHost "  ROLLUP POST-PROCESSOR ENABLED ($rollupSwitchBannerName)" -ForegroundColor Cyan
+	Write-LogHost "═══════════════════════════════════════════════════════" -ForegroundColor Cyan
+	Write-LogHost "    Purpose   : Produces input files for the Microsoft Copilot Growth ROI Advisory Team's" -ForegroundColor White
+	Write-LogHost "                Power BI templates at https://github.com/microsoft/Analytics-Hub." -ForegroundColor White
+	Write-LogHost "                Output is NOT intended for any other downstream use." -ForegroundColor White
+	Write-LogHost "    Target    : $rollupTargetDashboard" -ForegroundColor White
+	Write-LogHost "    Processor : $processorLabel" -ForegroundColor White
+	Write-LogHost "    Retention : $rollupRetention" -ForegroundColor White
+	if ($IncludeAgent365Info) {
+		Write-LogHost "    Companion : Agent365_<ts>.csv (point-in-time snapshot; ALWAYS retained — consumed by the same Analytics-Hub dashboards alongside the rollup output)." -ForegroundColor White
+	}
+	Write-LogHost "    Runtime   : Python $($Script:ROLLUP_PYTHON_MIN_MAJOR).$($Script:ROLLUP_PYTHON_MIN_MINOR)+ required (auto-installed if missing); 'orjson' auto-installed for speed (optional)." -ForegroundColor Gray
+	Write-LogHost "    Output    : Written to the same directory as the raw Purview CSV." -ForegroundColor Gray
+	Write-LogHost "═══════════════════════════════════════════════════════" -ForegroundColor Cyan
+	Write-LogHost ""
+}
 
 $startTimeStamp = try { $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') } catch { (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') }
 Write-LogHost ("Script execution started at $startTimeStamp UTC") -ForegroundColor White
 
 # For OnlyUserInfo mode, show simplified header (no Mode/DateRange/Purview output info)
-if (-not $OnlyUserInfo) {
+if (-not $OnlyUserInfo -and -not $OnlyAgent365Info) {
 	Write-LogHost "Mode: $scriptMode" -ForegroundColor White
 	${rangeText} = if ($RAWInputCSV) { if ([string]::IsNullOrWhiteSpace($StartDate) -and [string]::IsNullOrWhiteSpace($EndDate)) { 'Full CSV (no date filter)' } else { "$StartDate (inclusive) to $EndDate (exclusive) (filters)" } } else { "$StartDate (inclusive) to $EndDate (exclusive)" }
 	Write-LogHost "Date Range: $rangeText" -ForegroundColor White
+} elseif ($OnlyAgent365Info) {
+	Write-LogHost "Mode: OnlyAgent365Info (Microsoft Agent 365 catalog export only - no audit logs)" -ForegroundColor Cyan
 } else {
 	Write-LogHost "Mode: OnlyUserInfo (Entra user and MAC licensing export only)" -ForegroundColor Cyan
 }
@@ -8111,16 +14292,25 @@ if (($finalActivityTypes -contains 'AIAppInteraction') -or ($finalActivityTypes 
 
 # Output file/directory display based on export mode
 # Note: If activity type switches are used, detailed filenames will be shown after activity types are finalized
-# For OnlyUserInfo mode, only show Entra file output (skip Purview data file messaging)
+# For OnlyUserInfo / OnlyAgent365Info modes, show only the relevant standalone files
 if ($OnlyUserInfo) {
 	$outputDir = if ($OutputPath) { $OutputPath } else { "C:\Temp\" }
 	if ($ExportWorkbook) {
 		$entraOutputFile = Join-Path $outputDir "EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.xlsx"
-		Write-LogHost "Output File: $entraOutputFile (Entra users workbook)" -ForegroundColor White
+		Write-LogHost "Output File: $(Get-DisplayPath -LocalPath $entraOutputFile) (Entra users workbook)" -ForegroundColor White
 	} else {
 		$entraOutputFile = Join-Path $outputDir "EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.csv"
-		Write-LogHost "Output File: $entraOutputFile" -ForegroundColor White
+		Write-LogHost "Output File: $(Get-DisplayPath -LocalPath $entraOutputFile)" -ForegroundColor White
 	}
+	if ($IncludeAgent365Info) {
+		$agent365PreviewFile = Join-Path $outputDir "Agent365_${global:ScriptRunTimestamp}.csv"
+		Write-LogHost "  Agent 365 File: $(Get-DisplayPath -LocalPath $agent365PreviewFile)" -ForegroundColor Gray
+	}
+} elseif ($OnlyAgent365Info) {
+	# OnlyAgent365Info mode: only the Agents365 catalog CSV is produced
+	$outputDir = if ($OutputPath) { $OutputPath } else { "C:\Temp\" }
+	$agent365PreviewFile = Join-Path $outputDir "Agent365_${global:ScriptRunTimestamp}.csv"
+	Write-LogHost "Output File: $(Get-DisplayPath -LocalPath $agent365PreviewFile) (Microsoft Agent 365 catalog)" -ForegroundColor White
 } elseif ($AppendFile) {
 	# AppendFile mode: Show exact filename being appended to
 	$fileType = if ($ExportWorkbook) { 
@@ -8130,6 +14320,17 @@ if ($OnlyUserInfo) {
 	}
 	Write-LogHost "Output File: $displayOutputFile ($fileType)" -ForegroundColor White
 	Write-LogHost "  Mode: Appending to existing file" -ForegroundColor Cyan
+	if ($IncludeAgent365Info) {
+		# Agent 365 always writes a separate CSV alongside the appended file (or its own tab if Excel).
+		# Use the LOCAL OutputFile parent for path math; display gets routed through Get-DisplayPath.
+		$agent365TargetDir = Split-Path $OutputFile -Parent
+		if ($ExportWorkbook) {
+			Write-LogHost "  Agent 365 Tab: Agents365 (appended to workbook)" -ForegroundColor Gray
+		} else {
+			$agent365PreviewFile = Join-Path $agent365TargetDir "Agent365_${global:ScriptRunTimestamp}.csv"
+			Write-LogHost "  Agent 365 File: $(Get-DisplayPath -LocalPath $agent365PreviewFile)" -ForegroundColor Gray
+		}
+	}
 } elseif ($IncludeDSPMForAI -or $ExcludeCopilotInteraction) {
 	# Activity type switches present - defer detailed filename listing until after activity types are finalized
 	$outputDir = if ($ExportWorkbook) {
@@ -8137,19 +14338,21 @@ if ($OnlyUserInfo) {
 	} else {
 		Split-Path $OutputFile -Parent
 	}
-	Write-LogHost "Output Directory: $outputDir\" -ForegroundColor White
+	Write-LogHost "Output Directory: $(Get-DisplayPath -LocalPath $outputDir -Directory)\" -ForegroundColor White
 	Write-LogHost "  (Detailed filenames will be shown after activity types are finalized)" -ForegroundColor Gray
 } elseif ($ExportWorkbook) {
 	# Excel mode: always one .xlsx file (combined tab or multiple tabs)
 	$outputDir = if ($OutputPath) { $OutputPath } else { "C:\Temp\" }
+	$displayDir = (Get-DisplayPath -LocalPath $outputDir -Directory).TrimEnd('/','\') + '/'
 	if ($CombineOutput) {
 		# New naming: Purview_Audit_CombinedUsageActivity[_EntraUsers]_timestamp.xlsx
 		$baseName = "Purview_Audit_CombinedUsageActivity"
 		if ($IncludeUserInfo -and -not $UseEOM) { $baseName += "_EntraUsers" }
-		Write-LogHost "Output File: ${outputDir}${baseName}_<timestamp>.xlsx (single-tab workbook)" -ForegroundColor White
+		Write-LogHost "Output File: ${displayDir}${baseName}_<timestamp>.xlsx (single-tab workbook)" -ForegroundColor White
 	} else {
-		Write-LogHost "Output File: ${outputDir}Purview_Audit_MultiTab_<timestamp>.xlsx (multi-tab workbook)" -ForegroundColor White
+		Write-LogHost "Output File: ${displayDir}Purview_Audit_MultiTab_<timestamp>.xlsx (multi-tab workbook)" -ForegroundColor White
 	}
+	if ($IncludeAgent365Info) { Write-LogHost "  Agent 365 Tab: Agents365 (appended to workbook after audit + EntraUsers)" -ForegroundColor Gray }
 } else {
 	# CSV mode: combined file or separate files per activity type
 	if ($CombineOutput) {
@@ -8157,17 +14360,26 @@ if ($OnlyUserInfo) {
 		Write-LogHost "Output File: $displayOutputFile (combined - all activity types)" -ForegroundColor White
 		if ($IncludeUserInfo -and -not $UseEOM) {
 			$entraFile = (Join-Path (Split-Path $OutputFile -Parent) "EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.csv")
-			Write-LogHost "  Entra Users File: $entraFile" -ForegroundColor Gray
+			Write-LogHost "  Entra Users File: $(Get-DisplayPath -LocalPath $entraFile)" -ForegroundColor Gray
+		}
+		if ($IncludeAgent365Info) {
+			$agent365PreviewFile = (Join-Path (Split-Path $OutputFile -Parent) "Agent365_${global:ScriptRunTimestamp}.csv")
+			Write-LogHost "  Agent 365 File: $(Get-DisplayPath -LocalPath $agent365PreviewFile)" -ForegroundColor Gray
 		}
 	} else {
 		# Separate CSV files per activity type
-		$outputDir = Split-Path $OutputFile -Parent
-		$timestamp = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile) -replace '.*_(\d{8}_\d{6}).*', '$1'
-		Write-LogHost "Output Directory: $outputDir\" -ForegroundColor White
-		Write-LogHost "Output Files: ${outputDir}\Purview_Audit_<ActivityType>_${timestamp}.csv" -ForegroundColor Gray
+		$outputDir  = Split-Path $OutputFile -Parent
+		$displayDir = (Get-DisplayPath -LocalPath $outputDir -Directory).TrimEnd('/','\')
+		$timestamp  = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile) -replace '.*_(\d{8}_\d{6}).*', '$1'
+		Write-LogHost "Output Directory: $displayDir\" -ForegroundColor White
+		Write-LogHost "Output Files: ${displayDir}\Purview_Audit_UsageActivity_<ActivityType>_${timestamp}.csv" -ForegroundColor Gray
 		if ($IncludeUserInfo -and -not $UseEOM) {
 			$entraFile = "${outputDir}\EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.csv"
-			Write-LogHost "  Entra Users: $entraFile" -ForegroundColor Gray
+			Write-LogHost "  Entra Users: $(Get-DisplayPath -LocalPath $entraFile)" -ForegroundColor Gray
+		}
+		if ($IncludeAgent365Info) {
+			$agent365PreviewFile = "${outputDir}\Agent365_${global:ScriptRunTimestamp}.csv"
+			Write-LogHost "  Agent 365: $(Get-DisplayPath -LocalPath $agent365PreviewFile)" -ForegroundColor Gray
 		}
 	}
 }
@@ -8278,7 +14490,7 @@ if ($AppendFile) {
 	
 	Write-LogHost "  Explosion parameters compatible ($($validation.CurrentMode.DisplayName)) - safe to append" -ForegroundColor Green
 	
-	Write-LogHost "AppendFile mode: Appending to existing file: $OutputFile" -ForegroundColor Cyan
+	Write-LogHost "AppendFile mode: Appending to existing file: $(Get-DisplayPath -LocalPath $OutputFile)" -ForegroundColor Cyan
 
 	# Closing banner only emitted when AppendFile validation actually ran -- otherwise the
 	# initial banner above already provides the visual divider and a second one renders as
@@ -8292,13 +14504,12 @@ if ($ForcedRawInputCsvExplosion -and -not $ExplodeDeep -and -not $ExplodeArrays.
 if ($script:memoryFlushEnabled) { 
 	$memSource = if ($MaxMemoryMB -eq -1) { "auto-detected" } else { "user-specified" }
 	Write-LogHost "Memory management: $($script:ResolvedMaxMemoryMB)MB limit ($memSource) - will flush to disk when exceeded" -ForegroundColor Cyan 
-	Write-LogHost "  Note: Not compatible with explosion modes (-ExplodeDeep/-ExplodeArrays) - those modes require in-memory processing." -ForegroundColor DarkGray
 } elseif ($script:ResolvedMaxMemoryMB -gt 0 -and ($ExplodeDeep -or $ExplodeArrays -or $ForcedRawInputCsvExplosion)) {
 	Write-LogHost "Note: Memory limit ($($script:ResolvedMaxMemoryMB)MB) ignored because explosion mode is active" -ForegroundColor DarkYellow
 }
 
 if ($RAWInputCSV) {
-	# Build snapshot then optionally inject EntraUsersOutput immediately after OutputFile
+	# Replay mode (offline): no live EOM/Graph query; show only relevant parameters
 	$paramSnapshot = [ordered]@{
 		Mode                   = $scriptMode
 		RAWInputCSV            = $RAWInputCSV
@@ -8311,15 +14522,11 @@ if ($RAWInputCSV) {
 		UseEOM                 = $UseEOM.IsPresent
 		MaxMemoryMB            = $(if ($script:ResolvedMaxMemoryMB -eq 0) { 'Off' } else { "$($script:ResolvedMaxMemoryMB)MB" + $(if ($MaxMemoryMB -eq -1) { ' (auto)' } else { '' }) })
 		StatusIntervalSeconds  = $StatusIntervalSeconds
-		MaxPartitions          = $MaxPartitions
-		ResultSize             = $ResultSize
-		PacingMs               = $PacingMs
 		ExportWorkbook         = $ExportWorkbook.IsPresent
 		CombineOutput          = $CombineOutput.IsPresent
 		AppendFile             = $(if ($AppendFile) { $AppendFile } else { '' })
 		Force                  = $Force.IsPresent
 		SkipDiagnostics        = $SkipDiagnostics.IsPresent
-		AutoCompleteness       = $AutoCompleteness.IsPresent
 		EmitMetricsJson        = $EmitMetricsJson.IsPresent
 		MetricsPath            = $(if ($MetricsPath) { $MetricsPath } else { '' })
 		StreamingSchemaSample  = $StreamingSchemaSample
@@ -8340,6 +14547,20 @@ if ($RAWInputCSV) {
 		foreach ($k in $paramSnapshot.Keys) {
 			$newSnap[$k] = $paramSnapshot[$k]
 			if ($k -eq 'OutputFile') { $newSnap['EntraUsersOutput'] = $entraPath }
+		}
+		$paramSnapshot = $newSnap
+	}
+	if ($IncludeAgent365Info -or $OnlyAgent365Info) {
+		$agentsPath = if ($ExportWorkbook) { 'Workbook Tab: Agents365' } else { (Join-Path (Split-Path $OutputFile -Parent) "Agent365_${global:ScriptRunTimestamp}.csv") }
+		# Rebuild ordered snapshot with Agents365Output immediately after EntraUsersOutput (or OutputFile if Entra absent)
+		$newSnap = [ordered]@{}
+		$inserted = $false
+		foreach ($k in $paramSnapshot.Keys) {
+			$newSnap[$k] = $paramSnapshot[$k]
+			if (-not $inserted -and ($k -eq 'EntraUsersOutput' -or ($k -eq 'OutputFile' -and -not $paramSnapshot.Contains('EntraUsersOutput')))) {
+				$newSnap['Agents365Output'] = $agentsPath
+				$inserted = $true
+			}
 		}
 		$paramSnapshot = $newSnap
 	}
@@ -8382,27 +14603,35 @@ else {
 	
 	# Query parameters specific to each mode
 	if ($UseEOM) {
-		# EOM-specific: Search-UnifiedAuditLog parameters
+		# EOM-only: Search-UnifiedAuditLog parameters
 		$paramSnapshot['BlockHours'] = $BlockHours
-		$paramSnapshot['MaxPartitions'] = $MaxPartitions
 		$paramSnapshot['ResultSize'] = $ResultSize
 		$paramSnapshot['PacingMs'] = $PacingMs
-		$paramSnapshot['StatusIntervalSeconds'] = $StatusIntervalSeconds
+		$paramSnapshot['DisableAdaptive'] = $DisableAdaptive.IsPresent
+		$paramSnapshot['MemoryPressureMB'] = $MemoryPressureMB
+		$paramSnapshot['BackoffBaseSeconds'] = $BackoffBaseSeconds
+		$paramSnapshot['BackoffMaxSeconds'] = $BackoffMaxSeconds
+		$paramSnapshot['CircuitBreakerThreshold'] = $CircuitBreakerThreshold
+		$paramSnapshot['CircuitBreakerCooldownSeconds'] = $CircuitBreakerCooldownSeconds
+		$paramSnapshot['ProgressSmoothingAlpha'] = $ProgressSmoothingAlpha
+		$paramSnapshot['AutoCompleteness'] = $AutoCompleteness.IsPresent
 	} else {
-		# Graph API-specific: Parallel processing parameters
-		$paramSnapshot['MaxConcurrency'] = $MaxConcurrency
+		# Graph-only: parallel/partition orchestration
 		$paramSnapshot['ParallelMode'] = $ParallelMode
 		$paramSnapshot['MaxParallelGroups'] = $MaxParallelGroups
-		$paramSnapshot['IncludeUserInfo'] = $IncludeUserInfo.IsPresent
-		$paramSnapshot['OnlyUserInfo'] = $OnlyUserInfo.IsPresent
-		$paramSnapshot['MaxNetworkOutageMinutes'] = $MaxNetworkOutageMinutes
+		$paramSnapshot['EnableParallel'] = $EnableParallel.IsPresent
 		$paramSnapshot['PartitionHours'] = if ($PartitionHours -gt 0) { $PartitionHours } else { 'auto' }
 		$paramSnapshot['MaxPartitions'] = $MaxPartitions
-		$paramSnapshot['ResultSize'] = $ResultSize
-		$paramSnapshot['PacingMs'] = $PacingMs
-		$paramSnapshot['MaxMemoryMB'] = $(if ($script:ResolvedMaxMemoryMB -eq 0) { 'Off' } else { "$($script:ResolvedMaxMemoryMB)MB" + $(if ($MaxMemoryMB -eq -1) { ' (auto)' } else { '' }) })
-		$paramSnapshot['StatusIntervalSeconds'] = $StatusIntervalSeconds
+		$paramSnapshot['MaxNetworkOutageMinutes'] = $MaxNetworkOutageMinutes
+		$paramSnapshot['IncludeUserInfo'] = $IncludeUserInfo.IsPresent
+		$paramSnapshot['OnlyUserInfo'] = $OnlyUserInfo.IsPresent
+		$paramSnapshot['IncludeTelemetry'] = $IncludeTelemetry.IsPresent
 	}
+
+	# Crossover (both modes)
+	$paramSnapshot['MaxConcurrency'] = $MaxConcurrency
+	$paramSnapshot['MaxMemoryMB'] = $(if ($script:ResolvedMaxMemoryMB -eq 0) { 'Off' } else { "$($script:ResolvedMaxMemoryMB)MB" + $(if ($MaxMemoryMB -eq -1) { ' (auto)' } else { '' }) })
+	$paramSnapshot['StatusIntervalSeconds'] = $StatusIntervalSeconds
 
 	# Common toggles and output options
 	$paramSnapshot['UseEOM'] = $UseEOM.IsPresent
@@ -8411,7 +14640,8 @@ else {
 	$paramSnapshot['AppendFile'] = $(if ($AppendFile) { $AppendFile } else { '' })
 	$paramSnapshot['Force'] = $Force.IsPresent
 	$paramSnapshot['SkipDiagnostics'] = $SkipDiagnostics.IsPresent
-	$paramSnapshot['AutoCompleteness'] = $AutoCompleteness.IsPresent
+	$paramSnapshot['Rollup'] = $Rollup.IsPresent
+	$paramSnapshot['RollupPlusRaw'] = $RollupPlusRaw.IsPresent
 	$paramSnapshot['EmitMetricsJson'] = $EmitMetricsJson.IsPresent
 	$paramSnapshot['MetricsPath'] = $(if ($MetricsPath) { $MetricsPath } else { '' })
 	$paramSnapshot['StreamingSchemaSample'] = $StreamingSchemaSample
@@ -8425,6 +14655,8 @@ else {
 	$paramSnapshot['IncludeCopilotInteraction'] = $copilotIncluded
 	$paramSnapshot['IncludeM365Usage'] = $IncludeM365Usage.IsPresent
 	$paramSnapshot['IncludeDSPMForAI'] = $IncludeDSPMForAI.IsPresent
+	$paramSnapshot['IncludeAgent365Info'] = $IncludeAgent365Info.IsPresent
+	$paramSnapshot['OnlyAgent365Info'] = $OnlyAgent365Info.IsPresent
 	$paramSnapshot['ExcludeCopilotInteraction'] = $ExcludeCopilotInteraction.IsPresent
 	
 	# Post-processing filters (work in both modes - applied during/after explosion)
@@ -8459,6 +14691,21 @@ else {
 		foreach ($k in $paramSnapshot.Keys) {
 			$newSnap[$k] = $paramSnapshot[$k]
 			if ($k -eq 'OutputFile') { $newSnap['EntraUsersOutput'] = $entraPath }
+		}
+		$paramSnapshot = $newSnap
+	}
+
+	# Agent 365 output reference (inserted after EntraUsersOutput, or after OutputFile when Entra absent)
+	if ($IncludeAgent365Info -or $OnlyAgent365Info) {
+		$agentsPath = if ($ExportWorkbook) { 'Workbook Tab: Agents365' } else { (Join-Path (Split-Path $OutputFile -Parent) "Agent365_${global:ScriptRunTimestamp}.csv") }
+		$newSnap = [ordered]@{}
+		$inserted = $false
+		foreach ($k in $paramSnapshot.Keys) {
+			$newSnap[$k] = $paramSnapshot[$k]
+			if (-not $inserted -and ($k -eq 'EntraUsersOutput' -or ($k -eq 'OutputFile' -and -not $paramSnapshot.Contains('EntraUsersOutput')))) {
+				$newSnap['Agents365Output'] = $agentsPath
+				$inserted = $true
+			}
 		}
 		$paramSnapshot = $newSnap
 	}
@@ -8790,7 +15037,7 @@ function Invoke-ReplayInlineExport {
 	if ($errCount -gt 0) {
 		Write-LogHost ("  Errors:         {0:N0} record(s) failed to process" -f $errCount) -ForegroundColor Red
 	}
-	Write-LogHost ("  Output file:    {0}" -f $OutputFile) -ForegroundColor Gray
+	Write-LogHost ("  Output file:    {0}" -f (Get-DisplayPath -LocalPath $OutputFile)) -ForegroundColor Gray
 	Write-LogHost ""
 }
 
@@ -8928,7 +15175,7 @@ function Get-UnifiedReplayHeader {
 	return $header
 }
 
-# --- Legacy M365 Usage Wide Header (kept for backward compatibility) ---
+# --- M365 Usage Wide Header (used for replay of previously exported raw CSVs) ---
 function Get-M365UsageWideHeader {
 	param(
 		[string]$RawCsvPath,
@@ -9927,6 +16174,13 @@ try {
 		else {
 			# Auto-discover checkpoints in OutputPath
 			$searchPath = if ($OutputPath) { $OutputPath } else { (Get-Location).Path }
+
+			# NOTE: Resume artifacts (.pax_checkpoint_*.json, *_PARTIAL.csv, .pax_incremental/*.jsonl)
+			# are LOCAL-ONLY by design — see Save-CheckpointToDisk for rationale. There is no
+			# remote-prefetch step here; resume is a same-host operation. Operators running in
+			# remote-output mode (-OutputPathSP / -OutputPathFabric) must resume from the same
+			# machine where the original run was interrupted.
+
 			Write-LogHost "Searching for checkpoints in: $searchPath" -ForegroundColor Yellow
 			
 			$checkpoints = Find-Checkpoints -OutputPath $searchPath
@@ -10066,6 +16320,9 @@ try {
 		if ($cp.includeDSPMForAI) { $IncludeDSPMForAI = [switch]$true }
 		if ($cp.includeCopilotInteraction) { $IncludeCopilotInteraction = [switch]$true }
 		if ($cp.excludeCopilotInteraction) { $ExcludeCopilotInteraction = [switch]$true }
+		if ($cp.includeAgent365Info) { $IncludeAgent365Info = [switch]$true }
+		# Note: onlyAgent365Info is intentionally not restored on resume - it would imply
+		# no audit phase to resume from. Original validation blocks -OnlyAgent365Info + -Resume.
 		
 		# Partitioning
 		if ($cp.blockHours) { $BlockHours = $cp.blockHours }
@@ -10076,7 +16333,54 @@ try {
 		if ($cp.outputPath) { $OutputPath = $cp.outputPath }
 		if ($cp.exportWorkbook) { $ExportWorkbook = [switch]$true }
 		if ($cp.combineOutput) { $CombineOutput = [switch]$true }
-		
+
+		# Restore rollup post-processor intent from checkpoint, with last-write-wins semantics:
+		# if the user passed -Rollup or -RollupPlusRaw on the resume command line, the resume
+		# switch wins and the checkpoint value is ignored. If the user passed neither, restore
+		# the original run's rollup mode from the checkpoint so a resumed run produces the same
+		# outputs as the original would have.
+		$resumeUserPassedRollup = $PSBoundParameters.ContainsKey('Rollup') -or $PSBoundParameters.ContainsKey('RollupPlusRaw')
+		if (-not $resumeUserPassedRollup -and $cp.rollupMode) {
+			switch ([string]$cp.rollupMode) {
+				'Rollup'        { $Rollup        = [System.Management.Automation.SwitchParameter]::new($true); $RollupPlusRaw = [System.Management.Automation.SwitchParameter]::new($false) }
+				'RollupPlusRaw' { $RollupPlusRaw = [System.Management.Automation.SwitchParameter]::new($true); $Rollup        = [System.Management.Automation.SwitchParameter]::new($false) }
+				default         { }
+			}
+			if ($cp.processorMode -and ($cp.processorMode -in @('CopilotInteraction','M365Bundle','None'))) {
+				$script:RollupProcessorMode = [string]$cp.processorMode
+			}
+			if ($Rollup -or $RollupPlusRaw) {
+				$restoredSwitch = if ($Rollup) { '-Rollup' } else { '-RollupPlusRaw' }
+				Write-LogHost "  Restored rollup mode from checkpoint: $restoredSwitch (processorMode=$($script:RollupProcessorMode))" -ForegroundColor DarkGray
+			}
+		}
+		elseif ($resumeUserPassedRollup -and $cp.rollupMode -and $cp.rollupMode -ne 'None') {
+			# Resume's switch wins; just log the override for visibility.
+			$nowSwitch = if ($Rollup) { '-Rollup' } elseif ($RollupPlusRaw) { '-RollupPlusRaw' } else { '<none>' }
+			Write-LogHost "  Rollup mode overridden on resume: checkpoint='$($cp.rollupMode)' -> resume='$nowSwitch' (last-write-wins)." -ForegroundColor Yellow
+		}
+
+		# Re-derive $script:RollupProcessorMode AFTER all resume-restore lines above have
+		# merged checkpoint state (especially IncludeM365Usage). This guarantees the wire-up
+		# at end-of-run picks the right embedded processor even when the resume CLI omitted
+		# the modifier switches. The gating BLOCKERS are not re-run here — they were validated
+		# on the original run and the resume restore preserves all gating-relevant switches
+		# (IncludeDSPMForAI, ExportWorkbook, OnlyUserInfo, OnlyAgent365Info, AppendFile,
+		# RAWInputCSV, UseEOM); if any of those were set, the original run would have already
+		# hard-failed before producing a checkpoint to resume from.
+		if ($Rollup -or $RollupPlusRaw) {
+			if ($IncludeM365Usage) {
+				$script:RollupProcessorMode = 'M365Bundle'
+			}
+			else {
+				$script:RollupProcessorMode = 'CopilotInteraction'
+				if (-not $IncludeUserInfo) {
+					$IncludeUserInfo = [System.Management.Automation.SwitchParameter]::new($true)
+					Write-LogHost "  Resume: auto-enabled -IncludeUserInfo for CopilotInteraction-mode rollup." -ForegroundColor Cyan
+				}
+			}
+		}
+
 		# Auth - only restore if user didn't override
 		if (-not $PSBoundParameters.ContainsKey('Auth') -and $cp.auth) { $Auth = $cp.auth }
 		if (-not $PSBoundParameters.ContainsKey('TenantId') -and $cp.tenantId) { $TenantId = $cp.tenantId }
@@ -10225,9 +16529,112 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		if ($UseEOM) {
 			Import-Module ExchangeOnlineManagement -Force
 		}
-		
+
+		# Banner 7a: AppRegistration + -IncludeAgent365Info informational notice.
+		# The Microsoft Graph Agent Package Management API requires a signed-in user with
+		# AI Admin or Global Admin role; app-only auth cannot satisfy it. The script prompts
+		# for the Agent 365 interactive sign-in UP-FRONT (immediately after Phase 1 connects)
+		# so the audit phase can run unattended after a single user prompt.
+		if ($IncludeAgent365Info -and $Auth -eq 'AppRegistration') {
+			Write-LogHost ""
+			Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Cyan
+			Write-LogHost "|  DUAL-CONTEXT RUN: -Auth AppRegistration + -IncludeAgent365Info     |" -ForegroundColor Cyan
+			Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Cyan
+			Write-LogHost "|  Phase 1 (Audit, EntraUsers, M365 usage):                            |" -ForegroundColor Cyan
+			Write-LogHost "|    APP-ONLY using your app registration (unattended).                |" -ForegroundColor Cyan
+			Write-LogHost "|                                                                      |" -ForegroundColor Cyan
+			Write-LogHost "|  Phase 2 (Agent 365 catalog):                                        |" -ForegroundColor Cyan
+			Write-LogHost "|    DELEGATED (interactive sign-in, prompts ONCE up-front, before    |" -ForegroundColor Cyan
+			Write-LogHost "|    audit work begins). Required because the Agent 365 endpoint has   |" -ForegroundColor Cyan
+			Write-LogHost "|    no app-only Graph scope; it requires AI Admin or Global Admin on  |" -ForegroundColor Cyan
+			Write-LogHost "|    a signed-in user.                                                 |" -ForegroundColor Cyan
+			Write-LogHost "|                                                                      |" -ForegroundColor Cyan
+			Write-LogHost "|  Order: Phase 1 connect -> Phase 2 prompt -> Phase 2 cached ->       |" -ForegroundColor Cyan
+			Write-LogHost "|         restore Phase 1 -> audit runs unattended -> Phase 2 silent. |" -ForegroundColor Cyan
+			Write-LogHost "|                                                                      |" -ForegroundColor Cyan
+			Write-LogHost "|  Reference:                                                          |" -ForegroundColor Cyan
+			Write-LogHost "|  https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api|" -ForegroundColor Cyan
+			Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Cyan
+			Write-LogHost ""
+		}
+
 		# Use unified authentication function
 		Connect-PurviewAudit -AuthMethod $Auth -UseEOMMode $UseEOM
+
+		# Remote-output destination probe + AppendFile pull (SP/Fabric only).
+		# Done immediately after Graph/EOM connect so we fail fast before any audit work.
+		if ($script:RemoteOutputMode -ne 'None') {
+			try {
+				Test-RemoteDestination
+				Write-LogHost ("Remote destination probe OK ({0})." -f $script:RemoteOutputMode) -ForegroundColor Green
+			} catch {
+				# Resolve-SharePointTarget / Resolve-FabricTarget now throw a multi-line classified
+				# diagnosis (Cause / Action / Graph response). Format that as a banner pointing back
+				# to the permissions table so customers don't have to scroll up guessing.
+				$probeMsg   = $_.Exception.Message
+				$probeLines = $probeMsg -split "`r?`n"
+				Write-LogHost ""                                                                                              -ForegroundColor Red
+				Write-LogHost "═══════════════════════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
+				Write-LogHost ("  REMOTE OUTPUT PRE-FLIGHT FAILED — {0} destination cannot be reached" -f $script:RemoteOutputMode) -ForegroundColor Red
+				Write-LogHost "═══════════════════════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
+				Write-LogHost ("  Destination URL : {0}" -f $script:RemoteOutputUrl) -ForegroundColor White
+				Write-LogHost ""                                                     -ForegroundColor White
+				foreach ($pl in $probeLines) {
+					if ([string]::IsNullOrWhiteSpace($pl)) { Write-LogHost "" -ForegroundColor White; continue }
+					Write-LogHost ("  {0}" -f $pl) -ForegroundColor Yellow
+				}
+				Write-LogHost ""                                                                                              -ForegroundColor White
+				Write-LogHost "  See the 'Permissions Required for THIS run' table earlier in this output for the"             -ForegroundColor Gray
+				Write-LogHost "  full list of required scopes/roles, including which apply to the SharePoint or"               -ForegroundColor Gray
+				Write-LogHost "  Fabric output destination."                                                                   -ForegroundColor Gray
+				Write-LogHost ""                                                                                              -ForegroundColor White
+				Write-LogHost "  No data has been written and no audit queries have been issued. Aborting before the"          -ForegroundColor Gray
+				Write-LogHost "  run starts so you do not produce a partial export. Resolve the issue above and re-run."       -ForegroundColor Gray
+				Write-LogHost "═══════════════════════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
+				Write-LogHost ""                                                                                              -ForegroundColor Red
+				# Customer-facing abort: the banner above is the entire diagnosis. Do NOT throw —
+				# the outer top-level catch would print "Script failed: <message>" plus a dev stack
+				# trace, which is noise on top of an already self-explanatory banner. Mark EarlyExit
+				# so the finally block skips the success-path cleanup and the _PARTIAL rename, then
+				# exit with non-zero status for callers that check $LASTEXITCODE.
+				$script:EarlyExit = 'PreFlightFailure'
+				exit 1
+			}
+
+			# AppendFile: pull the existing remote file into local scratch so the rest of
+			# the script's append logic operates against a local path, transparently.
+			if ($AppendFile) {
+				try {
+					$appendName      = [System.IO.Path]::GetFileName($AppendFile)
+					$appendLocalPath = Join-Path $OutputPath $appendName
+					if ($script:RemoteOutputMode -eq 'SharePoint') {
+						Get-RemoteFile-SharePoint -RelativeName $appendName -DestinationPath $appendLocalPath -ErrorAction Stop
+					} else {
+						Get-RemoteFile-OneLake    -RelativeName $appendName -DestinationPath $appendLocalPath -ErrorAction Stop
+					}
+					Write-LogHost ("Remote AppendFile downloaded to scratch: {0}" -f $appendLocalPath) -ForegroundColor Cyan
+					$AppendFile = $appendLocalPath
+				} catch {
+					Write-LogHost ("ERROR: Failed to download remote AppendFile '{0}': {1}" -f $AppendFile, $_.Exception.Message) -ForegroundColor Red
+					throw
+				}
+			}
+		}
+
+		# EAGER Agent 365 sign-in: when -Auth AppRegistration + -IncludeAgent365Info,
+		# prompt the user for the Agent 365 delegated sign-in NOW so they don't have
+		# to babysit the run waiting for the prompt to appear hours later.
+		if (-not $UseEOM) {
+			$null = Invoke-Agent365EarlyInteractiveSignIn
+			# Fallback: if Phase 2 sign-in failed (or was skipped), the dual-context display
+			# never emitted. Disclose the Phase 1 context now so the log is not missing it.
+			if ($script:DeferAuthContextDisplay -and $script:Phase1Context) {
+				Write-LogHost "  Tenant ID: $($script:Phase1Context.TenantId)" -ForegroundColor Gray
+				Write-LogHost "  Account:   (app-only / AppRegistration - no interactive user; Phase 2 sign-in did not complete)" -ForegroundColor Gray
+				Write-LogHost "  Scopes:    $($script:Phase1Context.GrantedRequired -join ', ')" -ForegroundColor Gray
+				$script:DeferAuthContextDisplay = $false
+			}
+		}
 		
 		# Fetch user directory and license data if requested (Graph API mode only)
 		$script:LicenseData = $null
@@ -10244,8 +16651,8 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		}
 	}
 	
-	# Skip all audit log queries when only exporting user data
-	if (-not $OnlyUserInfo) {
+	# Skip all audit log queries when only exporting user data or only exporting Agent 365 data
+	if (-not $OnlyUserInfo -and -not $OnlyAgent365Info) {
 		$allLogs = New-Object System.Collections.ArrayList
 		if ($RAWInputCSV) {
 		Write-LogHost "Replay mode enabled: ingesting raw Purview CSV '$RAWInputCSV' (no Graph/EOM connections)" -ForegroundColor Yellow
@@ -10361,7 +16768,6 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		} else {
 			Write-LogHost "Starting enterprise-grade audit log search..." -ForegroundColor Yellow
 			Write-LogHost "Date range: $($startDateObj.ToString('yyyy-MM-dd')) (inclusive) to $($endDateObj.ToString('yyyy-MM-dd')) (exclusive)" -ForegroundColor Gray
-			Write-LogHost "Processing mode: $(if ($ExplodeDeep){'Deep Column Explosion (with Row Explosion)'} elseif ($ExplodeArrays){'Array Explosion'} else {'Standard 1:1'})" -ForegroundColor Gray
 		}
 		
 		# Adaptive block sizing only applies to EOM mode (Graph API uses partitioning instead)
@@ -10491,6 +16897,18 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 	if ($paramSnapshot -and $paramSnapshot.Contains('ActivityTypes')) {
 		$paramSnapshot['ActivityTypes'] = ($ActivityTypes -join ';')
 	}
+
+	# Helper: file emissions for Agent 365 should only render when (a) the user requested
+	# Agent 365 output AND (b) the eager Frontier probe didn't already determine the tenant
+	# is unavailable. The probe is run by Invoke-Agent365EarlyInteractiveSignIn (AppReg+Agent365)
+	# or by the deferred Test-Agent365FrontierAccess (interactive auth). When unavailable,
+	# $script:Agent365FrontierAvailable is $false; when not yet probed, $null.
+	$agent365WillProduceFile = ($IncludeAgent365Info -or $OnlyAgent365Info) -and ($script:Agent365FrontierAvailable -ne $false)
+
+	# Scrub Agents365Output from the parameter snapshot when we already know the file won't be produced.
+	if ($paramSnapshot -and $paramSnapshot.Contains('Agents365Output') -and -not $agent365WillProduceFile) {
+		$paramSnapshot.Remove('Agents365Output')
+	}
 	
 		# Step 10b: Display detailed output filenames now that ActivityTypes is finalized (if activity type switches were used)
 	if ($IncludeDSPMForAI -or $ExcludeCopilotInteraction) {
@@ -10498,31 +16916,39 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		Write-LogHost "=== Output Files ===" -ForegroundColor Cyan
 		if ($ExportWorkbook) {
 			# Excel mode
-			$outputDir = if ($OutputPath) { $OutputPath } else { "C:\Temp\" }
+			$outputDir  = if ($OutputPath) { $OutputPath } else { "C:\Temp\" }
+			$displayDir = (Get-DisplayPath -LocalPath $outputDir -Directory).TrimEnd('/','\') + '/'
 			if ($CombineOutput) {
 				$baseName = "Purview_Audit_CombinedUsageActivity"
 				if ($IncludeUserInfo -and -not $UseEOM) { $baseName += "_EntraUsers" }
-				$excelDescriptor = if ($IncludeUserInfo -and -not $UseEOM) { 'multi-tab workbook (CombinedActivity + EntraUsers_MAClicensing)' } else { 'single-tab workbook' }
-				Write-LogHost "Output File: ${outputDir}${baseName}_<timestamp>.xlsx ($excelDescriptor)" -ForegroundColor White
-				if ($IncludeUserInfo -and -not $UseEOM) { Write-LogHost "  Tabs: CombinedActivity, EntraUsers_MAClicensing" -ForegroundColor Gray }
+				$tabsList = @('CombinedActivity')
+				if ($IncludeUserInfo -and -not $UseEOM) { $tabsList += 'EntraUsers_MAClicensing' }
+				if ($agent365WillProduceFile) { $tabsList += 'Agents365' }
+				$excelDescriptor = if ($tabsList.Count -gt 1) { "multi-tab workbook ($($tabsList -join ' + '))" } else { 'single-tab workbook' }
+				Write-LogHost "Output File: ${displayDir}${baseName}_<timestamp>.xlsx ($excelDescriptor)" -ForegroundColor White
+				if ($tabsList.Count -gt 1) { Write-LogHost "  Tabs: $($tabsList -join ', ')" -ForegroundColor Gray }
 			} else {
-				Write-LogHost "Output File: ${outputDir}Purview_Audit_MultiTab_<timestamp>.xlsx (multi-tab workbook)" -ForegroundColor White
+				Write-LogHost "Output File: ${displayDir}Purview_Audit_MultiTab_<timestamp>.xlsx (multi-tab workbook)" -ForegroundColor White
 				if ($IncludeUserInfo -and -not $UseEOM) { Write-LogHost "  Entra Users Tab: EntraUsers_MAClicensing" -ForegroundColor Gray }
+				if ($agent365WillProduceFile) { Write-LogHost "  Agent 365 Tab: Agents365" -ForegroundColor Gray }
 			}
 		} else {
 			# CSV mode
 			if ($CombineOutput) {
 				# Single combined CSV file
 				$displayPath = if ($script:FinalOutputPath) { $script:FinalOutputPath } else { $OutputFile }
-				Write-LogHost "Output File: $displayPath (combined - all activity types)" -ForegroundColor White
-				if ($IncludeUserInfo -and -not $UseEOM) { $entraFileLater = (Join-Path (Split-Path $displayPath -Parent) "EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.csv"); Write-LogHost "  Entra Users File: $entraFileLater" -ForegroundColor Gray }
+				Write-LogHost "Output File: $(Get-DisplayPath -LocalPath $displayPath) (combined - all activity types)" -ForegroundColor White
+				if ($IncludeUserInfo -and -not $UseEOM) { $entraFileLater = (Join-Path (Split-Path $displayPath -Parent) "EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.csv"); Write-LogHost "  Entra Users File: $(Get-DisplayPath -LocalPath $entraFileLater)" -ForegroundColor Gray }
+				if ($agent365WillProduceFile) { $agent365FileLater = (Join-Path (Split-Path $displayPath -Parent) "Agent365_${global:ScriptRunTimestamp}.csv"); Write-LogHost "  Agent 365 File: $(Get-DisplayPath -LocalPath $agent365FileLater)" -ForegroundColor Gray }
 			} else {
 				# Separate CSV files per activity type
-				$outputDir = Split-Path $OutputFile -Parent
-				$timestamp = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile) -replace '.*_(\d{8}_\d{6}).*', '$1'
-				Write-LogHost "Output Directory: $outputDir\" -ForegroundColor White
-				Write-LogHost "Output Files: ${outputDir}\Purview_Audit_<ActivityType>_${timestamp}.csv" -ForegroundColor Gray
-				if ($IncludeUserInfo -and -not $UseEOM) { $entraFileSplit = "${outputDir}\EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.csv"; Write-LogHost "  Entra Users: $entraFileSplit" -ForegroundColor Gray }
+				$outputDir   = Split-Path $OutputFile -Parent
+				$displayDir2 = (Get-DisplayPath -LocalPath $outputDir -Directory).TrimEnd('/','\')
+				$timestamp   = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile) -replace '.*_(\d{8}_\d{6}).*', '$1'
+				Write-LogHost "Output Directory: $displayDir2\" -ForegroundColor White
+				Write-LogHost "Output Files: ${displayDir2}\Purview_Audit_UsageActivity_<ActivityType>_${timestamp}.csv" -ForegroundColor Gray
+				if ($IncludeUserInfo -and -not $UseEOM) { $entraFileSplit = "${outputDir}\EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.csv"; Write-LogHost "  Entra Users: $(Get-DisplayPath -LocalPath $entraFileSplit)" -ForegroundColor Gray }
+				if ($agent365WillProduceFile) { $agent365FileSplit = "${outputDir}\Agent365_${global:ScriptRunTimestamp}.csv"; Write-LogHost "  Agent 365: $(Get-DisplayPath -LocalPath $agent365FileSplit)" -ForegroundColor Gray }
 			}
 		}
 	}
@@ -10617,15 +17043,25 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 				$script:ExcelExportData = @{
 					$combinedTabName = @()
 				}
-				if ($IncludeUserInfo -and -not $UseEOM) {
-					Write-LogHost "Excel export: Combined mode (multi-tab: $combinedTabName + EntraUsers_MAClicensing)" -ForegroundColor Cyan
+				$excelInitTabs = @($combinedTabName)
+				if ($IncludeUserInfo -and -not $UseEOM) { $excelInitTabs += 'EntraUsers_MAClicensing' }
+				if ($agent365WillProduceFile) { $excelInitTabs += 'Agents365' }
+				if ($excelInitTabs.Count -gt 1) {
+					Write-LogHost "Excel export: Combined mode (multi-tab: $($excelInitTabs -join ' + '))" -ForegroundColor Cyan
 				} else {
 					Write-LogHost "Excel export: Combined mode (single tab: $combinedTabName)" -ForegroundColor Cyan
 				}
 			} else {
 				# Multi-tab mode: Store rows by activity type
 				$script:ExcelExportData = @{}
-				Write-LogHost "Excel export: Multi-tab mode (separate tab per activity type)" -ForegroundColor Cyan
+				$multiTabExtras = @()
+				if ($IncludeUserInfo -and -not $UseEOM) { $multiTabExtras += 'EntraUsers_MAClicensing' }
+				if ($agent365WillProduceFile) { $multiTabExtras += 'Agents365' }
+				if ($multiTabExtras.Count -gt 0) {
+					Write-LogHost "Excel export: Multi-tab mode (separate tab per activity type + $($multiTabExtras -join ' + '))" -ForegroundColor Cyan
+				} else {
+					Write-LogHost "Excel export: Multi-tab mode (separate tab per activity type)" -ForegroundColor Cyan
+				}
 			}
 		}
 		# --- End Excel Export Initialization ---
@@ -10676,16 +17112,19 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 	if (-not $ExportWorkbook) {
 			if ($csvCombineMode) {
 				$displayPath = if ($script:FinalOutputPath) { $script:FinalOutputPath } else { $OutputFile }
-				$outputDir = Split-Path $displayPath -Parent
-				Write-LogHost "Output file: $displayPath" -ForegroundColor Gray
-				if ($IncludeUserInfo) { Write-LogHost "EntraUsers file (separate): $($OutputDir)\EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.csv" -ForegroundColor Gray }
+				$outputDir   = Split-Path $displayPath -Parent
+				Write-LogHost "Output file: $(Get-DisplayPath -LocalPath $displayPath)" -ForegroundColor Gray
+				if ($IncludeUserInfo) { Write-LogHost "EntraUsers file (separate): $(Get-DisplayPath -LocalPath ($OutputDir + '\EntraUsers_MAClicensing_' + $global:ScriptRunTimestamp + '.csv'))" -ForegroundColor Gray }
+				if ($agent365WillProduceFile) { Write-LogHost "Agent 365 file (separate): $(Get-DisplayPath -LocalPath ($OutputDir + '\Agent365_' + $global:ScriptRunTimestamp + '.csv'))" -ForegroundColor Gray }
 			} else {
 			$outputDir = Split-Path $OutputFile -Parent
+			$displayDir = (Get-DisplayPath -LocalPath $outputDir -Directory)
 			# Prefix for per-activity CSV files
 			$filePrefix = "Purview_Audit"
-			Write-LogHost "Output directory: $outputDir" -ForegroundColor Gray
+			Write-LogHost "Output directory: $displayDir" -ForegroundColor Gray
 				Write-LogHost "Activity file pattern: ${filePrefix}_<ActivityType>_${global:ScriptRunTimestamp}.csv" -ForegroundColor Gray
 				if ($IncludeUserInfo) { Write-LogHost "EntraUsers file: EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.csv" -ForegroundColor Gray }
+				if ($agent365WillProduceFile) { Write-LogHost "Agent 365 file: Agent365_${global:ScriptRunTimestamp}.csv" -ForegroundColor Gray }
 		}
 	}
 	Write-LogHost "===================================" -ForegroundColor Cyan
@@ -10908,8 +17347,6 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 			}
 			$withinCap = $groupIndex -le $MaxParallelGroups
 			# Graph API mode: always use the parallel ThreadJob code path, even with a single partition
-			# (1 ThreadJob is still preferable to the sequential code path, and avoids the divergent
-			# sequential branch that caused worker-flush record loss in v1.10.8 and earlier).
 			# EOM mode: keep the single-partition shortcut to sequential (parallel is incompatible with
 			# Exchange Online implicit remoting, enforced again by the EOM gate inside the parallel block).
 			$canParallel = $parallelOverallEnabled -and $withinCap -and ($PSVersionTable.PSVersion.Major -ge 7) -and ((-not $UseEOM) -or ($degree -gt 1))
@@ -12664,21 +19101,15 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 						$script:AuthFailureDetected = $false
 						$script:Auth401MessageShown = $false
 						Write-LogHost "  [AUTH] Token refreshed automatically (AppRegistration)" -ForegroundColor Green
-					} elseif ($Force) {
-						# -Force mode: FATAL exit (true headless operation)
-						Write-LogHost "  [AUTH] FATAL: AppRegistration token refresh failed (-Force mode)" -ForegroundColor Red
+					} else {
+						# AppRegistration is non-interactive by design - there is no R/Q prompt that
+						# could supply alternate credentials. Save checkpoint and exit cleanly so the
+						# run can be resumed once the cert/secret issue is fixed. Applies to both -Force
+						# and non-Force runs.
+						Write-LogHost "  [AUTH] FATAL: AppRegistration token refresh failed - exiting (use -Resume after fixing credentials)" -ForegroundColor Red
 						if ($script:CheckpointEnabled) { Save-Checkpoint -Force }
 						Show-CheckpointExitMessage
 						exit 0
-					} else {
-						# No -Force: fall back to interactive prompt
-						Write-LogHost "  [AUTH] Silent refresh failed - falling back to interactive prompt" -ForegroundColor Yellow
-						$refreshResult = Invoke-TokenRefreshPrompt
-						if ($refreshResult -eq 'Quit') {
-							if ($script:CheckpointEnabled) { Save-Checkpoint -Force }
-							Show-CheckpointExitMessage
-							exit 0
-						}
 					}
 				} else {
 					# Interactive modes: prompt user
@@ -12761,28 +19192,15 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 							$script:SharedAuthState.ExpiresOn = (Get-Date).ToUniversalTime().AddMinutes(50)
 							$script:SharedAuthState.LastRefresh = Get-Date
 							Write-LogHost "  [AUTH] Token refreshed automatically (AppRegistration)" -ForegroundColor Green
-						} elseif ($Force) {
-							# -Force mode: FATAL exit (true headless operation)
-							Write-LogHost "  [AUTH] FATAL: AppRegistration token refresh failed (-Force mode)" -ForegroundColor Red
+						} else {
+							# AppRegistration is non-interactive by design - there is no R/Q prompt that
+							# could supply alternate credentials. Save checkpoint and exit cleanly so the
+							# run can be resumed once the cert/secret issue is fixed. Applies to both -Force
+							# and non-Force runs.
+							Write-LogHost "  [AUTH] FATAL: AppRegistration token refresh failed - exiting (use -Resume after fixing credentials)" -ForegroundColor Red
 							if ($script:CheckpointEnabled) { Save-Checkpoint -Force }
 							Write-LogHost "  Exiting due to authentication failure. Use -Resume to continue later." -ForegroundColor Yellow
 							return
-						} else {
-							# No -Force: fall back to interactive prompt
-							Write-LogHost "  [AUTH] Silent refresh failed - falling back to interactive prompt" -ForegroundColor Yellow
-							$refreshResult = Invoke-TokenRefreshPrompt
-							if ($refreshResult -eq 'Quit') {
-								if ($script:CheckpointEnabled) { Save-Checkpoint -Force }
-								Write-LogHost "  Exiting due to user request. Use -Resume to continue later." -ForegroundColor Yellow
-								return
-							}
-							# Update shared auth state for thread jobs
-							$tokenInfo = Get-GraphAccessTokenWithExpiry
-							if ($tokenInfo) {
-								$script:SharedAuthState.Token = $tokenInfo.Token
-								$script:SharedAuthState.ExpiresOn = $tokenInfo.ExpiresOn
-								$script:SharedAuthState.LastRefresh = Get-Date
-							}
 						}
 					} else {
 						# Interactive modes: prompt user
@@ -12805,12 +19223,11 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 				
 				Start-Sleep -Milliseconds 500
 				
-				# Collect output from active jobs while waiting (with error detection)
-				# FIX: Process ALL jobs including completed ones to ensure JSONL gets saved
+				# Collect output from active jobs while waiting (with error detection).
+				# Process ALL jobs including completed ones — completed jobs MUST be processed to get
+				# their result objects for JSONL save and checkpoint update.
 				foreach ($activeJob in $activeJobs) {
 					if ($script:AuthFailureDetected) { break }  # IMMEDIATE EXIT on auth failure
-					# REMOVED: if ($activeJob.State -eq 'Completed') { continue }
-					# Completed jobs MUST be processed to get their result objects for JSONL save
 					try {
 						# NO -Keep: process result objects fully here (JSONL save, checkpoint)
 						$waitOutput = Receive-Job -Job $activeJob -ErrorAction SilentlyContinue -ErrorVariable backpressureJobErrors
@@ -12873,8 +19290,8 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 											}
 											break  # IMMEDIATE EXIT - don't process more output
 										} else {
-											# FIX: Non-401 [ERROR] messages (e.g., "Unexpected error during record processing")
-											# must also mark the partition as Failed for retry
+											# Non-401 [ERROR] messages (e.g., "Unexpected error during record processing")
+											# must also mark the partition as Failed for retry.
 											$jobPartition = $jobMeta[$activeJob.Id]
 											if ($jobPartition -and $script:partitionStatus.ContainsKey($jobPartition.Index)) {
 												$script:partitionStatus[$jobPartition.Index].Status = 'Failed'
@@ -13220,11 +19637,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 					$script:lastStatusUpdate = Get-Date
 				}					# Show status updates while creating jobs (if monitoring started)
 					if ($monitoringStarted) {
-						# Collect output from all existing jobs
-						# FIX: Process ALL jobs including completed ones to ensure JSONL gets saved
+						# Collect output from all existing jobs.
+						# Process ALL jobs including completed ones — completed jobs MUST be processed
+						# to get their result objects for JSONL save and checkpoint update.
 						foreach ($existingJob in $jobs) {
-							# REMOVED: if ($existingJob.State -eq 'Completed') { continue }
-							# Completed jobs MUST be processed to get their result objects for JSONL save
 							try {
 								# NO -Keep: process result objects fully here (JSONL save, checkpoint)
 								$jobOutput = Receive-Job -Job $existingJob -ErrorAction SilentlyContinue
@@ -13465,10 +19881,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 							try {
 								$jobOutput = Receive-Job -Job $job -Keep -ErrorAction SilentlyContinue -ErrorVariable jobErrors
 								
-								# SCALING FIX: Receive-Job -Keep re-delivers ALL historical output every loop iteration.
+								# Scaling: Receive-Job -Keep re-delivers ALL historical output every loop iteration.
 								# After hundreds/thousands of pages, iterating all messages on every 500ms cycle causes
 								# progressive slowdown (STATUS gaps widen from 60s to 10+ minutes after many hours).
-								# Track per-job offset so we only process truly new messages each cycle.
+								# Track per-job offset so only truly new messages are processed each cycle.
 								$rawCount = if ($jobOutput) { @($jobOutput).Count } else { 0 }
 								$seenCount = if ($script:jobOutputOffset.ContainsKey($job.Id)) { $script:jobOutputOffset[$job.Id] } else { 0 }
 								$script:jobOutputOffset[$job.Id] = $rawCount
@@ -14475,8 +20891,8 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 							# CRITICAL: Use $graphResultSize (0 for Graph API = unlimited) instead of $ResultSize (10000)
 							# Pass existing QueryId if available (for retry after 403 fetch failure)
 							$existingQueryId = $script:partitionStatus[$pt.Index].QueryId
-							# BUGFIX: Clear dead QueryId if partition failed due to 404 (query vanished server-side)
-							# A dead QueryId would cause infinite retry loops polling a non-existent query
+							# Clear dead QueryId if the partition failed due to 404 (query vanished server-side).
+							# A dead QueryId would cause infinite retry loops polling a non-existent query.
 							$lastErr = $script:partitionStatus[$pt.Index].LastError
 							if ($existingQueryId -and $lastErr -and ($lastErr -match 'QUERY-GONE|404.*Not Found|404.*status poll')) {
 								Write-LogHost "    [QUERY-GONE] Clearing dead QueryId $existingQueryId for Partition $($pt.Index)/$($pt.Total) - will CREATE fresh query" -ForegroundColor Yellow
@@ -14573,8 +20989,8 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 												[void]$allLogs.Add($log)
 											}
 											
-											# INCREMENTAL SAVE: Write retry partition records to disk immediately (prevents data loss on auth failure)
-											# BUG FIX: This was missing from retry path, causing data loss on subsequent failures
+											# INCREMENTAL SAVE: Write retry partition records to disk immediately to prevent
+											# data loss on subsequent auth failures.
 											try {
 												$incrementalDir = Join-Path (Split-Path $script:PartialOutputPath -Parent) ".pax_incremental"
 												if (-not (Test-Path $incrementalDir)) {
@@ -15136,7 +21552,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 	}
 	
 	# ============================================================================
-	# WORKER-FLUSH RECOVERY (v1.10.9): When workers page-flushed records to JSONL but the
+	# WORKER-FLUSH RECOVERY: When workers page-flushed records to JSONL but the
 	# parent's $script:memoryFlushed flag never got set (e.g., due to a missed result-object
 	# event in the receive loop), $allLogs is empty even though completed partitions report
 	# RecordCount > 0 and have JSONL files on disk. Detect this and activate streaming merge
@@ -15472,13 +21888,15 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 		Write-LogHost "Emitting header-only CSV (0 rows) for deterministic downstream processing..." -ForegroundColor Cyan
 		$headerColumns = if ($ExplodeDeep -or $ExplodeArrays -or $ForcedRawInputCsvExplosion) { if ($IncludeM365Usage -and $RAWInputCSV) { Get-M365UsageWideHeader -RawCsvPath $RAWInputCSV -BaseHeader $M365UsageBaseHeader } else { $PurviewExplodedHeader } } else { @('RecordId', 'CreationDate', 'RecordType', 'Operation', 'UserId', 'AuditData', 'AssociatedAdminUnits', 'AssociatedAdminUnitsNames') }
 		try { $outputDirEmpty = Split-Path $OutputFile -Parent; if (-not (Test-Path $outputDirEmpty)) { New-Item -ItemType Directory -Path $outputDirEmpty -Force | Out-Null }; $enc = New-Object System.Text.UTF8Encoding($false); $sw = [System.IO.StreamWriter]::new($OutputFile, $false, $enc); $escapedCols = @(); foreach ($col in $headerColumns) { $c = [string]$col; $needsQuote = ($c -match '[",\r\n]') -or $c.StartsWith(' ') -or $c.EndsWith(' '); $escaped = $c -replace '"', '""'; if ($needsQuote) { $escaped = '"' + $escaped + '"' }; $escapedCols += , $escaped }; $sw.WriteLine(($escapedCols -join ',')); $sw.Flush(); $sw.Dispose() } catch { Write-LogHost "Failed to write header-only CSV: $($_.Exception.Message)" -ForegroundColor Red }
-		# Finalize checkpoint: rename _PARTIAL files and delete checkpoint (same pattern as normal completion)
-		if ($script:CheckpointEnabled -and $script:PartialOutputPath -and (Test-Path $script:PartialOutputPath)) {
+		# Finalize checkpoint: rename _PARTIAL files and delete checkpoint (same pattern as normal
+		# completion). Complete-CheckpointRun handles missing partial output internally and still
+		# deletes the checkpoint.
+		if ($script:CheckpointEnabled) {
 			Complete-CheckpointRun -FinalOutputPath $script:FinalOutputPath
 			$OutputFile = $script:FinalOutputPath
 			$LogFile = $script:LogFile
 		}
-		$script:metrics.TotalStructuredRows = 0; $script:metrics.EffectiveChunkSize = 0; Set-ProgressPhase -Phase 'Complete' -Status 'No data'; Complete-Progress; Write-LogHost "Header-only CSV created at: $OutputFile" -ForegroundColor Green; $script:ScriptCompleted = $true; return
+		$script:metrics.TotalStructuredRows = 0; $script:metrics.EffectiveChunkSize = 0; Set-ProgressPhase -Phase 'Complete' -Status 'No data'; Complete-Progress; Write-LogHost "Header-only CSV created at: $(Get-DisplayPath -LocalPath $OutputFile)" -ForegroundColor Green; $script:ScriptCompleted = $true; return
 	}
 	
 	# Determine explosion mode:
@@ -16360,8 +22778,8 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 		Write-LogHost "Phase 4: Writing CSV..." -ForegroundColor Cyan
 		$writeStart = Get-Date
 		
-		# Calculate effective chunk size for CSV writing
-		# OPTIMIZATION: Increased base chunk sizes since Write-CsvRows now uses column index lookup (O(1) vs O(n))
+		# Calculate effective chunk size for CSV writing.
+		# Write-CsvRows uses column index lookup (O(1) vs O(n)), so larger base chunks are safe.
 		$colCount = $columnOrder.Count
 		$effectiveChunkSize = $StreamingChunkSize
 		if ($colCount -gt 1000) { $effectiveChunkSize = [int][Math]::Min($effectiveChunkSize, 3000) }
@@ -16384,8 +22802,8 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 			$endIdx = [Math]::Min($i + $writeChunkSize - 1, $allExplodedRecords.Count - 1)
 			$chunk = $allExplodedRecords[$i..$endIdx]
 			
-			# Rows from parallel explosion are already hashtables - pass directly to CSV writer
-			# Removed: Select-Object -Property $columnOrder (extremely slow with 100+ columns)
+			# Rows from parallel explosion are already hashtables — pass directly to CSV writer.
+			# Avoids Select-Object -Property $columnOrder, which is extremely slow with 100+ columns.
 			if ($chunk.Count -gt 0) {
 				Write-CsvRows -Rows $chunk -Columns $columnOrder
 				$totalWritten += $chunk.Count
@@ -16593,7 +23011,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 			Write-LogHost "Created temporary CSV for Excel append: $tempCsvPath" -ForegroundColor Gray
 		} else {
 			# CSV AppendFile: Append new data to existing CSV
-			Write-LogHost "Appending new data to existing CSV: $OutputFile" -ForegroundColor Cyan
+			Write-LogHost "Appending new data to existing CSV: $(Get-DisplayPath -LocalPath $OutputFile)" -ForegroundColor Cyan
 			try {
 				# Read new data (without header)
 				$newLines = Get-Content -Path $tempCsvPath -ErrorAction Stop | Select-Object -Skip 1
@@ -16644,7 +23062,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				$onlyType = [string]$distinctOps[0]  # Explicit cast to string to avoid array slicing
 				if (-not [string]::IsNullOrWhiteSpace($onlyType)) {
 					$safeType = $onlyType -replace '[\/:*?"<>|]', '_'
-					$singleName = "Purview_Audit_${safeType}_${global:ScriptRunTimestamp}.csv"
+					$singleName = "Purview_Audit_UsageActivity_${safeType}_${global:ScriptRunTimestamp}.csv"
 					$targetPath = Join-Path $OutputPath $singleName
 					if ($OutputFile -ne $targetPath) {
 						Write-LogHost "Detected single-activity result in combined mode: '$onlyType' → Renaming output file to $singleName" -ForegroundColor Yellow
@@ -16714,7 +23132,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 	if ($csvSeparateMode -and -not $OnlyUserInfo -and (Test-Path $OutputFile)) {
 		Write-LogHost ""
 		Write-LogHost "=== Splitting CSV by Activity Type ===" -ForegroundColor Cyan
-		Write-LogHost "Reading combined CSV: $OutputFile" -ForegroundColor Gray
+		Write-LogHost "Reading combined CSV: $(Get-DisplayPath -LocalPath $OutputFile)" -ForegroundColor Gray
 		
 		try {
 			# Read combined CSV
@@ -16736,7 +23154,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 			# Sanitize filename (remove invalid characters)
 			$safeActivityName = $activityType -replace '[\\/:*?"<>|]', '_'
 			# Base name already contains full prefix+timestamp, just prepend activity type
-			$fileName = "Purview_Audit_${safeActivityName}_${global:ScriptRunTimestamp}.csv"
+			$fileName = "Purview_Audit_UsageActivity_${safeActivityName}_${global:ScriptRunTimestamp}.csv"
 			$filePath = Join-Path $outputDir $fileName				# Export to separate CSV
 				$group.Group | Export-Csv -Path $filePath -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
 				$createdFiles += $filePath
@@ -16772,7 +23190,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 			
 		} catch {
 			Write-LogHost "WARNING: CSV splitting failed: $($_.Exception.Message)" -ForegroundColor Yellow
-			Write-LogHost "Combined CSV retained at: $OutputFile" -ForegroundColor Yellow
+			Write-LogHost "Combined CSV retained at: $(Get-DisplayPath -LocalPath $OutputFile)" -ForegroundColor Yellow
 		}
 	}
 	
@@ -17094,9 +23512,12 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 	}
 	
 	# ============================================================
-	# CHECKPOINT COMPLETION: Rename _PARTIAL file and delete checkpoint
+	# CHECKPOINT COMPLETION: Rename _PARTIAL file and delete checkpoint.
+	# In CSV-split / ExportWorkbook modes the intermediate _PARTIAL.csv may already have been
+	# deleted by upstream code paths; Complete-CheckpointRun skips the rename internally when
+	# the partial file is gone but still deletes the checkpoint.
 	# ============================================================
-	if ($script:CheckpointEnabled -and $script:PartialOutputPath -and (Test-Path $script:PartialOutputPath)) {
+	if ($script:CheckpointEnabled) {
 		Complete-CheckpointRun -FinalOutputPath $script:FinalOutputPath
 		# Update OutputFile to point to final path (without _PARTIAL) for correct display
 		$OutputFile = $script:FinalOutputPath
@@ -17104,13 +23525,12 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 	}
 	
 	# ============================================================
-	# FIX 37: FALLBACK LOG RENAME — remove _PARTIAL from log file
-	# When CSV split mode deletes the combined _PARTIAL.csv before
-	# Complete-CheckpointRun runs, the Test-Path guard above fails
-	# and the log file is never renamed. This catch-all handles that
-	# case (and any other code path that could skip the rename).
-	# GUARD: Only rename on genuinely completed runs — interrupted
-	# or failed runs MUST keep _PARTIAL so Resume mode can detect them.
+	# FALLBACK LOG RENAME — remove _PARTIAL from log file.
+	# When CSV split mode deletes the combined _PARTIAL.csv before Complete-CheckpointRun
+	# runs, the Test-Path guard above fails and the log file is never renamed. This catch-all
+	# handles that case (and any other code path that could skip the rename).
+	# GUARD: Only rename on genuinely completed runs — interrupted or failed runs MUST keep
+	# _PARTIAL so Resume mode can detect them.
 	# ============================================================
 	if ($script:LogFile -and $script:LogFile -match '_PARTIAL\.log$' -and (Test-Path $script:LogFile) -and -not $script:CtrlCPressed -and -not $script:EarlyExit) {
 		try {
@@ -17138,7 +23558,6 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 		}
 	} else {
 		# Standard audit log export summary
-		Write-LogHost "Processing mode: $processingMode" -ForegroundColor White
 		Write-LogHost "Records exported: $($script:metrics.TotalStructuredRows)" -ForegroundColor White
 		if ($IncludeUserInfo -and -not $UseEOM -and $script:EntraUsersData) {
 			Write-LogHost "Entra users exported: $($script:EntraUsersData.Count)" -ForegroundColor White
@@ -17298,10 +23717,10 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 	}
 	Write-LogHost ""
 	
-	# File output summary (skip for -OnlyUserInfo mode)
-	if (-not $OnlyUserInfo) {
+	# File output summary (skip for -OnlyUserInfo and -OnlyAgent365Info modes)
+	if (-not $OnlyUserInfo -and -not $OnlyAgent365Info) {
 		if ($ExportWorkbook -and $OutputFile -match '\.xlsx$') {
-			Write-LogHost "Output workbook: $OutputFile" -ForegroundColor White
+			Write-LogHost "Output workbook: $(Get-DisplayPath -LocalPath $OutputFile)" -ForegroundColor White
 			Write-LogHost "Workbook mode: $(if ($CombineOutput) { 'Single-tab (Combined)' } else { 'Multi-tab (By Activity Type)' })" -ForegroundColor White
 			if ($IncludeUserInfo -and -not $UseEOM) { Write-LogHost "Entra Users Tab: EntraUsers_MAClicensing" -ForegroundColor Gray }
 			if (Test-Path $OutputFile) {
@@ -17312,31 +23731,32 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 			}
 		} elseif ($script:CsvSplitFiles -and $script:CsvSplitFiles.Count -gt 0) {
 			# CSV was split into multiple files
-			Write-LogHost "Output directory: $(Split-Path $OutputFile -Parent)" -ForegroundColor White
+			Write-LogHost "Output directory: $(Get-DisplayPath -LocalPath (Split-Path $OutputFile -Parent) -Directory)" -ForegroundColor White
 			Write-LogHost "Files created: $($script:CsvSplitFiles.Count) separate CSV files" -ForegroundColor White
 			$totalSize = ($script:CsvSplitFiles | ForEach-Object { (Get-Item $_).Length } | Measure-Object -Sum).Sum
 			Write-LogHost "Total size: $([math]::Round($totalSize / 1KB,2)) KB" -ForegroundColor White
 			if ($IncludeUserInfo -and -not $UseEOM) {
 				$entraSplit = (Join-Path (Split-Path $OutputFile -Parent) "EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.csv")
-				if (Test-Path $entraSplit) { $entraSize = [math]::Round((Get-Item $entraSplit).Length / 1KB,2); Write-LogHost "Entra Users File: $(Split-Path $entraSplit -Leaf) ($entraSize KB)" -ForegroundColor Gray } else { Write-LogHost "Entra Users File: $(Split-Path $entraSplit -Leaf) (pending generation)" -ForegroundColor Gray }
+				if (Test-Path $entraSplit) { $entraSize = [math]::Round((Get-Item $entraSplit).Length / 1KB,2); Write-LogHost "Entra Users File: $(Get-DisplayPath -LocalPath $entraSplit) ($entraSize KB)" -ForegroundColor Gray } else { Write-LogHost "Entra Users File: $(Get-DisplayPath -LocalPath $entraSplit) (pending generation)" -ForegroundColor Gray }
 			}
 			
 			# Show filename pattern instead of listing each file
-			$outputDir = Split-Path $OutputFile -Parent
-			$timestamp = [System.IO.Path]::GetFileNameWithoutExtension($script:CsvSplitFiles[0]) -replace '.*_(\d{8}_\d{6}).*', '$1'
-			Write-LogHost "Output pattern: ${outputDir}\Purview_Audit_<ActivityType>_${timestamp}.csv" -ForegroundColor Gray
+			$outputDir   = Split-Path $OutputFile -Parent
+			$displayDir3 = (Get-DisplayPath -LocalPath $outputDir -Directory).TrimEnd('/','\')
+			$timestamp   = [System.IO.Path]::GetFileNameWithoutExtension($script:CsvSplitFiles[0]) -replace '.*_(\d{8}_\d{6}).*', '$1'
+			Write-LogHost "Output pattern: ${displayDir3}\Purview_Audit_UsageActivity_<ActivityType>_${timestamp}.csv" -ForegroundColor Gray
 		} elseif (Test-Path $OutputFile) {
-			Write-LogHost "Output file: $OutputFile" -ForegroundColor White
+			Write-LogHost "Output file: $(Get-DisplayPath -LocalPath $OutputFile)" -ForegroundColor White
 			Write-LogHost "File size: $([math]::Round((Get-Item $OutputFile).Length / 1KB,2)) KB" -ForegroundColor White
 			if ($IncludeUserInfo -and -not $UseEOM) {
 				$entraCombined = (Join-Path (Split-Path $OutputFile -Parent) "EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.csv")
-				if (Test-Path $entraCombined) { $entraSize = [math]::Round((Get-Item $entraCombined).Length / 1KB,2); Write-LogHost "Entra Users File: $entraCombined ($entraSize KB)" -ForegroundColor Gray } else { Write-LogHost "Entra Users File: $entraCombined (pending)" -ForegroundColor Gray }
+				if (Test-Path $entraCombined) { $entraSize = [math]::Round((Get-Item $entraCombined).Length / 1KB,2); Write-LogHost "Entra Users File: $(Get-DisplayPath -LocalPath $entraCombined) ($entraSize KB)" -ForegroundColor Gray } else { Write-LogHost "Entra Users File: $(Get-DisplayPath -LocalPath $entraCombined) (pending)" -ForegroundColor Gray }
 			}
 		} else {
-			Write-LogHost "Output file: $OutputFile" -ForegroundColor White
+			Write-LogHost "Output file: $(Get-DisplayPath -LocalPath $OutputFile)" -ForegroundColor White
 			if ($IncludeUserInfo -and -not $UseEOM) {
 				$entraCombined = (Join-Path (Split-Path $OutputFile -Parent) "EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.csv")
-				Write-LogHost "Entra Users File: $entraCombined (pending)" -ForegroundColor Gray
+				Write-LogHost "Entra Users File: $(Get-DisplayPath -LocalPath $entraCombined) (pending)" -ForegroundColor Gray
 			}
 			Write-LogHost "File size: N/A (file may have been deleted/moved during processing)" -ForegroundColor DarkGray
 		}
@@ -17360,7 +23780,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				}
 				$sw.WriteLine(($escapedCols -join ','))
 				$sw.Flush(); $sw.Dispose()
-				Write-LogHost "Header-only CSV created at: $OutputFile" -ForegroundColor Green
+				Write-LogHost "Header-only CSV created at: $(Get-DisplayPath -LocalPath $OutputFile)" -ForegroundColor Green
 			} catch {
 				Write-LogHost "Failed to write header-only CSV for ${OutputFile}: $($_.Exception.Message)" -ForegroundColor Red
 			}
@@ -17374,7 +23794,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				$timestamp = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile) -replace '.*_(\d{8}_\d{6}).*', '$1'
 				$headerColumns = if ($ExplodeDeep -or $ExplodeArrays -or $ForcedRawInputCsvExplosion) { $PurviewExplodedHeader } else { @('RecordId', 'CreationDate', 'RecordType', 'Operation', 'UserId', 'AuditData', 'AssociatedAdminUnits', 'AssociatedAdminUnitsNames') }
 				foreach ($actType in $ActivityTypes) {
-					$file = Join-Path $outputDir ("Purview_Audit_{0}_{1}.csv" -f $actType, $timestamp)
+					$file = Join-Path $outputDir ("Purview_Audit_UsageActivity_{0}_{1}.csv" -f $actType, $timestamp)
 					try {
 						$outputDirEmpty = Split-Path $file -Parent
 						if (-not (Test-Path $outputDirEmpty)) { New-Item -ItemType Directory -Path $outputDirEmpty -Force | Out-Null }
@@ -17390,7 +23810,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 						}
 						$sw.WriteLine(($escapedCols -join ','))
 						$sw.Flush(); $sw.Dispose()
-						Write-LogHost "Header-only CSV created at: $file" -ForegroundColor Green
+						Write-LogHost "Header-only CSV created at: $(Get-DisplayPath -LocalPath $file)" -ForegroundColor Green
 					} catch {
 						Write-LogHost "Failed to write header-only CSV for ${file}: $($_.Exception.Message)" -ForegroundColor Red
 					}
@@ -17399,29 +23819,300 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				Write-LogHost "Failed to emit per-activity header-only CSVs: $($_.Exception.Message)" -ForegroundColor Red
 			}
 		}
-	} else {
+	} elseif ($OnlyUserInfo) {
 		# -OnlyUserInfo mode: Show only EntraUsers file
 		$entraFile = (Join-Path (Split-Path $OutputFile -Parent) "EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.csv")
 		if (Test-Path $entraFile) {
 			$entraSize = [math]::Round((Get-Item $entraFile).Length / 1KB, 2)
-			Write-LogHost "EntraUsers file: $entraFile" -ForegroundColor White
+			Write-LogHost "EntraUsers file: $(Get-DisplayPath -LocalPath $entraFile)" -ForegroundColor White
 			Write-LogHost "File size: $entraSize KB" -ForegroundColor White
 		} else {
-			Write-LogHost "EntraUsers file: $entraFile (not found)" -ForegroundColor Yellow
+			Write-LogHost "EntraUsers file: $(Get-DisplayPath -LocalPath $entraFile) (not found)" -ForegroundColor Yellow
+		}
+	} else {
+		# -OnlyAgent365Info mode: Agent 365 file path is printed by the Agent 365 phase block below
+		Write-LogHost "Mode: OnlyAgent365Info (Agent 365 file path shown below)" -ForegroundColor Cyan
+	}
+	
+	# === Microsoft Agent 365 enrichment phase (-IncludeAgent365Info / -OnlyAgent365Info) ===
+	# The interactive sign-in (when -Auth AppRegistration) is performed UP-FRONT by
+	# Invoke-Agent365EarlyInteractiveSignIn so the audit phase runs unattended. Phase 2
+	# here just emits the file using the cached delegated context.
+	if ($IncludeAgent365Info -or $OnlyAgent365Info) {
+		try {
+			$agentResult = Invoke-Agent365Phase
+			if ($agentResult -and $agentResult.Rows -and $agentResult.Rows.Count -gt 0) {
+				if ($ExportWorkbook -and $OutputFile -and (Test-Path $OutputFile -ErrorAction SilentlyContinue)) {
+					Add-Agent365WorkbookTab -WorkbookPath $OutputFile -Rows $agentResult.Rows
+				}
+				if ($agentResult.CsvPath) {
+					Write-LogHost ("Agent 365 file: {0}" -f (Get-DisplayPath -LocalPath $agentResult.CsvPath)) -ForegroundColor White
+				}
+			}
+		} catch {
+			Write-LogHost ("WARNING: Agent 365 phase failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
 		}
 	}
 	
-	Write-LogHost "Log file: $LogFile" -ForegroundColor White
+	Write-LogHost "Log file: $(Get-DisplayPath -LocalPath $LogFile)" -ForegroundColor White
 	
 	# Mark script as completed normally (used by finally block to detect Ctrl+C)
 	$script:ScriptCompleted = $true
-	
-	# Clean up incremental JSONL files from this run after successful completion
-	# CRITICAL: Must happen AFTER explosion completes, using timestamp to identify this run's files
-	# This avoids the issue where $script:PartialOutputPath is null after Complete-CheckpointRun
+
+	# ============================================================
+	# ROLLUP POST-PROCESSOR WIRE-UP
+	# ------------------------------------------------------------
+	# Runs only when:
+	#   - User passed -Rollup or -RollupPlusRaw (or restored from checkpoint on resume),
+	#   - The audit run completed successfully (no Ctrl+C, no early exit, ScriptCompleted),
+	#   - $script:RollupProcessorMode resolved to a real processor (gated up-front).
+	#
+	# Failure semantics: the embedded post-processor is best-effort. A non-zero exit code
+	# logs an error and KEEPS raw outputs (regardless of -Rollup vs -RollupPlusRaw). It does
+	# NOT throw past this point and does NOT mark the audit run as failed — the raw CSVs
+	# already on disk are the canonical successful output.
+	# ============================================================
+	if ($script:RollupProcessorMode -and $script:RollupProcessorMode -in @('CopilotInteraction','M365Bundle') `
+		-and $script:ScriptCompleted -and -not $script:CtrlCPressed -and -not $script:EarlyExit) {
+
+		$rollupSuccess = $false
+		$rollupOutputDir = Split-Path $OutputFile -Parent
+		$rollupIncDir = Join-Path $rollupOutputDir ".pax_incremental"
+		$rollupSwitchUsed = if ($Rollup) { '-Rollup' } else { '-RollupPlusRaw' }
+
+		Write-LogHost ""
+		Write-LogHost "═══════════════════════════════════════════════════════" -ForegroundColor Cyan
+		Write-LogHost "  ROLLUP POST-PROCESSOR ($rollupSwitchUsed) — mode: $script:RollupProcessorMode" -ForegroundColor Cyan
+		Write-LogHost "═══════════════════════════════════════════════════════" -ForegroundColor Cyan
+
+		try {
+			# 1. Resolve Python interpreter (auto-installs 3.13 via winget/python.org if missing).
+			$pyResolved = Resolve-PythonExe -AllowAutoInstall
+			$pyDisplay = if ($pyResolved.Args -and $pyResolved.Args.Count -gt 0) { "$($pyResolved.Path) $($pyResolved.Args -join ' ')" } else { $pyResolved.Path }
+			Write-LogHost "Rollup: using Python $($pyResolved.Version) at '$pyDisplay'" -ForegroundColor Gray
+
+			# 2. Best-effort orjson install (processors fall back to stdlib json on import failure).
+			[void](Install-OrjsonIfMissing -PythonExe $pyResolved.Path -LauncherArgs $pyResolved.Args)
+
+			# 3. Build processor-specific argument vector.
+			$rollupArgs = $null
+			$rollupRawCsvList = New-Object System.Collections.Generic.List[string]
+			# Internal-input deletion list: files consumed only as join inputs by the
+			# rollup processor (e.g. the Entra users CSV for CopilotInteraction). These
+			# are deleted under -Rollup and retained under -RollupPlusRaw. Population
+			# is processor-specific below.
+			$rollupAlwaysDeleteList = New-Object System.Collections.Generic.List[string]
+			# Extra-retained list: files that exist on disk and are NEVER deleted by the
+			# rollup retention logic but should still be surfaced in the post-rollup
+			# summary so the user can see every file produced by the run. Examples:
+			# the Entra users CSV under -RollupPlusRaw (CopilotInteraction) or under
+			# -IncludeUserInfo (M365Bundle, where the processor doesn't consume it).
+			$rollupRetainedExtraList = New-Object System.Collections.Generic.List[string]
+
+			# Resolve the actual Purview CSV path. $OutputFile may have been renamed by the
+			# single-activity downgrade (Purview_Audit_UsageActivity_<ActivityType>_<ts>.csv). If the path
+			# at $OutputFile does not exist, fall back to a timestamp-scoped glob in the
+			# output dir (excluding EntraUsers and Agent365 companion CSVs).
+			$rollupPurviewCsv = $OutputFile
+			if (-not (Test-Path -LiteralPath $rollupPurviewCsv)) {
+				$rollupCandidates = Get-ChildItem -LiteralPath $rollupOutputDir -Filter "Purview_Audit_*_${global:ScriptRunTimestamp}.csv" -File -ErrorAction SilentlyContinue |
+					Where-Object { $_.Name -notlike 'EntraUsers_*' -and $_.Name -notlike 'Agent365_*' }
+				if ($rollupCandidates -and $rollupCandidates.Count -eq 1) {
+					$rollupPurviewCsv = $rollupCandidates[0].FullName
+					Write-LogHost "Rollup: resolved Purview CSV via timestamp glob: $(Get-DisplayPath -LocalPath $rollupPurviewCsv)" -ForegroundColor Gray
+				}
+				elseif ($rollupCandidates -and $rollupCandidates.Count -gt 1) {
+					throw "Rollup: multiple candidate Purview CSVs found for timestamp ${global:ScriptRunTimestamp} in '$rollupOutputDir'. Re-run with -CombineOutput to produce a single combined CSV."
+				}
+			}
+
+			if ($script:RollupProcessorMode -eq 'M365Bundle') {
+				if (-not (Test-Path -LiteralPath $rollupPurviewCsv)) {
+					throw "Rollup: expected combined Purview CSV not found at '$rollupPurviewCsv'."
+				}
+				$rollupArgs = @('--input', $rollupPurviewCsv, '--output-dir', $rollupOutputDir, '--mode', 'rollup')
+				$rollupRawCsvList.Add($rollupPurviewCsv)
+				# The M365Bundle processor does NOT consume the Entra users CSV. When
+				# -IncludeUserInfo produced one, it is always retained — surface it in
+				# the post-rollup summary so the user sees it alongside the rollup output.
+				if ($IncludeUserInfo) {
+					$rollupEntraCsvM365 = Join-Path $rollupOutputDir "EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.csv"
+					if (Test-Path -LiteralPath $rollupEntraCsvM365) {
+						$rollupRetainedExtraList.Add($rollupEntraCsvM365)
+					}
+				}
+			}
+			elseif ($script:RollupProcessorMode -eq 'CopilotInteraction') {
+				if (-not (Test-Path -LiteralPath $rollupPurviewCsv)) {
+					throw "Rollup: expected Purview CSV not found at '$rollupPurviewCsv'."
+				}
+				$rollupEntraCsv = Join-Path $rollupOutputDir "EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.csv"
+				if (-not (Test-Path -LiteralPath $rollupEntraCsv)) {
+					throw "Rollup: required Entra users CSV not found at '$rollupEntraCsv'. -IncludeUserInfo must produce a CSV (not a workbook tab)."
+				}
+				$rollupEntraInfo = Get-Item -LiteralPath $rollupEntraCsv
+				if ($rollupEntraInfo.Length -le 0) {
+					throw "Rollup: Entra users CSV at '$rollupEntraCsv' is empty (0 bytes)."
+				}
+				$rollupArgs = @('--purview', $rollupPurviewCsv, '--entra', $rollupEntraCsv, '--out-dir', $rollupOutputDir)
+				$rollupRawCsvList.Add($rollupPurviewCsv)
+				# EntraUsers CSV is an internal join input to the CopilotInteraction processor.
+				# Under -Rollup it is deleted alongside the raw Purview CSV. Under -RollupPlusRaw
+				# the user has explicitly opted to retain raw inputs, so keep the Entra CSV too
+				# and surface it in the retained-summary block.
+				if (-not $RollupPlusRaw) {
+					$rollupAlwaysDeleteList.Add($rollupEntraCsv)
+				}
+				else {
+					$rollupRetainedExtraList.Add($rollupEntraCsv)
+				}
+			}
+
+			# 4. Invoke embedded processor (writes temp .py into .pax_incremental, deletes on exit).
+			$rollupExit = Invoke-EmbeddedProcessor `
+				-ProcessorMode  $script:RollupProcessorMode `
+				-PythonExe      $pyResolved.Path `
+				-LauncherArgs   $pyResolved.Args `
+				-ProcessorArgs  $rollupArgs `
+				-IncrementalDir $rollupIncDir
+
+			if ($rollupExit -eq 0) {
+				$rollupSuccess = $true
+				Write-LogHost "Rollup: post-processor completed successfully (exit 0)." -ForegroundColor Green
+			}
+			else {
+				Write-LogHost "Rollup: post-processor returned non-zero exit code $rollupExit. Raw CSV(s) preserved." -ForegroundColor Red
+			}
+		}
+		catch {
+			Write-LogHost "Rollup: post-processor failed: $($_.Exception.Message)" -ForegroundColor Red
+			Write-Log    "Rollup: $($_.ScriptStackTrace)"
+			$rollupSuccess = $false
+		}
+
+		# 5. Retention: -Rollup deletes raw CSV(s) on success; -RollupPlusRaw always keeps them;
+		#    any failure ALWAYS keeps them (regardless of which switch).
+		#    NOTE: The Agent 365 catalog CSV (Agent365_<ts>.csv) is intentionally
+		#    NEVER added to $rollupRawCsvList because the Analytics-Hub Power BI dashboards
+		#    consume it as a companion input alongside the rollup output. The defensive
+		#    file-name guard below is belt-and-suspenders against a future refactor that
+		#    might inadvertently include it.
+		if ($rollupSuccess -and $Rollup -and -not $RollupPlusRaw) {
+			foreach ($rollupRawPath in $rollupRawCsvList) {
+				if ([System.IO.Path]::GetFileName($rollupRawPath) -like 'Agent365_*') {
+					Write-LogHost "Rollup: skipping Agent 365 catalog CSV (always retained as Power BI companion): $(Get-DisplayPath -LocalPath $rollupRawPath)" -ForegroundColor DarkGray
+					continue
+				}
+				try {
+					if (Test-Path -LiteralPath $rollupRawPath) {
+						Remove-Item -LiteralPath $rollupRawPath -Force -ErrorAction Stop
+						Write-LogHost "Rollup: deleted raw CSV (per -Rollup): $(Get-DisplayPath -LocalPath $rollupRawPath)" -ForegroundColor DarkGray
+					}
+				}
+				catch {
+					Write-LogHost "Rollup: failed to delete raw CSV '$(Get-DisplayPath -LocalPath $rollupRawPath)': $($_.Exception.Message)" -ForegroundColor Yellow
+				}
+			}
+		}
+		elseif ($rollupSuccess -and $RollupPlusRaw) {
+			Write-LogHost "Rollup: raw CSV(s) retained (per -RollupPlusRaw):" -ForegroundColor Gray
+			foreach ($rollupRawPath in $rollupRawCsvList) {
+				Write-LogHost "  Raw output:     $(Get-DisplayPath -LocalPath $rollupRawPath)" -ForegroundColor Gray
+			}
+			foreach ($rollupExtraPath in $rollupRetainedExtraList) {
+				if (Test-Path -LiteralPath $rollupExtraPath) {
+					Write-LogHost "  Raw output:     $(Get-DisplayPath -LocalPath $rollupExtraPath)" -ForegroundColor Gray
+				}
+			}
+		}
+
+		# Always-delete list: files that are internal rollup inputs and must never be
+		# retained as customer artifacts (e.g. Entra users CSV). Deleted on rollup success
+		# regardless of -Rollup vs -RollupPlusRaw. On failure they are preserved alongside
+		# the raw Purview CSV so the user can re-invoke the rollup manually.
+		if ($rollupSuccess) {
+			foreach ($rollupAlwaysDeletePath in $rollupAlwaysDeleteList) {
+				try {
+					if (Test-Path -LiteralPath $rollupAlwaysDeletePath) {
+						Remove-Item -LiteralPath $rollupAlwaysDeletePath -Force -ErrorAction Stop
+						Write-LogHost "Rollup: deleted internal input CSV: $(Get-DisplayPath -LocalPath $rollupAlwaysDeletePath)" -ForegroundColor DarkGray
+					}
+				}
+				catch {
+					Write-LogHost "Rollup: failed to delete internal input CSV '$(Get-DisplayPath -LocalPath $rollupAlwaysDeletePath)': $($_.Exception.Message)" -ForegroundColor Yellow
+				}
+			}
+		}
+
+		# Surface any extra retained files (e.g. M365Bundle + -IncludeUserInfo Entra CSV,
+		# which the M365 processor never consumes and which is therefore always kept).
+		# Under -RollupPlusRaw these were already listed above; only emit here for the
+		# -Rollup case to avoid double-printing.
+		if ($rollupSuccess -and $Rollup -and -not $RollupPlusRaw -and $rollupRetainedExtraList.Count -gt 0) {
+			Write-LogHost "Rollup: file(s) retained (not consumed by this processor):" -ForegroundColor Gray
+			foreach ($rollupExtraPath in $rollupRetainedExtraList) {
+				if (Test-Path -LiteralPath $rollupExtraPath) {
+					Write-LogHost "  Retained:       $(Get-DisplayPath -LocalPath $rollupExtraPath)" -ForegroundColor Gray
+				}
+			}
+		}
+		Write-LogHost "═══════════════════════════════════════════════════════" -ForegroundColor Cyan
+		Write-LogHost ""
+	}
+
+	# Local-mode consolidated artifact listing — when no remote destination is set, surface
+	# a single end-of-run list of all customer-visible files produced this run (audit CSV/XLSX,
+	# EntraUsers, Agent365, rollup outputs, log, metrics). Mirrors the remote upload sweep's
+	# scoping logic so customers see the same picture whether output is local or remote.
+	if ($script:RemoteOutputMode -eq 'None' -and $global:ScriptRunTimestamp) {
+		$listingDir = Split-Path $OutputFile -Parent
+		if ($listingDir -and (Test-Path $listingDir)) {
+			$listingCandidates = Get-ChildItem -Path $listingDir -File -ErrorAction SilentlyContinue |
+				Where-Object { $_.Name -like "*${global:ScriptRunTimestamp}*" -and $_.Name -notlike '.pax_*' -and $_.Name -notlike '*_PARTIAL.*' } |
+				Sort-Object Name
+			if ($listingCandidates -and $listingCandidates.Count -gt 0) {
+				Write-LogHost ("Output files created ({0}):" -f $listingCandidates.Count) -ForegroundColor Cyan
+				foreach ($listingFile in $listingCandidates) {
+					$sizeKB = [math]::Round($listingFile.Length / 1KB, 2)
+					Write-LogHost ("  {0} ({1} KB)" -f $listingFile.FullName, $sizeKB) -ForegroundColor Gray
+				}
+				Write-LogHost ""
+			}
+		}
+	}
+
+	# Remote upload sweep — upload all customer-visible artifacts produced this run to the
+	# remote destination (SharePoint or Fabric). Done in a single sweep AFTER all writers
+	# (audit CSV/XLSX, EntraUsers CSV, Agent365 CSV, rollup output) have closed but BEFORE
+	# the local scratch cleanup. Scoped strictly to this run's $global:ScriptRunTimestamp.
+	# Skipped automatically when remote mode is None.
+	if ($script:RemoteOutputMode -ne 'None' -and $global:ScriptRunTimestamp) {
+		$uploadDir = Split-Path $OutputFile -Parent
+		if ($uploadDir -and (Test-Path $uploadDir)) {
+			$uploadCandidates = Get-ChildItem -Path $uploadDir -File -ErrorAction SilentlyContinue |
+				Where-Object { $_.Name -like "*${global:ScriptRunTimestamp}*" -and $_.Name -notlike '.pax_*' }
+			if ($uploadCandidates -and $uploadCandidates.Count -gt 0) {
+				Write-LogHost ("Uploading {0} artifact(s) to {1}..." -f $uploadCandidates.Count, $script:RemoteOutputMode) -ForegroundColor Cyan
+				foreach ($uploadFile in $uploadCandidates) {
+					try {
+						Invoke-OutputUpload -LocalPath $uploadFile.FullName
+					} catch {
+						Write-LogHost ("WARNING: Upload failed for '{0}': {1}" -f $uploadFile.Name, $_.Exception.Message) -ForegroundColor Yellow
+					}
+				}
+			}
+		}
+	}
+
+	# Clean up incremental JSONL files from this run after successful completion.
+	# CRITICAL: Must happen AFTER explosion completes, using timestamp to identify this run's files.
+	# This avoids the issue where $script:PartialOutputPath is null after Complete-CheckpointRun.
+	# Pattern is *.jsonl (not *records.jsonl) so that page-flush files (named
+	# Part{N}_<ts>_qid-<qid>_<jobRunId>.jsonl, no "records" suffix) are also removed.
+	# The embedded $global:ScriptRunTimestamp keeps this scoped strictly to this run's files.
 	$incrementalDir = Join-Path (Split-Path $OutputFile -Parent) ".pax_incremental"
 	if (Test-Path $incrementalDir) {
-		$thisRunPattern = "*_${global:ScriptRunTimestamp}_*records.jsonl"
+		$thisRunPattern = "*_${global:ScriptRunTimestamp}_*.jsonl"
 		$thisRunFiles = Get-ChildItem -Path $incrementalDir -Filter $thisRunPattern -ErrorAction SilentlyContinue
 		if ($thisRunFiles -and $thisRunFiles.Count -gt 0) {
 			try {
@@ -17431,12 +24122,41 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				Write-LogHost "Note: Could not remove incremental JSONL files: $($_.Exception.Message)" -ForegroundColor DarkGray
 			}
 		}
+		# Reap any embedded-rollup temp .py file scoped to THIS run. The normal code path
+		# deletes it inside Invoke-EmbeddedProcessor's finally, but if the runtime died between
+		# WriteAllText and the finally (rare), this cleanup is the backstop.
+		$thisRunPyPattern = "PAX_*_${global:ScriptRunTimestamp}.py"
+		$thisRunPyFiles = Get-ChildItem -Path $incrementalDir -Filter $thisRunPyPattern -ErrorAction SilentlyContinue
+		if ($thisRunPyFiles -and $thisRunPyFiles.Count -gt 0) {
+			try {
+				$thisRunPyFiles | Remove-Item -Force -ErrorAction Stop
+				Write-LogHost "Rollup temp .py files cleaned up ($($thisRunPyFiles.Count) files from this run)" -ForegroundColor DarkGray
+			} catch {
+				Write-LogHost "Note: Could not remove rollup temp .py files: $($_.Exception.Message)" -ForegroundColor DarkGray
+			}
+		}
 		# Also remove the directory if it's now empty
 		$remaining = Get-ChildItem -Path $incrementalDir -ErrorAction SilentlyContinue
 		if (-not $remaining -or $remaining.Count -eq 0) {
 			try {
 				Remove-Item -Path $incrementalDir -Force -ErrorAction SilentlyContinue
 			} catch {}
+		}
+	}
+	
+	# Defensive checkpoint sweep — if Complete-CheckpointRun didn't run or failed silently
+	# (file lock during atomic-write merge, etc.), reap any orphaned checkpoint tied to THIS
+	# specific run timestamp.
+	if ($global:ScriptRunTimestamp) {
+		$checkpointDirSweep = Split-Path $OutputFile -Parent
+		$ckptThisRun = Join-Path $checkpointDirSweep ".pax_checkpoint_${global:ScriptRunTimestamp}.json"
+		if (Test-Path $ckptThisRun) {
+			try {
+				Remove-Item -Path $ckptThisRun -Force -ErrorAction Stop
+				Write-LogHost "Checkpoint file cleaned up: $ckptThisRun" -ForegroundColor DarkGray
+			} catch {
+				Write-LogHost "Note: Could not remove checkpoint file: $($_.Exception.Message)" -ForegroundColor DarkGray
+			}
 		}
 	}
 }
@@ -17461,6 +24181,43 @@ finally {
 	if (-not $script:ScriptCompleted -and -not $script:EarlyExit -and -not $script:CtrlCPressed) {
 		# Script was interrupted - likely Ctrl+C that wasn't caught by PipelineStoppedException
 		$script:CtrlCPressed = $true
+	}
+	
+	# Defensive idempotent cleanup safety net.
+	# If the success-path cleanup in the try-block was bypassed by a late exception (e.g.
+	# Agent365 phase, output summary), reap this run's incremental JSONLs and checkpoint here.
+	# Gated on the SAME success criteria as the _PARTIAL log rename: script completed AND not
+	# Ctrl+C AND not early-exit. Idempotent — no-op if the success path already cleaned up.
+	if ($script:ScriptCompleted -and -not $script:CtrlCPressed -and -not $script:EarlyExit -and $global:ScriptRunTimestamp) {
+		try {
+			$cleanupBaseDir = if ($OutputFile) { Split-Path $OutputFile -Parent } elseif ($OutputPath) { $OutputPath } else { $null }
+			if ($cleanupBaseDir -and (Test-Path $cleanupBaseDir)) {
+				# Incremental JSONLs scoped to this run only
+				$cleanupIncDir = Join-Path $cleanupBaseDir ".pax_incremental"
+				if (Test-Path $cleanupIncDir) {
+					$cleanupFiles = Get-ChildItem -Path $cleanupIncDir -Filter "*_${global:ScriptRunTimestamp}_*.jsonl" -ErrorAction SilentlyContinue
+					if ($cleanupFiles -and $cleanupFiles.Count -gt 0) {
+						$cleanupFiles | Remove-Item -Force -ErrorAction SilentlyContinue
+					}
+					# Also reap rollup temp .py files scoped to this run.
+					$cleanupPyFiles = Get-ChildItem -Path $cleanupIncDir -Filter "PAX_*_${global:ScriptRunTimestamp}.py" -ErrorAction SilentlyContinue
+					if ($cleanupPyFiles -and $cleanupPyFiles.Count -gt 0) {
+						$cleanupPyFiles | Remove-Item -Force -ErrorAction SilentlyContinue
+					}
+					$cleanupRemaining = Get-ChildItem -Path $cleanupIncDir -ErrorAction SilentlyContinue
+					if (-not $cleanupRemaining -or $cleanupRemaining.Count -eq 0) {
+						Remove-Item -Path $cleanupIncDir -Force -ErrorAction SilentlyContinue
+					}
+				}
+				# Checkpoint scoped to this run only
+				$cleanupCkpt = Join-Path $cleanupBaseDir ".pax_checkpoint_${global:ScriptRunTimestamp}.json"
+				if (Test-Path $cleanupCkpt) {
+					Remove-Item -Path $cleanupCkpt -Force -ErrorAction SilentlyContinue
+				}
+			}
+		} catch {
+			# Non-fatal: cleanup is best-effort
+		}
 	}
 	
 	# Show graceful exit message if interrupted (and not already shown by engine event handler)
@@ -17578,7 +24335,39 @@ finally {
 	# NOTE: JSONL cleanup for successful runs is now handled at true script completion
 	# (after explosion, before this finally block) using timestamp-based file matching.
 	# This finally block only handles abnormal termination scenarios.
-	
+
+	# Remote-output: final upload of metrics JSON + log file (best-effort; runs on every
+	# exit path including error/Ctrl+C so operators can see the run output remotely).
+	# Skip entirely when the destination probe never succeeded (e.g. pre-flight failure):
+	# in that case the structured pre-flight banner is the entire failure output and we
+	# must not emit trailing upload-failure noise after it.
+	$remoteProbeOk = ($script:RemoteOutputMode -eq 'SharePoint' -and $script:SPResolved) -or `
+	                 ($script:RemoteOutputMode -eq 'Fabric'     -and $script:FabricResolved)
+	if ($script:RemoteOutputMode -ne 'None' -and $remoteProbeOk -and $script:EarlyExit -ne 'PreFlightFailure') {
+		try {
+			if ($metricsPath -and (Test-Path -LiteralPath $metricsPath -ErrorAction SilentlyContinue)) {
+				try { Invoke-OutputUpload -LocalPath $metricsPath } catch { Write-Verbose ("Metrics upload failed: {0}" -f $_.Exception.Message) }
+			}
+			if ($LogFile -and (Test-Path -LiteralPath $LogFile -ErrorAction SilentlyContinue)) {
+				try { Invoke-OutputUpload -LocalPath $LogFile } catch { Write-Verbose ("Log file upload failed: {0}" -f $_.Exception.Message) }
+			}
+		} catch {}
+	}
+
+	# Remote-output: scratch directory cleanup. Only on a clean, successful run — preserve
+	# scratch on Ctrl+C / early-exit / failure so the operator can inspect locally if running
+	# attended, or so a re-run from the same container can resume from local state.
+	if ($script:RemoteScratchDir -and $script:ScriptCompleted -and -not $script:CtrlCPressed -and -not $script:EarlyExit) {
+		try {
+			if (Test-Path -LiteralPath $script:RemoteScratchDir) {
+				Remove-Item -LiteralPath $script:RemoteScratchDir -Recurse -Force -ErrorAction Stop
+				Write-LogHost ("Scratch directory cleaned up: {0}" -f $script:RemoteScratchDir) -ForegroundColor DarkGray
+			}
+		} catch {
+			Write-LogHost ("WARNING: Scratch cleanup failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+		}
+	}
+
 	$exitCode = 0; if ($script:circuitBreakerOpen) { $exitCode = 20 } elseif (($script:Hit10KLimit -or $script:Hit1MLimit) -and -not $AutoCompleteness) { $exitCode = 10 }
 	Write-LogHost "Exit code: $exitCode" -ForegroundColor DarkGray
 	exit $exitCode
