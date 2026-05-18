@@ -4,15 +4,43 @@
     Azure Container Apps Jobs writing to SharePoint or Fabric/OneLake.
 
 .DESCRIPTION
+    IMPORTANT: Microsoft Agent 365 enrichment is temporarily disabled pending further
+    testing. The switches -IncludeAgent365Info, -OnlyAgent365Info,
+    -OutputPathAgent365Info, and -AppendAgent365Info are gated at PAX startup and
+    will cause the script to exit immediately with a notice. References to Agent 365
+    elsewhere in this help text are preserved for when the feature is re-enabled.
+
     One-time bootstrap script. Performs (idempotently):
 
       1. Creates (or reuses) a user-assigned managed identity.
       2. Grants AcrPull on the specified Azure Container Registry to the identity.
-      3. Grants Microsoft Graph application permissions (AuditLog.Read.All, User.Read.All,
-         Organization.Read.All, Application.Read.All; + optional SharePoint scopes
-         Sites.ReadWrite.All, Files.ReadWrite.All) and ADMIN-CONSENTS them on the
-         identity's service principal.
-      4. (SharePoint mode) Verifies SharePoint scopes are present.
+      3. Grants Microsoft Graph application permissions and ADMIN-CONSENTS them on
+         the identity's service principal:
+           - AuditLogsQuery.Read.All                  (always — /security/auditLog/queries)
+           - User.Read.All                            (always — /users for EntraUsers)
+           - Organization.Read.All                    (always — /subscribedSkus for license map)
+           - GroupMember.Read.All                     (always — /groups, /groups/{id}/members,
+                                                       only consumed when -GroupNames is passed
+                                                       to PAX, but pre-granted so the same
+                                                       image works for both call shapes)
+           - AuditLogsQuery-Exchange.Read.All         (-IncludeM365Usage only)
+           - AuditLogsQuery-OneDrive.Read.All         (-IncludeM365Usage only)
+           - AuditLogsQuery-SharePoint.Read.All       (-IncludeM365Usage only)
+           - Sites.ReadWrite.All, Files.ReadWrite.All (SharePoint mode only)
+
+         NOT granted (intentionally):
+           - AuditLog.Read.All        — different endpoint (Entra audit activities), not
+                                        used by PAX.
+           - CopilotPackages.Read.All — Agent 365 enrichment requires a user-bound role
+                                        (AI Admin / Global Admin) that a managed identity
+                                        cannot hold. PAX rejects -IncludeAgent365Info /
+                                        -OnlyAgent365Info under -Auth ManagedIdentity.
+           - Application.Read.All     — only consumed by the Agent 365 path, which is
+                                        unsupported under -Auth ManagedIdentity.
+
+      4. (SharePoint mode) Adds Sites.ReadWrite.All and Files.ReadWrite.All to the
+         scope list above so PAX can write outputs to the destination SharePoint
+         document library.
       5. (Fabric mode) Grants Storage Blob Data Contributor on the Fabric workspace's
          OneLake at workspace scope.
 
@@ -42,6 +70,12 @@
     (provider Microsoft.Fabric/workspaces or Microsoft.PowerBIDedicated/workspaceCollections
     depending on tenant; pass the OneLake-backed workspace resource ID).
 
+.PARAMETER IncludeM365Usage
+    Grant the workload-scoped audit variants required by PAX's -IncludeM365Usage switch
+    (AuditLogsQuery-Exchange.Read.All, AuditLogsQuery-OneDrive.Read.All,
+    AuditLogsQuery-SharePoint.Read.All). Omit when you only need the unified
+    AuditLogsQuery.Read.All umbrella scope.
+
 .EXAMPLE
     # SharePoint mode
     ./Grant-PAXPermissions.ps1 `
@@ -51,13 +85,14 @@
         -Mode SharePoint
 
 .EXAMPLE
-    # Fabric mode
+    # Fabric mode, with -IncludeM365Usage workload variants
     ./Grant-PAXPermissions.ps1 `
         -SubscriptionId 'xxx' -ResourceGroup 'rg-pax' `
         -ManagedIdentityName 'uai-pax' -Location 'eastus' `
         -AcrResourceId '/subscriptions/.../registries/paxacr' `
         -Mode Fabric `
-        -FabricWorkspaceResourceId '/subscriptions/.../workspaces/PAX-Workspace'
+        -FabricWorkspaceResourceId '/subscriptions/.../workspaces/PAX-Workspace' `
+        -IncludeM365Usage
 #>
 [CmdletBinding()]
 param(
@@ -67,10 +102,34 @@ param(
     [Parameter(Mandatory)] [string] $Location,
     [Parameter(Mandatory)] [string] $AcrResourceId,
     [Parameter(Mandatory)] [ValidateSet('SharePoint','Fabric')] [string] $Mode,
-    [Parameter()]          [string] $FabricWorkspaceResourceId
+    [Parameter()]          [string] $FabricWorkspaceResourceId,
+    [Parameter()]          [switch] $IncludeM365Usage
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Helper: invoke an idempotent `az` mutation, surface non-"already exists" failures as
+# Warnings, and stay silent on benign re-run skips. Preserves prior idempotent behaviour
+# but no longer swallows real errors (F-SEC-1 / F-DEP-3).
+function script:Invoke-AzIdempotent {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]   $Label,
+        [Parameter(Mandatory)][string[]] $Arguments
+    )
+    $captured = & az @Arguments --only-show-errors 2>&1
+    $code     = $LASTEXITCODE
+    if ($code -eq 0) {
+        Write-Host "  $Label : granted (or already present)." -ForegroundColor Green
+        return
+    }
+    $text = ($captured | Out-String).Trim()
+    if ($text -match '(?i)already\s*exists|RoleAssignmentExists|already\s+has\s+the\s+role|already\s+assigned') {
+        Write-Host "  $Label : already present (idempotent)." -ForegroundColor DarkGray
+        return
+    }
+    Write-Warning "$Label failed (az exit $code): $text"
+}
 
 if ($Mode -eq 'Fabric' -and -not $FabricWorkspaceResourceId) {
     throw "FabricWorkspaceResourceId is required when -Mode Fabric."
@@ -97,18 +156,41 @@ $miPrincipalId = $mi.principalId
 $miClientId    = $mi.clientId
 $miResourceId  = $mi.id
 
-# Eventual-consistency wait for the identity's service principal to be discoverable.
-Start-Sleep -Seconds 10
+# --- 1b. Bounded wait for the identity's service principal to become discoverable (F-DEP-2 resolved) ---
+# Replaces a previous fixed `Start-Sleep -Seconds 10`. Polls `az ad sp show --id <clientId>`
+# at 5s intervals up to 120s total, succeeds as soon as Entra ID returns the SP. On
+# timeout we emit an explicit, actionable diagnostic and continue (the downstream
+# Get-MgServicePrincipal call still gates the actual permission grant, so a slow tenant
+# is surfaced as a clear "wait 30s and re-run" message rather than a silent hang).
+$spTimeoutSeconds  = if ($env:PAX_SP_WAIT_TIMEOUT_SECONDS  -as [int]) { [int]$env:PAX_SP_WAIT_TIMEOUT_SECONDS  } else { 120 }
+$spIntervalSeconds = if ($env:PAX_SP_WAIT_INTERVAL_SECONDS -as [int]) { [int]$env:PAX_SP_WAIT_INTERVAL_SECONDS } else { 5 }
+$spStart = [DateTime]::UtcNow
+$spReady = $false
+Write-Host "Waiting for managed identity service principal to propagate (timeout ${spTimeoutSeconds}s, interval ${spIntervalSeconds}s)..." -ForegroundColor Cyan
+while (([DateTime]::UtcNow - $spStart).TotalSeconds -lt $spTimeoutSeconds) {
+    $probe = & az ad sp show --id $miClientId --only-show-errors 2>&1
+    if ($LASTEXITCODE -eq 0 -and $probe) {
+        $spReady = $true
+        $elapsed = [int]([DateTime]::UtcNow - $spStart).TotalSeconds
+        Write-Host "  Service principal discoverable after ${elapsed}s." -ForegroundColor Green
+        break
+    }
+    Start-Sleep -Seconds $spIntervalSeconds
+}
+if (-not $spReady) {
+    Write-Warning ("Service principal for managed identity (clientId $miClientId) not discoverable within ${spTimeoutSeconds}s. " +
+                   "Proceeding optimistically; the subsequent Graph lookup will surface a clear 'wait 30s and re-run' message if propagation is still incomplete.")
+}
 
 # --- 2. AcrPull on the ACR ---
 Write-Host "Granting AcrPull on $AcrResourceId..." -ForegroundColor Cyan
-az role assignment create `
-    --assignee-object-id   $miPrincipalId `
-    --assignee-principal-type ServicePrincipal `
-    --role 'AcrPull' `
-    --scope $AcrResourceId `
-    --only-show-errors 2>$null | Out-Null
-Write-Host "  AcrPull granted (or already present)." -ForegroundColor Green
+Invoke-AzIdempotent -Label 'AcrPull' -Arguments @(
+    'role','assignment','create',
+    '--assignee-object-id',      $miPrincipalId,
+    '--assignee-principal-type', 'ServicePrincipal',
+    '--role',                    'AcrPull',
+    '--scope',                   $AcrResourceId
+)
 
 # --- 3. Microsoft Graph application permissions + admin consent ---
 Write-Host "Granting Microsoft Graph application permissions..." -ForegroundColor Cyan
@@ -129,11 +211,18 @@ $miSp         = Get-MgServicePrincipal -Filter "appId eq '$miClientId'" -ErrorAc
 if (-not $miSp) { throw "Service principal for managed identity (clientId $miClientId) not found yet. Wait 30s and re-run." }
 
 $requiredScopes = @(
-    'AuditLog.Read.All',
+    'AuditLogsQuery.Read.All',
     'User.Read.All',
     'Organization.Read.All',
-    'Application.Read.All'
+    'GroupMember.Read.All'
 )
+if ($IncludeM365Usage) {
+    $requiredScopes += @(
+        'AuditLogsQuery-Exchange.Read.All',
+        'AuditLogsQuery-OneDrive.Read.All',
+        'AuditLogsQuery-SharePoint.Read.All'
+    )
+}
 if ($Mode -eq 'SharePoint') {
     $requiredScopes += @('Sites.ReadWrite.All','Files.ReadWrite.All')
 }
@@ -162,13 +251,13 @@ foreach ($scopeName in $requiredScopes) {
 # --- 4. Fabric/OneLake permission (Fabric mode only) ---
 if ($Mode -eq 'Fabric') {
     Write-Host "Granting 'Storage Blob Data Contributor' on Fabric workspace..." -ForegroundColor Cyan
-    az role assignment create `
-        --assignee-object-id   $miPrincipalId `
-        --assignee-principal-type ServicePrincipal `
-        --role 'Storage Blob Data Contributor' `
-        --scope $FabricWorkspaceResourceId `
-        --only-show-errors 2>$null | Out-Null
-    Write-Host "  Granted (or already present)." -ForegroundColor Green
+    Invoke-AzIdempotent -Label 'Storage Blob Data Contributor (Fabric workspace)' -Arguments @(
+        'role','assignment','create',
+        '--assignee-object-id',      $miPrincipalId,
+        '--assignee-principal-type', 'ServicePrincipal',
+        '--role',                    'Storage Blob Data Contributor',
+        '--scope',                   $FabricWorkspaceResourceId
+    )
     Write-Host ""
     Write-Host "  IMPORTANT: Also add the managed identity as a 'Contributor' member on the" -ForegroundColor Yellow
     Write-Host "  Fabric workspace via the Fabric portal (Workspace settings -> Manage access)." -ForegroundColor Yellow
