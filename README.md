@@ -32,13 +32,12 @@ The flagship script in the set — and the one most customers will use — is th
 
 Highlights of the Purview Audit Log Processor:
 
-- Microsoft 365 Copilot, AI agent, and DSPM for AI signal coverage
+- Microsoft 365 Copilot, Unlicensed Copilot, and AI agent signal coverage
 - **Microsoft 365 Usage Bundle** for productivity-workload activity (Teams, Exchange, SharePoint, OneDrive, Word, Excel, PowerPoint, OneNote, Forms, Stream, Planner, PowerApps) captured in the same run alongside Copilot telemetry
-- **Microsoft Agent 365 catalog enrichment** for Frontier-enrolled tenants
 - **Entra ID user + Microsoft 365 Copilot (MAC) licensing enrichment**
-- Long-running enterprise exports with checkpoint & resume, parallel processing, adaptive time-slicing, and 1M / 10K limit detection
+- Long-running enterprise exports with checkpoint & resume, append capabilities, rolled up data architecture support to shrink data footprint, parallel processing, adaptive time-slicing, and server record limit detection and override
 - Flexible filtering by user, group, agent, activity type, record/service type, and date range
-- **Flexible output destinations:** local folder, SharePoint document library, or directly into a **Microsoft Fabric (OneLake)** lakehouse / warehouse — for unattended Azure-hosted runs, pair with `-Auth ManagedIdentity`
+- **Flexible output destinations:** local folder, SharePoint document library, or directly into **Microsoft Fabric (OneLake)** Delta tables — for unattended Azure-hosted runs, paired with Managed Identities
 
 The PAX set also includes two specialized companion scripts for narrower use cases:
 
@@ -51,23 +50,11 @@ The PAX set also includes two specialized companion scripts for narrower use cas
 
 ## 🔍 Purview Audit Log Processor — primary script
 
-> Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.1.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.1/PAX_Purview_Audit_Log_Processor_v1.11.1.ps1)
+> Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.2.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.2/PAX_Purview_Audit_Log_Processor_v1.11.2.ps1) | Release Date: 2026-05-17
 >
 > **📖 Resources:** [Latest Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md) | [Latest Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md)
 >
 > **📚 Archives:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor) | [Previous Versions](https://github.com/microsoft/PAX/tree/release/script_archive/Purview_Audit_Log_Processor)
->
-> ---
->
-> > #### ⚠️ Action Required: Microsoft Graph Audit API Permission Change (April 2026)
-> >
-> > **Applies to the Purview Audit Log Processor only.**
-> >
-> > **Microsoft introduced a new dedicated permission, `AuditLogsQuery.Read.All`, for the Microsoft Graph audit query API and began enforcing it across all tenants in April 2026.** This is a Microsoft-platform-level change that affects every tenant retrieving Copilot audit data via the Graph API, regardless of which tool is used.
-> >
-> > - The legacy `AuditLog.Read.All` permission is **no longer sufficient** to retrieve `CopilotInteraction` records via the Graph audit query API.
-> > - Graph API calls made with only the legacy permission will appear to succeed but return **0 records** — silently — for affected record types.
-> > - **PAX v1.10.9 and later** request the correct scopes automatically. **Older PAX versions will not retrieve Copilot data correctly until you upgrade and grant admin consent for the new permission(s).**
 
 ---
 

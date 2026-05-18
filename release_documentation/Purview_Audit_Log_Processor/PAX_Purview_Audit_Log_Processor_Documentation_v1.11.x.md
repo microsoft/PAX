@@ -1,6 +1,8 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.1.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.1/PAX_Purview_Audit_Log_Processor_v1.11.1.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.2.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.2/PAX_Purview_Audit_Log_Processor_v1.11.2.ps1)
+>
+> **📅 Script v1.11.2 Release Date:** 2026-05-17
 >
 > **📋 Release Notes:** See what's new → [v1.11.x Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
@@ -8,7 +10,7 @@
 >
 > **📚 Documentation Archive:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
-**Documentation Version:** 1.11.x  
+**Documentation Version:** v1.11.x (Current Script Version: v1.11.2)
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 7+ (required for default Graph API mode); PowerShell 5.1 supported only with `-UseEOM`  
 **License:** MIT
@@ -19,7 +21,7 @@
 >
 > This documentation is intentionally comprehensive — it covers every parameter, authentication method, output destination, troubleshooting scenario, and known limitation in detail so you can rely on it as a single reference.
 >
-> If you are looking for a specific answer rather than reading end-to-end, try opening this page in a Copilot-enabled view (for example, the Microsoft 365 Copilot chat side panel, GitHub Copilot Chat in VS Code, or Edge's Copilot pane) and asking it to summarize a section, locate a parameter, or walk you through a particular scenario. Sample prompts: *"Summarize how to send PAX output to SharePoint,"* *"What permissions do I need for `-OutputPathFabric`?"*, or *"Show me only the troubleshooting steps for managed-identity sign-in."* Copilot can comfortably handle this file and will get you to the right place faster than scrolling.
+> If you are looking for a specific answer rather than reading end-to-end, try opening this page in a Copilot-enabled view (for example, the Microsoft 365 Copilot chat side panel, GitHub Copilot Chat in VS Code, or Edge's Copilot pane) and asking it to summarize a section, locate a parameter, or walk you through a particular scenario. Sample prompts: *"Summarize how to send PAX output to SharePoint,"* *"What permissions do I need to write output to Microsoft Fabric (OneLake)?"*, or *"Show me only the troubleshooting steps for managed-identity sign-in."* Copilot can comfortably handle this file and will get you to the right place faster than scrolling.
 
 ---
 
@@ -33,7 +35,7 @@
 **The audit data exported by this script is highly sensitive.** Output may contain user identifiers (UPN, email, GUID), file/site/resource paths, conversation and message IDs, agent identifiers, prompt/response metadata (timestamps, lengths, classifications), and other personally identifiable information drawn directly from your tenant's Unified Audit Log.
 
 - **Data is NOT hashed, masked, redacted, anonymized, or de-identified** in any way. Records are exported in their raw, attributable form exactly as Microsoft Purview returns them.
-- Outputs (CSV/Excel/JSON metrics, checkpoint files, logs) may contain confidential business content, regulated data (PII, PHI, financial, IP), and end-user communications.
+- Outputs (CSV/JSON metrics, checkpoint files, logs) may contain confidential business content, regulated data (PII, PHI, financial, IP), and end-user communications.
 - **The customer (you / your organization) is solely responsible** for the secure handling, storage, transmission, retention, disclosure, access control, and deletion of all data produced by this script, and for ensuring its use complies with all applicable laws, regulations, contractual obligations, and internal policies — including but not limited to GDPR, HIPAA, CCPA, employee monitoring laws, works-council agreements, and data-residency requirements.
 - **Microsoft has no visibility into, control over, or responsibility for** the data customers extract using this tool or how that data is subsequently used, shared, or stored. Microsoft disclaims any and all liability arising from or related to customer use of this script and its output.
 - Treat all output files as **Highly Confidential**. Restrict access to authorized personnel with a documented business need. Encrypt at rest and in transit. Apply tenant DLP / sensitivity labels as appropriate.
@@ -61,21 +63,18 @@
 12. [User and Group Filtering](#user-and-group-filtering)
 13. [Prompt and Response Filtering](#prompt-and-response-filtering)
 14. [Combining Filters](#combining-filters)
-15. [Microsoft Agent 365 (Frontier)](#microsoft-agent-365-frontier)
-16. [Microsoft 365 Usage Bundle](#microsoft-365-usage-bundle)
-17. [Rollup Post-Processor (Power BI)](#rollup-post-processor-power-bi)
-18. [DSPM for AI](#dspm-for-ai)
-19. [Excel Export](#excel-export)
-20. [Incremental Data Collection](#incremental-data-collection)
-21. [Checkpoint & Resume](#checkpoint--resume)
-22. [Output Files & Schema](#output-files--schema)
-23. [Activity Types Reference](#activity-types-reference)
-24. [Record & Service Filters](#record--service-filters)
-25. [Advanced Features](#advanced-features)
-26. [Performance Tuning](#performance-tuning)
-27. [Troubleshooting](#troubleshooting)
-28. [Known Limitations](#known-limitations)
-29. [Security & Compliance](#security--compliance)
+15. [Microsoft 365 Usage Bundle](#microsoft-365-usage-bundle)
+16. [Rollup Post-Processor (Power BI)](#rollup-post-processor-power-bi)
+17. [Incremental Data Collection](#incremental-data-collection)
+18. [Checkpoint & Resume](#checkpoint--resume)
+19. [Output Files & Schema](#output-files--schema)
+20. [Activity Types Reference](#activity-types-reference)
+21. [Record & Service Filters](#record--service-filters)
+22. [Advanced Features](#advanced-features)
+23. [Performance Tuning](#performance-tuning)
+24. [Troubleshooting](#troubleshooting)
+25. [Known Limitations](#known-limitations)
+26. [Security & Compliance](#security--compliance)
 
 ---
 
@@ -84,26 +83,25 @@
 <details open>
 <summary>What It Does</summary>
 
-The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script that exports Microsoft Purview Unified Audit Log events, with specialized support for Microsoft 365 Copilot activities and related operations. It extends Graph-based retrieval so you can capture classic Microsoft 365 app usage (Word, Excel, PowerPoint, OneNote, Loop, SharePoint, OneDrive, Teams files) in the same run—without falling back to ExchangeOnlineManagement—alongside Copilot telemetry. It transforms raw audit data into analysis-ready **CSV or Excel** output and writes it to the destination of your choice — a **local folder**, a **SharePoint document library**, or directly into **Microsoft Fabric (OneLake)** for downstream notebooks, pipelines, and Power BI semantic models — with enriched metadata, intelligent query optimization, and flexible schema options.
+The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script that exports Microsoft Purview Unified Audit Log events, with specialized support for Microsoft 365 Copilot activities and related operations. It extends Graph-based retrieval so you can capture classic Microsoft 365 app usage (Word, Excel, PowerPoint, OneNote, SharePoint, OneDrive, Teams) in the same run — without falling back to ExchangeOnlineManagement — alongside Copilot telemetry. It transforms raw audit data into analysis-ready output — **CSV files** for local folders and SharePoint document libraries, or **Delta tables** under the `Tables/` namespace of a Microsoft Fabric Lakehouse for downstream notebooks, pipelines, and Power BI semantic models — with enriched metadata, intelligent query optimization, and flexible schema options.
 
 **Core Capabilities:**
 
 - Retrieves audit events from Microsoft 365 Unified Audit Log via **Graph API (default)** or **EOM mode** (`-UseEOM`)
 - **Graph API filter passthrough:** Optional `-RecordTypes` / `-ServiceTypes` switches target documented Purview workloads (SharePoint, OneDrive, and future additions) so non-Copilot office app activity returns alongside Copilot operations
 - **Microsoft 365 usage data (`-IncludeM365Usage`):** Curated cross-workload activity bundle spanning Outlook, Teams, SharePoint, OneDrive, Word, Excel, PowerPoint, OneNote, Forms, Stream, Planner, and PowerApps — captured in the same Graph audit run alongside Copilot telemetry for ROI and behavior-change analysis
-- **Microsoft Agent 365 catalog (`-IncludeAgent365Info` / `-OnlyAgent365Info`):** Point-in-time snapshot of the Microsoft Agent 365 catalog (28-column schema matching the Microsoft Admin Center "Agent 365" export) for Frontier-enrolled tenants
-- Exports to structured CSV or Excel (.xlsx)
+- Exports to structured CSV
 - Includes enriched usage & ROI fields (tokens, models, latency, acceptance metrics)
 - Implements adaptive time slicing to navigate service limits intelligently
 - Provides detailed logging of all operations, warnings, and performance metrics
-- Automatically handles module installation and authentication (Microsoft.Graph.Authentication for Graph API mode; ExchangeOnlineManagement for EOM mode)
-- **Flexible output destinations:** Write results to a local folder (`-OutputPath`), directly to a SharePoint document library folder (`-OutputPathSP`), or directly to a Microsoft Fabric lakehouse OneLake folder (`-OutputPathFabric`)
-- **Microsoft Fabric (OneLake) as a first-class destination (`-OutputPathFabric`):** Writes PAX output files straight into the `Files/` area of a Fabric **Lakehouse** or **Warehouse**, eliminating the local-disk + manual-upload hop that downstream Fabric consumers would otherwise need
-- **Fabric-ready for production at scale:** OneLake credentials are refreshed automatically in the background and large workbooks/CSVs use resumable uploads, so multi-hour exports land in Fabric without interruption
-- **Fabric + managed identity for fully unattended runs:** Pair `-OutputPathFabric` with `-Auth ManagedIdentity` to run PAX as a scheduled/event-driven Azure Container Apps Job (or any Azure compute) that lands data directly in a Fabric workspace with no secrets to manage — see the repo-root **`fabric_resources`** folder for container images, Bicep/ARM templates, and the Azure-role + Fabric-workspace-role + Fabric-tenant-setting checklist
+- Automatically handles module installation and authentication (`Microsoft.Graph.Authentication` and `Microsoft.Graph.Security` for Graph API mode; `ExchangeOnlineManagement` for EOM mode). `Az.Accounts` — needed only for Fabric OneLake output — must be installed manually if missing.
+- **Flexible output destinations:** A single `-OutputPath` parameter accepts a local folder path, a SharePoint document library URL, or a Microsoft Fabric Lakehouse OneLake URL — PAX infers the destination tier from the URL form. Local and SharePoint destinations receive identical CSV filenames; Fabric destinations receive the same data as Delta tables whose names are derived from the CSV basenames (the trailing `_YYYYMMDD_HHMMSS` run-timestamp is stripped so tables are evergreen across runs)
+- **Microsoft Fabric (OneLake) as a first-class destination:** Provide a Fabric **Lakehouse** URL to `-OutputPath` and PAX writes audit data as Delta tables under the Lakehouse `Tables/` namespace, with operational artifacts (run log, metrics JSON) under `Files/` — eliminating the local-disk + manual-upload hop and landing data in a form Fabric notebooks, pipelines, and Direct Lake Power BI semantic models consume natively. Only Lakehouse items are supported as Fabric destinations; Warehouse items are not.
+- **Fabric-ready for production at scale:** OneLake credentials are refreshed automatically in the background and large CSV uploads to SharePoint use resumable chunked transfer, so multi-hour exports complete without interruption
+- **Fabric + managed identity for fully unattended runs:** Combine an `-OutputPath` Fabric URL with `-Auth ManagedIdentity` to run PAX as a scheduled/event-driven Azure Container Apps Job (or any Azure compute) that lands data directly in a Fabric workspace with no secrets to manage — see the repo-root **`fabric_resources`** folder for container images, Bicep/ARM templates, and the Azure-role + Fabric-workspace-role + Fabric-tenant-setting checklist
 - **Unattended Azure-hosted runs:** Sign in with a managed identity (`-Auth ManagedIdentity`) for scheduled/event-driven jobs on Azure Container Apps Jobs, Azure VMs, or similar Azure compute — no secrets to manage
-- **Graph API mode (default):** Supports Entra ID user enrichment + Microsoft 365 Copilot license detection via `-IncludeUserInfo` and `-OnlyUserInfo`
-- **EOM mode (`-UseEOM`):** Supports server-side group expansion via `-GroupNames` and 10K limit detection
+- **Graph API mode (default):** Supports Entra ID user enrichment + Microsoft 365 Copilot license detection via `-IncludeUserInfo` and `-OnlyUserInfo`; group expansion via `-GroupNames` uses `Get-MgGroup` + `Get-MgGroupMember` (requires `GroupMember.Read.All`)
+- **EOM mode (`-UseEOM`):** Supports group expansion via `-GroupNames` (uses `Get-DistributionGroupMember`) and 10K-per-query limit detection
 
 </details>
 
@@ -130,31 +128,32 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 <summary>Data Processing & Output</summary>
 
 - **Purview Schema Compliance:** Matches Microsoft Purview's canonical schema structure
-- **Microsoft 365 Usage Bundle:** Single-switch activation (`-IncludeM365Usage`) captures activity types across Outlook, Teams, SharePoint, OneDrive, Word, Excel, PowerPoint, OneNote, Forms, Stream, Planner, and PowerApps alongside Copilot data — for Copilot ROI baselining and cross-workload behavior analysis
+- **Microsoft 365 Usage Bundle:** Single-switch activation (`-IncludeM365Usage`) captures activity types across Exchange (Outlook), Teams, SharePoint, OneDrive, Office apps (Word, Excel, PowerPoint, OneNote), Forms, Stream, Planner, and Power Apps alongside Copilot data — for Copilot ROI baselining and cross-workload behavior analysis
 - **Agent Filtering:** Filter records by specific AgentId values or any agent-related activity
-- **Record & Service Filters (Graph):** Use `-RecordTypes` / `-ServiceTypes` to retrieve Microsoft 365 app usage workloads (SharePoint, OneDrive, Loop, Files in Teams) without leaving Graph mode
-- **User Filtering:** Filter by user emails via `-UserIds` parameter (server-side with `-UseEOM`, client-side in Graph API mode)
-- **Group Filtering (EOM Mode Only):** Server-side group expansion to members via `-GroupNames` parameter (requires `-UseEOM`)
+- **Record & Service Filters (Graph):** Use `-RecordTypes` / `-ServiceTypes` to target specific Microsoft 365 workloads (examples: `SharePoint`, `OneDrive`, `Exchange`, `MicrosoftTeams`, `AzureActiveDirectory`; record types include `SharePointFileOperation`, `ExchangeItem`, `MicrosoftTeams`, etc.) without leaving Graph mode
+- **User Filtering:** Filter by user emails via `-UserIds` parameter — server-side (via `Search-UnifiedAuditLog -UserIds`) in `-UseEOM` mode; client-side after retrieval in Graph API mode (the Graph audit query API does not support UPN filtering server-side)
+- **Group Filtering:** Group expansion via `-GroupNames` — uses `Get-DistributionGroupMember` (Exchange Online RBAC) in `-UseEOM` mode and `Get-MgGroup` + `Get-MgGroupMember` (requires `GroupMember.Read.All`) in Graph API mode
 - **Entra ID Enrichment + M365 Copilot Licensing (Graph API Mode Only):** Enrich audit data with Entra user attributes and M365 Copilot (MAC) license information via `-IncludeUserInfo` (default mode, not compatible with `-UseEOM`)
 - **User-Only Export (Graph API Mode Only):** Export only Entra ID user data and M365 Copilot licensing without audit records via `-OnlyUserInfo` (requires `-IncludeUserInfo`, not compatible with `-UseEOM`)
-- **Microsoft Agent 365 Catalog Enrichment (Frontier-enrolled tenants):** Pull a **point-in-time snapshot** of the Microsoft Agent 365 catalog (28-column schema matching the Microsoft Admin Center "Agent 365" export) via `-IncludeAgent365Info` alongside an audit run, or via `-OnlyAgent365Info` as a standalone catalog snapshot. The catalog reflects the **current state of the tenant at the moment of the call** — it is not historical/time-ranged data and `-StartDate`/`-EndDate` do not apply to the agent phase. Requires Frontier program enrollment and an interactive sign-in for the agent phase (see [Microsoft Agent 365 (Frontier)](#microsoft-agent-365-frontier))
-- **Flexible Export Formats:** CSV (default) or Excel (.xlsx) with professional formatting
 - **Streaming Export:** Memory-efficient chunked data writing for large datasets
 - **UTF-8 Encoding:** Consistent UTF-8 (no BOM) output for CSV files
 - **Header Stability:** Always writes file headers even when zero records match (ensures schema consistency)
-- **Multiple Output Destinations:** Pick the destination that matches the consumer of the run — all three use identical filenames and schemas:
-  - **Local folder** via `-OutputPath` (default; best for ad-hoc analysis on the host machine)
-  - **SharePoint document library** via `-OutputPathSP` (best for team visibility, sharing-link distribution, and Power BI direct-from-SharePoint consumption — see [Sending Output to SharePoint](#sending-output-to-sharepoint))
-  - **Microsoft Fabric / OneLake** via `-OutputPathFabric` (best for downstream Fabric notebooks, pipelines, dataflows, and Power BI semantic models — see [Sending Output to Microsoft Fabric (OneLake)](#sending-output-to-microsoft-fabric-onelake))
-- **Pre-Flight Destination Check:** When using `-OutputPathSP` or `-OutputPathFabric`, PAX verifies the destination exists and is writable **before pulling any audit data**, so permission gaps fail fast rather than after hours of querying
-- **Resumable Uploads:** Large files (Excel workbooks, dense CSVs) use chunked, resumable upload to SharePoint, and OneLake credentials are refreshed automatically in the background — multi-hour exports finish without interruption
+- **Multiple Output Destinations:** A single `-OutputPath` parameter accepts the destination that matches the consumer of the run — PAX infers the tier from the value:
+  - **Local folder** (default; best for ad-hoc analysis on the host machine) — CSV files
+  - **SharePoint document library** when `-OutputPath` is a SharePoint URL (best for team visibility, sharing-link distribution, and Power BI direct-from-SharePoint consumption — see [Sending Output to SharePoint](#sending-output-to-sharepoint)) — CSV files with identical schemas to Local
+  - **Microsoft Fabric Lakehouse / OneLake** when `-OutputPath` is a Fabric lakehouse URL (best for downstream Fabric notebooks, pipelines, dataflows, and Direct Lake Power BI semantic models — see [Sending Output to Microsoft Fabric (OneLake)](#sending-output-to-microsoft-fabric-onelake)) — Delta tables under `Tables/`, with operational artifacts under `Files/`. Column names containing Delta-forbidden characters (space, comma, semicolon, parentheses, etc.) are sanitized to underscores at table-write time only; the underlying CSV column names are preserved
+- **Pre-Flight Destination Check:** When `-OutputPath` targets SharePoint or Microsoft Fabric, PAX verifies the destination exists and is writable **before pulling any audit data**, so permission gaps fail fast rather than after hours of querying
+- **Resumable Uploads:** Large files (dense CSVs) use chunked, resumable upload to SharePoint, and OneLake credentials are refreshed automatically in the background — multi-hour exports finish without interruption
 
 </details>
 
 <details>
 <summary>Microsoft Fabric Integration</summary>
 
-- **Direct OneLake Output:** `-OutputPathFabric` writes PAX output files straight into the `Files/` area of a Fabric **Lakehouse** or **Warehouse**, ready for immediate use in Fabric notebooks, pipelines, dataflows, and Power BI
+- **Direct OneLake Output:** Provide a Fabric **Lakehouse** URL to `-OutputPath` and PAX writes audit data as Delta tables under the Lakehouse `Tables/` namespace, queryable directly from the Fabric SQL endpoint and consumable by Direct Lake Power BI semantic models. Operational artifacts (run log, metrics JSON, checkpoint files) land under `Files/`. Only Lakehouse items are supported; Warehouse items are not.
+- **Evergreen Tables:** Delta table names are derived from the CSV basename with the `_YYYYMMDD_HHMMSS` run-timestamp stripped, so the same table is overwritten run-after-run (or appended into, when an `-Append*` switch is used) while the underlying CSV filenames continue to carry the timestamp suffix
+- **Schema Evolution:** Delta tables are written with `schema_mode='merge'` so additive schema changes between runs are absorbed automatically; pre-flight rejects breaking schema-shape mismatches before any audit query is issued
+- **`deltalake` Auto-Install:** The `deltalake>=0.15` Python package is verified on first use and auto-installed per-user if missing; offline / locked-down hosts can pre-install it manually
 - **No Intermediate Hop:** Eliminates the local-disk + manual-upload step that Fabric consumers would otherwise need
 - **Managed-Identity Friendly:** Pair with `-Auth ManagedIdentity` for scheduled, fully unattended Azure-hosted runs writing directly to Fabric
 - **Supporting Materials in `fabric_resources` (repo root):** The repository's **`fabric_resources` folder** (top level of the repo) contains the supporting material for adopting Fabric output in production, including:
@@ -172,7 +171,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 
 - **Parallel Query Execution:** Concurrent processing of multiple activity types with controlled throttling
 - **Learned Block Sizes:** Per-activity and global adaptive sizing based on observed densities
-- **Fast Data Writer:** Direct `StreamWriter` usage for CSV; ImportExcel module for Excel exports
+- **Fast Data Writer:** Direct `StreamWriter` usage for CSV
 - **Schema Sampling:** Configurable initial sampling to optimize column discovery vs. memory usage
 - **Memory Management:** Automatic memory monitoring (`-MaxMemoryMB`) that streams records directly to JSONL files when system memory reaches the threshold (75% of RAM by default)
 
@@ -182,7 +181,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 <summary>Operational Excellence</summary>
 
 - **Real-Time Progress Tracking:** Live status updates across Query and Export phases with percentage completion
-- **CSV & Excel Export:** Native support for both CSV files and Excel workbooks with professional formatting
+- **CSV Export:** Native CSV output with consistent schemas
 - **Detailed Logging:** Comprehensive log file with parameters, decisions, warnings, and metrics
 - **Automated Setup:** Graph API mode (default) auto-installs the `Microsoft.Graph.Authentication` module if needed; EOM mode auto-installs `ExchangeOnlineManagement` if needed
 
@@ -201,7 +200,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - Measure user engagement with AI features (interactions, token consumption, model usage)
 - Identify power users and underutilized licenses
 - Calculate ROI metrics based on time saved and acceptance rates
-- Analyze Word, Excel, PowerPoint, OneNote, and Loop document activity by pairing `-ActivityTypes` (e.g., `FileAccessed`, `FilePreviewed`) with `-RecordTypes`/`-ServiceTypes` to capture SharePoint and OneDrive workloads alongside Copilot usage
+- Analyze Word, Excel, PowerPoint, and OneNote document activity by pairing `-ActivityTypes` (e.g., `FileAccessed`, `FilePreviewed`) with `-RecordTypes`/`-ServiceTypes` to capture SharePoint and OneDrive workloads alongside Copilot usage
 
 </details>
 
@@ -224,8 +223,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - Track plugin usage and custom GPT deployment
 - Generate audit trails for security reviews
 - Filter and analyze specific Copilot Studio declarative agent activity
-- Expand investigations to include Microsoft 365 productivity apps—SharePoint, OneDrive, and Files in Teams—by applying record/service filters for document operations such as `FileModified` or `FileDownloaded`
-- Inventory Microsoft Agent 365 packages (publisher, developer, install counts, last-modified metadata) via `-IncludeAgent365Info` or `-OnlyAgent365Info` for Frontier-enrolled tenants
+- Expand investigations to include Microsoft 365 productivity workloads — SharePoint and OneDrive (including Teams files, which are tracked under `SharePointFileOperation`) — by applying `-RecordTypes` / `-ServiceTypes` filters alongside document-operation activity types such as `FileModified` or `FileDownloaded`
 
 </details>
 
@@ -247,8 +245,8 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - Join audit data with licensing information for coverage analysis
 - Maintain historical archives with consistent schema over time
 - Blend Copilot telemetry with Microsoft 365 app usage metrics (SharePoint/OneDrive document interactions, Teams file usage) by leveraging record/service filters before loading into BI platforms
-- **Land results in a Microsoft Fabric lakehouse on every run** with `-OutputPathFabric` so notebooks, pipelines, and Power BI semantic models can pick up the latest export with no manual upload step (supporting templates and walkthroughs live in the `fabric_resources` folder at the repo root)
-- **Distribute results to a SharePoint team library** with `-OutputPathSP` for analysts who consume audit output directly from Power BI's SharePoint connector or Excel in the browser
+- **Land results in a Microsoft Fabric lakehouse on every run** by passing a Fabric lakehouse URL to `-OutputPath` so notebooks, pipelines, and Power BI semantic models can pick up the latest export with no manual upload step (supporting templates and walkthroughs live in the `fabric_resources` folder at the repo root)
+- **Distribute results to a SharePoint team library** by passing a SharePoint document library URL to `-OutputPath` for analysts who consume audit output directly from Power BI's SharePoint connector or Excel in the browser
 
 </details>
 
@@ -263,22 +261,12 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 </details>
 
 <details>
-<summary>Development & Testing</summary>
-
-- Test schema changes against synthetic or sanitized datasets
-- Validate data pipelines without querying production audit logs
-- Develop downstream analytics without live tenant access
-
-</details>
-
-<details>
 <summary>Agents</summary>
 
 - Inventory all agent activity across your tenant using `-AgentsOnly` to filter audit records that involve any Copilot Studio declarative agent, custom agent, or Microsoft-built agent
 - Analyze adoption and usage of specific agents using `-AgentId` for targeted investigations (single or multiple agent IDs)
 - Compare agent vs. non-agent Copilot interactions using `-ExcludeAgents` to baseline standard Copilot usage against agent-driven activity
 - Combine agent filters with `-UserIds`, `-GroupNames`, or `-PromptFilter` for focused analyses (e.g., specific user's interactions with a specific agent)
-- Pair with `-IncludeAgent365Info` or `-OnlyAgent365Info` to correlate runtime agent activity with the Microsoft Agent 365 catalog (publisher, developer, install counts) for Frontier-enrolled tenants
 
 </details>
 
@@ -297,13 +285,13 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 | **Unified Audit Logging**   | Enabled in tenant                       | Verify in Microsoft Purview compliance portal                |
 | **Graph API Permissions**   | See [Permission Details](#permission-details) below | Required for Graph API mode (default). Consented during interactive sign-in or pre-configured for app registrations. |
 | **Audit Role**              | Purview Audit Reader (or higher) | Required only for EOM mode (`-UseEOM`) and the Purview UI. Not required for Graph API mode (default), regardless of authentication method. |
-| **SharePoint write access** *(only if using `-OutputPathSP`)* | Edit/Contribute on the destination library + folder, plus the Graph delegated or application permissions `Sites.ReadWrite.All` and `Files.ReadWrite.All` | See [Sending Output to SharePoint](#sending-output-to-sharepoint) for the full setup. |
-| **Microsoft Fabric / OneLake access** *(only if using `-OutputPathFabric`)* | All three layers are required: **(1)** the Azure role `Storage Blob Data Contributor` on the OneLake storage scope, **(2)** the **Contributor** (or higher) role on the Fabric workspace in the Fabric portal, **(3)** the tenant setting allowing service principals / Entra IDs to access Fabric APIs must be enabled by your Fabric admin | See [Sending Output to Microsoft Fabric (OneLake)](#sending-output-to-microsoft-fabric-onelake) for the full setup, and the `fabric_resources` folder in the repo root for detailed container/runbook material. |
-| **Az.Accounts PowerShell module** *(only if using `-OutputPathFabric`)* | Used to obtain the OneLake storage token | PAX installs it automatically if missing. |
-| **Network Access**          | Microsoft 365 endpoints                 | Ensure firewall allows connections to Microsoft Graph and Exchange Online endpoints. If using `-OutputPathSP`, also allow `*.sharepoint.com`. If using `-OutputPathFabric`, also allow `onelake.dfs.fabric.microsoft.com`. |
+| **SharePoint write access** *(only when `-OutputPath` is a SharePoint URL)* | Edit/Contribute on the destination library + folder, plus the Graph delegated or application permissions `Sites.ReadWrite.All` and `Files.ReadWrite.All` | See [Sending Output to SharePoint](#sending-output-to-sharepoint) for the full setup. |
+| **Microsoft Fabric / OneLake access** *(only when `-OutputPath` is a Fabric lakehouse URL)* | All three layers are required: **(1)** the Azure role `Storage Blob Data Contributor` on the OneLake storage scope, **(2)** the **Contributor** (or higher) role on the Fabric workspace in the Fabric portal, **(3)** the tenant setting allowing service principals / Entra IDs to access Fabric APIs must be enabled by your Fabric admin | See [Sending Output to Microsoft Fabric (OneLake)](#sending-output-to-microsoft-fabric-onelake) for the full setup, and the `fabric_resources` folder in the repo root for detailed container/runbook material. |
+| **Az.Accounts PowerShell module** *(only when `-OutputPath` is a Fabric lakehouse URL)* | Used to obtain the OneLake storage token | Install manually if missing: `Install-Module Az.Accounts -Scope CurrentUser`. PAX surfaces a clear error at pre-flight if the module is not present. (Already present on Azure Cloud Shell and the PAX-on-ACA container image.) |
+| **Network Access**          | Microsoft 365 endpoints                 | Ensure firewall allows connections to Microsoft Graph and Exchange Online endpoints. When `-OutputPath` is a SharePoint URL, also allow `*.sharepoint.com`. When `-OutputPath` is a Fabric lakehouse URL, also allow `onelake.dfs.fabric.microsoft.com`. |
 | **Execution Policy**        | Bypass or RemoteSigned                  | See [Authentication Methods](#authentication-methods)        |
 
-**Note:** Graph API mode (default) requires the `Microsoft.Graph.Authentication` PowerShell module, which is automatically detected and installed by the script if missing. EOM mode (`-UseEOM`) automatically handles `ExchangeOnlineManagement` module detection and installation if needed.
+**Note:** Graph API mode (default) requires the `Microsoft.Graph.Authentication` and `Microsoft.Graph.Security` PowerShell modules, both of which are automatically detected and installed by the script if missing. EOM mode (`-UseEOM`) automatically handles `ExchangeOnlineManagement` module detection and installation if needed. The `Az.Accounts` module (needed only for Fabric OneLake output) is the one exception — it must be installed manually before the first Fabric run.
 
 <details>
 <summary>Permission Details</summary>
@@ -314,24 +302,21 @@ Graph API mode requests scopes conditionally based on the switches you pass. The
 
 | Permission | Purpose | When required (Graph API) | Graph API (Delegated) | Graph API (AppRegistration) | ExchangeOnlineManagement (EOM) |
 |------------|---------|---------------------------|:---------------------:|:---------------------------:|:------------------------------:|
-| **Graph: AuditLogsQuery.Read.All** | Umbrella permission for the Microsoft Graph audit query API — covers `CopilotInteraction` record type | Always (except `-OnlyUserInfo` / `-OnlyAgent365Info`) | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: AuditLogsQuery.Read.All** | Umbrella permission for the Microsoft Graph audit query API — covers `CopilotInteraction` record type | Always (except `-OnlyUserInfo`) | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: AuditLogsQuery-Exchange.Read.All** | Exchange Online audit logs | `-IncludeM365Usage` | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: AuditLogsQuery-OneDrive.Read.All** | OneDrive audit logs | `-IncludeM365Usage` | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: AuditLogsQuery-SharePoint.Read.All** | SharePoint Online audit logs | `-IncludeM365Usage` | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: User.Read.All** | Entra user directory, MAC licensing | `-IncludeUserInfo`, `-OnlyUserInfo`, or `-GroupNames` | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: Organization.Read.All** | Tenant/organization context, license metadata | `-IncludeUserInfo` or `-OnlyUserInfo` | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: GroupMember.Read.All** | Group lookup and membership expansion (least privilege) | `-GroupNames` | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: Sites.ReadWrite.All** | Resolve the SharePoint site/library/folder and upload output files | `-OutputPathSP` | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: Files.ReadWrite.All** | Create, replace, and resume uploads of output files in the SharePoint folder | `-OutputPathSP` | ✅ Yes | ✅ Yes | — N/A |
-| **Azure role: Storage Blob Data Contributor** | Write PAX output files into the OneLake `Files/` area of the destination lakehouse | `-OutputPathFabric` | ✅ Required on the signed-in user / managed identity | ✅ Required on the service principal | — N/A |
-| **Fabric portal role: Contributor** (or higher) on the workspace | Allow the identity to see and write into the lakehouse via Fabric APIs | `-OutputPathFabric` | ✅ Required | ✅ Required | — N/A |
-| **Fabric tenant setting: "Service principals can use Fabric APIs"** | Enables Entra service principals / managed identities to call Fabric/OneLake | `-OutputPathFabric` (only when using `-Auth AppRegistration` or `-Auth ManagedIdentity`) | — | ✅ Must be enabled by a Fabric admin | — N/A |
-| **Graph: CopilotPackages.Read.All** | Microsoft Agent 365 catalog/package metadata (Frontier program) | `-IncludeAgent365Info` or `-OnlyAgent365Info` | ✅ Yes (delegated only) | ❌ **Not supported by the API** — see Agent 365 callout below | — N/A |
-| **Graph: Application.Read.All** | Developer/publisher resolution for Agent 365 packages | `-IncludeAgent365Info` or `-OnlyAgent365Info` | ✅ Yes (delegated only) | ❌ **Not supported by the API** — see Agent 365 callout below | — N/A |
-| **Entra role: AI Administrator OR Global Administrator** | Frontier program server-side gate (separate from Graph scopes) | `-IncludeAgent365Info` or `-OnlyAgent365Info` | ✅ Required on the signed-in caller | ✅ Required on the interactive caller used for the agent phase | — N/A |
+| **Graph: Sites.ReadWrite.All** | Resolve the SharePoint site/library/folder and upload output files | `-OutputPath` is a SharePoint URL | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: Files.ReadWrite.All** | Create, replace, and resume uploads of output files in the SharePoint folder | `-OutputPath` is a SharePoint URL | ✅ Yes | ✅ Yes | — N/A |
+| **Azure role: Storage Blob Data Contributor** | Write PAX output into the OneLake `Tables/` namespace (Delta tables) and `Files/` namespace (operational artifacts) of the destination Lakehouse | `-OutputPath` is a Fabric lakehouse URL | ✅ Required on the signed-in user / managed identity | ✅ Required on the service principal | — N/A |
+| **Fabric portal role: Contributor** (or higher) on the workspace | Allow the identity to see and write into the lakehouse via Fabric APIs | `-OutputPath` is a Fabric lakehouse URL | ✅ Required | ✅ Required | — N/A |
+| **Fabric tenant setting: "Service principals can use Fabric APIs"** | Enables Entra service principals / managed identities to call Fabric/OneLake | `-OutputPath` is a Fabric lakehouse URL (only when using `-Auth AppRegistration` or `-Auth ManagedIdentity`) | — | ✅ Must be enabled by a Fabric admin | — N/A |
 | **Purview Audit Reader** | Purview UI/EOM | EOM only | ❌ No | ❌ No | ✅ Yes |
 
-> **📚 Reference:** [Microsoft Graph Audit Log Query Permissions](https://learn.microsoft.com/en-us/graph/api/security-auditcoreroot-post-auditlogqueries#permissions) | [Get auditLogQuery Permissions](https://learn.microsoft.com/en-us/graph/api/security-auditlogquery-get#permissions) | [Microsoft Agent 365 Graph API](https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api)
+> **📚 Reference:** [Microsoft Graph Audit Log Query Permissions](https://learn.microsoft.com/en-us/graph/api/security-auditcoreroot-post-auditlogqueries#permissions) | [Get auditLogQuery Permissions](https://learn.microsoft.com/en-us/graph/api/security-auditlogquery-get#permissions)
 
 **Audit Role Requirement and Enforcement Behavior:**
 
@@ -341,22 +326,10 @@ The **Purview Audit Reader** role is only required for EOM mode (`-UseEOM`) and 
 > If an EOM-mode run fails with `"User is not authorized for the RBAC roles"` or returns a `403 Forbidden` response, this typically indicates a stale role assignment. The Purview Audit Reader role may appear correctly assigned in the Purview portal, but the Exchange audit backend no longer recognizes it.  
 > **Fix:** Remove and re-assign the **Purview Audit Reader** role to the user. This refreshes the Exchange audit authorization mapping. No new permissions are required.
 
-**DSPM for AI Access:**
-- Same permissions as standard audit access (see table above)
-- No additional permissions required for DSPM activity types (`ConnectedAIAppInteraction`, `AIInteraction`, `AIAppInteraction`)
-
 **Entra ID User Enrichment + M365 Copilot Licensing (Optional Feature - Graph API Mode Only):**
 - Requires the **User.Read.All** and **Organization.Read.All** permissions (requested only when this feature is enabled)
 - Enabled via `-IncludeUserInfo` or `-OnlyUserInfo` parameters
 - Provides access to Entra user attributes AND M365 Copilot (MAC) license information
-- Not applicable in EOM mode (`-UseEOM`)
-
-**Microsoft Agent 365 Catalog Access (Optional Feature - Graph API Mode Only):**
-- Requires Graph delegated scopes **CopilotPackages.Read.All** and **Application.Read.All** (requested only when this feature is enabled)
-- Requires the signed-in caller to hold the Entra **AI Administrator** or **Global Administrator** role (server-side gate, separate from Graph scopes)
-- Requires tenant enrollment in the Microsoft Agent 365 Frontier program
-- Enabled via `-IncludeAgent365Info` or `-OnlyAgent365Info` parameters
-- The Agent Package Management API does not accept app-only tokens — the agent phase always uses a delegated (interactive) token. See the Frontier callout below for the full authentication matrix.
 - Not applicable in EOM mode (`-UseEOM`)
 
 **Microsoft 365 Usage Bundle (Optional Feature - Graph API Mode Only):**
@@ -366,7 +339,7 @@ The **Purview Audit Reader** role is only required for EOM mode (`-UseEOM`) and 
 - Not applicable in EOM mode (`-UseEOM`)
 
 **Sending output directly to SharePoint (Optional Feature - Graph API Mode Only):**
-- Requires the Graph permissions **Sites.ReadWrite.All** and **Files.ReadWrite.All**, requested only when `-OutputPathSP` is used
+- Requires the Graph permissions **Sites.ReadWrite.All** and **Files.ReadWrite.All**, requested only when `-OutputPath` is a SharePoint URL
 - The signed-in account (or, for unattended runs, the service principal / managed identity) must additionally have **Edit** or **Contribute** permission on the destination SharePoint library and folder
 - See [Sending Output to SharePoint](#sending-output-to-sharepoint) for the full walkthrough, including how to get a valid URL and what kinds of links cannot be used
 - Not applicable in EOM mode (`-UseEOM`)
@@ -376,7 +349,7 @@ The **Purview Audit Reader** role is only required for EOM mode (`-UseEOM`) and 
   1. **Azure role:** `Storage Blob Data Contributor` for the identity running PAX, scoped to the OneLake storage of the destination workspace
   2. **Fabric portal role:** **Contributor** (or higher) on the destination workspace, assigned in the Fabric portal under *Workspace settings → Manage access*
   3. **Fabric tenant setting:** *"Service principals can use Fabric APIs"* must be enabled by a Fabric admin (required for `-Auth AppRegistration` and `-Auth ManagedIdentity`)
-- Requires the `Az.Accounts` PowerShell module on the host running PAX (auto-installed if missing)
+- Requires the `Az.Accounts` PowerShell module on the host running PAX. **Install manually if missing** (`Install-Module Az.Accounts -Scope CurrentUser`); PAX surfaces a clear error at pre-flight if it cannot find the module.
 - See [Sending Output to Microsoft Fabric (OneLake)](#sending-output-to-microsoft-fabric-onelake) for the walkthrough, and the **`fabric_resources` folder in the repo root** for detailed setup, container, and deployment material if you plan to run PAX inside Azure
 - Not applicable in EOM mode (`-UseEOM`)
 
@@ -384,32 +357,7 @@ The **Purview Audit Reader** role is only required for EOM mode (`-UseEOM`) and 
 - When running PAX inside Azure (for example, an Azure Container Apps Job, Azure VM, or Azure Container Instance) you can sign in using a managed identity instead of a password or app secret
 - The managed identity must hold all the same Graph and destination permissions described in the table above — managed-identity sign-in only controls *how* PAX authenticates, not *what* it is allowed to do
 - If your host has more than one identity attached, set the `AZURE_CLIENT_ID` environment variable to the client ID of the one you want PAX to use
-- Not supported with `-IncludeAgent365Info` / `-OnlyAgent365Info` (the Agent 365 catalog API does not accept non-interactive tokens)
 - Not applicable in EOM mode (`-UseEOM`)
-
----
-
-> ### Microsoft Agent 365 (Frontier) Access — Read Before Using `-IncludeAgent365Info` or `-OnlyAgent365Info`
->
-> The Agent 365 catalog phase calls the Microsoft Graph **Agent Package Management API** (`/beta/copilot/admin/catalog/packages`). This endpoint behaves very differently from the rest of the Purview audit surface, and the differences are not optional — missing any one of them causes the agent phase to fail or be skipped.
->
-> **All four conditions below must be satisfied:**
->
-> 1. **Tenant must be enrolled in the Microsoft Agent 365 Frontier program.** If the tenant is not enrolled, PAX shows a banner and skips the agent phase. Audit and EntraUsers phases (when applicable) still complete normally. See the [Microsoft Agent 365 Frontier program](https://www.microsoft.com/en-us/microsoft-365-copilot/frontier-program) for enrollment information.
-> 2. **The signed-in caller must hold the Entra `AI Administrator` or `Global Administrator` role.** This is enforced server-side by the Frontier program and is independent of the Graph scopes consented to PAX. Granting Graph scopes alone is **not** sufficient — without the role the endpoint returns 403.
-> 3. **Graph delegated scopes `CopilotPackages.Read.All` and `Application.Read.All` must be consented for the signed-in caller.** PAX requests these scopes during the interactive sign-in for the agent phase.
-> 4. **The Agent 365 phase requires a delegated (interactive) Graph token.** The Agent Package Management API **does not accept app-only tokens** — there is no `-Auth AppRegistration`-only path for the agent phase, regardless of how the app registration is configured.
->
-> **Agent 365 Graph API Authentication behavior matrix:**
->
-> | Scenario | Audit phase auth | Agent 365 phase auth | Result |
-> |----------|------------------|----------------------|--------|
-> | `-Auth WebLogin` / `DeviceCode` / `Credential` / `Silent` + `-IncludeAgent365Info` | Interactive (single sign-in) | Same interactive context | ✅ Single sign-in covers both phases |
-> | `-Auth AppRegistration` + `-IncludeAgent365Info` | App-only (service principal) | **One-time interactive prompt launched at the start of the agent phase** to acquire `CopilotPackages.Read.All` and `Application.Read.All` for the signed-in admin | ✅ Dual context — audit runs unattended, agent phase requires a human at that point |
-> | `-Auth WebLogin` / `DeviceCode` / `Credential` / `Silent` + `-OnlyAgent365Info` | (skipped) | Interactive | ✅ Supported |
-> | **`-Auth AppRegistration` + `-OnlyAgent365Info`** | (skipped) | n/a | ❌ **Not supported.** PAX exits with a clear error. There is no audit phase to justify falling back to a secondary interactive sign-in. Use `-Auth WebLogin` or `-Auth DeviceCode` for `-OnlyAgent365Info`. |
->
-> **Reference:** [Microsoft Agent 365 Graph API](https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api)
 
 </details>
 
@@ -442,7 +390,7 @@ The **Purview Audit Reader** role is only required for EOM mode (`-UseEOM`) and 
 
 ### Download the Script
 
-- **Script:** [PAX_Purview_Audit_Log_Processor_v1.11.1.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.1/PAX_Purview_Audit_Log_Processor_v1.11.1.ps1)
+- **Script:** [PAX_Purview_Audit_Log_Processor_v1.11.2.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.2/PAX_Purview_Audit_Log_Processor_v1.11.2.ps1)
 - **Release Notes:** [v1.11.x](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md)
 
 Save the downloaded script to a working directory (e.g., `C:\Scripts\PAX\`).
@@ -497,12 +445,6 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -
 *Workload selection (what to collect):*
 - [Microsoft 365 Usage Parameters](#microsoft-365-usage-parameters)
 - [Dual-Mode & Enrichment Parameters](#dual-mode--enrichment-parameters)
-- [Microsoft Agent 365 Parameters](#microsoft-agent-365-parameters)
-- [DSPM for AI Parameters](#dspm-for-ai-parameters)
-
-*Data processing:*
-- [Data Processing Parameters](#data-processing-parameters)
-- [Offline Replay Parameters](#offline-replay-parameters)
 
 *Performance & reliability:*
 - [Parallel Execution Parameters](#parallel-execution-parameters)
@@ -518,16 +460,15 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -
 
 | A | B-C | D-E | F-I | L-O | P-R | S-Z |
 |---|-----|-----|-----|-----|-----|-----|
-| `-ActivityTypes` | `-BlockHours` | `-DSPMOutputMode` | `-Force` | `-LowLatencyMs` | `-PacingMs` | `-ServiceTypes` |
-| `-AdaptiveConcurrencyCeiling` | `-ClientCertificatePassword` | `-EmitMetricsJson` | `-GroupNames` | `-MaxConcurrency` | `-ParallelMode` | `-StartDate` |
-| `-AgentId` | `-ClientCertificatePath` | `-EndDate` | `-Help` | `-MaxMemoryMB` | `-PromptFilter` | `-StatusIntervalSeconds` |
-| `-AgentsOnly` | `-ClientCertificateStoreLocation` | `-ExcludeAgents` | `-IncludeAgent365Info` | `-MaxParallelGroups` | `-RAWInputCSV` | `-StreamingChunkSize` |
-| `-AppendFile` | `-ClientCertificateThumbprint` | `-ExcludeCopilotInteraction` | `-IncludeCopilotInteraction` | `-MetricsPath` | `-RecordTypes` | `-StreamingSchemaSample` |
-| `-Auth` | `-ClientId` | `-ExplodeArrays` | `-IncludeDSPMForAI` | `-OnlyAgent365Info` | `-Resume` | `-TenantId` |
-| `-AutoCompleteness` | `-ClientSecret` | `-ExplodeDeep` | `-IncludeM365Usage` | `-OnlyUserInfo` | `-ResultSize` | `-ThroughputDropPct` |
-|   | `-CombineOutput` | `-ExplosionThreads` | `-IncludeTelemetry` | `-OutputPath` |   | `-UseEOM` |
-|   |   | `-ExportProgressInterval` | `-IncludeUserInfo` | `-OutputPathSP` |   | `-UserIds` |
-|   |   |   |   | `-OutputPathFabric` |   |   |
+| `-ActivityTypes` | `-BlockHours` | `-EmitMetricsJson` | `-Force` | `-LowLatencyMs` | `-PacingMs` | `-ServiceTypes` |
+| `-AdaptiveConcurrencyCeiling` | `-ClientCertificatePassword` | `-EndDate` | `-GroupNames` | `-MaxConcurrency` | `-ParallelMode` | `-StartDate` |
+| `-AgentId` | `-ClientCertificatePath` | `-ExcludeAgents` | `-Help` | `-MaxMemoryMB` | `-PromptFilter` | `-StatusIntervalSeconds` |
+| `-AgentsOnly` | `-ClientCertificateStoreLocation` | `-ExcludeCopilotInteraction` | `-IncludeCopilotInteraction` | `-MaxParallelGroups` | `-RecordTypes` | `-StreamingChunkSize` |
+| `-AppendFile` | `-ClientCertificateThumbprint` | `-ExportProgressInterval` | `-IncludeM365Usage` | `-MetricsPath` | `-Resume` | `-StreamingSchemaSample` |
+| `-Auth` | `-ClientId` |   | `-IncludeTelemetry` | `-OnlyUserInfo` | `-ResultSize` | `-TenantId` |
+| `-AutoCompleteness` | `-ClientSecret` |   | `-IncludeUserInfo` | `-OutputPath` |   | `-ThroughputDropPct` |
+|   | `-CombineOutput` |   |   |   |   | `-UseEOM` |
+|   |   |   |   |   |   | `-UserIds` |
 
 </details>
 
@@ -567,18 +508,16 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -
 **Purpose:** Directory path where output files will be created with auto-generated timestamped filenames  
 **Default:** `C:\Temp\`
 
-> 💡 If you want output to land directly in SharePoint or Microsoft Fabric instead of a local folder, see [`-OutputPathSP`](#-outputpathsp-string) and [`-OutputPathFabric`](#-outputpathfabric-string) below. **Pick exactly one destination per run** — PAX writes locally **or** to SharePoint **or** to Fabric, never two at once. If you pass more than one of `-OutputPath`, `-OutputPathSP`, or `-OutputPathFabric`, PAX exits immediately with an error before any audit data is pulled.
+> 💡 `-OutputPath` accepts a local folder, a SharePoint document-library URL, or a Microsoft Fabric lakehouse URL. PAX infers the destination tier from the form of the value you pass and writes to exactly one location per run. See [Sending Output to SharePoint](#sending-output-to-sharepoint) and [Sending Output to Microsoft Fabric (OneLake)](#sending-output-to-microsoft-fabric-onelake) for the URL formats and required permissions.
 
 **Auto-Generated Filenames:** Script creates descriptive filenames based on:
 - **Activity types** being exported
-- **Export mode** (CSV vs Excel, combined vs separate)
+- **Combined vs separate output** mode
 - **Current timestamp** (yyyyMMdd_HHmmss format)
 
 **Examples of Auto-Generated Filenames:**
 - `Purview_CopilotInteraction_Export_20251110_143022.csv`
 - `Purview_Audit_CombinedUsageActivity_20251110_143022.csv`
-- `Purview_MultiTab_Export_20251110_143022.xlsx`
-- `Purview_DSPM_Export_20251110_143022.csv` (with `-IncludeDSPMForAI`)
 
 **Use When:** Specifying custom output directory location  
 **Example:** `-OutputPath "D:\AuditData\2025\\"`
@@ -587,7 +526,7 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -
 
 #### `-AppendFile` (string)
 
-**Purpose:** Append new audit records to an existing output file (CSV or Excel) instead of creating new timestamped files  
+**Purpose:** Append new audit records to an existing output file (CSV) instead of creating new timestamped files  
 **Default:** Not set (creates new timestamped files)  
 **Use When:**
 
@@ -596,7 +535,7 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -
 
 **Examples:**
 
-- Filename only: `-AppendFile "Report.xlsx"` (uses `-OutputPath` directory)
+- Filename only: `-AppendFile "Report.csv"` (uses `-OutputPath` directory)
 - Full path: `-AppendFile "C:\Data\\"`
 
 **Notes:**
@@ -609,95 +548,31 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -
 
 #### `-CombineOutput` (switch)
 
-**Purpose:** Combine all activity types into single output file/tab  
-**Default:** Off (creates separate files per activity type for CSV; separate tabs for Excel)  
+**Purpose:** Combine all activity types into single output file  
+**Default:** Off (creates separate files per activity type)  
 **Use When:** Need consolidated single-file output for ingestion pipelines or simplified analysis  
-**Applies to:** Both CSV and Excel export modes  
-**Example:** `-CombineOutput` (for CSV) or `-ExportWorkbook -CombineOutput` (for Excel)
+**Applies to:** CSV exports  
+**Example:** `-CombineOutput`
 
 **Behavior:**
 
 **Without `-CombineOutput` (Default):**
-- **CSV Mode:** Creates separate CSV file per activity type (e.g., `CopilotInteraction_<timestamp>.csv`, `ConnectedAIAppInteraction_<timestamp>.csv`)
-- **Excel Mode:** Creates multi-tab workbook (one tab per activity type, e.g., `CopilotInteraction`, `ConnectedAIAppInteraction`)
+- Creates separate CSV file per activity type (e.g., `CopilotInteraction_<timestamp>.csv`, `ConnectedAIAppInteraction_<timestamp>.csv`)
 
 **With `-CombineOutput` switch:**
-- **CSV Mode:** Merges all activity types into single file: `Purview_Audit_CombinedUsageActivity_<timestamp>.csv` (with `Operations` column identifying type)
-- **Excel Mode:** Creates single-tab workbook with all activity types in one sheet: `Purview_Audit_CombinedUsageActivity_<timestamp>.xlsx`
+- Merges all activity types into single file: `Purview_Audit_CombinedUsageActivity_<timestamp>.csv` (with `Operations` column identifying type)
 
 **Use Cases:**
 
 - **Ingestion Pipelines:** Single combined file simplifies automated ingestion workflows
 - **Cross-Activity Analysis:** Easier correlation across activity types in single dataset
-- **Simplified Distribution:** Single file for stakeholder sharing instead of multiple files/tabs
+- **Simplified Distribution:** Single file for stakeholder sharing instead of multiple files
 
 **Notes:**
 
 - EntraUsers data always exported separately (not merged with activity data)
-- Can be combined with `-AppendFile` for incremental single-tab Excel builds
+- Can be combined with `-AppendFile` for incremental single-file builds
 - Separate files (default) enable parallel processing and activity-specific analysis
-
----
-
-#### `-OutputPathSP` (string)
-
-**Purpose:** Send all output (CSVs, Excel workbook, log file, metrics JSON) directly to a folder in a SharePoint document library instead of writing it to a local folder.
-
-**Default:** Not set (local output via `-OutputPath` is used).
-
-**URL shape:**
-
-```
-https://<tenant>.sharepoint.com/sites/<site>/<library>[/<folder>][/<subfolder>]
-```
-
-**Example:** `-OutputPathSP "https://contoso.sharepoint.com/sites/AuditTeam/Shared Documents/PAX-Output"`
-
-**What it does:**
-
-- PAX checks the folder exists and that the signed-in identity has write access **before any audit data is pulled**. If the check fails, PAX exits immediately with a clear error — no half-run files are left behind.
-- Every output file that would normally appear in your local output folder (CSV, Excel, log, metrics JSON) is uploaded to the SharePoint folder under the same filename.
-- A small local scratch folder is used to stage each file briefly before upload; the local copy is removed after the file lands in SharePoint.
-- At the end of the run, PAX prints a consolidated list of every file that landed in SharePoint, with sizes.
-
-**Use When:** You want results to be immediately visible to a team, governed by SharePoint sharing/retention, or consumed by Power BI without a gateway hop.
-
-**Important:**
-
-- **Mutually exclusive with `-OutputPath` and `-OutputPathFabric`.** Pick exactly one destination per run.
-- See [Sending Output to SharePoint](#sending-output-to-sharepoint) for the full walkthrough, including **how to obtain a valid URL from a browser address bar** and **a list of URL formats that look right but will not work** (sharing links, `_layouts` pages, query strings, etc.).
-- Required permissions: `Sites.ReadWrite.All` and `Files.ReadWrite.All` (Graph), plus Edit/Contribute on the destination folder.
-
----
-
-#### `-OutputPathFabric` (string)
-
-**Purpose:** Send all output (CSVs, Excel workbook, log file, metrics JSON) directly to a OneLake folder in a Microsoft Fabric lakehouse instead of writing it to a local folder.
-
-**Default:** Not set (local output via `-OutputPath` is used).
-
-**URL shape:**
-
-```
-https://onelake.dfs.fabric.microsoft.com/<workspace>/<lakehouse>.Lakehouse/Files[/<folder>]
-```
-
-**Example:** `-OutputPathFabric "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse/Files/audit"`
-
-**What it does:**
-
-- PAX checks the lakehouse Files area exists and that the signed-in identity has write access **before any audit data is pulled**. If the check fails, PAX exits immediately with a clear error.
-- Every output file is uploaded to the OneLake folder using the same filenames it would use locally. Files appear in the Fabric lakehouse explorer under your `Files/...` path and become immediately available to Fabric notebooks, pipelines, and Power BI reports.
-- For long runs, PAX keeps its OneLake sign-in current automatically so multi-hour exports finish without interruption.
-
-**Use When:** You want PAX output to land directly in a Fabric workspace for downstream analytics, with no intermediate copy and no manual upload.
-
-**Important:**
-
-- **Mutually exclusive with `-OutputPath` and `-OutputPathSP`.** Pick exactly one destination per run.
-- Requires the `Az.Accounts` PowerShell module (auto-installed if missing).
-- See [Sending Output to Microsoft Fabric (OneLake)](#sending-output-to-microsoft-fabric-onelake) for the walkthrough, including **how to construct the URL from your workspace and lakehouse**, **what kinds of URLs to avoid** (Power BI report links, dataset links), and the three-layer permissions model.
-- For containerized / scheduled runs in Azure, see the **`fabric_resources` folder in the repo root** for detailed setup material.
 
 ---
 
@@ -731,7 +606,6 @@ Automating scripts, using headless terminals, or SSO scenarios
 **Notes:**
 
 - Available in both Graph API and EOM modes, except `AppRegistration` and `ManagedIdentity` (Graph mode only)
-- `ManagedIdentity` is not compatible with `-IncludeAgent365Info` / `-OnlyAgent365Info` (the Microsoft Agent 365 catalog API does not accept non-interactive tokens)
 - See [Authentication Methods](#authentication-methods) section for detailed guidance
 
 ---
@@ -879,7 +753,7 @@ Automating scripts, using headless terminals, or SSO scenarios
 **Mode Compatibility:** Graph API mode (default) only; ignored in EOM mode (`-UseEOM`).  
 **Use When:**
 
-- Retrieving Microsoft 365 app usage (Word, Excel, PowerPoint, OneNote, Loop) that maps to SharePoint or OneDrive operations
+- Retrieving Microsoft 365 app usage (Word, Excel, PowerPoint, OneNote) that maps to SharePoint or OneDrive operations
 - Targeting legacy operations that require both operation and record type filters to return data (for example, `FilePreviewed`)
 
 **Examples:**
@@ -1009,33 +883,31 @@ Automating scripts, using headless terminals, or SSO scenarios
 
 #### `-GroupNames` (string[])
 
-**Purpose:** Filter audit records to include only those from members of specific distribution group(s)  
+**Purpose:** Filter audit records to include only those from members of specific distribution group(s) (or Entra ID security groups / mail-enabled groups in Graph API mode)  
 **Default:** Not set (no group filtering)  
 **Mode Compatibility:**
-- **⚠️ EOM Mode Only:** Requires `-UseEOM` parameter (NOT compatible with default Graph API mode)
-- Expands groups to member emails, then filters server-side (efficient)
+- **EOM Mode (`-UseEOM`):** Uses `Get-DistributionGroupMember` to expand groups to member emails (server-side via Exchange Online), then filters server-side via `Search-UnifiedAuditLog -UserIds`
+- **Graph API Mode (default):** Uses `Get-MgGroup` + `Get-MgGroupMember` to expand groups (requires the `GroupMember.Read.All` scope; the script requests it automatically when `-GroupNames` is supplied), then filters client-side after retrieval (the Graph audit query API does not support UPN filtering server-side)
 
 **Use When:**
 
-- Analyzing department-wide or team-level Copilot adoption (EOM mode only)
+- Analyzing department-wide or team-level Copilot adoption
 - Tracking usage across organizational units
 - Compliance audits for specific business groups
 - ROI analysis by functional group
 
 **Examples:**
 
-- Single: `-UseEOM -GroupNames "Engineering-Team@contoso.com"`
-- Multiple: `-UseEOM -GroupNames "Sales@contoso.com","Marketing@contoso.com"`
-- Array: `-UseEOM -GroupNames @("Group1@contoso.com", "Group2@contoso.com")`
+- Graph API mode (default): `-GroupNames "Engineering-Team@contoso.com"`
+- EOM mode: `-UseEOM -GroupNames "Engineering-Team@contoso.com"`
+- Multiple: `-GroupNames "Sales@contoso.com","Marketing@contoso.com"`
+- Array: `-GroupNames @("Group1@contoso.com", "Group2@contoso.com")`
 
-**Notes:** 
-- **Requires `-UseEOM`** to enable EOM mode
-- Requires Exchange Online authentication for group expansion
-- Uses `Get-DistributionGroupMember` to expand groups to member emails
+**Notes:**
+- Identifiers can be group display name, mail address, or (in Graph API mode) the group's object ID
 - Expansion adds ~2-5 seconds per group (one-time cost)
 - Can be combined with `-UserIds` (users are merged and deduplicated)
 - Works with all other filters (`-AgentsOnly`, `-AgentId`, `-ExcludeAgents`, `-PromptFilter`)
-- **Not compatible with Graph API mode (default)** - use `-UseEOM` first
 
 ---
 
@@ -1090,13 +962,11 @@ Automating scripts, using headless terminals, or SSO scenarios
 **Use When:**
 
 - Using `-IncludeM365Usage` but only want non-AI collaboration signals
-- Querying DSPM activity types without M365 Copilot data
 - Building exports focused purely on classic M365 workloads
 
 **Examples:**
 
 - `-IncludeM365Usage -ExcludeCopilotInteraction` — Full M365 usage bundle WITHOUT CopilotInteraction
-- `-IncludeDSPMForAI -ExcludeCopilotInteraction` — DSPM activity types only
 
 **Notes:**
 - Overrides default auto-inclusion of CopilotInteraction
@@ -1172,9 +1042,9 @@ ExchangeAdmin, ExchangeItem, ExchangeMailbox, SharePointFileOperation, SharePoin
 
 **Notes:**
 
-- **Graph API is now the default** in version 1.8.0
+- **Graph API is the default mode**
 - EOM mode does NOT support `-IncludeUserInfo` (Entra enrichment requires Graph API)
-- `-GroupNames` filtering requires EOM mode (Graph API does not support server-side group filtering)
+- `-GroupNames` is supported in both modes — Graph API mode expands groups via `Get-MgGroup` + `Get-MgGroupMember` (requires `GroupMember.Read.All`), then filters client-side after retrieval; EOM mode expands via `Get-DistributionGroupMember` and filters server-side via `Search-UnifiedAuditLog -UserIds`
 - For most scenarios, Graph API provides better performance and features
 
 ---
@@ -1196,7 +1066,7 @@ ExchangeAdmin, ExchangeItem, ExchangeMailbox, SharePointFileOperation, SharePoin
 
 - **Graph API Mode:** NOT compatible with `-UseEOM` (requires Graph API)
 - **Permissions:** User.Read.All (includes user profiles and license data), Organization.Read.All (least privilege)
-- **Output:** Adds `EntraUsers_MAClicensing_<timestamp>.csv` file (CSV mode) or `EntraUsers_MAClicensing` tab (Excel mode)
+- **Output:** Adds `EntraUsers_MAClicensing_<timestamp>.csv` file
 
 **Schema:** Comprehensive schema including UserPrincipalName, DisplayName, Email, Department, JobTitle, Manager, AssignedLicenses (semicolon-separated M365 licenses), HasLicense (boolean, **dynamically detected** — see License Detection Logic below), AccountEnabled, and more
 
@@ -1206,7 +1076,7 @@ ExchangeAdmin, ExchangeItem, ExchangeMailbox, SharePointFileOperation, SharePoin
 - Minimal performance impact (<5 seconds for typical datasets)
 - User data cached for session duration
 - **License data:** Retrieved via User.Read.All scope from Microsoft Graph - includes all assigned licenses
-- **License detection (dynamic, future-proof):** PAX queries the tenant's `/subscribedSkus` endpoint and discovers every `servicePlanId` whose `servicePlanName` matches the wildcard `*COPILOT*`. A user's `HasLicense` flag is `True` when the user has any `assignedPlan` with `capabilityStatus == 'Enabled'` AND `servicePlanId` in the discovered set. No SKU allow-list is hard-coded in the script; new Copilot SKUs (M365, EDU, Sales, Service, Finance, GCC, Frontier, etc.) are picked up automatically.
+- **License detection (dynamic, future-proof):** PAX queries the tenant's `/subscribedSkus` endpoint and discovers every `servicePlanId` whose `servicePlanName` matches the wildcard `*COPILOT*`. A user's `HasLicense` flag is `True` when the user has any `assignedPlan` with `capabilityStatus == 'Enabled'` AND `servicePlanId` in the discovered set. No SKU allow-list is hard-coded in the script; new Copilot SKUs (M365, EDU, Sales, Service, Finance, GCC, etc.) are picked up automatically.
 - **Power BI Templates:** When importing into Copilot ROI Analytics team Power BI templates, use the same PAX-generated EntraUsers file for both the "User/Org Data" and "Licensing Data" import prompts
 
 ---
@@ -1228,7 +1098,7 @@ ExchangeAdmin, ExchangeItem, ExchangeMailbox, SharePointFileOperation, SharePoin
 
 - Authenticates to Microsoft Graph
 - Fetches all Entra users and Microsoft 365 license assignments via Graph API
-- Exports standalone `EntraUsers_MAClicensing_<timestamp>.csv` (or Excel with single tab)
+- Exports standalone `EntraUsers_MAClicensing_<timestamp>.csv`
 - **Skips all audit log queries** (completes in 5-15 seconds vs. minutes/hours)
 - Automatically enables `-IncludeUserInfo` internally
 
@@ -1242,7 +1112,6 @@ ExchangeAdmin, ExchangeItem, ExchangeMailbox, SharePointFileOperation, SharePoin
 
 - `-OutputPath` (specify output directory)
 - `-Auth` (choose authentication method: WebLogin, DeviceCode, etc.)
-- `-ExportWorkbook` (export to Excel instead of CSV)
 
 **Note:** `-AppendFile` is NOT compatible with `-OnlyUserInfo` since EntraUsers data represents point-in-time snapshots, not time-based activity that should be appended.
 
@@ -1251,9 +1120,8 @@ ExchangeAdmin, ExchangeItem, ExchangeMailbox, SharePointFileOperation, SharePoin
 All audit-related parameters are incompatible and will trigger validation errors:
 
 - **Date Filtering:** StartDate, EndDate
-- **Activity Types:** ActivityTypes, IncludeDSPMForAI, ExcludeCopilotInteraction
+- **Activity Types:** ActivityTypes, ExcludeCopilotInteraction
 - **User/Agent Filtering:** UserIds, GroupNames, AgentId, AgentsOnly, ExcludeAgents, PromptFilter
-- **Processing Modes:** ExplodeArrays, ExplodeDeep, RAWInputCSV
 - **Query Tuning:** BlockHours, PartitionHours, MaxPartitions, ResultSize, PacingMs, AutoCompleteness
 - **Parallelization:** ParallelMode, MaxParallelGroups, MaxConcurrency, EnableParallel
 - **EOM Mode:** UseEOM
@@ -1277,9 +1145,6 @@ All audit-related parameters are incompatible and will trigger validation errors
 # Basic user-only export (CSV)
 .\PAX_Purview_Audit_Log_Processor.ps1 -OnlyUserInfo
 
-# Export to Excel workbook
-.\PAX_Purview_Audit_Log_Processor.ps1 -OnlyUserInfo -ExportWorkbook
-
 # Custom output directory
 .\PAX_Purview_Audit_Log_Processor.ps1 -OnlyUserInfo -OutputPath "D:\LicenseAudits\"
 
@@ -1289,161 +1154,13 @@ All audit-related parameters are incompatible and will trigger validation errors
 
 ---
 
-### Microsoft Agent 365 Parameters
-
-#### `-IncludeAgent365Info` (switch)
-
-**Purpose:** Add a Microsoft Agent 365 catalog enrichment phase to a normal audit run for tenants enrolled in the **Microsoft Agent 365 Frontier program**.
-
-> **Point-in-time:** The Agent 365 catalog is a **snapshot of the tenant at the moment of the call**. It is *not* historical / time-ranged data. `-StartDate` and `-EndDate` apply only to the audit phase and have no effect on the Agent 365 phase. Each run produces a fresh snapshot; to track changes over time, run on a schedule and retain the per-run CSVs.
-
-**Behavior:**
-- Audit phase runs as configured (date range, filters, M365 Usage bundle, DSPM for AI, etc.).
-- After the audit phase completes, PAX calls the Microsoft Graph **Agent Package Management API** (`/beta/copilot/admin/catalog/packages`) and emits a point-in-time Frontier-program agent inventory.
-- Output schema matches the Microsoft Admin Center "Agent 365" export (28 columns, including agent name, package id, publisher, developer, install counts, last-modified metadata).
-- CSV mode: writes a separate file `Agent365_<timestamp>.csv`.
-- Excel mode (`-ExportWorkbook`): writes an additional `Agents365` worksheet alongside the audit tabs.
-- If the tenant is **not** enrolled in the Frontier program, PAX shows a banner and skips the agent phase. Audit and EntraUsers phases (when applicable) still complete normally.
-
-**Requirements:**
-- Tenant must be enrolled in the [Microsoft Agent 365 Frontier program](https://www.microsoft.com/en-us/microsoft-365-copilot/frontier-program).
-- The signed-in caller for the agent phase must hold the Entra **AI Administrator** or **Global Administrator** role (server-side gate enforced by the Frontier program, separate from Graph scopes).
-- Graph delegated scopes `CopilotPackages.Read.All` and `Application.Read.All` must be consented to PAX (requested at sign-in).
-- The agent phase **requires a delegated (interactive) Graph token** — the Agent Package Management API does not accept app-only tokens.
-
-**Authentication behavior:**
-- With `-Auth WebLogin` / `DeviceCode` / `Credential` / `Silent`: the same interactive sign-in covers both the audit and agent phases — no extra prompt.
-- With `-Auth AppRegistration`: PAX runs the audit phase non-interactively using the service principal, then **launches a one-time interactive sign-in at the start of the agent phase** to acquire `CopilotPackages.Read.All` and `Application.Read.All` for an admin holding the AI Administrator or Global Administrator role.
-
-**Incompatible Parameters:**
-- `-RAWInputCSV` (offline replay has no live Graph context for the agent phase)
-- `-UseEOM` (the Agent 365 endpoint is Graph-only)
-- `-Resume` (the agent phase is a single-shot snapshot and does not participate in checkpoint/resume)
-- `-OnlyUserInfo` and `-OnlyAgent365Info` (mutually exclusive standalone-export modes)
-
-**Reference:** [Microsoft Agent 365 Graph API](https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api)
-
-**Examples:**
-
-```powershell
-# Audit run with Agent 365 catalog appended (CSV)
-./PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -IncludeAgent365Info
-
-# Audit run plus Agent 365 catalog as an Excel worksheet
-./PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -IncludeAgent365Info -ExportWorkbook
-
-# Dual-context: AppRegistration for audit, interactive sign-in for the agent phase
-./PAX_Purview_Audit_Log_Processor.ps1 `
-    -Auth AppRegistration `
-    -TenantId "<tenant-guid>" `
-    -ClientId "<app-id>" `
-    -ClientSecret $clientSecret `
-    -StartDate 2025-10-01 -EndDate 2025-10-02 `
-    -IncludeAgent365Info
-```
-
----
-
-#### `-OnlyAgent365Info` (switch)
-
-**Purpose:** Run **only** the Microsoft Agent 365 catalog snapshot — skip the audit phase and any EntraUsers enrichment.
-
-> **Point-in-time:** The Agent 365 catalog reflects the **current state of the tenant at the moment of the call**, not a date-ranged history. `-StartDate` / `-EndDate` are not applicable and are blocked. Each invocation produces a fresh snapshot; schedule recurring runs if you need a longitudinal view.
-
-**Behavior:**
-- No audit query is issued. PAX connects to Microsoft Graph and pulls the Agent 365 catalog via `/beta/copilot/admin/catalog/packages`.
-- Output: `Agent365_<timestamp>.csv` (or an `Agents365` tab in `-ExportWorkbook` mode).
-- A preflight check verifies tenant Frontier enrollment, role membership, and consented scopes before issuing the catalog call. Use `-Force` to bypass non-blocking preflight warnings.
-- If the tenant is not enrolled in the Frontier program, PAX shows a banner and exits.
-
-**Requirements:** Same as `-IncludeAgent365Info` (Frontier enrollment, AI Administrator / Global Administrator role, `CopilotPackages.Read.All`, `Application.Read.All`).
-
-**Authentication behavior:**
-- Supported: `-Auth WebLogin`, `-Auth DeviceCode`, `-Auth Credential`, `-Auth Silent`.
-- **Not supported: `-Auth AppRegistration`.** Because `-OnlyAgent365Info` skips the audit phase entirely, there is no work for a service principal to perform; PAX exits with a clear error directing you to use `-Auth WebLogin` or `-Auth DeviceCode`.
-
-**Incompatible Parameters (automatically blocked):**
-- All audit-related parameters: `StartDate`, `EndDate`, `ActivityTypes`, `IncludeDSPMForAI`, `ExcludeCopilotInteraction`, `UserIds`, `GroupNames`, `AgentId`, `AgentsOnly`, `ExcludeAgents`, `PromptFilter`, `ExplodeArrays`, `ExplodeDeep`, `RAWInputCSV`, `BlockHours`, `PartitionHours`, `MaxPartitions`, `ResultSize`, `PacingMs`, `AutoCompleteness`, `ParallelMode`, `MaxParallelGroups`, `MaxConcurrency`, `EnableParallel`, `UseEOM`, `IncludeM365Usage`, `IncludeUserInfo`, `OnlyUserInfo`, `IncludeAgent365Info`, `Resume`, `AppendFile`.
-- `-Auth AppRegistration` (see above).
-
-**Use Cases:**
-1. **Agent inventory audits:** Periodic snapshots of installed Agent 365 packages for governance/compliance reporting.
-2. **Frontier program enablement validation:** Confirm tenant enrollment and admin role assignments produce a successful catalog pull before integrating into broader audit workflows.
-3. **Power BI / BI feeds:** Standalone agent catalog data for dashboards without re-running heavy audit queries.
-
-**Examples:**
-
-```powershell
-# Standalone Agent 365 catalog snapshot (CSV)
-./PAX_Purview_Audit_Log_Processor.ps1 -OnlyAgent365Info
-
-# Excel workbook with the Agents365 worksheet
-./PAX_Purview_Audit_Log_Processor.ps1 -OnlyAgent365Info -ExportWorkbook
-
-# Bypass non-blocking preflight warnings
-./PAX_Purview_Audit_Log_Processor.ps1 -OnlyAgent365Info -Force
-
-# Device code auth for headless / no-browser workstations
-./PAX_Purview_Audit_Log_Processor.ps1 -OnlyAgent365Info -Auth DeviceCode
-```
-
----
-
-### Data Processing Parameters
-
-#### `-ExplodeArrays` (switch)
-
-**Purpose:** Enable Purview canonical 153-column exploded schema (array elements → rows)  
-**Default:** Off (standard 1:1 row mode)  
-**Use When:**
-
-- Need one row per array element for pivoting
-- Matching Microsoft Purview export format
-- Preparing for relational BI tools
-
-**Example:** `-ExplodeArrays`  
-**Notes:** Forced ON automatically in replay mode
-
----
-
-#### `-ExplodeDeep` (switch)
-
-**Purpose:** Enable deep flattening (153-column base + all `CopilotEventData.*` columns)  
-**Default:** Off  
-**Use When:**
-
-- Maximum data extraction for BI/ML pipelines
-- Need every nested field as a separate column
-- Building wide-schema data warehouses
-
-**Example:** `-ExplodeDeep`  
-**Notes:** Significantly increases CSV width; test with short date range first
-
----
-
-### Offline Replay Parameters
-
-#### `-RAWInputCSV` (string)
-
-**Purpose:** Path to previously exported raw Purview audit CSV for offline transformation  
-**Default:** Not set (live query mode)  
-**Use When:**
-
-- Re-processing raw exports with different explosion settings
-- Development/testing without live tenant access
-- Reproducible transformations for auditing
-
-**Example:** `-RAWInputCSV "C:\PreviousExports\\"`
-
----
-
 ### Parallel Execution Parameters
 
 #### `-ParallelMode` (string)
 
 **Purpose:** Control parallel execution of multiple activity types  
 **Valid Values:** `Off`, `On`, `Auto`  
-**Default:** `Off`  
+**Default:** `Auto` (PowerShell 7+ engages parallel processing automatically unless explicitly set to `Off`; PowerShell 5.1 / `-UseEOM` always runs serial)  
 **Use When:**
 
 - Processing multiple high-volume activity types
@@ -1452,7 +1169,7 @@ All audit-related parameters are incompatible and will trigger validation errors
 
 **Examples:**
 
-- `-ParallelMode Auto` - Let script decide based on activity count and volume
+- `-ParallelMode Auto` - Let script decide based on activity count and volume (default)
 - `-ParallelMode On` - Force parallel execution
 - `-ParallelMode Off` - Sequential processing
 
@@ -1481,46 +1198,10 @@ All audit-related parameters are incompatible and will trigger validation errors
 #### `-MaxParallelGroups` (int)
 
 **Purpose:** Maximum number of activity groups to process concurrently  
-**Range:** `1` to `5`  
-**Default:** `3`  
-**Use When:** Limiting total concurrent operations  
-**Example:** `-MaxParallelGroups 2`
-
----
-
-#### `-ExplosionThreads` (int)
-
-**Purpose:** Control parallel thread count for array/conversation explosion processing  
-**Range:** `0` to `8`  
-**Default:** `0` (auto-detect based on CPU cores)  
-**Use When:**
-
-- Processing large datasets with `-ExplodeArrays` or `-ExplodeDeep`
-- Optimizing explosion throughput on multi-core systems
-- Need explicit control over thread utilization
-
-**Value Behaviors:**
-
-| Value | Behavior |
-|-------|----------|
-| `0` | Auto-detect: Uses 2-8 threads based on CPU core count |
-| `1` | Force serial processing (single-threaded) |
-| `2-8` | Use exactly N threads for parallel explosion (capped at 8 for stability) |
-
-**Examples:**
-
-- `-ExplosionThreads 0` - Auto-detect optimal thread count (default, recommended)
-- `-ExplosionThreads 1` - Force serial explosion (debugging, compatibility)
-- `-ExplosionThreads 8` - Use maximum 8 threads for high-core systems
-
-**Notes:**
-
-- Uses `Start-ThreadJob` with job queue architecture for optimal load balancing
-- Processes records in ~1000-record chunks with N concurrent workers
-- **Full schema discovery:** Parallel mode scans ALL rows for 100% column coverage (serial mode uses sampling via `-StreamingSchemaSample`)
-- Output is identical to serial mode (same columns, data, row count; only row order may differ)
-- Checkpoint files store `explosionThreads` for resume consistency
-- Serial processing when `-ExplosionThreads 1` specified
+**Range:** `0` to `50` (aligns with Microsoft Purview's ~10 query safe limit per user account; values >10 increase scheduling pressure but rarely raw throughput)  
+**Default:** `8`  
+**Use When:** Tuning total concurrent group execution; lower to reduce throttling pressure, raise only if you have headroom against the per-user-account search-job limit  
+**Example:** `-MaxParallelGroups 4`
 
 ---
 
@@ -1610,7 +1291,6 @@ All audit-related parameters are incompatible and will trigger validation errors
 
 - Always active by default at 75% of system RAM — no action needed for most users
 - Set to `0` to disable the memory threshold entirely (all records collected in memory)
-- Not compatible with `-ExplodeArrays` or `-ExplodeDeep` (explosion modes always use in-memory processing; the threshold is ignored with a logged warning)
 - Stored in checkpoint and can be overridden with `-Resume` (e.g., resuming on different hardware)
 
 **Examples:**
@@ -1646,7 +1326,7 @@ All audit-related parameters are incompatible and will trigger validation errors
 
 #### `-EmitMetricsJson` (switch)
 
-**Purpose:** Emit a structured JSON metrics file summarizing the export session (query windows, explosion counts, timings, exit code)  
+**Purpose:** Emit a structured JSON metrics file summarizing the export session (query windows, timings, exit code)  
 **Default:** Off  
 **Use When:**
 
@@ -1735,7 +1415,7 @@ All audit-related parameters are incompatible and will trigger validation errors
 
 **IMPORTANT: Resume mode is STANDALONE**
 
-The `-Resume` switch restores ALL settings from the checkpoint file to ensure data consistency. You cannot specify other processing parameters with `-Resume`. This prevents schema mismatches (e.g., first half of data with explosion, second half without).
+The `-Resume` switch restores ALL settings from the checkpoint file to ensure data consistency. You cannot specify other processing parameters with `-Resume`. This prevents schema mismatches between the original run and the resumed run.
 
 **Allowed with `-Resume`:**
 
@@ -1747,12 +1427,11 @@ The `-Resume` switch restores ALL settings from the checkpoint file to ensure da
 | `-TenantId` | Override tenant ID (for AppRegistration) |
 | `-ClientId` | Override client ID (for AppRegistration) |
 | `-ClientSecret` | Provide client secret (for AppRegistration) |
-| `-ExplosionThreads` | Override thread count for parallel explosion (e.g., resuming on different hardware) |
 | `-MaxMemoryMB` | Override memory threshold (e.g., resuming on different hardware) |
 
 **NOT Allowed with `-Resume`:**
 
-Any other parameter (dates, activities, explosion settings, M365 bundles, etc.). These are all restored from checkpoint.
+Any other parameter (dates, activities, M365 bundles, etc.). These are all restored from checkpoint.
 
 **Usage Patterns:**
 
@@ -1800,17 +1479,15 @@ Any other parameter (dates, activities, explosion settings, M365 bundles, etc.).
 | Activity Filtering | ActivityTypes, RecordTypes, ServiceTypes, UserIds, GroupNames |
 | Agent Filtering | AgentId, AgentsOnly, ExcludeAgents |
 | Prompt Filtering | PromptFilter |
-| Schema/Explosion | ExplodeArrays, ExplodeDeep, FlatDepth, StreamingSchemaSample, StreamingChunkSize |
-| M365/User Info | IncludeM365Usage, IncludeUserInfo, IncludeDSPMForAI |
+| M365/User Info | IncludeM365Usage, IncludeUserInfo |
 | Partitioning | BlockHours, PartitionHours, MaxPartitions |
-| Output | OutputPath, ExportWorkbook, CombineOutput |
+| Output | OutputPath, CombineOutput |
 | Other | ResultSize, MaxConcurrency, AutoCompleteness, IncludeTelemetry, StatusIntervalSeconds |
 
 **Notes:**
 
 - Auth parameters can be overridden at resume time for flexibility
 - ClientSecret is never stored in checkpoint (security)
-- Incompatible with `-RAWInputCSV` (replay mode doesn't use checkpoints)
 
 ---
 
@@ -1831,14 +1508,12 @@ Any other parameter (dates, activities, explosion settings, M365 bundles, etc.).
 **Use When:**
 
 - Running in automation, scheduled tasks, or CI/CD pipelines
-- Avoiding billing confirmation prompts for DSPM activity types
 - Auto-resolving parameter conflicts
 
-**Example:** `-IncludeDSPMForAI -Force`
+**Example:** `-Force`
 
 **Behaviors:**
 
-- Skips DSPM/PAYG billing confirmation prompts
 - Honors `-ExcludeCopilotInteraction` without prompting when conflicts detected
 - Continues execution without user interaction for all warning scenarios
 - Required for headless/non-interactive environments
@@ -1866,12 +1541,12 @@ The script uses **Microsoft Graph API by default** for audit log retrieval, prov
 | Feature | Graph API (Default) | EOM Mode (`-UseEOM`) |
 |---------|-------------------|---------------------|
 | **Entra ID Enrichment + MAC Licensing** (`-IncludeUserInfo`) | ✅ Supported | ❌ Not supported |
-| **Server-Side Group Filtering** (`-GroupNames`) | ❌ Not supported | ✅ Supported |
+| **Group Filtering** (`-GroupNames`) | ✅ Supported (group expansion via Graph; client-side audit filter) | ✅ Supported (group expansion via EXO; server-side audit filter via `Search-UnifiedAuditLog -UserIds`) |
 | **Performance** | Better (modern API) | Good (mature module) |
 | **Authentication Methods** | WebLogin, DeviceCode, Credential, Silent, AppRegistration*, ManagedIdentity* | WebLogin, DeviceCode, Credential, Silent |
 | **Default** | ✅ Yes | Use `-UseEOM` to enable |
 
-**Recommendation:** Use Graph API mode (default) unless you require `-GroupNames` filtering or have legacy constraints.
+**Recommendation:** Use Graph API mode (default) unless you have legacy constraints; both modes support `-GroupNames` filtering.
 
 > **Important:** Graph API mode requires multiple permissions for the Microsoft Purview Audit Search API. See [Permission Details](#permission-details) in the Prerequisites section for the complete list. The **Purview Audit Reader** role is only required for EOM mode (`-UseEOM`) and the Purview UI — it is not required for Graph API mode regardless of authentication method.
 
@@ -1881,26 +1556,21 @@ Graph API mode requests scopes conditionally based on the switches you pass. The
 
 | Permission | Purpose | When required (Graph API) | Graph API (Delegated) | Graph API (AppRegistration) | ExchangeOnlineManagement (EOM) |
 |------------|---------|---------------------------|:---------------------:|:---------------------------:|:------------------------------:|
-| **Graph: AuditLogsQuery.Read.All** | Umbrella permission for the Microsoft Graph audit query API — covers `CopilotInteraction` record type | Always (except `-OnlyUserInfo` / `-OnlyAgent365Info`) | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: AuditLogsQuery.Read.All** | Umbrella permission for the Microsoft Graph audit query API — covers `CopilotInteraction` record type | Always (except `-OnlyUserInfo`) | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: AuditLogsQuery-Exchange.Read.All** | Exchange Online audit logs | `-IncludeM365Usage` | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: AuditLogsQuery-OneDrive.Read.All** | OneDrive audit logs | `-IncludeM365Usage` | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: AuditLogsQuery-SharePoint.Read.All** | SharePoint Online audit logs | `-IncludeM365Usage` | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: User.Read.All** | Entra user directory, MAC licensing | `-IncludeUserInfo`, `-OnlyUserInfo`, or `-GroupNames` | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: Organization.Read.All** | Tenant/organization context, license metadata | `-IncludeUserInfo` or `-OnlyUserInfo` | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: GroupMember.Read.All** | Group lookup and membership expansion (least privilege) | `-GroupNames` | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: Sites.ReadWrite.All** | Resolve and upload to SharePoint destination folder | `-OutputPathSP` | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: Files.ReadWrite.All** | Create / replace / resume uploads to the SharePoint folder | `-OutputPathSP` | ✅ Yes | ✅ Yes | — N/A |
-| **Azure role: Storage Blob Data Contributor** | Write into the OneLake `Files/` area of the destination lakehouse | `-OutputPathFabric` | ✅ Required on user / managed identity | ✅ Required on service principal | — N/A |
-| **Fabric portal role: Contributor (or higher)** | Workspace access in the Fabric portal | `-OutputPathFabric` | ✅ Required | ✅ Required | — N/A |
-| **Fabric tenant setting: "Service principals can use Fabric APIs"** | Allows non-interactive identities to call Fabric/OneLake | `-OutputPathFabric` (when using `-Auth AppRegistration` or `-Auth ManagedIdentity`) | — | ✅ Must be enabled by a Fabric admin | — N/A |
-| **Graph: CopilotPackages.Read.All** | Microsoft Agent 365 catalog/package metadata (Frontier program) | `-IncludeAgent365Info` or `-OnlyAgent365Info` | ✅ Yes (delegated only) | ❌ Not supported by the API | — N/A |
-| **Graph: Application.Read.All** | Developer/publisher resolution for Agent 365 packages | `-IncludeAgent365Info` or `-OnlyAgent365Info` | ✅ Yes (delegated only) | ❌ Not supported by the API | — N/A |
-| **Entra role: AI Administrator OR Global Administrator** | Frontier program server-side gate (separate from Graph scopes) | `-IncludeAgent365Info` or `-OnlyAgent365Info` | ✅ Required on the signed-in caller | ✅ Required on the interactive caller used for the agent phase | — N/A |
+| **Graph: Sites.ReadWrite.All** | Resolve and upload to SharePoint destination folder | `-OutputPath` is a SharePoint URL | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: Files.ReadWrite.All** | Create / replace / resume uploads to the SharePoint folder | `-OutputPath` is a SharePoint URL | ✅ Yes | ✅ Yes | — N/A |
+| **Azure role: Storage Blob Data Contributor** | Write into the OneLake `Files/` area of the destination lakehouse | `-OutputPath` is a Fabric lakehouse URL | ✅ Required on user / managed identity | ✅ Required on service principal | — N/A |
+| **Fabric portal role: Contributor (or higher)** | Workspace access in the Fabric portal | `-OutputPath` is a Fabric lakehouse URL | ✅ Required | ✅ Required | — N/A |
+| **Fabric tenant setting: "Service principals can use Fabric APIs"** | Allows non-interactive identities to call Fabric/OneLake | `-OutputPath` is a Fabric lakehouse URL (when using `-Auth AppRegistration` or `-Auth ManagedIdentity`) | — | ✅ Must be enabled by a Fabric admin | — N/A |
 | **Purview Audit Reader** | Purview UI/EOM | EOM only | ❌ No | ❌ No | ✅ Yes |
 
-> **📚 Reference:** [Microsoft Graph Audit Log Query Permissions](https://learn.microsoft.com/en-us/graph/api/security-auditcoreroot-post-auditlogqueries#permissions) | [Get auditLogQuery Permissions](https://learn.microsoft.com/en-us/graph/api/security-auditlogquery-get#permissions) | [Microsoft Agent 365 Graph API](https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api)
-
-> **⚠️ Microsoft Agent 365 (Frontier) requires interactive sign-in even under `-Auth AppRegistration`.** The Agent Package Management API (`/beta/copilot/admin/catalog/packages`) does not accept app-only tokens. When `-Auth AppRegistration` is combined with `-IncludeAgent365Info`, PAX completes the audit phase non-interactively, then launches a one-time interactive sign-in for the agent phase to acquire `CopilotPackages.Read.All` and `Application.Read.All` for an admin holding the **AI Administrator** or **Global Administrator** role. `-OnlyAgent365Info` is **not supported** with `-Auth AppRegistration` — use `-Auth WebLogin` or `-Auth DeviceCode` instead. See the [Microsoft Agent 365 (Frontier) Access](#prerequisites) callout in Prerequisites for the full behavior matrix.
+> **📚 Reference:** [Microsoft Graph Audit Log Query Permissions](https://learn.microsoft.com/en-us/graph/api/security-auditcoreroot-post-auditlogqueries#permissions) | [Get auditLogQuery Permissions](https://learn.microsoft.com/en-us/graph/api/security-auditlogquery-get#permissions)
 
 > **⚠️ Troubleshooting (EOM mode): "User is not authorized" or 403 Errors**  
 > If an EOM-mode run fails with `"User is not authorized for the RBAC roles"` or returns a `403 Forbidden` response, this typically indicates a stale role assignment. The Purview Audit Reader role may appear correctly assigned in the Purview portal, but the Exchange audit backend no longer recognizes it.  
@@ -1934,10 +1604,10 @@ The script supports six authentication methods:
 
 **Token Refresh Details:**
 - **AppRegistration:** Proactively refreshes token at ~45-50 minutes (before expiry). Also handles 401 errors reactively as a backup. Fully automatic and silent.
-- **ManagedIdentity:** Azure issues short-lived tokens; PAX renews them automatically in the background, including for the separate OneLake sign-in used by `-OutputPathFabric`. No user interaction is ever required.
+- **ManagedIdentity:** Azure issues short-lived tokens; PAX renews them automatically in the background, including for the separate OneLake sign-in used when `-OutputPath` is a Fabric lakehouse URL. No user interaction is ever required.
 - **Interactive (WebLogin/DeviceCode):** On 401 error, first attempts silent refresh using SDK's cached refresh token. Only prompts user if silent refresh fails.
 - **403 Forbidden errors:** Indicate a permissions issue, NOT token expiry. Token refresh will not help—check `AuditLogsQuery.Read.All` consent and role assignments.
-- **Long uploads to SharePoint and Fabric:** When using `-OutputPathSP` or `-OutputPathFabric`, PAX maintains a separate sign-in to the storage endpoint (Graph for SharePoint, OneLake for Fabric) and refreshes it independently of the audit-query token. Multi-hour exports upload without interruption regardless of which interactive or non-interactive auth method was used.
+- **Long uploads to SharePoint and Fabric:** When `-OutputPath` is a SharePoint URL or a Fabric lakehouse URL, PAX maintains a separate sign-in to the storage endpoint (Graph for SharePoint, OneLake for Fabric) and refreshes it independently of the audit-query token. Multi-hour exports upload without interruption regardless of which interactive or non-interactive auth method was used.
 
 > 💡 **Recommendation:** For long-running queries, use `-Auth AppRegistration` with a service principal for automatic token refresh. For interactive modes (WebLogin/DeviceCode), the script attempts silent token refresh first and only prompts for re-authentication when necessary, with incremental saves ensuring no data loss.
 
@@ -2017,7 +1687,6 @@ Service principal authentication for automation, CI/CD, and headless batch jobs.
 - **Prerequisites:** App registration with Graph application permissions (at minimum `AuditLogsQuery.Read.All`, plus any conditional scopes required by the switches you use — see the Permissions table above), admin consent, and either a client secret or certificate.
 - **Works in:** Graph API mode only; automatically blocked when `-UseEOM` is supplied.
 - **Automation suitability:** Purpose-built for automation with support for secrets, PFX certificates, or certificate thumbprints.
-- **Microsoft Agent 365 (Frontier) caveat:** When combined with `-IncludeAgent365Info`, PAX runs the audit phase using the service principal, then launches a **one-time interactive sign-in** at the start of the agent phase (the Agent Package Management API does not accept app-only tokens). The interactive caller must hold the **AI Administrator** or **Global Administrator** role and must consent to `CopilotPackages.Read.All` and `Application.Read.All`. `-Auth AppRegistration` is **not supported** with `-OnlyAgent365Info`.
 
 > 💡 Tip: Store secrets or certificate passwords in a secure vault (Azure Key Vault, Windows Credential Manager) and convert them to secure strings at runtime before passing to the script.
 
@@ -2087,16 +1756,15 @@ Attempts to use cached authentication token. Falls back to WebLogin if no valid 
 
 Sign in using the managed identity attached to the Azure resource that is running PAX. No secrets are stored on disk, no interactive prompts are required, and tokens are renewed automatically by Azure.
 
-- **Best for:** Scheduled or event-driven PAX runs hosted in Azure Container Apps Jobs, Azure VMs, Azure Container Instances, or other Azure compute that supports managed identities. Particularly recommended when output is being written to SharePoint (`-OutputPathSP`) or Microsoft Fabric (`-OutputPathFabric`) from the same Azure environment.
+- **Best for:** Scheduled or event-driven PAX runs hosted in Azure Container Apps Jobs, Azure VMs, Azure Container Instances, or other Azure compute that supports managed identities. Particularly recommended when output is being written to SharePoint or Microsoft Fabric (OneLake) from the same Azure environment.
 - **Prerequisites:**
   - A system-assigned or user-assigned managed identity on the Azure resource hosting PAX.
   - The identity granted the same Microsoft Graph application permissions an `AppRegistration` would need (at minimum `AuditLogsQuery.Read.All`, plus any conditional scopes for the switches you use — see the Permissions tables above).
-  - For `-OutputPathFabric`: the identity also needs `Storage Blob Data Contributor` (Azure role on the OneLake storage), the **Contributor** role on the Fabric workspace, and the Fabric tenant setting *Service principals can use Fabric APIs* enabled.
-  - For `-OutputPathSP`: the identity also needs `Sites.ReadWrite.All` and `Files.ReadWrite.All`, plus Edit/Contribute on the destination folder.
+  - When `-OutputPath` is a Fabric lakehouse URL: the identity also needs `Storage Blob Data Contributor` (Azure role on the OneLake storage), the **Contributor** role on the Fabric workspace, and the Fabric tenant setting *Service principals can use Fabric APIs* enabled.
+  - When `-OutputPath` is a SharePoint URL: the identity also needs `Sites.ReadWrite.All` and `Files.ReadWrite.All`, plus Edit/Contribute on the destination folder.
   - If multiple identities are attached to the host (for example, both a system-assigned and one or more user-assigned identities), set the `AZURE_CLIENT_ID` environment variable to the client ID of the one PAX should use.
 - **Works in:** Graph API mode only; automatically blocked when `-UseEOM` is supplied.
 - **Automation suitability:** Strongly preferred over `AppRegistration` for any workload that already runs inside Azure — no secret rotation, no certificate management.
-- **Microsoft Agent 365 (Frontier) caveat:** Not supported with `-IncludeAgent365Info` or `-OnlyAgent365Info`. The Microsoft Agent 365 catalog API does not accept managed-identity tokens. Use `WebLogin` or the AppRegistration + interactive hybrid pattern for Agent 365 exports.
 
 > 💡 Tip: When you also send output to SharePoint or Fabric, run a short test export (one day, no member expansion) first. This validates **all three** sets of permissions — audit-log read, destination write, and managed-identity sign-in — in a few minutes rather than discovering a missing role partway through a multi-hour export.
 
@@ -2125,7 +1793,7 @@ $env:AZURE_CLIENT_ID = "<user-assigned-identity-client-id>"
 	-TenantId "<tenant-guid>" `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-OutputPathFabric "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse/Files/audit"
+	-OutputPath "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse/Files/audit"
 ```
 
 </details>
@@ -2141,27 +1809,25 @@ $env:AZURE_CLIENT_ID = "<user-assigned-identity-client-id>"
 <details>
 <summary>📤 View SharePoint Output Guide (click to expand)</summary>
 
-PAX can write every output file (CSV, Excel, log, metrics JSON) **directly into a SharePoint document library folder** instead of a local drive. This is useful when:
+PAX can write every output file (CSV, log, metrics JSON) **directly into a SharePoint document library folder** instead of a local drive. This is useful when:
 
 - Several people on your team need to see results as soon as a run finishes.
 - The destination is governed by your tenant's normal SharePoint sharing, retention, and DLP policies.
 - Downstream tools (Power BI, Excel, Power Automate) already read from SharePoint and a local-disk hop is unnecessary.
 
-Pass the destination as the `-OutputPathSP` parameter:
+Pass a SharePoint URL as the `-OutputPath` parameter:
 
 ```powershell
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-OutputPathSP "https://contoso.sharepoint.com/sites/AuditTeam/Shared Documents/PAX-Output"
+	-OutputPath "https://contoso.sharepoint.com/sites/AuditTeam/Shared Documents/PAX-Output"
 ```
-
-> ⚠️ `-OutputPathSP`, `-OutputPathFabric`, and `-OutputPath` are **mutually exclusive**. Pick exactly one destination per run. If you pass more than one, PAX exits immediately with an error before any audit data is pulled.
 
 ### How PAX uses your SharePoint folder
 
 1. **Pre-flight check (before any audit data is pulled).** PAX verifies the site, library, and folder exist, that the signed-in identity has write access, and that none of the requested filenames already exist as locked items. If anything fails, the run stops with a clear error — no half-uploaded files are left behind.
-2. **Staging.** Each output file is briefly written to a local scratch folder, then uploaded to SharePoint with the same filename. Small files use a single upload; large files (Excel workbooks, big CSVs) use a chunked, resumable upload that keeps working through transient network blips.
+2. **Staging.** Each output file is briefly written to a local scratch folder, then uploaded to SharePoint with the same filename. Small files use a single upload; large CSVs use a chunked, resumable upload that keeps working through transient network blips.
 3. **Cleanup.** Once a file lands in SharePoint successfully, the local scratch copy is removed. Nothing PAX-related is left on disk after the run.
 4. **End-of-run summary.** PAX prints a consolidated list of every file that landed in SharePoint, with sizes, so you can confirm visually before opening the folder.
 
@@ -2188,7 +1854,7 @@ https://contoso.sharepoint.com/sites/AuditTeam/Shared Documents/PAX-Output
 1. Open the destination library in your browser (any modern browser is fine).
 2. Navigate into the exact folder where you want PAX output to land. Create it first if it does not exist yet — PAX will not create new folders for you.
 3. Look at the browser **address bar**. The URL you see while *viewing* the folder is the one PAX wants. Copy the part from `https://` up to (and including) the folder name. **Do not** copy anything after a `?` — those are view/filter parameters PAX cannot use.
-4. Paste it as the value of `-OutputPathSP`, in quotes. Keep spaces in folder names as-is (`"Shared Documents"`) — PowerShell quoting handles them. Do not manually replace spaces with `%20`.
+4. Paste it as the value of `-OutputPath`, in quotes. Keep spaces in folder names as-is (`"Shared Documents"`) — PowerShell quoting handles them. Do not manually replace spaces with `%20`.
 
 **URLs that look right but will NOT work — do not paste any of these:**
 
@@ -2225,19 +1891,19 @@ For unattended runs using `-Auth AppRegistration` or `-Auth ManagedIdentity`, th
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-OutputPathSP "https://contoso.sharepoint.com/sites/AuditTeam/Shared Documents/PAX-Output"
+	-OutputPath "https://contoso.sharepoint.com/sites/AuditTeam/Shared Documents/PAX-Output"
 
 # 2. Subfolder in a non-default library
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-OutputPathSP "https://contoso.sharepoint.com/sites/AuditTeam/Audit Files/2025/October"
+	-OutputPath "https://contoso.sharepoint.com/sites/AuditTeam/Audit Files/2025/October"
 
 # 3. Government cloud tenant
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-OutputPathSP "https://contoso.sharepoint.us/sites/AuditTeam/Shared Documents/PAX-Output"
+	-OutputPath "https://contoso.sharepoint.us/sites/AuditTeam/Shared Documents/PAX-Output"
 
 # 4. Unattended run from an Azure Container Apps Job using a managed identity
 ./PAX_Purview_Audit_Log_Processor.ps1 `
@@ -2245,7 +1911,7 @@ For unattended runs using `-Auth AppRegistration` or `-Auth ManagedIdentity`, th
 	-TenantId "<tenant-guid>" `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-OutputPathSP "https://contoso.sharepoint.com/sites/AuditTeam/Shared Documents/PAX-Output"
+	-OutputPath "https://contoso.sharepoint.com/sites/AuditTeam/Shared Documents/PAX-Output"
 
 # 5. Service principal with a client secret (CI/CD pipeline)
 $clientSecret = ConvertTo-SecureString $env:PAX_CLIENT_SECRET -AsPlainText -Force
@@ -2256,7 +1922,7 @@ $clientSecret = ConvertTo-SecureString $env:PAX_CLIENT_SECRET -AsPlainText -Forc
 	-ClientSecret $clientSecret `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-OutputPathSP "https://contoso.sharepoint.com/sites/AuditTeam/Shared Documents/PAX-Output"
+	-OutputPath "https://contoso.sharepoint.com/sites/AuditTeam/Shared Documents/PAX-Output"
 ```
 
 </details>
@@ -2288,56 +1954,64 @@ PAX can write output directly into a **OneLake folder inside a Microsoft Fabric 
 - You want results to be immediately queryable in Fabric without an upload step.
 - You are running PAX from inside Azure (an Azure Container Apps Job, Azure VM, or similar) and want to skip the SharePoint hop entirely.
 
-Pass the destination as the `-OutputPathFabric` parameter:
+Pass a Fabric lakehouse URL as the `-OutputPath` parameter:
 
 ```powershell
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-OutputPathFabric "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse/Files/audit"
+	-OutputPath "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse"
 ```
 
-> ⚠️ `-OutputPathFabric`, `-OutputPathSP`, and `-OutputPath` are **mutually exclusive**. Pick exactly one destination per run. If you pass more than one, PAX exits immediately with an error before any audit data is pulled.
+When you point `-OutputPath` at the lakehouse root, PAX writes **Delta tables under `Tables/`** (raw, rollup interactions, rollup users) and **operational artifacts under `Files/`** (run log, metrics JSON, checkpoint). You can also point `-OutputPath` directly at `.../Tables` or `.../Tables/<schema>` (Schemas-mode Lakehouse) to control table location, and use `-OutputPathLog` / `-OutputPathUserInfo` to override individual destinations.
 
-> 📁 For container images, deployment templates, identity setup walkthroughs, and other supporting material for running PAX inside Azure with `-OutputPathFabric`, see the **`fabric_resources` folder in the repository root**. The instructions in this section cover the script-side experience; the `fabric_resources` folder covers the Azure-side hosting and setup.
+> 📁 For container images, deployment templates, identity setup walkthroughs, and other supporting material for running PAX inside Azure with a Fabric lakehouse destination, see the **`fabric_resources` folder in the repository root**. The instructions in this section cover the script-side experience; the `fabric_resources` folder covers the Azure-side hosting and setup.
 
 ### How PAX uses your Fabric lakehouse
 
-1. **Pre-flight check (before any audit data is pulled).** PAX verifies the OneLake URL is valid, the lakehouse exists, and the signed-in identity has write access to the `Files/` area. If anything fails, the run stops with a clear error.
-2. **Streaming upload.** Each output file is uploaded into the OneLake `Files/...` path with the same filename it would use locally.
-3. **Long-run handling.** OneLake sign-in is maintained automatically in the background, so multi-hour exports finish without interruption regardless of which authentication method you used for the audit side.
-4. **Visibility.** Files appear in the Fabric lakehouse explorer under the path you specified and become immediately available to Fabric notebooks, pipelines, dataflows, and Power BI.
+1. **Pre-flight check (before any audit data is pulled).** PAX verifies the OneLake URL is valid, the lakehouse exists, and the signed-in identity has write access. If anything fails, the run stops with a clear error.
+2. **Delta tables (`Tables/`).** PAX writes audit data as **Delta tables** — the raw event-level table, the rollup interactions table, and the rollup users table — directly under the lakehouse `Tables/` area. Tables stay at stable names across runs so downstream notebooks, pipelines, and Power BI semantic models bind once.
+3. **Operational artifacts (`Files/`).** The run log, metrics JSON, and checkpoint file land under the lakehouse `Files/` area. You can redirect any of these with `-OutputPathLog` and related switches.
+4. **Long-run handling.** OneLake sign-in is maintained automatically in the background, so multi-hour exports finish without interruption regardless of which authentication method you used for the audit side.
+5. **Visibility.** Delta tables appear immediately under the lakehouse explorer's **Tables** section and become queryable from Fabric notebooks, pipelines, dataflows, and Power BI semantic models. Operational files appear under the **Files** section.
 
 ### How to get the right URL (and what NOT to paste)
 
-PAX needs the **OneLake DFS URL** of a folder inside the `Files/` area of a Fabric lakehouse or warehouse. The URL shape is:
+PAX needs the **OneLake DFS URL** of a Fabric lakehouse (or a folder underneath it). The URL shape is:
 
 ```
-https://onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Lakehouse/Files[/<folder>]
-https://onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Warehouse/Files[/<folder>]
+https://onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Lakehouse[/Tables[/<schema>]]
+https://onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Lakehouse[/Files[/<folder>]]
 ```
 
-A real example:
+**Recommended:** point `-OutputPath` at the lakehouse root — PAX automatically routes Delta tables to `Tables/` and operational artifacts to `Files/`:
 
 ```
-https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse/Files/audit
+https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse
 ```
+
+For a **Schemas-mode Lakehouse**, append `/Tables/<schema>` (default schema is `dbo`) to land Delta tables under a specific schema:
+
+```
+https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse/Tables/dbo
+```
+
+Warehouse items (`.Warehouse` suffix) are also accepted by the URL parser, but Delta-table writes are designed for Lakehouse items — use a Lakehouse for the Tables/ side of the output.
 
 **How to build it:**
 
 1. In the Fabric portal, open the destination workspace.
 2. Note the **workspace name** (the URL segment after `/groups/<id>/` in the browser, *or* the display name shown in the workspace settings). The workspace name in the URL is case-sensitive.
-3. Open the destination **lakehouse** (or warehouse). Note its name — that is the `<item>` value. The suffix must be `.Lakehouse` or `.Warehouse` exactly.
-4. Identify the subfolder inside `Files/` where PAX output should land. Create it in the lakehouse explorer first if it does not exist.
-5. Assemble the URL in the shape shown above. PAX accepts both lakehouse and warehouse items.
+3. Open the destination **lakehouse**. Note its name — that is the `<item>` value. The suffix must be `.Lakehouse` exactly.
+4. (Optional) For finer control, append `/Tables` (or `/Tables/<schema>` on a Schemas-mode Lakehouse) to direct Delta tables, or `/Files/<folder>` to direct operational artifacts. Otherwise, just use the lakehouse root and PAX handles routing automatically.
+5. Assemble the URL in the shape shown above.
 
 **URLs that will NOT work — do not paste any of these:**
 
 | Bad URL shape | Why it fails |
 |---|---|
-| Anything from a **Power BI report**, **dataset**, or **semantic model** link | Those are different surfaces; PAX writes to OneLake `Files/`, not to a model or report. |
+| Anything from a **Power BI report**, **dataset**, or **semantic model** link | Those are different surfaces; PAX writes to OneLake `Tables/` and `Files/`, not to a model or report. |
 | The lakehouse **portal URL** from your browser (e.g. `https://app.fabric.microsoft.com/groups/<guid>/lakehouses/<guid>`) | That is a UI page. PAX needs the OneLake DFS URL, which begins with `https://onelake.dfs.fabric.microsoft.com/`. |
-| A URL pointing at the `Tables/` area instead of `Files/` | PAX writes flat output files (CSV, Excel, log). `Tables/` is for delta tables managed by Fabric. |
 | A URL with no item-type suffix (missing `.Lakehouse` or `.Warehouse`) | OneLake routes requests by item type; the suffix is required. |
 | `http://...` (no `s`) | PAX requires HTTPS. |
 
@@ -2353,10 +2027,16 @@ https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse/Files/audit
 
 ### Module prerequisite
 
-`-OutputPathFabric` needs the `Az.Accounts` PowerShell module. PAX installs it automatically the first time you use the parameter; on locked-down hosts where module install is blocked, install it once ahead of time:
+A Fabric lakehouse `-OutputPath` requires the `Az.Accounts` PowerShell module (used to acquire the OneLake access token) **and** the Python `deltalake` package (used to write the Delta tables). PAX does **not** auto-install `Az.Accounts` — install it once ahead of time:
 
 ```powershell
 Install-Module Az.Accounts -Scope CurrentUser
+```
+
+PAX will install the Python `deltalake` package automatically on first use if a Python environment is available; on locked-down hosts, install it once ahead of time:
+
+```powershell
+pip install deltalake
 ```
 
 ### More examples
@@ -2369,19 +2049,20 @@ Install-Module Az.Accounts -Scope CurrentUser
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-OutputPathFabric "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse/Files/audit"
+	-OutputPath "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse"
 
-# 2. Subfolder organized by month
+# 2. Schemas-mode Lakehouse — land Delta tables under a specific schema
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-31 `
-	-OutputPathFabric "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse/Files/audit/2025-10"
+	-OutputPath "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse/Tables/dbo"
 
-# 3. Warehouse item instead of a lakehouse
+# 3. Lakehouse root plus separate Files/ subfolder for the run log
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-OutputPathFabric "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Warehouse/Files/audit"
+	-OutputPath "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse" `
+	-OutputPathLog "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse/Files/logs"
 
 # 4. Containerized run on Azure Container Apps Jobs using a managed identity
 ./PAX_Purview_Audit_Log_Processor.ps1 `
@@ -2389,7 +2070,7 @@ Install-Module Az.Accounts -Scope CurrentUser
 	-TenantId "<tenant-guid>" `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-OutputPathFabric "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse/Files/audit"
+	-OutputPath "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse"
 ```
 
 </details>
@@ -2398,11 +2079,12 @@ Install-Module Az.Accounts -Scope CurrentUser
 
 | What you see | Most likely cause | What to do |
 |---|---|---|
-| `OneLake URL is not in the expected shape` at the very start | Missing `.Lakehouse` / `.Warehouse` suffix, wrong host, or `Tables/` instead of `Files/` | Rebuild the URL using the shape in *How to get the right URL* above. |
-| `Access denied to OneLake Files/...` during pre-flight | Identity is missing one of: Azure role, Fabric workspace role, or tenant setting | Verify all three layers in the permissions table above. If two are in place, suspect the tenant setting — only a Fabric admin can change it. |
-| `Module 'Az.Accounts' could not be installed` | Locked-down host that blocks PowerShell Gallery | Pre-install with `Install-Module Az.Accounts -Scope CurrentUser` (or AllUsers) from an environment that can reach PowerShell Gallery. |
+| `OneLake URL is not in the expected shape` at the very start | Missing `.Lakehouse` / `.Warehouse` suffix, wrong host, or malformed path | Rebuild the URL using the shape in *How to get the right URL* above. |
+| `Access denied to OneLake Tables/...` or `Files/...` during pre-flight | Identity is missing one of: Azure role, Fabric workspace role, or tenant setting | Verify all three layers in the permissions table above. If two are in place, suspect the tenant setting — only a Fabric admin can change it. |
+| `Module 'Az.Accounts' could not be installed` or `Az.Accounts not found` | Locked-down host that blocks PowerShell Gallery, or the module was never installed | Pre-install with `Install-Module Az.Accounts -Scope CurrentUser` (or AllUsers) from an environment that can reach PowerShell Gallery. |
+| `deltalake` Python package errors during table write | Python or `deltalake` not present on the host | Install Python 3.9+ and `pip install deltalake`. |
 | Multi-hour export fails partway through with an auth error to OneLake | Rare; usually a tenant-side credential rotation | Re-run with the same parameters. PAX uses checkpoint/resume on the audit side; you will not start over from zero. |
-| Files do not appear in the Fabric lakehouse explorer | You may be looking at the wrong workspace/lakehouse, or at `Tables/` rather than `Files/` | Open the exact `Files/<folder>` path that matches the URL you passed. PAX prints the full list of uploaded files at the end of the run. |
+| Delta tables do not appear in the Fabric lakehouse explorer | You may be looking at the wrong workspace/lakehouse, or filtering by name | Open the destination lakehouse → **Tables** section. PAX writes stable table names; refresh the lakehouse explorer if the tables were created during your current session. |
 
 </details>
 
@@ -2490,47 +2172,6 @@ elseif ($LASTEXITCODE -eq 20) { Write-Host 'Circuit breaker tripped – investig
 
 </details>
 
-### Microsoft Agent 365 (Frontier) Examples
-
-<details>
-<summary>💻 Show Microsoft Agent 365 Examples</summary>
-
-> **Note:** Requires tenant enrollment in the [Microsoft Agent 365 Frontier program](https://www.microsoft.com/en-us/microsoft-365-copilot/frontier-program) and an Entra **AI Administrator** or **Global Administrator** role on the interactive caller. See the Prerequisites section for the full requirements matrix.
->
-> **Point-in-time data:** The Agent 365 catalog is a snapshot of the tenant at the moment of the call. `-StartDate` / `-EndDate` apply only to the audit phase, never to the Agent 365 phase. To track agent inventory changes over time, run on a schedule and retain the per-run CSVs.
-
-```powershell
-# Audit run with the Agent 365 catalog appended (CSV)
-./PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -IncludeAgent365Info
-
-# Audit run plus Agent 365 catalog as an additional Excel worksheet
-./PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -IncludeAgent365Info -ExportWorkbook
-
-# Standalone Agent 365 catalog snapshot (no audit phase)
-./PAX_Purview_Audit_Log_Processor.ps1 -OnlyAgent365Info
-
-# Standalone Agent 365 snapshot bypassing non-blocking preflight warnings
-./PAX_Purview_Audit_Log_Processor.ps1 -OnlyAgent365Info -Force
-
-# Standalone Agent 365 snapshot using device code (headless workstations)
-./PAX_Purview_Audit_Log_Processor.ps1 -OnlyAgent365Info -Auth DeviceCode
-
-# Dual-context: AppRegistration drives the audit phase non-interactively,
-# then a one-time interactive sign-in covers the agent phase
-./PAX_Purview_Audit_Log_Processor.ps1 `
-    -Auth AppRegistration `
-    -TenantId "<tenant-guid>" `
-    -ClientId "<app-id>" `
-    -ClientSecret $clientSecret `
-    -StartDate 2025-10-01 -EndDate 2025-10-02 `
-    -IncludeAgent365Info
-
-# NOT supported — PAX exits with a clear error
-# ./PAX_Purview_Audit_Log_Processor.ps1 -OnlyAgent365Info -Auth AppRegistration ...
-```
-
-</details>
-
 ### Performance Tuning Examples
 
 <details>
@@ -2545,9 +2186,6 @@ elseif ($LASTEXITCODE -eq 20) { Write-Host 'Circuit breaker tripped – investig
 
 # Add pacing to reduce throttling
 ./PAX_Purview_Audit_Log_Processor.ps1 -PacingMs 250 -StartDate 2025-10-01 -EndDate 2025-10-02
-
-# Parallel explosion for large datasets
-./PAX_Purview_Audit_Log_Processor.ps1 -ExplodeDeep -ExplosionThreads 8 -StartDate 2025-10-01 -EndDate 2025-10-31
 
 # Cap memory at 4 GB for large standard exports
 ./PAX_Purview_Audit_Log_Processor.ps1 -MaxMemoryMB 4096 -StartDate 2025-10-01 -EndDate 2025-10-31
@@ -2570,50 +2208,6 @@ elseif ($LASTEXITCODE -eq 20) { Write-Host 'Circuit breaker tripped – investig
 ./PAX_Purview_Audit_Log_Processor.ps1 -ParallelMode On -MaxConcurrency 4 -MaxParallelGroups 2 -ActivityTypes CopilotInteraction,MessageSent,FileAccessed
 ```
 
-**Explosion Parallelism (Array/Conversation Processing):**
-
-```powershell
-# Auto-detect explosion threads (default, recommended)
-./PAX_Purview_Audit_Log_Processor.ps1 -ExplodeDeep -ExplosionThreads 0 -StartDate 2025-10-01 -EndDate 2025-10-08
-
-# Explicit 8-thread explosion for large datasets
-./PAX_Purview_Audit_Log_Processor.ps1 -ExplodeDeep -ExplosionThreads 8 -StartDate 2025-10-01 -EndDate 2025-10-31
-
-# Force serial explosion (debugging or compatibility)
-./PAX_Purview_Audit_Log_Processor.ps1 -ExplodeArrays -ExplosionThreads 1 -StartDate 2025-10-01 -EndDate 2025-10-02
-
-# Combined: parallel queries + parallel explosion
-./PAX_Purview_Audit_Log_Processor.ps1 -ParallelMode On -MaxConcurrency 4 -ExplodeDeep -ExplosionThreads 8 -ActivityTypes CopilotInteraction,ConnectedAIAppInteraction
-```
-
-</details>
-
-### Offline Replay
-
-<details>
-<summary>💻 Show Offline Replay Examples</summary>
-
-```powershell
-# Basic replay (forced explosion) - creates timestamped output file
-./PAX_Purview_Audit_Log_Processor.ps1 -RAWInputCSV "C:\PreviousExports\\" -OutputPath "C:\AuditData\"
-
-# Replay with deep flatten and date filtering
-./PAX_Purview_Audit_Log_Processor.ps1 -RAWInputCSV "C:\PreviousExports\\" -ExplodeDeep -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputPath "C:\AuditData\"
-
-# Replay with parallel explosion (large datasets)
-./PAX_Purview_Audit_Log_Processor.ps1 -RAWInputCSV "C:\PreviousExports\\" -ExplodeDeep -ExplosionThreads 8 -OutputPath "C:\AuditData\"
-
-# Replay with activity filtering
-./PAX_Purview_Audit_Log_Processor.ps1 -RAWInputCSV "C:\PreviousExports\\" -ActivityTypes CopilotInteraction -OutputPath "C:\AuditData\"
-
-# Replay with agent filtering (any agent)
-./PAX_Purview_Audit_Log_Processor.ps1 -RAWInputCSV "C:\PreviousExports\\" -AgentsOnly -OutputPath "C:\AuditData\"
-
-
-# Replay with specific agent ID
-./PAX_Purview_Audit_Log_Processor.ps1 -RAWInputCSV "C:\PreviousExports\\" -AgentId "CopilotStudio.Declarative.T_4e671777-fa6c-601a-b416-df08b6ae4c14.03dc0b8b-a75a-4b77-86d7-98185a176d1b" -OutputPath "C:\AuditData\\"
-```
-
 </details>
 
 ### Agent Filtering
@@ -2628,8 +2222,8 @@ elseif ($LASTEXITCODE -eq 20) { Write-Host 'Circuit breaker tripped – investig
 # Filter for specific agent ID(s)
 ./PAX_Purview_Audit_Log_Processor.ps1 -AgentId "SYSTEM_CreateGPT.declarativeCopilot" -StartDate 2025-10-01 -EndDate 2025-10-02
 
-# Multiple agent IDs with deep flatten
-./PAX_Purview_Audit_Log_Processor.ps1 -ExplodeDeep -AgentId "SYSTEM_CreateGPT.declarativeCopilot","CopilotStudio.Declarative.T_..." -StartDate 2025-10-01 -EndDate 2025-10-02
+# Multiple agent IDs
+./PAX_Purview_Audit_Log_Processor.ps1 -AgentId "SYSTEM_CreateGPT.declarativeCopilot","CopilotStudio.Declarative.T_..." -StartDate 2025-10-01 -EndDate 2025-10-02
 ```
 
 </details>
@@ -2648,20 +2242,10 @@ elseif ($LASTEXITCODE -eq 20) { Write-Host 'Circuit breaker tripped – investig
 	-OutputPath "C:\Exports\\"
 # Output: CopilotInteraction_<timestamp>.csv + EntraUsers_MAClicensing_<timestamp>.csv
 
-# Entra enrichment with Excel export (embedded tab)
+# Group filtering (works in both Graph API and EOM modes)
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-IncludeUserInfo `
-	-ExportWorkbook `
-	-CombineOutput
-# Output: Purview_Audit_CombinedUsageActivity_EntraUsers_MAClicensing_<timestamp>.xlsx (with EntraUsers_MAClicensing tab)
-
-# Use EOM mode for GroupNames filtering (legacy mode)
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-UseEOM `
 	-GroupNames "Sales Team","Marketing Team" `
 	-OutputPath "C:\Exports\\"
 
@@ -2710,7 +2294,7 @@ $clientSecret = ConvertTo-SecureString "<client-secret>" -AsPlainText -Force
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-OutputPathSP "https://contoso.sharepoint.com/sites/AuditTeam/Shared Documents/PAX-Output"
+	-OutputPath "https://contoso.sharepoint.com/sites/AuditTeam/Shared Documents/PAX-Output"
 
 # Unattended run from Azure using a managed identity
 ./PAX_Purview_Audit_Log_Processor.ps1 `
@@ -2718,7 +2302,7 @@ $clientSecret = ConvertTo-SecureString "<client-secret>" -AsPlainText -Force
 	-TenantId "<tenant-guid>" `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-OutputPathSP "https://contoso.sharepoint.com/sites/AuditTeam/Shared Documents/PAX-Output"
+	-OutputPath "https://contoso.sharepoint.com/sites/AuditTeam/Shared Documents/PAX-Output"
 ```
 
 See [Sending Output to SharePoint](#sending-output-to-sharepoint) for full details, including how to obtain a valid URL.
@@ -2731,11 +2315,11 @@ See [Sending Output to SharePoint](#sending-output-to-sharepoint) for full detai
 <summary>💻 Show Fabric Output Examples</summary>
 
 ```powershell
-# Output goes straight to a Fabric lakehouse Files folder
+# Output goes straight to a Fabric lakehouse (Delta tables under Tables/, operational artifacts under Files/)
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-OutputPathFabric "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse/Files/audit"
+	-OutputPath "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse"
 
 # Containerized run on Azure using a managed identity
 ./PAX_Purview_Audit_Log_Processor.ps1 `
@@ -2743,7 +2327,7 @@ See [Sending Output to SharePoint](#sending-output-to-sharepoint) for full detai
 	-TenantId "<tenant-guid>" `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-OutputPathFabric "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse/Files/audit"
+	-OutputPath "https://onelake.dfs.fabric.microsoft.com/Analytics/PAX.Lakehouse"
 ```
 
 See [Sending Output to Microsoft Fabric (OneLake)](#sending-output-to-microsoft-fabric-onelake) for full details, including how to build the URL and the required three-layer permissions.
@@ -2812,14 +2396,6 @@ Agent Filtering enables targeted extraction of Copilot agent-specific audit reco
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
 	-AgentId "CopilotStudio.Declarative.agent1","CopilotStudio.Declarative.agent2","CustomAgent.xyz" `
-	-OutputPath "C:\Exports\\"
-
-# Combine with deep explosion for maximum analysis detail
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-AgentsOnly `
-	-ExplodeDeep `
 	-OutputPath "C:\Exports\\"
 ```
 
@@ -2902,10 +2478,9 @@ User and Group Filtering enables targeted extraction of audit records for specif
 - **EOM Mode (`-UseEOM`):** Server-side filtering via `Search-UnifiedAuditLog -UserIds`
 
 **Group Filtering (`-GroupNames`):**
-- **⚠️ EOM Mode Only:** Requires `-UseEOM` parameter
-- Groups are expanded to member emails using `Get-DistributionGroupMember` before querying
-- NOT supported in Graph API mode (default)
-- Requires Exchange Online authentication for group expansion
+- **Graph API Mode (Default):** Groups are expanded via `Get-MgGroup` + `Get-MgGroupMember` (requires `GroupMember.Read.All`), then the resulting member emails are applied as a client-side filter after retrieval
+- **EOM Mode (`-UseEOM`):** Groups are expanded via `Get-DistributionGroupMember` (Exchange Online), then filtered server-side via `Search-UnifiedAuditLog -UserIds`
+- Supported in both modes; identifier can be display name, mail address, or (in Graph API mode) the group's object ID
 
 ### When to Use User/Group Filtering
 
@@ -2917,7 +2492,7 @@ User and Group Filtering enables targeted extraction of audit records for specif
 - Works with both Graph API (default) and EOM mode
 
 **Use `-GroupNames`** when:
-- Analyzing department-wide or team-level adoption (**EOM mode only - requires `-UseEOM`**)
+- Analyzing department-wide or team-level adoption (works in both Graph API and EOM modes)
 - Tracking Copilot usage across organizational units
 - Compliance audits for specific business groups
 - ROI analysis by functional group
@@ -2942,7 +2517,14 @@ User and Group Filtering enables targeted extraction of audit records for specif
 	-UserIds "john.doe@contoso.com","jane.smith@contoso.com","bob.jones@contoso.com" `
 	-OutputPath "C:\Exports\\"
 
-# Filter for a distribution group (EOM mode only - requires -UseEOM)
+# Filter for a distribution group (Graph API mode - default)
+./PAX_Purview_Audit_Log_Processor.ps1 `
+	-StartDate 2025-10-01 `
+	-EndDate 2025-10-02 `
+	-GroupNames "Engineering-Team@contoso.com" `
+	-OutputPath "C:\Exports\\"
+
+# Same group filter under EOM mode (server-side audit filter)
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
@@ -2950,19 +2532,17 @@ User and Group Filtering enables targeted extraction of audit records for specif
 	-GroupNames "Engineering-Team@contoso.com" `
 	-OutputPath "C:\Exports\\"
 
-# Filter for multiple groups (EOM mode only - requires -UseEOM)
+# Filter for multiple groups (Graph API mode)
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-UseEOM `
 	-GroupNames "Sales@contoso.com","Marketing@contoso.com" `
 	-OutputPath "C:\Exports\\"
 
-# Combine UserIds and GroupNames (EOM mode only - requires -UseEOM)
+# Combine UserIds and GroupNames
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-UseEOM `
 	-UserIds "ceo@contoso.com","cfo@contoso.com" `
 	-GroupNames "ExecutiveTeam@contoso.com" `
 	-OutputPath "C:\Exports\\"
@@ -2973,7 +2553,6 @@ User and Group Filtering enables targeted extraction of audit records for specif
 	-EndDate 2025-10-02 `
 	-UserIds "poweruser@contoso.com" `
 	-AgentsOnly `
-	-ExplodeDeep `
 	-OutputPath "C:\Exports\\"
 ```
 
@@ -2987,17 +2566,13 @@ User and Group Filtering enables targeted extraction of audit records for specif
 **Live Mode Process:**
 
 1. **Group Expansion** (if `-GroupNames` used):
-   - Connects to Exchange Online using existing authentication
-   - Calls `Get-DistributionGroupMember` for each group
-   - Extracts `PrimarySmtpAddress` from each member
-   - Combines with any `-UserIds` provided
-   - Deduplicates final user list
+   - **Graph API mode (default):** Calls `Get-MgGroup` to resolve each group, then `Get-MgGroupMember` to enumerate members (requires `GroupMember.Read.All`); extracts member UPNs/emails
+   - **EOM mode (`-UseEOM`):** Connects to Exchange Online, calls `Get-DistributionGroupMember`, extracts `PrimarySmtpAddress` from each member
+   - Combines results with any `-UserIds` provided and deduplicates the final user list
 
-2. **Server-Side Filtering**:
-   - Passes expanded user list to `Search-UnifiedAuditLog -UserIds` parameter
-   - Purview server filters records matching any UserIds
-   - Only matching records are transmitted to client
-   - Highly efficient: reduces network transfer and processing time
+2. **Audit Filtering:**
+   - **EOM mode:** Passes expanded user list to `Search-UnifiedAuditLog -UserIds` parameter; the Purview server filters records matching any UserIds and only matching records are transmitted to the client (server-side, highly efficient)
+   - **Graph API mode:** The Graph audit query API does not accept UPN filters server-side; the full audit window is retrieved and PAX applies the user-list filter client-side after retrieval (still benefits from any `-RecordTypes` / `-ActivityTypes` / date filtering)
 
 3. **Progress Tracking**:
    - Shows user/group expansion status
@@ -3011,12 +2586,11 @@ User and Group Filtering enables targeted extraction of audit records for specif
 <details>
 <summary>📊 Show Performance Metrics</summary>
 
-**Live Query Mode (Server-Side):**
-- Extremely efficient: filtering happens at Microsoft 365 Purview
-- Only matching records transmitted over network
-- No local processing overhead for non-matching records
-- Group expansion adds ~2-5 seconds per group (one-time cost)
-- **Recommended** when targeting specific users/groups
+**Live Query Mode (mode-dependent):**
+- **EOM mode:** Extremely efficient — filtering happens server-side at Microsoft 365 Purview; only matching records transmitted over the network
+- **Graph API mode:** User filtering is client-side after retrieval; combine with `-RecordTypes`, `-ActivityTypes`, and tight date ranges to keep the retrieval window small
+- Group expansion adds ~2-5 seconds per group (one-time cost; same in both modes)
+- **Recommended** when targeting specific users/groups in either mode
 
 </details>
 
@@ -3034,7 +2608,7 @@ The `UserId` field appears in all Copilot audit records and identifies the user 
 
 ### Important Notes
 
-- **Authentication**: Group expansion requires Exchange Online authentication in live mode
+- **Authentication:** In EOM mode, group expansion requires Exchange Online authentication; in Graph API mode, group expansion uses the Microsoft Graph session and requires the `GroupMember.Read.All` scope
 - **Deduplication**: When combining `-UserIds` and `-GroupNames`, duplicates are automatically removed
 - **Case Sensitivity**: User email matching is case-insensitive
 - **Filter Combinations**: Can combine with `-AgentsOnly`, `-AgentId`, `-ExcludeAgents`, `-PromptFilter`
@@ -3060,7 +2634,7 @@ Prompt and Response Filtering (`-PromptFilter`) enables targeted extraction of s
 - **Response Analysis**: Extract Copilot responses for content analysis, latency measurement, and tracking acceptance rates (combine with prompts via ThreadId for full conversation context)
 - **Conversation Segmentation**: Separate prompts from responses for training data or analysis pipelines
 - **Data Reduction**: Reduce output size by 50%+ when only prompts or responses are needed
-- **Performance**: Two-stage filtering optimizes processing (pre-filter records + conversation-level filtering during explosion)
+- **Performance**: Two-stage filtering optimizes processing (pre-filter records + conversation-level filtering during processing)
 
 ### PromptFilter Options
 
@@ -3081,7 +2655,6 @@ Prompt and Response Filtering (`-PromptFilter`) enables targeted extraction of s
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-ExplodeArrays `
 	-PromptFilter Prompt `
 	-OutputPath "C:\Exports\\"
 
@@ -3089,7 +2662,6 @@ Prompt and Response Filtering (`-PromptFilter`) enables targeted extraction of s
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-ExplodeArrays `
 	-PromptFilter Response `
 	-OutputPath "C:\Exports\\"
 
@@ -3097,7 +2669,6 @@ Prompt and Response Filtering (`-PromptFilter`) enables targeted extraction of s
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-ExplodeArrays `
 	-AgentsOnly `
 	-PromptFilter Prompt `
 	-OutputPath "C:\Exports\\"
@@ -3135,7 +2706,6 @@ PromptFilter analyzes each record's Messages array (conversation turns) and:
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-ExplodeArrays `
 	-AgentsOnly `
 	-PromptFilter Prompt `
 	-OutputPath "C:\Exports\\"
@@ -3144,7 +2714,6 @@ PromptFilter analyzes each record's Messages array (conversation turns) and:
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-ExplodeArrays `
 	-ExcludeAgents `
 	-PromptFilter Prompt `
 	-OutputPath "C:\Exports\\"
@@ -3266,7 +2835,7 @@ All filtering switches (`-UserIds`, `-GroupNames`, `-AgentsOnly`, `-AgentId`, `-
 </details>
 
 **Benefits:**
-- Removes resource-only explosion rows (cleaner message-focused dataset)
+- Removes resource-only rows (cleaner message-focused dataset)
 - Typical reduction: 15-20% smaller file when using `PromptFilter Both`
 - Ideal for conversation analysis, prompt engineering studies, token usage
 
@@ -3336,7 +2905,6 @@ All filtering switches (`-UserIds`, `-GroupNames`, `-AgentsOnly`, `-AgentId`, `-
 	-GroupNames "Executive Leadership" `
 	-AgentsOnly `
 	-PromptFilter Both `
-	-ExplodeDeep `
 	-OutputPath "C:\Exports\\"
 ```
 
@@ -3347,36 +2915,6 @@ All filtering switches (`-UserIds`, `-GroupNames`, `-AgentsOnly`, `-AgentId`, `-
 - **Optimal performance:** Server-side reduces data transfer (live mode)
 - **Clean dataset:** Only relevant conversation turns for the targeted user/agent combination
 - **Typical reduction:** 95%+ of original data filtered out for highly focused analysis
-
----
-
-### Replay Mode Combinations
-
-All filter combinations work in replay mode **except `-GroupNames`** (requires authentication).
-
-<details>
-<summary>💻 Show Replay Mode Combination Examples</summary>
-
-```powershell
-# Replay: User + Agent + PromptFilter
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-RAWInputCSV "C:\Exports\\" `
-	-UserIds "poweruser@contoso.com","analyst@contoso.com" `
-	-AgentsOnly `
-	-PromptFilter Both `
-	-OutputPath "C:\Exports\\"
-
-# Replay: User + PromptFilter (client-side user filtering from JSON)
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-RAWInputCSV "C:\Exports\\" `
-	-UserIds "exec@contoso.com" `
-	-PromptFilter Prompt `
-	-OutputPath "C:\Exports\\"
-```
-
-</details>
-
-**Note:** Use `-UserIds` with explicit email addresses instead of `-GroupNames` in replay mode.
 
 ---
 
@@ -3399,151 +2937,9 @@ All filter combinations work in replay mode **except `-GroupNames`** (requires a
 ### Performance Tips
 
 - **EOM Mode (`-UseEOM`):** User/group filtering is server-side (highly efficient) - best for large datasets when filtering by users
-- **Graph API Mode (Default):** User filtering is client-side - retrieves all records then filters; consider EOM mode for user-specific queries
-- **Replay Mode:** All filtering is client-side - expect longer processing times
+- **Graph API Mode (Default):** User filtering is client-side - retrieves all records first then filters; consider EOM mode for user-specific queries
 - **PromptFilter Impact:** Reduces output rows by 15-20% when using `Both` (removes resource-only rows)
 - **Three-Filter Combo:** Can reduce final output by 95%+ for highly targeted analysis
-
-</details>
-
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
-
----
-
-## Microsoft Agent 365 (Frontier)
-
-<details>
-<summary>🤖 View Microsoft Agent 365 (Frontier) Guide (Click to Expand)</summary>
-
-### Overview
-
-Microsoft Agent 365 is the **Frontier program** surface for governing AI agents (Microsoft 365 Copilot agents, declarative agents, and partner-published packages) across the tenant. PAX adds first-class support for the Agent 365 catalog through two switches:
-
-- **`-IncludeAgent365Info`** — appends an Agent 365 catalog snapshot to a normal audit run.
-- **`-OnlyAgent365Info`** — runs **only** the Agent 365 catalog snapshot, with no audit query.
-
-The output schema mirrors the **Microsoft Admin Center "Agent 365" export** (28 columns, including agent name, package id, publisher, developer, install counts, and last-modified metadata).
-
-**Reference Links:**
-- [Microsoft Agent 365 Frontier program](https://www.microsoft.com/en-us/microsoft-365-copilot/frontier-program)
-- [Microsoft Agent 365 Graph API](https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api)
-
-### When to Use Each Switch
-
-| Goal | Use |
-|------|-----|
-| Combine an audit export with a same-run agent inventory snapshot (e.g., monthly reporting that includes both Copilot interactions and the current installed agent catalog) | `-IncludeAgent365Info` |
-| Pull an agent catalog snapshot only (e.g., governance reviews, change tracking, BI feeds) without the cost of an audit query | `-OnlyAgent365Info` |
-| Validate Frontier program enablement, role assignments, and consent quickly | `-OnlyAgent365Info` (preflight check produces fast feedback) |
-
-### Requirements & Permissions
-
-All four conditions below must be satisfied before the agent phase can run:
-
-1. **Tenant Frontier program enrollment.** If the tenant is not enrolled, PAX shows a banner and skips the agent phase (with `-IncludeAgent365Info`) or exits (with `-OnlyAgent365Info`).
-2. **Entra role: AI Administrator OR Global Administrator** on the signed-in caller for the agent phase. This is enforced server-side by the Frontier program and is **independent of the Graph scopes** consented to PAX. Without the role the endpoint returns 403.
-3. **Graph delegated scopes:** `CopilotPackages.Read.All` and `Application.Read.All` consented for the signed-in caller.
-4. **Delegated (interactive) Graph token.** The Microsoft Graph **Agent Package Management API** does not accept app-only tokens.
-
-See the [Prerequisites](#prerequisites) section for the full permissions table and the prominent Microsoft Agent 365 (Frontier) Access callout.
-
-### Authentication Flows
-
-| Scenario | Audit phase | Agent 365 phase | Notes |
-|----------|------------|-----------------|-------|
-| `-Auth WebLogin` / `DeviceCode` / `Credential` / `Silent` + `-IncludeAgent365Info` | Interactive | Same interactive context | Single sign-in covers both phases. |
-| `-Auth AppRegistration` + `-IncludeAgent365Info` | App-only (service principal) | **One-time interactive prompt** at the start of the agent phase | The interactive caller must hold AI Administrator / Global Administrator and consent to `CopilotPackages.Read.All` and `Application.Read.All`. Audit phase is unattended; agent phase is not. |
-| `-Auth WebLogin` / `DeviceCode` / `Credential` / `Silent` + `-OnlyAgent365Info` | (skipped) | Interactive | Supported. |
-| **`-Auth AppRegistration` + `-OnlyAgent365Info`** | (skipped) | n/a | **Not supported.** PAX exits with a clear error directing you to use `-Auth WebLogin` or `-Auth DeviceCode`. |
-
-### Output Schema
-
-When the agent phase runs successfully, PAX writes a 28-column dataset matching the Admin Center "Agent 365" export schema. Output destination depends on switches:
-
-- **CSV mode (default):** `Agent365_<timestamp>.csv` (always a separate CSV file, even when combined output is enabled for the audit phase).
-- **Excel mode (`-ExportWorkbook`):** an additional `Agents365` worksheet is added to the workbook alongside the audit tabs.
-
-### Temporal Model & Data Depth (Important)
-
-> **At a glance:** The Agent 365 CSV is a **point-in-time snapshot of the live tenant catalog at the moment the script runs**. It is **not** date-ranged, **not** historical, and **not** affected by `-StartDate` / `-EndDate`. There is **no** `-Rollup` deletion of this file — it is always retained.
-
-#### Data source
-
-The Agent 365 CSV is built from two Microsoft Graph endpoints:
-
-1. **Microsoft Agent 365 Package Management API** — `GET /beta/copilot/admin/catalog/packages` (and `/{id}` for details). Returns the **complete current inventory** of agents and apps in the tenant catalog. ([API reference](https://learn.microsoft.com/en-us/microsoft-365-copilot/extensibility/api/admin-settings/package/copilotpackages-list))
-2. **Unified Audit Log enrichment** (best-effort, optional join) — a narrow Graph audit query for agent / app creation events, used to populate the **Date created** and **Created by** columns. Operations queried: `AppCatalogPublishedAppCreated`, `AppCatalogPublishedAppUpdated`, `AgentCreated`, `AgentPublished`, `CopilotAgentInstalled`.
-
-#### How far back does the catalog go?
-
-The Package Management API is a **current-state inventory call**, not a time-windowed query. There is no "since" / "as-of" / `$top=history` semantic. The factual rules:
-
-| Question | Answer |
-| --- | --- |
-| **How old can a returned package be?** | Arbitrarily old. As long as the package currently exists in the tenant catalog, it appears in the snapshot — even if it was added years ago and has never been modified. There is **no Microsoft-imposed age cutoff** on returned items. |
-| **Can I see deleted / unpublished agents?** | **No.** The API only returns currently-cataloged items. Once a package is removed from the tenant catalog, it disappears from subsequent snapshots and there is no "deleted items" or audit-trail endpoint that re-surfaces it. |
-| **Can I get yesterday's catalog state?** | **No.** Each call returns *now*. To track changes over time, run PAX on a schedule and retain the per-run CSVs — PAX does not maintain catalog history itself. |
-| **What does `lastModifiedDateTime` (column in the CSV) mean?** | The date Microsoft last updated that specific package's metadata. It is **not** the package's age, install date, or first-seen date — just the most recent modification timestamp Microsoft has recorded for it. |
-| **Does the API have a `createdDateTime` field?** | The documented `copilotPackage` schema does not expose a creation timestamp. PAX populates the **Date created** / **Created by** columns by joining to the Unified Audit Log (see below), not from the package itself. |
-
-#### How far back does the Created / Created By enrichment go?
-
-This is the **only** time-bounded part of the Agent 365 output, and the bound is **two layers**:
-
-1. **Tenant audit log retention.** Microsoft retains Unified Audit Log events for:
-   - **180 days** — default for most Microsoft 365 / Office 365 plans (E3 and below).
-   - **1 year** — default for licenses that include Microsoft 365 Audit (Standard) (E5, E5 Compliance).
-   - **Up to 10 years** — with the **Audit (Premium) 10-Year Retention** add-on and an applied retention policy.
-   Creation events older than your tenant's retained window are gone and **cannot be enriched**.
-2. **The run's date window.** PAX's enrichment query uses the run's `-StartDate` / `-EndDate` if provided; otherwise it defaults to **the last 30 days**. So even if your tenant retains 1 year of audit data, an enrichment run with no explicit dates will only look back 30 days.
-
-If a creation event is not found in either window, the **Date created** and **Created by** columns are left **blank** for that agent (no fabrication).
-
-#### Practical guidance
-
-- **Treat the CSV as a slowly-changing reference dimension** when joining it to date-ranged audit data in BI dashboards. The catalog reflects "now"; the audit data reflects the audit window.
-- **For longitudinal catalog tracking**, schedule recurring PAX runs and retain each `Agent365_<timestamp>.csv`. Diff them in BI to detect added / removed / modified packages.
-- **To maximize Created / Created By coverage**, either:
-  - Run with an explicit `-StartDate` / `-EndDate` covering the period you care about (and within your audit retention window), or
-  - Ensure your tenant has Audit (Standard) or Audit (Premium) so older creation events are retrievable.
-- **Endpoint version.** PAX targets `https://graph.microsoft.com/beta/copilot/admin/catalog/packages` today (the only currently published endpoint for this data). The endpoint URL is centralized in `Get-Agent365PackagesUri` so a future move to `https://graph.microsoft.com/v1.0/...` is a one-line change.
-
-### Tenant Not Enrolled (Frontier Banner)
-
-If the tenant is not enrolled in the [Microsoft Agent 365 Frontier program](https://www.microsoft.com/en-us/microsoft-365-copilot/frontier-program), PAX:
-- With `-IncludeAgent365Info`: prints a clear banner explaining enrollment is required, **skips** the Agent 365 phase, and continues with the audit phase (and EntraUsers enrichment if requested) so no other work is lost.
-- With `-OnlyAgent365Info`: prints the same banner and exits.
-
-See the [Microsoft Agent 365 Frontier program](https://www.microsoft.com/en-us/microsoft-365-copilot/frontier-program) page for enrollment information.
-
-### Examples
-
-```powershell
-# Audit run with the Agent 365 catalog appended (CSV)
-./PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -IncludeAgent365Info
-
-# Audit run plus Agent 365 catalog as an additional Excel worksheet
-./PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -IncludeAgent365Info -ExportWorkbook
-
-# Standalone Agent 365 catalog snapshot (no audit phase)
-./PAX_Purview_Audit_Log_Processor.ps1 -OnlyAgent365Info
-
-# Standalone Agent 365 snapshot bypassing non-blocking preflight warnings
-./PAX_Purview_Audit_Log_Processor.ps1 -OnlyAgent365Info -Force
-
-# Standalone Agent 365 snapshot using device code (headless workstations)
-./PAX_Purview_Audit_Log_Processor.ps1 -OnlyAgent365Info -Auth DeviceCode
-
-# Dual-context: AppRegistration drives the audit phase non-interactively,
-# then a one-time interactive sign-in covers the agent phase
-./PAX_Purview_Audit_Log_Processor.ps1 `
-    -Auth AppRegistration `
-    -TenantId "<tenant-guid>" `
-    -ClientId "<app-id>" `
-    -ClientSecret $clientSecret `
-    -StartDate 2025-10-01 -EndDate 2025-10-02 `
-    -IncludeAgent365Info
-```
 
 </details>
 
@@ -3823,7 +3219,6 @@ ExchangeAdmin,ExchangeItem,ExchangeMailbox,SharePointFileOperation,SharePointSha
     -EndDate 2025-12-02 `
     -IncludeM365Usage `
     -IncludeUserInfo `
-    -ExportWorkbook `
     -OutputPath "C:\Exports\"
 ```
 
@@ -3841,8 +3236,7 @@ ExchangeAdmin,ExchangeItem,ExchangeMailbox,SharePointFileOperation,SharePointSha
 1. **Start with combined output:** Use `-CombineOutput` to get all activity types in a single file for initial analysis
 2. **Add user context:** Include `-IncludeUserInfo` to enrich data with department, job title, and license information
 3. **Use date ranges strategically:** Start with 1-2 days to validate data volume before running larger date ranges
-4. **Export to Excel for pivoting:** Use `-ExportWorkbook` for multi-tab analysis by activity category
-5. **Exclude Copilot if focusing on baseline:** Use `-ExcludeCopilotInteraction` when establishing pre-Copilot baseline metrics
+4. **Exclude Copilot if focusing on baseline:** Use `-ExcludeCopilotInteraction` when establishing pre-Copilot baseline metrics
 
 </details>
 
@@ -3856,8 +3250,6 @@ ExchangeAdmin,ExchangeItem,ExchangeMailbox,SharePointFileOperation,SharePointSha
 <summary>📊 View Rollup Post-Processor Guide (Click to Expand)</summary>
 
 > **Purpose & scope.** The `-Rollup` and `-RollupPlusRaw` switches (added in **v1.11.1**) exist **solely to produce input files for the Microsoft Copilot Growth ROI Advisory Team's Power BI templates** published at <https://github.com/microsoft/Analytics-Hub>. The rolled-up CSVs are shaped specifically for those templates — schema, column names, aggregation grain, and join keys are all dictated by the Power BI data models. **The rollup outputs are not intended for any other downstream use.** If you need a generic analytics export, run PAX without `-Rollup` / `-RollupPlusRaw` and consume the raw CSV directly.
->
-> **Agent 365 companion (when `-IncludeAgent365Info` is also specified):** The same Analytics-Hub dashboards consume `Agent365_<timestamp>.csv` as a companion input alongside the rollup output. That file is a **point-in-time catalog snapshot** (it is **not** filtered by `-StartDate` / `-EndDate`) and is **always retained** — `-Rollup` never deletes it. Note the temporal mismatch when interpreting dashboards: rollup data spans the audit window, while the Agent 365 catalog reflects state at run time.
 
 ### Overview
 
@@ -3867,20 +3259,6 @@ When `-Rollup` or `-RollupPlusRaw` is specified, PAX runs an **embedded Python p
 | --- | --- | --- | --- |
 | **CopilotInteraction-only** (default activity type, or `-ActivityTypes 'CopilotInteraction'`) | `Purview_CopilotInteraction_Processor` v3.0.0 | Purview CSV **+** Entra users CSV (`EntraUsers_MAClicensing_<timestamp>.csv`) | **AI-in-One** and **AI Business Value** |
 | **`-IncludeM365Usage`** | `Purview_M365_Usage_Bundle_Explosion_Processor` v2.1.0 | Combined Purview CSV (single file) | **M365 Usage Analytics** |
-
-### Agent 365 Companion File
-
-`-IncludeAgent365Info` is **compatible** with `-Rollup` / `-RollupPlusRaw` even though Agent 365 data is not consumed by the embedded Python processor. The resulting `Agent365_<timestamp>.csv` is loaded directly by the same Analytics-Hub Power BI dashboards as a companion input alongside the rollup output.
-
-| Behavior | Detail |
-| --- | --- |
-| **Temporal model** | **Point-in-time snapshot of the live tenant catalog at the moment the script runs.** It is **not** filtered by `-StartDate` / `-EndDate`. The Microsoft Graph Package Management API (`/beta/copilot/admin/catalog/packages`) is a current-inventory call — it has no historical / as-of semantic. Items in the catalog are returned regardless of age; deleted items are **not** retrievable. See [Microsoft Agent 365 (Frontier) → Temporal Model & Data Depth](#microsoft-agent-365-frontier) for the full factual breakdown. |
-| **Created / Created By columns** | Populated by a separate Unified Audit Log enrichment join. Bounded by **(a)** your tenant's audit retention (180 days E3 / 1 year E5 / up to 10 years with Audit Premium add-on) and **(b)** the run's `-StartDate` / `-EndDate` window (defaults to last 30 days if omitted). Older creation events are left blank — no fabrication. |
-| **Retention** | **Always retained.** `-Rollup` never deletes it (the deletion loop has both an explicit allow-list and a defensive file-name guard against `Agent365_*`). |
-| **Dashboard interpretation** | Be aware of the temporal mismatch: the rollup file covers the audit-window date range, while the Agent 365 file reflects catalog state at run time. Dashboards joining the two should treat the Agent 365 catalog as a slowly-changing reference dimension. |
-| **`-OnlyAgent365Info`** | **Blocked** with rollup (it skips the Purview audit pull entirely, leaving nothing for the Python processor to consume). Use `-IncludeAgent365Info` instead. |
-
-See [Microsoft Agent 365 (Frontier)](#microsoft-agent-365-frontier) for the full Agent 365 schema and switch reference, including the **Temporal Model & Data Depth** subsection that documents the catalog API's current-state semantics and audit-log retention boundaries.
 
 ### Switches
 
@@ -3919,11 +3297,7 @@ Rollup configuration is persisted in the checkpoint JSON (`rollupMode` ∈ `None
 The rollup feature is intentionally narrow in scope. The script exits with an explicit error if any of the following is combined with `-Rollup` / `-RollupPlusRaw`:
 
 - `-UseEOM` (PowerShell 5.1 path)
-- `-ExportWorkbook`
 - `-OnlyUserInfo`
-- `-OnlyAgent365Info`
-- `-IncludeDSPMForAI`
-- `-RAWInputCSV`
 - `-AppendFile`
 - `-ExcludeCopilotInteraction` **without** `-IncludeM365Usage`
 
@@ -3936,19 +3310,14 @@ Rolled-up CSVs are written to the same directory as the raw Purview CSV (default
 ```powershell
 # CopilotInteraction-only rollup → AI-in-One + AI Business Value dashboards.
 # Raw CSV(s) deleted on success; only the rollup output remains.
-.\PAX_Purview_Audit_Log_Processor_v1.11.1.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -Rollup
+.\PAX_Purview_Audit_Log_Processor_v1.11.2.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -Rollup
 
 # Same as above but keep the raw Purview + Entra users CSVs alongside the rollup output.
-.\PAX_Purview_Audit_Log_Processor_v1.11.1.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -RollupPlusRaw
+.\PAX_Purview_Audit_Log_Processor_v1.11.2.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -RollupPlusRaw
 
 # M365 Usage Analytics dashboard input. -IncludeM365Usage auto-enables -CombineOutput;
 # -Rollup deletes the raw combined CSV after the rollup output is produced.
-.\PAX_Purview_Audit_Log_Processor_v1.11.1.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -IncludeM365Usage -Rollup
-
-# Rollup + Agent 365 companion file. Rollup output is produced from the audit window,
-# Agent 365 catalog snapshot is taken at run time, both feed the Analytics-Hub dashboards.
-# The Agents365 CSV is always retained even with -Rollup.
-.\PAX_Purview_Audit_Log_Processor_v1.11.1.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -IncludeAgent365Info -Rollup
+.\PAX_Purview_Audit_Log_Processor_v1.11.2.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -IncludeM365Usage -Rollup
 ```
 
 ### Best Practices
@@ -3958,572 +3327,6 @@ Rolled-up CSVs are written to the same directory as the raw Purview CSV (default
 3. **Don't rename output files.** The Analytics-Hub templates load files by name pattern. Renaming will break the data refresh.
 4. **Don't repurpose rollup outputs.** The schemas are tuned for the named Power BI templates. For ad-hoc analytics, BI ingestion outside Analytics-Hub, or custom data warehouses, use the raw Purview CSV instead.
 5. **Review the rollup banner.** Confirm the displayed target dashboard matches your intended Power BI template before letting a long audit run continue.
-
-</details>
-
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
-
----
-
-## DSPM for AI
-
-<details>
-<summary>🔐 View DSPM for AI Guide (Click to Expand)</summary>
-
-### Overview
-
-**Data Security Posture Management (DSPM) for AI** enables comprehensive monitoring of AI application interactions across your Microsoft 365 environment. Version 1.8.0 introduces dedicated switches to capture DSPM-specific audit data for governance, compliance, and security analysis.
-
-**What is DSPM for AI?**
-
-DSPM for AI provides visibility into:
-- Connected AI application interactions (Microsoft 365 Copilot integrations)
-- Team Copilot interactions (collaborative AI scenarios)
-- Third-party AI application interactions (external AI services)
-- Prompt and response content analysis (with elevated permissions)
-
-**Permission Requirements:**
-
-- **DSPM Activity Types:** Standard audit log permissions (View-Only Audit Logs or Audit Logs role) - **no additional permissions required**
-- **Cost:** PAYG billing applies only to third-party AI app records in `AIAppInteraction` activity type
-
-**Key Use Cases:**
-
-- **Compliance Monitoring:** Track AI usage for regulatory requirements (GDPR, HIPAA, SOX)
-- **Security Analysis:** Identify potentially risky AI interactions or data exposures
-- **Governance Reporting:** Demonstrate AI usage controls to auditors and stakeholders
-- **Data Flow Mapping:** Understand how data moves between your organization and AI services
-- **Risk Assessment:** Identify which AI applications access sensitive data
-
----
-
-### DSPM Activity Types
-
-#### MIXED FREE/PAYG Tier Activities
-
-The following activity types include both FREE and PAYG records depending on the source:
-
-**ConnectedAIAppInteraction**
-- Microsoft 365 Copilot integrations with external AI services
-- Copilot extensibility interactions
-- AI plugins and connectors within M365 ecosystem
-- **FREE:** Microsoft AI apps/agents
-- **PAYG:** Third-party AI apps/agents
-- **Enabled by:** `-IncludeDSPMForAI`
-
-**AIInteraction**
-- AI interactions (currently Microsoft platforms only)
-- Microsoft AI service interactions
-- **FREE:** Microsoft AI apps/agents
-- **PAYG:** Third-party AI apps/agents (if applicable)
-- **Enabled by:** `-IncludeDSPMForAI`
-
-#### PAYG (Pay-As-You-Go) Tier Activities
-
-The following activity type requires extended audit retention and incurs usage-based billing:
-
-**AIAppInteraction**
-- Third-party AI application interactions
-- External AI service connections outside M365 ecosystem
-- Non-Microsoft AI platforms and tools
-- **PAYG only:** Third-party AI apps/agents via network DLP
-- **Enabled by:** `-IncludeDSPMForAI`
-- **Cost:** Approximately $0.0132 per 1,000 records (verify current pricing with Microsoft)
-- **Billing Alert:** Script displays information about potential PAYG costs before proceeding
-
----
-
-### DSPM for AI Parameters
-
-#### `-IncludeDSPMForAI` (MIXED FREE/PAYG Tier)
-
-**Behavior:**
-- Adds `ConnectedAIAppInteraction`, `AIInteraction`, and `AIAppInteraction` to your activity types list
-- **Additive logic:** Does NOT replace existing `-ActivityTypes`, adds to them
-- Output files automatically include `DSPM` in filename
-- **Billing:** MIXED FREE/PAYG for `ConnectedAIAppInteraction` and `AIInteraction`; PAYG only for `AIAppInteraction`
-- **PAYG billing only applies to third-party AI apps/agents, never to Microsoft AI apps/agents**
-
-**Example:**
-
-<details>
-<summary>💻 Show DSPM for AI Examples</summary>
-
-```powershell
-# Basic DSPM for AI (includes all 3 activity types)
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-IncludeDSPMForAI
-
-# DSPM with existing activity types (additive)
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-ActivityTypes MessageSent,FileAccessed `
-	-IncludeDSPMForAI
-# Result: MessageSent + FileAccessed + ConnectedAIAppInteraction
-```
-
-</details>
-
----
-
-#### `-DSPMOutputMode`
-
-**Valid Values:** `Combined` (default), `Separate`
-
-**Combined Mode (Default):**
-- All activity types exported to single output file
-- Filename includes `DSPM` identifier: `Purview_DSPM_Export_20251030_143022.csv`
-
-**Separate Mode:**
-- DSPM activity types exported to dedicated `*_DSPM_*.csv` file
-- Standard activity types exported to separate file without `DSPM` identifier
-- Useful for compliance workflows requiring isolated DSPM data
-
-<details>
-<summary>💻 Show DSPMOutputMode Examples</summary>
-
-```powershell
-# Combined mode (default)
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-IncludeDSPMForAI
-# Output: Purview_DSPM_Export_20251030_143022.csv (all activities)
-
-# Separate mode
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-ActivityTypes MessageSent,FileAccessed `
-	-IncludeDSPMForAI `
-	-DSPMOutputMode Separate
-# Output 1: Purview_DSPM_Export_20251030_143022.csv (DSPM activities only)
-# Output 2: Purview_Export_20251030_143022.csv (standard activities only)
-```
-
-</details>
-
----
-
-### File Naming with DSPM
-
-**Automatic DSPM Detection:**
-
-The script automatically detects when DSPM parameters are active and adjusts file naming:
-
-| Scenario | Output Filename Pattern |
-|----------|------------------------|
-| Standard query (no DSPM) | `Purview_Export_20251030_143022.csv` or `.xlsx` |
-| DSPM parameters enabled | `Purview_DSPM_Export_20251030_143022.csv` or `.xlsx` |
-
-**Detection Logic:**
-
-Script considers DSPM active when:
-- `-IncludeDSPMForAI` is specified
-
----
-
-### Advanced DSPM Scenarios
-
-#### Comprehensive DSPM Audit
-
-<details>
-<summary>💻 Show Comprehensive DSPM Example</summary>
-
-```powershell
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-IncludeDSPMForAI `
-	-Force `
-	-ExplodeDeep
-# Result: All DSPM activities (ConnectedAIAppInteraction, AIInteraction, AIAppInteraction) with deep schema expansion
-```
-
-</details>
-
-#### DSPM with User Filtering
-
-<details>
-<summary>💻 Show DSPM + User Filtering Example</summary>
-
-	# Certificate thumbprint (local cert store)
-
-```powershell
-# Audit specific user's AI interactions
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-UserIds "executive@contoso.com" `
-	-IncludeDSPMForAI
-
-# Audit executive team's DSPM AI usage
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-GroupNames "Executive Team" `
-	-IncludeDSPMForAI `
-	-Force `
-	-ExcludeCopilotInteraction
-```
-
-</details>
-
-#### DSPM with Excel Export
-
-<details>
-<summary>💻 Show DSPM + Excel Example</summary>
-
-```powershell
-# DSPM data in Excel workbook
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-IncludeDSPMForAI `
-	-Force `
-	-ExportWorkbook
-# Output: Purview_DSPM_Export_20251030_143022.xlsx
-# Tabs: ConnectedAIAppInteraction, AIInteraction, AIAppInteraction, CopilotInteraction
-```
-
-</details>
-
----
-
-### DSPM Best Practices
-
-**Cost Management:**
-- Start with `-IncludeDSPMForAI` to understand data volumes across all three activity types
-- Test queries with narrow date ranges first
-- Use `-Force` in automation to avoid interactive prompts
-- Monitor actual costs through Microsoft billing portal
-- PAYG billing only applies to third-party AI app audit records
-
-**Compliance Workflows:**
-- Use `-DSPMOutputMode Separate` to isolate DSPM data for auditors
-- Combine with `-ExcludeCopilotInteraction` for pure DSPM datasets
-
-**Performance:**
-- DSPM activity types query the same API as standard activities
-- No performance penalty for enabling DSPM switches
-- Use standard performance tuning parameters (`-BlockHours`, `-PacingMs`) as needed
-
-</details>
-
-[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
-
----
-
-## Excel Export
-
-<details>
-<summary>📊 View Excel Export Guide (Click to Expand)</summary>
-
-### Overview
-
-**Excel Export** functionality in version 1.8.0 enables direct export to `.xlsx` format with professional formatting, making audit data immediately consumable by business stakeholders, executives, and reporting tools.
-
-**Why Excel Export?**
-
-- **Business-Ready Format:** No CSV-to-Excel conversion needed
-- **Professional Formatting:** Auto-sized columns, frozen headers, bold titles
-- **Multi-Tab Organization:** Separate tabs per activity type for easy navigation
-- **Incremental Builds:** Append new data to existing workbooks across multiple runs
-- **Safer Number Handling:** Prevents Excel's auto-conversion of IDs to scientific notation
-- **Stakeholder Distribution:** Share formatted reports directly with non-technical audiences
-
-**Prerequisites:**
-
-- **ImportExcel Module:** PowerShell module for Excel file manipulation
-- **Auto-Installation:** Script automatically installs module if missing (requires PowerShell Gallery access)
-- **No Excel Required:** Does NOT require Microsoft Excel to be installed on the machine
-
----
-
-### Export Modes
-
-#### Multi-Tab Mode (Default)
-
-**Behavior:**
-- Creates one tab per activity type
-- Tab names match activity type: `CopilotInteraction`, `MessageSent`, `FileAccessed`
-- Default mode when `-ExportWorkbook` is specified without `-CombineOutput`
-
-**File Naming:**
-- Standard: `Purview_Export_<timestamp>.xlsx`
-- With DSPM (`-IncludeDSPMForAI`): `Purview_DSPM_Export_<timestamp>.xlsx`
-
-**Use Cases:**
-- Multi-activity queries where separate analysis per type is needed
-- Reporting to different teams (each team gets their relevant tab)
-- Easier filtering and pivot tables per activity type
-
-<details>
-<summary>💻 Show Multi-Tab Mode Examples</summary>
-
-```powershell
-# Basic multi-tab export (default)
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-ExportWorkbook
-# Output: Purview_Export_20251030_143022.xlsx
-# Tabs: CopilotInteraction
-
-# Multi-activity multi-tab export
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-ActivityTypes CopilotInteraction,MessageSent,FileAccessed `
-	-ExportWorkbook
-# Output: Purview_Export_20251030_143022.xlsx
-# Tabs: CopilotInteraction, MessageSent, FileAccessed
-
-# DSPM multi-tab export
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-IncludeDSPMForAI `
-	-ExportWorkbook
-# Output: Purview_DSPM_Export_20251030_143022.xlsx
-# Tabs: CopilotInteraction, ConnectedAIAppInteraction,AIInteraction, AIAppInteraction
-```
-
-</details>
-
----
-
-#### Combined Mode (Single Tab)
-
-**Behavior:**
-- All activity types combined into single tab
-- Tab name: `Combined_Purview_Data` or `Combined_Purview_DSPM_Data` (with DSPM)
-- Enabled by adding `-CombineOutput` parameter
-
-**File Naming:**
-- Standard: `Purview_Audit_CombinedUsageActivity_<timestamp>.xlsx`
-- With Entra enrichment (`-IncludeUserInfo`): `Purview_Audit_CombinedUsageActivity_EntraUsers_MAClicensing_<timestamp>.xlsx`
-- Tab name: `CombinedUsageActivity` (with `EntraUsers_MAClicensing` tab if `-IncludeUserInfo` used)
-
-**Use Cases:**
-- Single activity type queries (no benefit to multiple tabs)
-- Cross-activity analysis where combined dataset is preferred
-- Smaller exports where tab organization isn't needed
-
-<details>
-<summary>💻 Show Combined Mode Examples</summary>
-
-```powershell
-# Single-tab export (combined mode)
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-ExportWorkbook `
-	-CombineOutput
-# Output: Purview_Audit_CombinedUsageActivity_<timestamp>.xlsx
-# Tab: CombinedUsageActivity
-
-# DSPM combined export
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-IncludeDSPMForAI `
-	-ExportWorkbook `
-	-CombineOutput
-# Output: Purview_Audit_CombinedUsageActivity_<timestamp>.xlsx
-# Tab: CombinedUsageActivity (DSPM activity types included)
-```
-
-</details>
-
----
-
-### Excel Formatting Features
-
-Every Excel export includes professional formatting:
-
-| Feature | Behavior | Benefit |
-|---------|----------|---------|
-| **AutoSize** | Columns auto-sized to content width | Readable without manual resizing |
-| **FreezeTopRow** | First row frozen during scroll | Headers always visible |
-| **BoldTopRow** | Header row in bold font | Clear visual separation |
-| **NoNumberConversion** | All columns treated as text (`@` format) | Prevents ID corruption (e.g., GUIDs) |
-
-**Number Conversion Prevention:**
-
-Excel's default behavior converts values like `1E10` or `00123` to scientific notation or removes leading zeros. The script applies text formatting (`'*'` = all columns) to prevent this, ensuring data integrity for:
-- User IDs
-- Session IDs
-- Agent IDs (GUIDs)
-- Timestamps
-- Any numeric-looking text fields
-
----
-
-### ImportExcel Module Management
-
-**Auto-Installation:**
-
-If `ImportExcel` module not found, script:
-1. Displays module information and purpose
-2. Prompts for installation confirmation
-3. Installs from PowerShell Gallery (requires internet)
-4. Imports module automatically
-
-**Manual Installation:**
-
-```powershell
-# Install ImportExcel module manually
-Install-Module -Name ImportExcel -Scope CurrentUser -Force
-
-# Verify installation
-Get-Module -Name ImportExcel -ListAvailable
-```
-
-**Fallback Behavior:**
-
-If installation fails or is declined:
-- Script falls back to CSV export
-- Displays warning message
-- Continues execution with CSV output
-
----
-
-### Advanced Excel Scenarios
-
-#### Incremental Weekly Reports
-
-<details>
-<summary>💻 Show Incremental Report Example</summary>
-
-```powershell
-# Monday: Week 1 initial export
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-06 `
-	-EndDate 2025-10-13 `
-	-ExportWorkbook `
-	-OutputPath "C:\Reports\\"
-
-# Monday: Week 2 append
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-13 `
-	-EndDate 2025-10-20 `
-	-ExportWorkbook `
-	-AppendFile `
-	-OutputPath "C:\Reports\\"
-
-# Result: Single workbook with 2 weeks of data
-```
-
-</details>
-
-#### DSPM Excel Reports
-
-<details>
-<summary>💻 Show DSPM Excel Example</summary>
-
-```powershell
-# Comprehensive DSPM report with Excel
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-IncludeDSPMForAI `
-	-IncludeThirdPartyAI `
-	-Force `
-	-ExportWorkbook `
-	-ExplodeDeep
-# Output: Purview_DSPM_Export_20251030_143022.xlsx
-# Tabs: CopilotInteraction, ConnectedAIAppInteraction, AIInteraction, AIAppInteraction
-# Formatting: All tabs have frozen headers, bold titles, auto-sized columns
-```
-
-</details>
-
-#### Multi-Activity Excel with Filtering
-
-<details>
-<summary>💻 Show Filtered Excel Example</summary>
-
-```powershell
-# Executive team activity across multiple types
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-GroupNames "Executive Team" `
-	-ActivityTypes CopilotInteraction,MessageSent,FileAccessed `
-	-ExportWorkbook `
-	-UseEOM
-# Output: Purview_Export_20251030_143022.xlsx
-# Tabs: CopilotInteraction (execs only), MessageSent (execs only), FileAccessed (execs only)
-```
-
-</details>
-
----
-
-### Excel Export Best Practices
-
-**Performance:**
-- Excel export adds minimal overhead (post-processing CSV → Excel conversion)
-- Use same performance tuning parameters as CSV mode
-- Large exports (>100K rows) may take slightly longer due to Excel formatting
-
-**File Management:**
-- Use descriptive `-AppendFile` names with consistent naming conventions
-- Consider date-based folder structure for long-term archival
-
-**Schema Consistency:**
-- Use consistent parameters across AppendFile runs
-- Avoid mixing `-ExplodeArrays` and `-ExplodeDeep` in same workbook
-- Schema mismatches create timestamped duplicate tabs (safe but increases file size)
-
-**Automation:**
-- Excel export works seamlessly in scheduled tasks
-- No Microsoft Excel installation required on server
-- ImportExcel module installation may require one-time interactive approval
-
-**Distribution:**
-- Excel workbooks are business-ready for sharing
-- No post-processing needed for stakeholder reports
-- Consider file size limits for email distribution (>25 MB may require file share)
-
----
-
-### File Naming Convention Reference
-
-**Complete naming patterns for all output scenarios:**
-
-| Export Mode | Parameters | Output File Name | Additional Files |
-|-------------|-----------|------------------|------------------|
-| **Excel Multi-Tab** | `-ExportWorkbook` | `Purview_Export_<timestamp>.xlsx` | — |
-| **Excel Multi-Tab (DSPM)** | `-ExportWorkbook -IncludeDSPMForAI` | `Purview_DSPM_Export_<timestamp>.xlsx` | — |
-| **Excel Combined** | `-ExportWorkbook -CombineOutput` | `Purview_Audit_CombinedUsageActivity_<timestamp>.xlsx` | — |
-| **Excel Combined + Entra** | `-ExportWorkbook -CombineOutput -IncludeUserInfo` | `Purview_Audit_CombinedUsageActivity_<timestamp>.xlsx` | `EntraUsers_MAClicensing` tab embedded |
-| **CSV Multi-File** | (default, no `-CombineOutput`) | `<ActivityType>_<timestamp>.csv` (per activity) | `EntraUsers_MAClicensing_<timestamp>.csv` (if `-IncludeUserInfo`) |
-| **CSV Combined** | `-CombineOutput` | `Purview_Audit_CombinedUsageActivity_<timestamp>.csv` | `EntraUsers_MAClicensing_<timestamp>.csv` (if `-IncludeUserInfo`) |
-
-**Timestamp Format:** `YYYYMMDD_HHMMSS` (e.g., `20251107_143022`)
-
-**Destination does not change filenames.** Whether output is written to a local folder (`-OutputPath`), a SharePoint folder (`-OutputPathSP`), or a Microsoft Fabric lakehouse (`-OutputPathFabric`), PAX uses the same filenames described above. Only the destination differs.
-
-**EntraUsers File Behavior:**
-- **CSV Mode:** Always separate file `EntraUsers_MAClicensing_<timestamp>.csv` when `-IncludeUserInfo` used
-- **Excel Mode:** Embedded as `EntraUsers_MAClicensing` tab in workbook when `-IncludeUserInfo` used (no separate file)
-- **Graph API Requirement:** `-IncludeUserInfo` requires Graph API mode (not compatible with `-UseEOM`)
-
-**Query Names in Purview:**
-
-When the script creates queries in Microsoft Purview (parallel mode), they appear with descriptive names:
-- **Format:** `PAX_Query_<StartDate>_<StartTime>-<EndDate>_<EndTime>_PartX/Total`
-- **Example:** `PAX_Query_20241101_0000-20241101_0100_Part27/134`
-
-This naming convention helps you:
-- Find queries in the Purview audit log search interface
-- Track query status and completion
-- Correlate script output with Purview UI for troubleshooting
 
 </details>
 
@@ -4546,7 +3349,7 @@ The **`-AppendFile` parameter** enables incremental dataset building across mult
 
 **Key Benefits:**
 - **Zero data loss:** Safe header validation prevents schema conflicts
-- **Flexible workflows:** Works with both CSV and Excel output formats
+- **Flexible workflows:** Works with CSV output (multi-file or combined)
 - **Enterprise-ready:** Supports large-scale audit collection strategies used by Fortune 500 organizations
 - **Time-saving:** Eliminates manual copy/paste operations across multiple exports
 
@@ -4569,41 +3372,16 @@ The **`-AppendFile` parameter** enables incremental dataset building across mult
 - **Detailed diagnostics:** Shows exact column differences when validation fails
 - **File lock detection:** Identifies if file is open in Excel or another process
 
-#### Excel Append Mode
-
-**Process:**
-1. **File Resolution:** Locates existing workbook by `-AppendFile` path (full path or filename in `-OutputPath`)
-2. **Pre-Flight Check:** Validates file accessibility and Excel format integrity
-3. **Sheet Discovery:** Reads all existing worksheet names
-4. **Header Validation:** Compares new data headers against each existing tab's first row
-5. **Matching Headers → Direct Append:** Appends rows to existing tabs (e.g., adds Day 2 data to existing `CopilotInteraction` tab)
-6. **Mismatched Headers → Safe Mode:** Creates timestamped duplicate tabs to preserve both datasets
-
-**Safety Features:**
-- **Never overwrites:** Mismatched schemas create new timestamped tabs (preserves original data)
-- **Multi-tab intelligence:** Handles multiple activity types independently
-- **DSPM naming awareness:** Recognizes tab naming variations (`CopilotInteraction` vs `DSPM_CopilotInteraction`)
-- **Encrypted file guidance:** Provides specific troubleshooting for OneDrive/sensitivity labeled files
-
-**Schema Mismatch Example:**
-```
-Existing tab: CopilotInteraction (10 columns, no deep explosion)
-New data: CopilotInteraction (25 columns, with -ExplodeDeep)
-Result: 
-  - Original tab "CopilotInteraction" preserved
-  - New tab "CopilotInteraction_20251110_143022" created with new schema
-```
-
 ---
 
 ### File Path Resolution
 
 | Scenario | `-AppendFile` Value | `-OutputPath` Value | Final Path Used |
 |----------|---------------------|---------------------|-----------------|
-| **Full path** | `"C:\Data\Report.xlsx"` | (any value) | `C:\Data\Report.xlsx` |
-| **Filename only** | `"Report.xlsx"` | `"C:\Data"` | `C:\Data\Report.xlsx` |
-| **Filename + default** | `"Report.xlsx"` | (not specified) | `.\output\Report.xlsx` |
-| **Conflicting paths** | `"C:\Data\Report.xlsx"` | `"C:\Other"` | `C:\Data\Report.xlsx` (warns about conflict) |
+| **Full path** | `"C:\Data\Report.csv"` | (any value) | `C:\Data\Report.csv` |
+| **Filename only** | `"Report.csv"` | `"C:\Data"` | `C:\Data\Report.csv` |
+| **Filename + default** | `"Report.csv"` | (not specified) | `.\output\Report.csv` |
+| **Conflicting paths** | `"C:\Data\Report.csv"` | `"C:\Other"` | `C:\Data\Report.csv` (warns about conflict) |
 
 **Recommendation:** Use full paths in automation scripts for explicit control; use filename-only in interactive workflows with `-OutputPath`.
 
@@ -4612,18 +3390,20 @@ Result:
 ### Restrictions & Requirements
 
 **Cannot Be Used With:**
-- **`-IncludeUserInfo`:** EntraUsers data represents point-in-time snapshots, not time-based activity suitable for appending
-- **`-OnlyUserInfo`:** Same reason (EntraUsers mode outputs user snapshots, not audit events)
+- **`-OnlyUserInfo`:** That mode outputs a point-in-time user/license snapshot only — no audit data stream exists to append into
+
+**Pairs With (companion switches):**
+- **`-AppendUserInfo`:** Parallel switch for the EntraUsers CSV stream. Use `-AppendFile` + `-AppendUserInfo` together when you also want to incrementally update the user/license snapshot file. `-AppendUserInfo` auto-enables `-IncludeUserInfo`.
 
 **Requires:**
 - **Single-file output:** Must use one of:
-  - `-ExportWorkbook` (Excel mode - multiple tabs OK, but single workbook)
   - `-CombineOutput` (CSV combined mode)
   - Single activity type (e.g., `-ActivityTypes CopilotInteraction` only)
 - **File must exist:** Run once without `-AppendFile` to create initial file, then use `-AppendFile` for subsequent runs
 
 **Works With:**
 - **Live query mode:** Append new date ranges to existing files
+- **`-IncludeUserInfo`:** Compatible — `-AppendFile` only touches the Purview audit CSV; the EntraUsers CSV is a separate file (manage it with `-AppendUserInfo` or `-OutputPathUserInfo`)
 - **All filtering options:** Agent, user, group, prompt filtering fully compatible
 
 ---
@@ -4640,23 +3420,21 @@ Result:
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate (Get-Date).AddDays(-1) `
 	-EndDate (Get-Date) `
-	-ExportWorkbook `
 	-CombineOutput `
 	-OutputPath "C:\AuditArchive"
-# Creates: Purview_Audit_CombinedUsageActivity_20251110_080000.xlsx
+# Creates: Purview_Audit_CombinedUsageActivity_20251110_080000.csv
 
 # Daily append (scheduled task)
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate (Get-Date).AddDays(-1) `
 	-EndDate (Get-Date) `
-	-ExportWorkbook `
 	-CombineOutput `
-	-AppendFile "Purview_Audit_CombinedUsageActivity_20251110_080000.xlsx" `
+	-AppendFile "Purview_Audit_CombinedUsageActivity_20251110_080000.csv" `
 	-OutputPath "C:\AuditArchive"
 ```
 
 **Benefits:**
-- Single workbook contains entire 90-day history
+- Single CSV contains entire 90-day history
 - No manual consolidation required
 - Consistent naming for downstream tools (Power BI, etc.)
 
@@ -4665,30 +3443,28 @@ Result:
 <details>
 <summary>💼 Multi-Tenant Consolidation</summary>
 
-**Scenario:** MSP managing multiple customer tenants, consolidating audit data into single workbook per customer
+**Scenario:** MSP managing multiple customer tenants, consolidating audit data into single file per customer
 
 ```powershell
 # Customer A - Tenant 1 (initial)
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
-	-ExportWorkbook `
 	-CombineOutput `
 	-OutputPath "C:\Customers\CustomerA"
-# Creates: Purview_Audit_CombinedUsageActivity_20251110_143022.xlsx
+# Creates: Purview_Audit_CombinedUsageActivity_20251110_143022.csv
 
 # Customer A - Tenant 1 (append Week 2)
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-08 `
 	-EndDate 2025-10-09 `
-	-ExportWorkbook `
 	-CombineOutput `
-	-AppendFile "Purview_Audit_CombinedUsageActivity_20251110_143022.xlsx" `
+	-AppendFile "Purview_Audit_CombinedUsageActivity_20251110_143022.csv" `
 	-OutputPath "C:\Customers\CustomerA"
 ```
 
 **Benefits:**
-- Single workbook per customer (easy distribution)
+- Single file per customer (easy distribution)
 - Consistent naming across customer base
 - Simplified monthly reporting workflows
 
@@ -4704,11 +3480,6 @@ Result:
 - Appends rows directly to existing file
 - No duplicate header row added
 - Seamless data continuation
-
-**Excel Mode:**
-- Appends rows to matching tabs
-- Preserves existing formatting and frozen panes
-- No visible indication of append boundary (continuous dataset)
 
 #### When Headers Don't Match
 
@@ -4729,22 +3500,12 @@ ERROR: CSV header mismatch detected
     2. Create new file without -AppendFile
 ```
 
-**Excel Mode:**
-```
-WARNING: Schema mismatch detected on tab 'CopilotInteraction'
-  New data has different columns than existing tab
-  Creating new tab: CopilotInteraction_20251110_143022
-  Original tab preserved
-```
-
 #### Common Schema Mismatch Causes
 
 | Cause | Solution |
 |-------|----------|
-| **Added `-ExplodeDeep`** | Use consistent explosion mode across runs OR accept timestamped duplicate tabs |
-| **Changed activity types** | Maintain same `-ActivityTypes` list OR use multi-tab mode (activity type per tab) |
-| **Added DSPM activities** | Include `-IncludeDSPMForAI` in all runs OR separate DSPM from standard exports |
-| **Schema evolution** | Microsoft adds new fields to API response - accept new timestamped tab OR rebuild initial file |
+| **Changed activity types** | Maintain same `-ActivityTypes` list across runs |
+| **Schema evolution** | Microsoft adds new fields to API response — rebuild initial file when this happens |
 
 ---
 
@@ -4763,37 +3524,15 @@ WARNING: Schema mismatch detected on tab 'CopilotInteraction'
 **Solutions:**
 ```powershell
 # Check if file is locked
-Get-Process | Where-Object {$_.MainWindowTitle -like "*Report.xlsx*"}
+Get-Process | Where-Object {$_.MainWindowTitle -like "*Report.csv*"}
 
 # Copy to local folder
-Copy-Item "C:\OneDrive\Reports\Report.xlsx" "C:\temp\Report.xlsx"
-.\PAX_Purview_Audit_Log_Processor.ps1 ... -AppendFile "C:\temp\Report.xlsx"
+Copy-Item "C:\OneDrive\Reports\Report.csv" "C:\temp\Report.csv"
+.\PAX_Purview_Audit_Log_Processor.ps1 ... -AppendFile "C:\temp\Report.csv"
 
 # Verify permissions
-Test-Path "C:\Data\Report.xlsx" -PathType Leaf
-(Get-Acl "C:\Data\Report.xlsx").Access
-```
-
-#### Excel Structure Errors
-
-**Error:** `Cannot read Excel workbook structure: The file is not a valid Package file`
-
-**Common Causes:**
-1. File has encryption/sensitivity labels applied
-2. File corrupted
-3. ImportExcel module can't parse file format
-
-**Solutions:**
-```powershell
-# Remove encryption (open in Excel)
-# File > Info > Protect Workbook > Remove encryption
-
-# Copy to clean folder (removes some metadata)
-Copy-Item "source.xlsx" "C:\temp\clean.xlsx"
-
-# Verify Excel format
-$excel = Import-Excel "C:\temp\clean.xlsx" -WorksheetName Sheet1 -StartRow 1 -EndRow 1
-# Should return first row without errors
+Test-Path "C:\Data\Report.csv" -PathType Leaf
+(Get-Acl "C:\Data\Report.csv").Access
 ```
 
 #### Pattern Matching Issues
@@ -4808,7 +3547,7 @@ $excel = Import-Excel "C:\temp\clean.xlsx" -WorksheetName Sheet1 -StartRow 1 -En
 -AppendFile -OutputPath "C:\Data"
 
 # Use explicit filename
--AppendFile "C:\Data\Purview_Export_20251030_143022.xlsx"
+-AppendFile "C:\Data\Purview_Export_20251030_143022.csv"
 ```
 
 ---
@@ -4823,30 +3562,27 @@ $excel = Import-Excel "C:\temp\clean.xlsx" -WorksheetName Sheet1 -StartRow 1 -En
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-08 `
-	-ExportWorkbook `
 	-CombineOutput `
 	-OutputPath "C:\Reports"
-# Output: Purview_Audit_CombinedUsageActivity_20251110_080000.xlsx
+# Output: Purview_Audit_CombinedUsageActivity_20251110_080000.csv
 
 # Week 2: Append
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-08 `
 	-EndDate 2025-10-15 `
-	-ExportWorkbook `
 	-CombineOutput `
-	-AppendFile "Purview_Audit_CombinedUsageActivity_20251110_080000.xlsx" `
+	-AppendFile "Purview_Audit_CombinedUsageActivity_20251110_080000.csv" `
 	-OutputPath "C:\Reports"
 
 # Week 3: Append
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-15 `
 	-EndDate 2025-10-22 `
-	-ExportWorkbook `
 	-CombineOutput `
-	-AppendFile "Purview_Audit_CombinedUsageActivity_20251110_080000.xlsx" `
+	-AppendFile "Purview_Audit_CombinedUsageActivity_20251110_080000.csv" `
 	-OutputPath "C:\Reports"
 
-# Result: Single workbook with 3 weeks of continuous data
+# Result: Single CSV with 3 weeks of continuous data
 ```
 
 </details>
@@ -4886,12 +3622,12 @@ $excel = Import-Excel "C:\temp\clean.xlsx" -WorksheetName Sheet1 -StartRow 1 -En
 $taskName = "PAX_Daily_Append"
 $scriptPath = "C:\Scripts\PAX_Purview_Audit_Log_Processor.ps1"
 $outputPath = "C:\AuditArchive"
-$fileName = "Annual_Audit_2025.xlsx"
+$fileName = "Annual_Audit_2025.csv"
 $serviceAccountPassword = ConvertTo-SecureString "<service-account-password>" -AsPlainText -Force
 
 # Task action
 $action = New-ScheduledTaskAction -Execute "pwsh.exe" -Argument @"
--NoProfile -Command "$scriptPath -StartDate (Get-Date).AddDays(-1) -EndDate (Get-Date) -ExportWorkbook -CombineOutput -AppendFile '$fileName' -OutputPath '$outputPath' -Silent"
+-NoProfile -Command "$scriptPath -StartDate (Get-Date).AddDays(-1) -EndDate (Get-Date) -CombineOutput -AppendFile '$fileName' -OutputPath '$outputPath' -Silent"
 "@
 
 # Task trigger (daily 2 AM)
@@ -4900,7 +3636,7 @@ $trigger = New-ScheduledTaskTrigger -Daily -At 2am
 # Register task
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -User "DOMAIN\ServiceAccount" -Password $serviceAccountPassword
 
-# Result: Single workbook automatically updated daily with previous 24h of data
+# Result: Single CSV automatically updated daily with previous 24h of data
 ```
 
 </details>
@@ -4910,9 +3646,9 @@ Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Us
 ### Best Practices
 
 **Naming Strategy:**
-- Use descriptive, date-based names: `Audit_2025_Q4.xlsx`
+- Use descriptive, date-based names: `Audit_2025_Q4.csv`
 - Avoid spaces in filenames (simplifies automation)
-- Include scope in name: `Executive_Team_Copilot_Usage_2025.xlsx`
+- Include scope in name: `Executive_Team_Copilot_Usage_2025.csv`
 
 **Schema Consistency:**
 - Document parameters used for initial export
@@ -4921,7 +3657,6 @@ Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Us
 
 **File Management:**
 - Keep backups before each append operation
-- Monitor file size (Excel limit: 1,048,576 rows)
 - Use compression for archived datasets (7-Zip, etc.)
 
 **Error Handling:**
@@ -4931,8 +3666,7 @@ Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Us
 
 **Performance:**
 - Appending adds minimal overhead (< 5 seconds for header validation)
-- Large Excel files (>500MB) may take longer to open/validate
-- Consider CSV for extremely large datasets (faster append, smaller files)
+- CSV append is fast even for very large datasets
 
 </details>
 
@@ -5007,13 +3741,12 @@ This reactive approach is more reliable than time-based prompts because token li
 - `-Force` - Use most recent checkpoint without prompting
 - `-Auth` - Override authentication method
 - `-TenantId`, `-ClientId`, `-ClientSecret` - Auth credentials for AppRegistration
-- `-ExplosionThreads` - Override thread count for parallel explosion (e.g., resuming on different hardware)
 - `-MaxMemoryMB` - Override memory threshold (e.g., resuming on different hardware)
 
 **NOT Allowed with `-Resume`:**
-- Any other parameter (dates, activities, explosion settings, etc.)
+- Any other parameter (dates, activities, output settings, etc.)
 
-This restriction prevents schema inconsistencies, such as first half of data exported with explosion and second half without.
+This restriction prevents schema inconsistencies between partitions of the same run.
 
 ### Resume Workflow
 
@@ -5024,7 +3757,6 @@ This restriction prevents schema inconsistencies, such as first half of data exp
 .\PAX_Purview_Audit_Log_Processor.ps1 `
     -StartDate 2025-12-01 `
     -EndDate 2025-12-15 `
-    -ExplodeDeep `
     -IncludeM365Usage `
     -OutputPath C:\Exports\
 
@@ -5056,10 +3788,9 @@ The checkpoint file preserves ALL processing parameters:
 | Date Range | StartDate, EndDate |
 | Activity Filtering | ActivityTypes, RecordTypes, ServiceTypes, UserIds, GroupNames |
 | Agent Filtering | AgentId, AgentsOnly, ExcludeAgents |
-| Schema/Explosion | ExplodeArrays, ExplodeDeep, FlatDepth, StreamingSchemaSample, StreamingChunkSize, ExplosionThreads |
-| M365/User Info | IncludeM365Usage, IncludeUserInfo, IncludeDSPMForAI |
+| M365/User Info | IncludeM365Usage, IncludeUserInfo |
 | Partitioning | BlockHours, PartitionHours, MaxPartitions |
-| Output | OutputPath, ExportWorkbook, CombineOutput |
+| Output | OutputPath, CombineOutput |
 | Auth (method only) | Auth, TenantId, ClientId (no secrets) |
 | Tuning | ResultSize, MaxConcurrency, AutoCompleteness, IncludeTelemetry, StatusIntervalSeconds |
 | Partition State | Completed partitions, query IDs, record counts |
@@ -5085,8 +3816,6 @@ The checkpoint file preserves ALL processing parameters:
     "startDate": "2025-12-01T00:00:00Z",
     "endDate": "2025-12-15T00:00:00Z",
     "activityTypes": ["CopilotInteraction"],
-    "explodeDeep": true,
-    "explosionThreads": 0,
     "includeM365Usage": true,
     "blockHours": 0.5,
     "auth": "WebLogin",
@@ -5130,30 +3859,17 @@ The checkpoint file preserves ALL processing parameters:
 
 Every execution produces two files:
 
-#### 1. Data Export File (CSV or Excel)
+#### 1. Data Export File (CSV)
 
 - **Location:** Specified by `-OutputPath` parameter (directory) or `-AppendFile` (specific filename/path)
-- **Format Options:**
-  - **CSV Mode (default):** UTF-8 without BOM, standard CSV with quoted fields, CRLF line endings (Windows) or LF (macOS/Linux)
-  - **Excel Mode (`-ExportWorkbook`):** .xlsx format with multi-tab or combined layout, professional formatting (frozen headers, auto-sized columns, bold titles)
+- **Format:** UTF-8 without BOM, standard CSV with quoted fields, CRLF line endings (Windows) or LF (macOS/Linux)
 - **Header:** Always written (even when zero records match)
-- **CSV Default:** Separate files per activity type (use `-CombineOutput` to merge into single file)
-- **Excel Default:** Multi-tab workbook (one tab per activity type; use `-CombineOutput` for single combined tab)
-
-**Excel File Naming Conventions:**
-
-- **Combined Mode (with `-CombineOutput`):**
-  - Standard and DSPM: `Purview_Audit_CombinedUsageActivity_<timestamp>.xlsx`
-- **Multi-Tab Mode (default for Excel):**
-  - Standard datasets: `Purview_Export_<timestamp>.xlsx`
-  - DSPM datasets (`-IncludeDSPMForAI`): `Purview_DSPM_Export_<timestamp>.xlsx`
-- **Microsoft Agent 365 (Frontier) catalog (with `-IncludeAgent365Info` or `-OnlyAgent365Info`):** an additional `Agents365` worksheet is added to the workbook (28-column schema matching the Microsoft Admin Center "Agent 365" export).
+- **Default:** Separate files per activity type (use `-CombineOutput` to merge into single file)
 
 **CSV File Naming:**
 - **Default (separate files per activity type):** `<ActivityTypeName>_<timestamp>.csv` (e.g., `CopilotInteraction_20251107_143022.csv`, `ConnectedAIAppInteraction_20251107_143022.csv`)
 - **Combined mode (with `-CombineOutput`):** `Purview_Audit_CombinedUsageActivity_<timestamp>.csv`
-- **Entra users file (when `-IncludeUserInfo` used):** `EntraUsers_MAClicensing_<timestamp>.csv` (always separate CSV, even in Excel mode unless embedded as tab)
-- **Microsoft Agent 365 (Frontier) catalog file (when `-IncludeAgent365Info` or `-OnlyAgent365Info` used):** `Agent365_<timestamp>.csv` (always a separate CSV when not in Excel workbook mode)
+- **Entra users file (when `-IncludeUserInfo` used):** `EntraUsers_MAClicensing_<timestamp>.csv`
 
 #### 2. Log File (Execution Metrics)
 
@@ -5178,65 +3894,6 @@ Every execution produces two files:
 
 **Use When:** Need raw data for custom processing or minimal transformation
 
-#### Exploded Mode (`-ExplodeArrays`)
-
-**Purview canonical 153-column schema.** Array elements (Messages, AccessedResources, AISystemPlugins) expanded to separate rows.
-
-**Column Count:** 153 base columns
-
-**Base Columns (153):**
-
-**Core Record Identity (7)**
-RecordId, CreationDate, RecordType, Operation, UserId, AssociatedAdminUnits, AssociatedAdminUnitsNames
-
-**Audit & Organization Metadata (14)**
-@odata.type, CreationTime, Id, OrganizationId, ResultStatus, UserKey, UserType, Version, Workload, ObjectId, ErrorNumber, CorrelationId, RecordTypeNum, ResultStatus_Audit
-
-**Identity & Authentication (15)**
-AzureActiveDirectoryEventType, ActorContextId, ActorIpAddress, InterSystemsId, IntraSystemId, SupportTicketId, TargetContextId, ApplicationId, AuthenticationType, ActorInfoString, AppId, AuthType, TokenObjectId, TokenTenantId, TokenType
-
-**Device & Client (12)**
-ClientIP, ClientIPAddress, DeviceProperties.OS, DeviceProperties.BrowserType, DeviceDisplayName, IsManagedDevice, DeviceType, BrowserName, BrowserVersion, Platform, UserAgent, ClientRegion
-
-**SharePoint & OneDrive (18)**
-SiteUrl, SourceRelativeUrl, SourceFileName, SourceFileExtension, ListId, ListItemUniqueId, WebId, ApplicationDisplayName, EventSource, ItemType, SiteSensitivityLabelId, GeoLocation, ListBaseType, ListServerTemplate, Site, DoNotDistributeEvent, HighPriorityMediaProcessing, FileSizeBytes
-
-**Exchange & Mailbox (15)**
-ClientAppId, ClientInfoString, ExternalAccess, InternalLogonType, LogonType, LogonUserSid, MailboxGuid, MailboxOwnerSid, MailboxOwnerUPN, OrganizationName, OriginatingServer, SessionId, SaveToSentItems, OperationCount, CrossMailboxOperation
-
-**Sharing & Permissions (6)**
-Permission, SensitivityLabelId, SharingLinkScope, TargetUserOrGroupType, TargetUserOrGroupName, SensitivityLabel
-
-**Teams & Meetings (17)**
-MeetingId, MeetingType, EventSignature, EventData, MeetingURL, ChatId, MessageId, MessageSizeInBytes, MessageType, ChannelId, TeamName, TeamGuid, ResponseId, IsAnonymous, ChannelName, ChannelGuid, ChannelType
-
-**Collaboration & Apps (14)**
-FormId, FormName, VideoId, VideoName, ViewDuration, AppName, EnvironmentName, PlanId, PlanName, TaskId, TaskName, PercentComplete, AppHost, ThreadId
-
-**Copilot AI & Model (11)**
-CopilotLogVersion, TargetId, ModelId, ModelProvider, ModelFamily, TokensTotal, TokensInput, TokensOutput, DurationMs, OutcomeStatus, ModelTransparencyDetails_ModelName
-
-**Copilot Interaction (11)**
-ConversationId, TurnNumber, RetryCount, ClientVersion, ClientPlatform, AgentId, AgentName, AgentVersion, AgentCategory, ApplicationName, MessageIds
-
-**Copilot Context & Resources (13)**
-Context_Id, Context_Type, Context_Item, Message_Id, Message_isPrompt, AccessedResource_Action, AccessedResource_PolicyDetails, AccessedResource_SiteUrl, AccessedResource_Name, AccessedResource_SensitivityLabel, AccessedResource_ResourceType, AISystemPlugin_Id, AISystemPlugin_Name
-
-**Use When:** Need relational format for BI tools or matching Microsoft Purview exports
-
-#### Deep Flatten Mode (`-ExplodeDeep`)
-
-**153 base columns + all nested `CopilotEventData.*` columns.** Maximum data extraction with every nested field as a separate column.
-
-**Column Count:** 153+ (dynamic based on data)
-
-**Use When:** 
-- Maximum data extraction for BI/ML pipelines
-- Need every nested field accessible as a column
-- Building wide-schema data warehouses
-
-**Warning:** Significantly increases CSV width and processing time. Test with short date range first.
-
 </details>
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
@@ -5260,7 +3917,7 @@ Context_Id, Context_Type, Context_Item, Message_Id, Message_isPrompt, AccessedRe
 - **Executive Dashboards:** Visualize usage by business unit, geography, or reporting hierarchy
 - **Data Enrichment:** Join audit data with HR systems using EmployeeId, Department, or Office location
 
-**New in version 1.8.0:** Requires **Graph API mode** (default) - not compatible with `-UseEOM`
+**Mode requirement:** Requires **Graph API mode** (default) — not compatible with `-UseEOM`
 
 ---
 
@@ -5271,7 +3928,7 @@ Context_Id, Context_Type, Context_Item, Message_Id, Message_isPrompt, AccessedRe
 | **Mode** | Graph API (default) - **NOT compatible with `-UseEOM`** |
 | **Parameter** | `-IncludeUserInfo` switch |
 | **Permissions** | `User.Read.All`, `Organization.Read.All` (least privilege Graph API scopes) |
-| **Output** | CSV: Separate `EntraUsers_MAClicensing_<timestamp>.csv` file<br>Excel: Embedded `EntraUsers_MAClicensing` tab in workbook |
+| **Output** | Separate `EntraUsers_MAClicensing_<timestamp>.csv` file |
 | **Performance** | Minimal impact: ~1-5 seconds for typical datasets (one-time batch query) |
 
 ---
@@ -5331,7 +3988,7 @@ Comprehensive user profile data per user, automatically deduplicated by UserPrin
    - `servicePlanId` is in the discovered Copilot service plan set.
 4. Users with no matching enabled plan get `HasLicense = False`. The full friendly SKU name list still appears in `AssignedLicenses` for traceability.
 
-**Why dynamic:** Microsoft adds new Copilot SKUs and renames existing ones regularly (e.g., across M365, EDU, Sales, Service, Finance, GCC, Frontier program). The wildcard match against the live `/subscribedSkus` catalog auto-adapts to any current or future Copilot SKU without requiring a script update.
+**Why dynamic:** Microsoft adds new Copilot SKUs and renames existing ones regularly (e.g., across M365, EDU, Sales, Service, Finance, GCC). The wildcard match against the live `/subscribedSkus` catalog auto-adapts to any current or future Copilot SKU without requiring a script update.
 
 **Caveats:**
 
@@ -5346,41 +4003,12 @@ Comprehensive user profile data per user, automatically deduplicated by UserPrin
 <summary>💻 Show Entra Enrichment Examples</summary>
 
 ```powershell
-# Basic Entra enrichment (CSV mode)
+# Basic Entra enrichment
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-02 `
 	-IncludeUserInfo
 # Output: CopilotInteraction_<timestamp>.csv + EntraUsers_MAClicensing_<timestamp>.csv
-
-# Entra enrichment with Excel (embedded tab)
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-IncludeUserInfo `
-	-ExportWorkbook `
-	-CombineOutput
-# Output: Purview_Audit_CombinedUsageActivity_EntraUsers_MAClicensing_<timestamp>.xlsx
-# Tabs: CombinedUsageActivity, EntraUsers_MAClicensing
-
-# Entra enrichment with DSPM activities
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-IncludeDSPMForAI `
-	-IncludeUserInfo `
-	-ExportWorkbook
-# Output: Purview_DSPM_Export_<timestamp>.xlsx
-# Tabs: CopilotInteraction, ConnectedAIAppInteraction, AIInteraction, AIAppInteraction, EntraUsers_MAClicensing
-
-# Entra enrichment with exploded schema
-./PAX_Purview_Audit_Log_Processor.ps1 `
-	-StartDate 2025-10-01 `
-	-EndDate 2025-10-02 `
-	-IncludeUserInfo `
-	-ExplodeArrays `
-	-OutputPath "C:\Exports\\"
-# Output: Copilot_Enriched_Exploded.csv + EntraUsers_MAClicensing_<timestamp>.csv
 ```
 
 </details>
@@ -5462,11 +4090,10 @@ ORDER BY InteractionCount DESC
 
 **Best Practices:**
 
-1. **Use with Excel:** Embed EntraUsers tab for easy pivot tables and Power Query joins
-2. **Cache Reuse:** Run multiple audit queries in same session to reuse cached user data
-3. **Selective Filtering:** Use `-UserIds` or `-GroupNames` to reduce audit dataset size before enrichment
-4. **License Auditing:** Export EntraUsers separately and audit `HasLicense` against actual license assignments
-5. **Power BI Templates:** When importing into Copilot ROI Analytics team Power BI templates, use the same PAX-generated EntraUsers file for both the "User/Org Data" and "Licensing Data" import prompts—the file contains all required columns for both
+1. **Cache Reuse:** Run multiple audit queries in same session to reuse cached user data
+2. **Selective Filtering:** Use `-UserIds` or `-GroupNames` to reduce audit dataset size before enrichment
+3. **License Auditing:** Export EntraUsers separately and audit `HasLicense` against actual license assignments
+4. **Power BI Templates:** When importing into Copilot ROI Analytics team Power BI templates, use the same PAX-generated EntraUsers file for both the "User/Org Data" and "Licensing Data" import prompts—the file contains all required columns for both
 
 **Troubleshooting:**
 
@@ -5500,9 +4127,9 @@ ORDER BY InteractionCount DESC
 ### Copilot & AI Activities
 
 - `CopilotInteraction` - Microsoft 365 Copilot usage events (default activity type)
-- `ConnectedAIAppInteraction` - Connected AI app interactions (MIXED FREE/PAYG - DSPM for AI)
-- `AIInteraction` - AI interactions (MIXED FREE/PAYG - DSPM for AI, currently Microsoft platforms only)
-- `AIAppInteraction` - Third-party AI app interactions (PAYG - DSPM for AI, ~$0.0132/1K records)
+- `ConnectedAIAppInteraction` - Connected AI app interactions (MIXED FREE/PAYG)
+- `AIInteraction` - AI interactions (MIXED FREE/PAYG, currently Microsoft platforms only)
+- `AIAppInteraction` - Third-party AI app interactions (PAYG, ~$0.0132/1K records)
 
 ### Common High-Volume Activities
 
@@ -5545,7 +4172,7 @@ This comprehensive reference includes all available operations across Microsoft 
 
 ### Overview
 
-Two optional switches—`-RecordTypes` and `-ServiceTypes`—pass Microsoft Graph `recordTypeFilters` and `serviceFilter` values directly to the audit query body. Use them to unlock classic Microsoft 365 app usage telemetry (Word, Excel, PowerPoint, OneNote, Loop, SharePoint, OneDrive, and Teams files) that sometimes requires explicit workload targeting when using the Graph Security endpoint.
+Two optional switches—`-RecordTypes` and `-ServiceTypes`—pass Microsoft Graph `recordTypeFilters` and `serviceFilter` values directly to the audit query body. Use them to unlock classic Microsoft 365 app usage telemetry (Word, Excel, PowerPoint, OneNote, SharePoint, OneDrive, and Teams files) that sometimes requires explicit workload targeting when using the Graph Security endpoint.
 
 - **Graph-only:** The switches are honored in Graph API mode (default). They are ignored automatically in EOM mode (`-UseEOM`).
 - **Optional behavior:** If omitted, the script submits only `operationFilters`, matching prior behavior.
@@ -5688,17 +4315,6 @@ The script automatically handles most transient failures. However, if you see pa
 - Review the specific query in Purview UI using the QueryName
 - Consider re-running with smaller partition sizes if issues persist
 
-### Offline Replay Mode
-
-Re-process previously exported raw audit CSV files without querying live APIs:
-
-- **No Authentication Required:** Skip connection to Microsoft 365 services
-- **Flexible Filtering:** Apply date, activity, and agent filters to existing data
-- **Schema Transformation:** Convert raw exports to exploded or deep flatten schemas
-- **Reproducible Analysis:** Test transformations against known datasets
-- **Development Workflow:** Build pipelines without production access
-- **Works with both modes:** Compatible with CSV exports from Graph API or EOM mode
-
 ### Progress Tracking System
 
 Real-time progress updates across three phases:
@@ -5707,7 +4323,7 @@ Real-time progress updates across three phases:
 
 ```
 PAX Purview Audit Log Processing
-Status: Query: 45/100(45%) | Explosion: 12000/25000(48%) | Export: 0/1(0%) :: 42%
+Status: Query: 45/100(45%) | Export: 0/1(0%) :: 42%
 ```
 
 **Components:**
@@ -5744,16 +4360,13 @@ The script can emit a metrics JSON capturing execution telemetry and final state
 **JSON Includes (illustrative):**
 ```json
 {
-	"ScriptVersion": "1.8.0",
+	"ScriptVersion": "1.11.2",
 	"StartTimestampUtc": "2025-10-26T14:05:23Z",
 	"EndTimestampUtc": "2025-10-26T14:07:11Z",
 	"TotalWindows": 42,
 	"SubdividedWindows": 6,
 	"Hit10KLimitWindows": 2,
 	"AutoCompletenessIterations": 1,
-	"ExplodedRows": 25678,
-	"ExplosionEvents": 1092,
-	"ExplosionRowsFromEvents": 2345,
 	"ExitCode": 0
 }
 ```
@@ -5773,26 +4386,9 @@ In parallel mode, interim partitions suppress metrics emission. A single aggrega
 
 **Safeguards:**
 - Internal `SkipMetrics` flag prevents duplicate writes
-- Explosion counters reconciled post-join (no double counting)
 - Atomic file write minimizes race conditions
 
 **Tip:** If monitoring progress externally, tail the log file; metrics JSON only appears at end.
-
-### Synthetic Replay Testing Guidance
-
-Offline replay (`-RAWInputCSV`) enables deterministic transformation tests without live service calls.
-
-**Use Cases:**
-- Validate schema explosion behavior on known datasets
-- Benchmark deep flatten memory impact safely
-- Redact / sanitize before sharing sample exports
-
-**Best Practices:**
-- Maintain a curated set of raw CSV snapshots (high, medium, low volume)
-- Pair replay runs with `-EmitMetricsJson` for longitudinal trend baselines
-- Use narrow date filtering when deep flattening very wide synthetic payloads
-
-**Not Supported in Replay:** Authentication, group expansion, adaptive block sizing (already materialized), parallel querying.
 
 </details>
 
@@ -5940,32 +4536,10 @@ pwsh -ExecutionPolicy Bypass -File ./PAX_Purview_Audit_Log_Processor.ps1 `
 
 ### Memory Optimization
 
-**For Deep Flatten with Wide Schemas:**
-
 <details>
 <summary>💻 Show Memory Optimization Examples</summary>
 
-```powershell
-# Increase schema sample, reduce chunk size
-./PAX_Purview_Audit_Log_Processor.ps1 -ExplodeDeep `
-  -StreamingSchemaSample 5000 `
-  -StreamingChunkSize 2000 `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
-```
-
-**For Narrow Schemas (Faster Processing):**
-
-```powershell
-# Reduce schema sample, increase chunk size
-./PAX_Purview_Audit_Log_Processor.ps1 -ExplodeArrays `
-  -StreamingSchemaSample 1000 `
-  -StreamingChunkSize 10000 `
-  -StartDate 2025-10-01 `
-  -EndDate 2025-10-02
-```
-
-**For Large Standard (Non-Exploded) Exports:**
+**For Large Exports:**
 
 PAX automatically monitors memory and streams to JSONL when 75% of system RAM is reached. Use `-MaxMemoryMB` only to override the default threshold or disable it.
 
@@ -6008,56 +4582,6 @@ PAX automatically monitors memory and streams to JSONL when 75% of system RAM is
 
 If adaptive scaling appears too assertive in your environment, lower `-AdaptiveConcurrencyCeiling` or raise `-ThroughputDropPct`. If scaling is too conservative, raise `-AdaptiveConcurrencyCeiling` (but keep `-MaxConcurrency` equal or higher) or lower `-LowLatencyMs` only if your baseline latency is consistently very low.
 
-### Parallel Explosion Tuning
-
-When using `-ExplodeArrays` or `-ExplodeDeep` with large datasets, parallel explosion can provide significant speedups:
-
-<details>
-<summary>💻 Show Parallel Explosion Tuning Examples</summary>
-
-**Auto-Detection (Recommended for Most Cases):**
-
-```powershell
-# Let script choose optimal thread count (2-8 based on CPU cores)
-./PAX_Purview_Audit_Log_Processor.ps1 -ExplodeDeep -ExplosionThreads 0 -StartDate 2025-10-01 -EndDate 2025-10-31
-```
-
-**Explicit Thread Control:**
-
-```powershell
-# High-core server: use maximum 8 threads for best throughput
-./PAX_Purview_Audit_Log_Processor.ps1 -ExplodeDeep -ExplosionThreads 8 -StartDate 2025-10-01 -EndDate 2025-10-31
-
-# Resource-constrained environment: limit to 4 threads
-./PAX_Purview_Audit_Log_Processor.ps1 -ExplodeDeep -ExplosionThreads 4 -StartDate 2025-10-01 -EndDate 2025-10-31
-```
-
-**Force Serial (Debugging):**
-
-```powershell
-# Serial processing for debugging
-./PAX_Purview_Audit_Log_Processor.ps1 -ExplodeArrays -ExplosionThreads 1 -StartDate 2025-10-01 -EndDate 2025-10-02
-```
-
-</details>
-
-**Thread Count Guidelines:**
-
-| Scenario | Recommended `-ExplosionThreads` |
-|----------|--------------------------------|
-| General use / auto-detect | `0` (default) |
-| 4-core laptop | `0` or `2-4` |
-| 8-core workstation | `0` or `4-8` |
-| 16+ core server | `0` or `8-16` |
-| Resource-constrained / shared | `2-4` |
-| Debugging | `1` (serial) |
-
-**Architecture Notes:**
-
-- Job queue pattern: Records split into ~1000-record chunks, N workers pull from shared queue
-- Ensures good load balancing even with uneven data distribution
-- No thread sits idle while work remains
-
 </details>
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
@@ -6076,11 +4600,9 @@ When using `-ExplodeArrays` or `-ExplodeDeep` with large datasets, parallel expl
 - [10K Limit Warnings](#10k-limit-warnings)
 - [Memory Issues](#memory-issues)
 - [Throttling Errors](#throttling-errors)
-- [Microsoft Agent 365 (Frontier) Issues](#microsoft-agent-365-frontier-issues)
-- [SharePoint Output Issues (`-OutputPathSP`)](#sharepoint-output-issues--outputpathsp)
-- [Fabric / OneLake Output Issues (`-OutputPathFabric`)](#fabric--onelake-output-issues--outputpathfabric)
+- [SharePoint Output Issues](#sharepoint-output-issues)
+- [Fabric / OneLake Output Issues](#fabric--onelake-output-issues)
 - [Managed-Identity Sign-In Issues](#managed-identity-sign-in-issues)
-- [Conflicting Output Destinations](#conflicting-output-destinations)
 
 ---
 
@@ -6139,7 +4661,6 @@ When using `-ExplodeArrays` or `-ExplodeDeep` with large datasets, parallel expl
 
 - Reduce `-StreamingChunkSize` (try 2000 or 1000)
 - Increase `-StreamingSchemaSample` to discover schema earlier (try 5000)
-- Avoid `-ExplodeDeep` for initial runs (use `-ExplodeArrays` instead)
 - Process shorter date ranges
 - Close other applications to free memory
 
@@ -6155,54 +4676,7 @@ When using `-ExplodeArrays` or `-ExplodeDeep` with large datasets, parallel expl
 - Disable parallel mode if enabled
 - Consider if tenant is under heavy load
 
-#### Microsoft Agent 365 (Frontier) Issues
-
-All Microsoft Agent 365 (Frontier) failure modes are consolidated below. The Agent 365 catalog is a **point-in-time snapshot** retrieved via the Graph Agent Package Management API; failures generally fall into one of three categories.
-
-##### 1. Tenant Not Enrolled
-
-**Problem:** Run with `-IncludeAgent365Info` or `-OnlyAgent365Info` shows a banner stating the tenant is not enrolled in the Microsoft Agent 365 Frontier program, and the agent phase is skipped.
-
-**Behavior:**
-- With `-IncludeAgent365Info`: the audit phase (and EntraUsers enrichment if requested) still completes normally; only the Agent 365 catalog phase is skipped.
-- With `-OnlyAgent365Info`: PAX exits because there is no other phase to run.
-
-**Solutions:**
-- Confirm tenant enrollment in the [Microsoft Agent 365 Frontier program](https://www.microsoft.com/en-us/microsoft-365-copilot/frontier-program).
-- After enrollment is processed, re-run PAX with the same parameters.
-
-##### 2. 403 on the Agent Endpoint
-
-**Problem:** The agent phase fails with a 403 Forbidden response from `/beta/copilot/admin/catalog/packages` even though Graph scopes are consented.
-
-**Cause:** The Agent 365 endpoint enforces an Entra role gate **separate from Graph scopes**. Consenting `CopilotPackages.Read.All` and `Application.Read.All` is necessary but not sufficient — the signed-in caller must also hold the Entra **AI Administrator** or **Global Administrator** role.
-
-**Solutions:**
-- Verify the signed-in caller (the interactive admin for the agent phase, even when `-Auth AppRegistration` is used for the audit phase) holds **AI Administrator** or **Global Administrator** in Entra.
-- If the role was just assigned, sign out and sign back in to refresh the token's role claims.
-- Re-consent `CopilotPackages.Read.All` and `Application.Read.All` if the consent record was revoked.
-
-##### 3. `-OnlyAgent365Info` Rejected With `-Auth AppRegistration`
-
-**Problem:** Running `./PAX_Purview_Audit_Log_Processor.ps1 -OnlyAgent365Info -Auth AppRegistration ...` exits immediately with an error.
-
-**Cause:** The Microsoft Graph Agent Package Management API does not accept app-only tokens. With `-IncludeAgent365Info`, PAX bridges this by adding a one-time interactive sign-in for the agent phase only — but with `-OnlyAgent365Info` there is no audit phase to justify the dual-context flow, so app-only auth is blocked outright.
-
-**Solutions:**
-- Use `-Auth WebLogin` for interactive workstations.
-- Use `-Auth DeviceCode` for headless or remote sessions.
-- If you need a fully scheduled run, use `-IncludeAgent365Info` together with `-Auth AppRegistration` and accept the one-time interactive prompt for the agent phase.
-
-##### Quick Diagnostic Reference
-
-| Symptom | Most Likely Cause | First Fix |
-|---|---|---|
-| Banner: "tenant not enrolled" | Frontier program enrollment missing | Enroll tenant in Frontier |
-| 403 on `/beta/copilot/admin/catalog/packages` | Caller missing AI Administrator / Global Administrator role | Assign role; re-sign-in to refresh token |
-| Immediate exit on `-OnlyAgent365Info -Auth AppRegistration` | App-only auth not supported for Agent 365 | Use `-Auth WebLogin` / `-Auth DeviceCode`, or use `-IncludeAgent365Info` with `-Auth AppRegistration` |
-| Empty catalog | No agents installed in tenant, or snapshot caught a transient state | Re-run; verify in Admin Center > Agent 365 |
-
-#### SharePoint Output Issues (`-OutputPathSP`)
+#### SharePoint Output Issues
 
 **Problem:** Run fails at the very start with "Could not resolve SharePoint folder" or a similar URL error.
 
@@ -6226,14 +4700,14 @@ All Microsoft Agent 365 (Frontier) failure modes are consolidated below. The Age
 - Verify you are looking at the same folder URL you passed to PAX. The script's end-of-run summary lists every uploaded file with its full path.
 - Check the script log file — it is uploaded last, so if the log is in the folder, the run did succeed.
 
-#### Fabric / OneLake Output Issues (`-OutputPathFabric`)
+#### Fabric / OneLake Output Issues
 
 **Problem:** Run fails at the very start with "OneLake URL is not in the expected shape."
 
 **Solutions:**
-- The URL must start with `https://onelake.dfs.fabric.microsoft.com/` and contain a `<workspace>/<item>.Lakehouse/Files` (or `.Warehouse/Files`) segment.
+- The URL must start with `https://onelake.dfs.fabric.microsoft.com/` and address a Lakehouse (`.Lakehouse`) or Warehouse (`.Warehouse`) item under a workspace. The lakehouse-root form is recommended — PAX writes Delta tables under `Tables/` and operational artifacts (logs, JSONL incrementals, metrics) under `Files/` automatically.
 - Do **not** paste the Fabric portal URL (`https://app.fabric.microsoft.com/...`); that is a UI page, not the OneLake DFS endpoint.
-- Make sure the path points at `Files/...`, not `Tables/...`. PAX writes flat files, not delta tables.
+- For schema-enabled lakehouses you may also point at `Tables/<schema>` (e.g., `.Lakehouse/Tables/dbo`).
 - See [Sending Output to Microsoft Fabric (OneLake)](#sending-output-to-microsoft-fabric-onelake) for the URL guide.
 
 **Problem:** Run fails at the pre-flight check with "Access denied to OneLake Files/..." even though the identity can sign in.
@@ -6256,16 +4730,6 @@ All Microsoft Agent 365 (Frontier) failure modes are consolidated below. The Age
 - Set the `AZURE_CLIENT_ID` environment variable to the client ID of the specific managed identity PAX should use, then re-run.
 - If the wrong identity is being chosen even with `AZURE_CLIENT_ID` set, verify the environment variable is exported in the same process / job that runs PAX (not just the parent shell).
 
-**Problem:** `-Auth ManagedIdentity` rejected immediately with an error mentioning Agent 365.
-
-**Solution:** `-IncludeAgent365Info` and `-OnlyAgent365Info` do not support managed-identity tokens. Use `-Auth WebLogin` or `-Auth DeviceCode` for Agent 365 phases. The audit phase can still run unattended with `-Auth AppRegistration` if you accept the one-time interactive sign-in for the agent phase.
-
-#### Conflicting Output Destinations
-
-**Problem:** Run exits immediately with an error saying that `-OutputPath`, `-OutputPathSP`, and `-OutputPathFabric` cannot be combined.
-
-**Solution:** Pick exactly one destination per run. The three parameters are mutually exclusive — PAX writes locally, to SharePoint, or to Fabric on a given run, never two at once. Remove the parameters you did not intend to use and re-run.
-
 </details>
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
@@ -6285,14 +4749,11 @@ All Microsoft Agent 365 (Frontier) failure modes are consolidated below. The Age
 | Parallel mode               | Graph API: time-partitioned parallel queries; EOM: multi-activity sets only    | Graph API mode (default) provides better parallel performance for single activity types                      |
 | Time zones                  | Dates interpreted as UTC; `yyyy-MM-dd` must be UTC                             | Convert local times to UTC prior to invocation to avoid DST drift                                            |
 | Streaming export            | Always on (chunked)                                                            | Adjust sample/chunk sizes for schema width & memory balance                                                  |
-| Group filtering             | Only available in EOM mode (`-UseEOM -GroupNames`)                              | Graph API mode does not support group-based filtering; export and filter client-side                         |
-| Microsoft Agent 365 catalog | Single-shot Graph call to `/beta/copilot/admin/catalog/packages` capped by Microsoft at **400 packages per response** (no server-side paging). Catalog is **point-in-time**, not historical. App-only tokens are rejected; agent phase requires a delegated (interactive) sign-in with **AI Administrator** or **Global Administrator** role. | Tenants exceeding 400 installed agents see a warning and a truncated export — no PAX-side workaround until Microsoft enables paging. For longitudinal change tracking, run on a schedule and retain per-run CSVs. Use `-IncludeAgent365Info` with `-Auth AppRegistration` to pair a non-interactive audit phase with a one-time interactive agent-phase sign-in. |
+| Group filtering             | Supported in both modes — EOM filters server-side via `Search-UnifiedAuditLog -UserIds` after expanding via `Get-DistributionGroupMember`; Graph API mode expands via `Get-MgGroupMember` and applies the user filter client-side after retrieval | In Graph API mode, combine `-GroupNames` with tight date ranges / `-RecordTypes` to keep the retrieval window small |
 | Microsoft 365 Usage bundle  | Requires per-workload Graph scopes: `AuditLogsQuery-Exchange.Read.All`, `AuditLogsQuery-OneDrive.Read.All`, `AuditLogsQuery-SharePoint.Read.All` in addition to base `AuditLogsQuery.Read.All` | Consent the per-workload scopes at first run. Without them, the bundle silently returns no data for the missing workloads. |
-| Output destination          | `-OutputPath`, `-OutputPathSP`, and `-OutputPathFabric` are **mutually exclusive**. PAX writes to exactly one destination per run; passing more than one causes PAX to exit immediately before any audit data is pulled. | Choose the destination that matches the consumer of the run (local for ad-hoc, SharePoint for team visibility, Fabric for downstream analytics). Run PAX a second time with a different destination if you need both. |
-| Managed identity + Agent 365 | `-Auth ManagedIdentity` is **not supported** with `-IncludeAgent365Info` or `-OnlyAgent365Info`. The Microsoft Agent 365 catalog API rejects non-interactive tokens (managed identity and app-only). | Use `-Auth WebLogin` or `-Auth DeviceCode` for Agent 365 phases, or use `-IncludeAgent365Info` with `-Auth AppRegistration` and accept the one-time interactive prompt for the agent phase. |
-| SharePoint output URL       | `-OutputPathSP` accepts only canonical SharePoint folder URLs (`https://<tenant>.sharepoint.com/sites/<site>/<library>/...`). Sharing links (`/:f:/s/...`), `_layouts/` pages, `Forms/AllItems.aspx` view URLs, query-string URLs, OneDrive personal sites, and HTTP URLs are all rejected. | Copy the URL from the browser address bar while *viewing the destination folder*; strip everything from `?` onward. See [Sending Output to SharePoint](#sending-output-to-sharepoint). |
-| Fabric output URL           | `-OutputPathFabric` accepts only OneLake DFS URLs (`https://onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Lakehouse/Files...` or `.Warehouse/Files...`). Fabric portal URLs, Power BI report/dataset URLs, and `Tables/` paths are rejected. PAX writes flat files; it does not write into delta tables. | Build the URL using the workspace and lakehouse/warehouse names. See [Sending Output to Microsoft Fabric (OneLake)](#sending-output-to-microsoft-fabric-onelake). |
-| Fabric permissions          | `-OutputPathFabric` requires **three** layers: Azure role `Storage Blob Data Contributor`, Fabric workspace **Contributor** role, and Fabric tenant setting *Service principals can use Fabric APIs* enabled (for `AppRegistration` / `ManagedIdentity`). Partial setup will fail at the pre-flight check. | Coordinate the three roles with the workspace owner, Azure subscription admin, and Fabric tenant admin before scheduling unattended runs. |
+| SharePoint output URL       | `-OutputPath` accepts SharePoint folder URLs only in canonical form (`https://<tenant>.sharepoint.com/sites/<site>/<library>/...`). Sharing links (`/:f:/s/...`), `_layouts/` pages, `Forms/AllItems.aspx` view URLs, query-string URLs, OneDrive personal sites, and HTTP URLs are all rejected. | Copy the URL from the browser address bar while *viewing the destination folder*; strip everything from `?` onward. See [Sending Output to SharePoint](#sending-output-to-sharepoint). |
+| Fabric output URL           | `-OutputPath` accepts Fabric output only as OneLake DFS URLs that address a Lakehouse (`.Lakehouse`) or Warehouse (`.Warehouse`) item under a workspace (lakehouse-root form recommended; `.Lakehouse/Tables/<schema>` also accepted for schema-enabled lakehouses). Fabric portal URLs and Power BI report/dataset URLs are rejected. PAX writes Delta tables under `Tables/` and operational artifacts (logs, JSONL incrementals, metrics) under `Files/` automatically. | Build the URL using the workspace and lakehouse/warehouse names. See [Sending Output to Microsoft Fabric (OneLake)](#sending-output-to-microsoft-fabric-onelake). |
+| Fabric permissions          | Fabric output requires **three** layers: Azure role `Storage Blob Data Contributor`, Fabric workspace **Contributor** role, and Fabric tenant setting *Service principals can use Fabric APIs* enabled (for `AppRegistration` / `ManagedIdentity`). Partial setup will fail at the pre-flight check. | Coordinate the three roles with the workspace owner, Azure subscription admin, and Fabric tenant admin before scheduling unattended runs. |
 
 ### Additional Notes
 
@@ -6345,7 +4806,7 @@ All Microsoft Agent 365 (Frontier) failure modes are consolidated below. The Age
 - **Read-only against Microsoft Graph and Exchange Online.** PAX issues only `GET`-equivalent audit / catalog calls. It never writes to audit logs, never modifies tenant configuration, and never alters Entra / Graph state.
 - **No third-party telemetry, no callbacks.** PAX does not transmit audit data, prompts, responses, user identities, or any tenant content to any non-Microsoft service. All processing happens on the local execution machine.
 - **In-memory credential handling.** Tokens, client secrets, and certificate passwords are passed as in-memory strings or `SecureString` and are not written to disk by PAX. Token cache files written by `Microsoft.Graph` / `MSAL` modules are governed by those modules, not PAX.
-- **Local output only.** PAX writes its CSV / Excel / JSON metrics output to the path you supply (`-OutputPath`). It does not upload anywhere.
+- **Output to operator-supplied destination only.** PAX writes its CSV / JSON metrics output to the path you supply (`-OutputPath`) — a local folder, a SharePoint folder URL, or a Microsoft Fabric OneLake URL. It does not transmit data to any other destination.
 - **Logged operations.** Each run produces a timestamped log file alongside the export, capturing parameter values (with secrets redacted) and per-phase timings for traceability.
 
 ### Graph Scopes PAX Requests (Least-Privilege Reference)
@@ -6360,7 +4821,6 @@ PAX is designed to request the **minimum scopes required for the features you ac
 | `-IncludeM365Usage` | `AuditLogsQuery-Exchange.Read.All`, `AuditLogsQuery-OneDrive.Read.All`, `AuditLogsQuery-SharePoint.Read.All` |
 | `-IncludeUserInfo` / `-OnlyUserInfo` | `User.Read.All`, `Organization.Read.All` |
 | `-GroupNames` | `User.Read.All`, `GroupMember.Read.All` |
-| `-IncludeAgent365Info` / `-OnlyAgent365Info` | `CopilotPackages.Read.All`, `Application.Read.All` (delegated; requires AI Administrator or Global Administrator role on the caller) |
 
 PAX does **not** request write scopes, directory write scopes, mail/file content scopes, or tenant configuration scopes under any feature combination.
 
@@ -6387,7 +4847,7 @@ These are **suggestions**, not requirements, and are common to any read-only Pow
 3. Use certificate-based app authentication (`-Auth AppRegistration` with `-ClientCertificateThumbprint`) over client secrets where possible.
 4. Store output on encrypted volumes or in access-controlled file shares; treat exported audit data as sensitive.
 5. Enforce TLS 1.2+ at the OS / network layer (PAX relies on the platform's TLS stack).
-6. Install required PowerShell modules (`Microsoft.Graph.*`, `ExchangeOnlineManagement`, `ImportExcel`) only from the official PowerShell Gallery, and pin module versions in regulated environments.
+6. Install required PowerShell modules (`Microsoft.Graph.*`, `ExchangeOnlineManagement`) only from the official PowerShell Gallery, and pin module versions in regulated environments.
 7. Rotate any service-principal secrets / certificates per your tenant's secret-rotation policy.
 
 </details>
@@ -6420,15 +4880,6 @@ These are **suggestions**, not requirements, and are common to any read-only Pow
 - [Microsoft Graph Security API](https://learn.microsoft.com/en-us/graph/api/resources/security-api-overview) — Graph API security capabilities
 - [AuditLog resource type](https://learn.microsoft.com/en-us/graph/api/resources/auditlog) — Graph API audit log documentation
 - [Exchange Online PowerShell](https://learn.microsoft.com/en-us/powershell/exchange/exchange-online-powershell) — Exchange Online module documentation (EOM mode)
-
-**Microsoft Agent 365 (Frontier):**
-
-- [Microsoft Agent 365 Frontier program](https://www.microsoft.com/en-us/microsoft-365-copilot/frontier-program) — Tenant enrollment
-- [Microsoft Agent 365 Graph API](https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api) — Agent Package Management API reference
-
-**DSPM for AI:**
-
-- [Microsoft Purview DSPM for AI](https://learn.microsoft.com/en-us/purview/ai-microsoft-purview) — Data Security Posture Management for AI overview
 
 ### Companion Analytics Hub
 
