@@ -220,13 +220,13 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v<x.y.z>.ps1 `
 
 ### M365 rollup append anchoring (`-IncludeM365Usage` + `-Rollup` / `-RollupPlusRaw`)
 
-The embedded M365 Bundle Explosion Processor produces 3 outputs into a single destination — `<stem>_Rollup.csv`, `<stem>_UserStats.csv`, `<stem>_SessionCohort.csv`. Only `_Rollup.csv` supports union merge; UserStats and SessionCohort are recomputed sidecars over the merged Rollup and are anchored off the `-AppendFile` leaf stem so they overwrite their derived destination URLs in-place each run.
+The embedded M365 Bundle Explosion Processor produces 4 outputs into a single destination — `<stem>_Rollup.csv`, `<stem>_UserStats.csv`, `<stem>_SessionCohort.csv`, `<stem>_SessionStats.csv`. Only `_Rollup.csv` is the merge anchor; UserStats and SessionCohort are recomputed sidecars over the merged Rollup, and SessionStats is union-merged in place (additive counters keyed on `UserId`, `CreationDate`, `AppHost`). All three sidecars are anchored off the `-AppendFile` leaf stem so they overwrite their derived destination URLs in-place each run.
 
 **Rules:**
 
-- `-AppendFile` MUST point to a `_Rollup.csv` leaf (local path / SharePoint URL / Fabric URL). Sidecar leaves (`_UserStats.csv`, `_SessionCohort.csv`) and other rollup shapes (`_Interactions.csv`, `_Exploded.csv`) are rejected at pre-flight with a leaf-specific error.
-- The two sidecar files are written next to the AppendFile target (same parent) using the leaves `<anchor_stem>_UserStats.csv` and `<anchor_stem>_SessionCohort.csv`. Across runs, the destination always has exactly one current set of all 3 files.
-- Renamed AppendFile is fine as long as the leaf still ends in `_Rollup.csv` (e.g. `MyM365_Rollup.csv` → sidecars `MyM365_UserStats.csv` / `MyM365_SessionCohort.csv`).
+- `-AppendFile` MUST point to a `_Rollup.csv` leaf (local path / SharePoint URL / Fabric URL); a timestamped `_Rollup_<YYYYMMDD_HHMMSS>.csv` leaf is also accepted. Sidecar leaves (`_UserStats.csv`, `_SessionCohort.csv`, `_SessionStats.csv`) and other rollup shapes (`_Interactions.csv`, `_Exploded.csv`) are rejected at pre-flight with a leaf-specific error.
+- The three sidecar files are written next to the AppendFile target (same parent) using the leaves `<anchor_stem>_UserStats.csv`, `<anchor_stem>_SessionCohort.csv`, and `<anchor_stem>_SessionStats.csv`. Across runs, the destination always has exactly one current set of all 4 files.
+- Renamed AppendFile is fine as long as the leaf still ends in `_Rollup.csv` (e.g. `MyM365_Rollup.csv` → sidecars `MyM365_UserStats.csv` / `MyM365_SessionCohort.csv` / `MyM365_SessionStats.csv`).
 - Prior sidecars with different leaf names (from a previous run before renaming) are NOT auto-deleted; clean them up manually if you want zero orphans.
 - First-time append: run once WITHOUT `-AppendFile` to produce the initial `_Rollup.csv` (plus sidecars), then point `-AppendFile` at that `_Rollup.csv` on subsequent runs.
 
@@ -243,7 +243,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v<x.y.z>.ps1 `
     -Rollup
 ```
 
-On Fabric `Tables/<schema>`, the destination ends up with 3 stable Delta tables under the same schema: `<anchor_stem>_Rollup`, `<anchor_stem>_UserStats`, `<anchor_stem>_SessionCohort`. The merged-and-recomputed CSVs land via `Convert-CsvToDelta -Mode overwrite` on every run.
+On Fabric `Tables/<schema>`, the destination ends up with 4 stable Delta tables under the same schema: `<anchor_stem>_Rollup`, `<anchor_stem>_UserStats`, `<anchor_stem>_SessionCohort`, `<anchor_stem>_SessionStats`. The merged-and-recomputed CSVs land via `Convert-CsvToDelta -Mode overwrite` on every run.
 
 ### Provenance columns on appended files
 

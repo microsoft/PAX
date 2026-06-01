@@ -2,8 +2,8 @@
 
 ## Release Information
 
-- **Latest Version:** 1.11.2
-- **Latest Release Date:** 2026-05-17
+- **Latest Version:** 1.11.3
+- **Latest Release Date:** 2026-06-01
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,12 +12,29 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
+- **PAX Purview Audit Log Processor Script v1.11.3:** [PAX_Purview_Audit_Log_Processor_v1.11.3.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.3/PAX_Purview_Audit_Log_Processor_v1.11.3.ps1)
 - **PAX Purview Audit Log Processor Script v1.11.2:** [PAX_Purview_Audit_Log_Processor_v1.11.2.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.2/PAX_Purview_Audit_Log_Processor_v1.11.2.ps1)
 - **Documentation v1.11.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md)
 
 ---
 
 ## Overview
+
+### v1.11.3
+
+Version 1.11.3 refreshes the `-IncludeM365Usage` rollup pipeline around the current Analytics-Hub M365 Usage Analytics dashboard, hardens resume and remote-destination reliability, and broadens managed-identity host support for cross-tenant App Registration runs. Existing v1.11.2 behavior is preserved for runs that do not use `-IncludeM365Usage` rollups, and no switch surface is added or removed.
+
+#### Refreshed M365 Usage Bundle and Rollup Processor
+
+The `-IncludeM365Usage` activity bundle is trimmed from roughly one hundred operations to a curated twenty-two-operation set focused on Exchange mail access, SharePoint/OneDrive file access, Teams chat/messaging, Teams meeting lifecycle, and Copilot/Connected-AI signals — the exact shape the Analytics-Hub M365 Usage Analytics dashboard consumes. Operations removed from the bundle can still be requested explicitly via `-ActivityTypes`. The embedded M365 Bundle Explosion processor is refreshed: the aggregated Rollup grows from nine to fourteen columns (a new `ItemsAccessedCount` column plus four agent-context columns — `AgentId`, `AgentName`, `ContextType`, `IsAgentInteraction`), the UserStats sidecar is widened from twenty-seven to sixty-six columns (the original twenty-seven retained verbatim, thirty-nine new per-app rolling-window raw counts and Copilot-Engaged-User ranks appended), and a new fourth output — the **SessionStats sidecar** — surfaces per-user/-date/-app-surface session, prompt, response, and agent-session counts derived directly from the underlying CopilotInteraction records. The UserStats `CECopilotPercentile` columns are now derived from the prompt-count signal in the SessionStats sidecar, aligning the percentile rank with the AI in One report definition. The `-AppendFile` flow produces and additively merges the SessionStats sidecar across runs alongside the existing Rollup merge.
+
+#### Intake-Stage Identity Filtering and Operation Canonicalization
+
+Both the M365 and the Copilot (`CopilotInteraction`-only) rollup processors now drop non-human `UserId` rows at intake — application identities, service-principal GUIDs, and compliance-bot signatures — so the aggregated Rollups and their sidecars carry only human end-user activity. The M365 processor additionally canonicalizes three workload-equivalent operation names in the Rollup (`FileViewed` → `FileAccessed`, `MeetingParticipantJoined` → `MeetingParticipantDetail`, `ConnectedAIAppInteraction` → `AIAppInteraction`) so the same logical event is not double-counted. In both cases the raw per-activity-type CSV is unchanged — the filtering and canonicalization are local to the rollup and its sidecars — so customers who need the unfiltered stream continue to consume the raw CSV directly. The redundant DSPM-for-AI informational Y/N prompt is now auto-suppressed on `-IncludeM365Usage` runs that do not explicitly request `AIAppInteraction` (the prompt still fires when `AIAppInteraction` is requested directly, since it carries real billing implications).
+
+#### Resume, Destination, and Managed-Identity Hardening
+
+Two `-Resume` data-loss conditions are fixed (a date-window off-by-one when resuming on hosts ahead of UTC, and a this-run partition shard that could be dropped from the streaming merge), the Fabric/OneLake destination path now accepts the lakehouse-root URL form recommended by the in-line help and reliably creates nested upload folders, Purview query submission is made culture-invariant (resolving `HTTP 500` failures from non-`en-US` hosts such as Danish and Finnish), and SharePoint output no longer creates a duplicate percent-encoded folder when the destination name contains a space. The managed-identity host guard now also accepts `-Auth AppRegistration` with bound credentials, unblocking the pattern where a script on an Azure-hosted runtime authenticates into a different tenant with explicit App Registration credentials.
 
 ### v1.11.2
 
@@ -100,6 +117,33 @@ New sixth value on the `-Auth` ValidateSet for Azure-hosted headless execution (
 ---
 
 ## What's New
+
+### v1.11.3
+
+#### Refreshed M365 Usage Bundle and Rollup Processor (v1.11.3)
+
+| Area | Details |
+| --- | --- |
+| **Curated `-IncludeM365Usage` bundle** | Trimmed from ~100 operations to a curated 22-operation set targeted at the Analytics-Hub M365 Usage Analytics dashboard (Exchange mail access, SharePoint/OneDrive file access, Teams chat/messaging, Teams meeting lifecycle, Copilot/Connected-AI). The `RECORD TYPES INCLUDED` set is unchanged; operations removed from the bundle remain requestable via `-ActivityTypes`, which continues to union with the bundle on the same run. |
+| **Refreshed Rollup schema** | The aggregated M365 Rollup is widened from nine to fourteen columns: a new `ItemsAccessedCount` column plus four trailing agent-context columns (`AgentId`, `AgentName`, `ContextType`, `IsAgentInteraction`) that participate in the rollup group key so distinct agent attributions are no longer collapsed. |
+| **Widened UserStats sidecar** | Widened from twenty-seven to sixty-six columns. The original twenty-seven v1.11.2 columns are retained verbatim in positions 1–27; thirty-nine new columns are appended (per-app L30 / L60 / Full raw event counts, per-app Copilot-Engaged-User ranks, and the `CECopilotPercentile_L30 / _L60 / _Full` triple). |
+| **New SessionStats sidecar** | A fourth M365 output — `<stem>_SessionStats_<timestamp>.csv` (`UserId, CreationDate, AppHost, SessionCount, PromptCount, ResponseCount, AgentSessionCount`) — surfaces per-user/-date/-app-surface session, prompt, response, and agent-session counts derived directly from the CopilotInteraction records. Produced automatically on every `-Rollup` / `-RollupPlusRaw` M365 run. The `CECopilotPercentile` columns are derived from its `PromptCount` signal, with a graceful fall-back to a rollup-derived signal when SessionStats is absent. |
+| **`-AppendFile` SessionStats merge** | The M365 `-AppendFile` flow produces and additively merges the SessionStats sidecar across runs (keyed on `UserId` / `CreationDate` / `AppHost`) alongside the existing Rollup merge, and regenerates UserStats from the full cross-run history. The customer's end state is four files at stable anchored URLs sharing one stem (`_Rollup`, `_UserStats`, `_SessionCohort`, `_SessionStats`). The leaf validator accepts a timestamped `_Rollup_<timestamp>.csv` anchor in addition to the anchored `_Rollup.csv`. |
+| **Intake-stage identity filter** | Both the M365 and the Copilot (`CopilotInteraction`-only) rollup processors drop non-human `UserId` rows at intake (application identities, service-principal GUIDs, compliance-bot signatures), so the aggregated Rollups and sidecars carry only human end-user activity. The raw per-activity-type CSV is unchanged. Row counts on affected tenants drop slightly. |
+| **Operation canonicalization** | The M365 processor folds `FileViewed` → `FileAccessed`, `MeetingParticipantJoined` → `MeetingParticipantDetail`, and `ConnectedAIAppInteraction` → `AIAppInteraction` at intake so the Rollup does not carry both the legacy and canonical names for the same logical event. Local to the Rollup and its sidecars; the raw CSV preserves the original operation names. |
+| **DSPM-for-AI prompt auto-suppression** | The DSPM-for-AI informational Y/N prompt is auto-suppressed on `-IncludeM365Usage` runs that do not explicitly request `AIAppInteraction` (a short informational line is emitted instead), since `ConnectedAIAppInteraction` is now part of the curated bundle. The full DSPM banner and PAYG prompt still fire when `-ActivityTypes AIAppInteraction` is requested directly. |
+
+---
+
+#### Managed-Identity Cross-Tenant App Registration Support (v1.11.3)
+
+| Area | Details |
+| --- | --- |
+| **Purpose** | Allow a script running on an Azure-hosted runtime (Functions, App Service, Container Apps, Container Instances, Fabric notebook / container — where `$env:IDENTITY_ENDPOINT` is present) to authenticate into a *different* tenant using explicit App Registration credentials. |
+| **Guard change** | The v1.11.2 host guard that fail-fasts when `$env:IDENTITY_ENDPOINT` is set but `-Auth` is not `ManagedIdentity` now also accepts `-Auth AppRegistration` when `-ClientId` is bound together with one of `-ClientSecret`, `-ClientCertificateThumbprint`, or `-ClientCertificatePath`. |
+| **Unchanged behavior** | The guard still fires — same exit code and intent — when `-Auth` is neither `ManagedIdentity` nor a credential-complete `AppRegistration`. The remediation message names both accepted shapes. |
+
+---
 
 ### v1.11.2
 
@@ -323,6 +367,18 @@ Excel filenames, Excel tab names, and the `EntraUsers_*` / `Agent365_*` filename
 
 ## Bug Fixes
 
+### v1.11.3
+
+- **(v1.11.3) `-Resume` data-loss conditions fixed.** Two resume-path defects that could cause a resumed run to export fewer records than the original are resolved: (1) an off-by-one-day shift of the export date window when resuming on a host whose local time zone has a positive UTC offset (for example IST, UTC+5:30), which trimmed the wrong side of midnight; and (2) a partition fetched *during* a resumed run that could be silently excluded from the streaming merge even though its records were on disk. Both fixes are tier-independent (Local, SharePoint, OneLake/Fabric) and apply to both the standard and rollup output paths. No parameter-surface or output-schema change.
+
+- **(v1.11.3) Fabric / OneLake destination URL acceptance and folder creation.** The Fabric URL validator now accepts the lakehouse-root URL form recommended by the in-line help and banner text (routing operational artifacts under `Files/` and Delta tables under `Tables/` automatically), in addition to explicit `Files`/`Tables` forms. OneLake uploads also escape each path segment individually and pre-create missing parent directories, so artifacts mirrored to a fresh subfolder (for example the resume mirror at `.pax_resume/<RunTimestamp>/`) no longer malform the upload URL or require the customer to pre-create the layout. Together these unblock `-IncludeM365Usage` and other checkpoint-mirroring runs against a lakehouse destination.
+
+- **(v1.11.3) Purview query submission is now culture-invariant.** On hosts whose current culture defines a non-`:` time separator (for example Danish `da-DK` and Finnish `fi-FI`, which use `.`), the audit-query request body previously carried a malformed timestamp (`2026-02-10T20.35.42.000Z`) and Purview rejected the request with `HTTP 500` before it entered the queue. Date/time emission is now pinned to invariant culture across the main thread and the query job, so query submission succeeds on every host. Transparent on `en-US` and other cultures whose time separator is already `:`.
+
+- **(v1.11.3) SharePoint output no longer creates a duplicate percent-encoded folder.** Writing to a SharePoint destination whose folder name contained a space (or another character that URL-encodes) previously created a second, empty folder named with the literal percent-encoded form (for example `PAX%20Exports`) alongside the correct decoded folder that actually received the files. The folder-creation call now decodes the display name so only one correctly named folder is created. Any empty `…%20…` folder left by a prior run can be deleted by hand.
+
+- **(v1.11.3) Per-stream destination display paths and run-log accuracy corrected.** Display sites that print where the EntraUsers and Agent 365 files will land (banners, parameter snapshots, output-file previews, resume rewriter, and the end-of-run listing) now resolve `-OutputPathUserInfo` / `-OutputPathAgent365Info` overrides through the same routing helper the writer uses, so the displayed destinations and the end-of-run tally match where the files actually land. Run-log accuracy is also improved: embedded Python processor output is pinned to UTF-8 (fixing the `×` arrow rendering as `ΓåÆ` mojibake on OEM-codepage hosts), and the Pipeline Summary post-trim count is relabeled `Retained` to match its actual semantics. Display/logging only — no on-disk write paths change.
+
 ### v1.11.2
 
 - **(v1.11.2) Append-merge correctness across all storage tiers and rollup modes.** Resolves several edge cases where `-AppendFile` / `-AppendUserInfo` could either leave the customer's target untouched, replace it with a header-only file, or report inverted merge statistics. The streaming-merge fast path now reliably emits the canonical `Retained / New / Departed / Union` tally; resume runs that find no skipped partitions preserve in-flight JSONL streaming state; header-only emissions on zero-records runs are skipped under `-AppendFile` so the customer's target byte-shape is unchanged; header-only CSV emissions now match the quoted-everywhere shape of populated CSVs; the zero-records early-exit branch emits the pipeline summary inline; and the embedded Python rollup processor no longer drops source rows whose `Message_Id` is seeded from the `-AppendFile` target (the dedup belongs to the PowerShell post-merge step, not the rollup loop).
@@ -384,6 +440,18 @@ The following authentication and certificate-handling fixes apply to `-Auth AppR
 ---
 
 ## Known Considerations
+
+### v1.11.3
+
+- **(v1.11.3) New fourth M365 output file (SessionStats sidecar):** `-IncludeM365Usage` rollup runs now emit a fourth output — `<stem>_SessionStats_<timestamp>.csv` — alongside the existing Rollup, UserStats, and SessionCohort files. It is produced automatically on every `-Rollup` / `-RollupPlusRaw` M365 run and merged in place under `-AppendFile`. Customers will see one additional file at the destination.
+
+- **(v1.11.3) Intake-stage human-identity filter lowers Rollup row counts slightly:** Both the M365 and the Copilot rollup processors drop non-human `UserId` rows (application identities, service-principal GUIDs, compliance-bot signatures) before aggregation, so the aggregated Rollups and their sidecars carry only human end-user activity. On tenants whose audit stream carries such rows, the Rollup and SessionCohort row counts drop by a small proportion. The raw per-activity-type CSV is unchanged — consume it directly for the unfiltered stream.
+
+- **(v1.11.3) M365 Rollup operation canonicalization:** In the M365 Rollup only, `FileViewed` is folded into `FileAccessed`, `MeetingParticipantJoined` into `MeetingParticipantDetail`, and `ConnectedAIAppInteraction` into `AIAppInteraction`, so the same logical event is not double-counted. The raw per-activity-type CSV preserves the original operation names exactly as Purview returned them; the Analytics-Hub M365 Usage Analytics dashboard binds against the canonical names.
+
+- **(v1.11.3) DSPM-for-AI prompt auto-suppressed on curated M365 runs:** Because `ConnectedAIAppInteraction` is part of the curated `-IncludeM365Usage` bundle, the DSPM-for-AI informational Y/N prompt is auto-suppressed on `-IncludeM365Usage` runs that do not explicitly request `AIAppInteraction` (a short informational line is emitted instead). The full DSPM banner and PAYG prompt still fire when `-ActivityTypes AIAppInteraction` is requested directly, since it carries real billing implications; `-Force` behavior is unchanged.
+
+- **(v1.11.3) Managed-identity host guard accepts cross-tenant App Registration:** On Azure-hosted runtimes (where `$env:IDENTITY_ENDPOINT` is present), the guard now accepts `-Auth AppRegistration` when `-ClientId` is bound with one of `-ClientSecret`, `-ClientCertificateThumbprint`, or `-ClientCertificatePath`, so a script can authenticate into a different tenant with explicit credentials. The guard still fires when `-Auth` is neither `ManagedIdentity` nor a credential-complete `AppRegistration`.
 
 ### v1.11.2
 

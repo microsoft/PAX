@@ -6,28 +6,28 @@
   "products": {
     "pax": {
       "name": "PAX Infrastructure",
-      "version": "1.0.24",
-      "status": "development",
+      "version": "1.0.25",
+      "status": "production",
       "notes": "Core infrastructure, workflows, governance (iterating beyond last tagged release)"
     },
     "purview": {
       "name": "Purview Audit Log Processor",
-      "version": "1.11.2",
-      "status": "development",
+      "version": "1.11.3",
+      "status": "production",
       "notes": "Canonical root script; prior versions in script_archive/Purview_Audit_Log_Processor."
     },
     "graph": {
       "name": "Graph Audit Log Processor",
       "version": "1.0.1",
-      "status": "development",
+      "status": "production",
       "notes": "Canonical root script; prior versions in script_archive/Graph_Audit_Log_Processor."
     },
     "copilotinteractions": {
       "name": "Copilot Interactions Content Audit Log Processor",
       "version": "2.0.0",
-      "status": "development",
+      "status": "production",
       "notes": "Canonical root script; prior versions in script_archive/CopilotInteractions_Content_Audit_Log_Processor."
     }
   },
-  "lastUpdated": "2026-05-17T00:00:00Z"
+  "lastUpdated": "2026-06-01T00:00:00Z"
 }

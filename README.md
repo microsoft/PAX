@@ -50,7 +50,7 @@ The PAX set also includes two specialized companion scripts for narrower use cas
 
 ## 🔍 Purview Audit Log Processor — primary script
 
-> Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.2.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.2/PAX_Purview_Audit_Log_Processor_v1.11.2.ps1) | Release Date: 2026-05-17
+> Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.3.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.3/PAX_Purview_Audit_Log_Processor_v1.11.3.ps1) | Release Date: 2026-06-01
 >
 > **📖 Resources:** [Latest Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md) | [Latest Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md)
 >
