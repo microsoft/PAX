@@ -1,5 +1,5 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.11.2
+# Version: v1.11.3
 # Requirements: PowerShell 7+ for default Graph API mode; PowerShell 5.1 supported ONLY with -UseEOM (serial Exchange Online Management mode, no parallel query/explosion).
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI activity types (specified via -ActivityTypes): AIInteraction, ConnectedAIAppInteraction, AIAppInteraction
@@ -842,41 +842,19 @@
 	Useful when combining Copilot telemetry with targeted classic workloads without redefining defaults.
 
 .PARAMETER IncludeM365Usage
-	Adds a curated Microsoft 365 usage bundle spanning Exchange, SharePoint, OneDrive, Teams,
-	Forms, Stream, Planner, PowerApps, and Office desktop apps.
+	Adds a curated, trimmed Microsoft 365 usage bundle spanning Exchange mail access,
+	SharePoint/OneDrive file access, Teams chat/messaging, Teams meeting lifecycle, and
+	Copilot/Connected-AI interaction signals.
 	
 	ACTIVITY TYPES INCLUDED:
-	  Exchange: MailItemsAccessed, Send, SendOnBehalf, SoftDelete, HardDelete,
-	            MoveToDeletedItems, CopyToFolder
-	  SharePoint/OneDrive (Files): FileAccessed, FileDownloaded, FileUploaded, FileModified,
-	            FileDeleted, FileMoved, FileCheckedIn, FileCheckedOut, FileRecycled, FileRestored,
-	            FileVersionsAllDeleted
-	  SharePoint/OneDrive (Sharing): SharingInvitationCreated, SharingInvitationAccepted,
-	            SharedLinkCreated, SharingRevoked, RemovedFromSecureLink
-	  Groups: AddMemberToUnifiedGroup, RemoveMemberFromUnifiedGroup
-	  Teams (Team/Channel): TeamCreated, TeamDeleted, TeamArchived, TeamSettingChanged,
-	            TeamMemberAdded, TeamMemberRemoved, MemberAdded, MemberRemoved, MemberRoleChanged,
-	            ChannelAdded, ChannelDeleted, ChannelSettingChanged, ChannelOwnerResponded,
-	            ChannelMessageSent, ChannelMessageDeleted, BotAddedToTeam, BotRemovedFromTeam,
-	            TabAdded, TabRemoved, TabUpdated, ConnectorAdded, ConnectorRemoved, ConnectorUpdated
-	  Teams (Chat/Messaging): TeamsSessionStarted, ChatCreated, ChatRetrieved, ChatUpdated,
-	            MessageSent, MessageRead, MessageDeleted, MessageUpdated, MessagesListed,
-	            MessageCreation, MessageCreatedHasLink, MessageEditedHasLink,
-	            MessageHostedContentRead, MessageHostedContentsListed, SensitiveContentShared
-	  Teams (Meetings): MeetingCreated, MeetingUpdated, MeetingDeleted, MeetingStarted, MeetingEnded,
-	            MeetingParticipantJoined, MeetingParticipantLeft, MeetingParticipantRoleChanged,
-	            MeetingRecordingStarted, MeetingRecordingEnded, MeetingDetail, MeetingParticipantDetail,
-	            LiveNotesUpdate, AINotesUpdate, RecordingExported, TranscriptsExported
-	  Teams (Apps/Approvals): AppInstalled, AppUpgraded, AppUninstalled, CreatedApproval,
-	            ApprovedRequest, RejectedApprovalRequest, CanceledApprovalRequest
-	  Office Apps: Create, Edit, Open, Save, Print
-	  Forms: CreateForm, EditForm, DeleteForm, ViewForm, CreateResponse, SubmitResponse,
-	            ViewResponse, DeleteResponse
-	  Stream: StreamModified, StreamViewed, StreamDeleted, StreamDownloaded
-	  Planner: PlanCreated, PlanDeleted, PlanModified, TaskCreated, TaskDeleted, TaskModified,
-	            TaskAssigned, TaskCompleted
-	  PowerApps: LaunchedApp, CreatedApp, EditedApp, DeletedApp, PublishedApp
-	  Copilot: CopilotInteraction
+	  Exchange: MailItemsAccessed, MailboxLogin, Send
+	  SharePoint/OneDrive (Files): FileAccessed, FileViewed, FilePreviewed, FileModified,
+	            FileDownloaded, FileUploaded
+	  Teams (Chat/Messaging): MessageSent, MessageRead, MessagesListed, ChatRetrieved,
+	            ChatCreated, TeamsSessionStarted
+	  Teams (Meetings): MeetingParticipantJoined, MeetingStarted, MeetingEnded,
+	            MeetingParticipantDetail, MeetingDetail
+	  Copilot / Connected AI: CopilotInteraction, ConnectedAIAppInteraction
 	
 	RECORD TYPES INCLUDED:
 	  ExchangeAdmin, ExchangeItem, ExchangeMailbox, SharePointFileOperation,
@@ -909,8 +887,8 @@
 	Requires PowerShell 7+ and Python 3.10+. If Python is not on PATH, the script attempts a
 	per-user silent install (winget Python.Python.3.13 → python.org installer fallback).
 
-	Blocked combinations (script exits with an error): -UseEOM, -OnlyUserInfo,
-	-AppendFile, and -ExcludeCopilotInteraction
+	Blocked combinations (script exits with an error): -UseEOM, -ExportWorkbook,
+	-OnlyUserInfo, -OnlyAgent365Info, -RAWInputCSV, and -ExcludeCopilotInteraction
 	without -IncludeM365Usage.
 
 .PARAMETER RollupPlusRaw
@@ -951,38 +929,80 @@
 	    Message_Id_Raw (rollup); rows in the target but missing from the current run are kept
 	    with In_Latest_Append = FALSE.
 	  • Date_Added / Latest_Append_Date / In_Latest_Append provenance columns are maintained
-	    on every row.
+	    on every row. NOTE: these three columns apply ONLY to the row-identity merges — the
+	    non-rollup raw audit CSV (keyed on RecordId) and the CopilotInteraction rollup Fact
+	    CSV (keyed on Message_Id_Raw), where one row maps to exactly one record. They are
+	    intentionally NOT added to the M365 Usage bundle rollup (-IncludeM365Usage + -Rollup),
+	    whose rows are additive aggregates summed across runs — see the per-row provenance
+	    caveat in the M365 Rollup Anchoring section below.
 	  • Compatible with: Standard (1:1), -Rollup, -RollupPlusRaw.
 	
 	**M365 Rollup Anchoring (-IncludeM365Usage + -Rollup / -RollupPlusRaw):**
-	  The embedded M365 Bundle Explosion Processor emits THREE files into a single output
+	  The embedded M365 Bundle Explosion Processor emits FOUR files into a single output
 	  directory, each sharing the same stem:
-	    • '<stem>_Rollup.csv'         — the 9-column aggregated rollup (union-mergeable).
-	    • '<stem>_UserStats.csv'      — recomputed per-user metrics (sidecar).
-	    • '<stem>_SessionCohort.csv'  — recomputed (UserId, App, Bucket) cohorts (sidecar).
-	  Only '_Rollup.csv' supports the union-merge semantic (via Python's --append-target-rollup).
-	  UserStats and SessionCohort are stateless aggregations RECOMPUTED over the merged Rollup
-	  on every run, so they are anchored off the AppendFile leaf stem and OVERWRITTEN in-place
-	  alongside the merged Rollup. The customer-facing rules:
-	    • -AppendFile MUST point to a '_Rollup.csv' leaf (filename / full local path / SharePoint /
-	      Fabric URL). Sidecar leaves (_UserStats / _SessionCohort) and CopilotInteraction
-	      (_Interactions) / M365 event-level (_Exploded) leaves are rejected at pre-flight.
-	    • The two sidecar files inherit the anchor stem and are written next to the AppendFile
-	      target (same parent folder/URL) using the leaves '<anchor_stem>_UserStats.csv' and
-	      '<anchor_stem>_SessionCohort.csv'. They overwrite the same destination URLs on every
-	      run, so the destination always has exactly one current set of all 3 files.
-	    • Renamed AppendFile is fine as long as the leaf still ends in '_Rollup.csv'. Example:
-	      -AppendFile 'MyM365Rollup_Rollup.csv' produces sidecars 'MyM365Rollup_UserStats.csv'
-	      and 'MyM365Rollup_SessionCohort.csv' at the same parent.
+	    • '<stem>_Rollup_<YYYYMMDD_HHMMSS>.csv'        — the 14-column aggregated rollup
+	                                                     (UserId, CreationDate, Operation,
+	                                                     Workload, SourceFileExtension, AppHost,
+	                                                     EventCount, ItemsAccessedCount,
+	                                                     CreationTime, MaxCreationTime,
+	                                                     AgentId, AgentName, ContextType,
+	                                                     IsAgentInteraction).
+	    • '<stem>_UserStats_<YYYYMMDD_HHMMSS>.csv'     — recomputed per-user metrics (sidecar).
+	    • '<stem>_SessionCohort_<YYYYMMDD_HHMMSS>.csv' — recomputed (UserId, App, Bucket) cohorts (sidecar).
+	    • '<stem>_SessionStats_<YYYYMMDD_HHMMSS>.csv'  — (v2.6.0+) per-(UserId, Date, AppHost)
+	                                                     DISTINCTCOUNT(ThreadId) + PromptCount /
+	                                                     ResponseCount / AgentSessionCount.
+	                                                     Drives the v2.6.0 CECopilotPercentile_*
+	                                                     measures from PromptCount semantics.
+	  Only the Rollup file supports the union-merge semantic. Under -AppendFile, the current
+	  run's Rollup is column-tolerant union-merged (keyed on the 9-tuple of UserId /
+	  CreationDate / Operation / Workload / SourceFileExtension / AppHost / AgentId /
+	  AgentName / ContextType) into the customer's target file; the SessionStats file is
+	  separately union-merged on (UserId, CreationDate, AppHost), and the UserStats and
+	  SessionCohort sidecars are regenerated from the merged Rollup (with the merged
+	  SessionStats feeding the CECopilotPercentile_* columns) and anchored off the target
+	  leaf stem (so the same destination URLs are overwritten on every run).
+	  Legacy targets that carry a narrower rollup schema (e.g. a 9- or 10-column file
+	  produced by an earlier processor build) are padded with empty AgentId / AgentName /
+	  ContextType cells and IsAgentInteraction=FALSE during merge so the union retains
+	  a uniform 14-column shape end-to-end.
+	  Provenance columns: the M365 bundle rollup merge is ADDITIVE (on a 9-tuple key match
+	  EventCount / ItemsAccessedCount are summed, CreationTime = min, MaxCreationTime = max,
+	  IsAgentInteraction = OR), so a merged row is a blend of multiple runs and is NOT owned
+	  by any single run. The Date_Added / Latest_Append_Date / In_Latest_Append columns are
+	  therefore intentionally NOT written to the rollup, SessionStats, or the regenerated
+	  UserStats / SessionCohort sidecars (they would be meaningless on a summed row). The
+	  rollup keeps exactly its 14 canonical columns. (Per-row provenance is carried only by
+	  the row-identity merges — see CSV Mode Behavior above.)
+	  Sidecar scope: the UserStats and SessionCohort sidecars are RECOMPUTED from the full
+	  merged Rollup on every append (not appended to), so they always describe the entire
+	  cumulative rollup, not just the latest run's slice. This is required for the window /
+	  percentile / cohort math to stay correct against the full history.
+	  Customer-facing rules:
+	    • -AppendFile MUST point to a '_Rollup.csv' OR '_Rollup_<YYYYMMDD_HHMMSS>.csv' leaf
+	      (filename / full local path / SharePoint / Fabric URL). Sidecar leaves (_UserStats
+	      / _SessionCohort / _SessionStats) and CopilotInteraction (_Interactions) / M365
+	      event-level (_Exploded) leaves are rejected at pre-flight.
+	    • The three sidecar files inherit the anchor stem and are written next to the AppendFile
+	      target (same parent folder/URL) using the leaves '<anchor_stem>_UserStats.csv',
+	      '<anchor_stem>_SessionCohort.csv', and '<anchor_stem>_SessionStats.csv'. They
+	      overwrite the same destination URLs on every run, so the destination always has
+	      exactly one current set of all 4 files.
+	    • Renamed AppendFile is fine as long as the leaf still ends in '_Rollup.csv' or
+	      '_Rollup_<YYYYMMDD_HHMMSS>.csv'. Example: -AppendFile 'MyM365Rollup_Rollup.csv'
+	      produces sidecars 'MyM365Rollup_UserStats.csv' and 'MyM365Rollup_SessionCohort.csv'
+	      at the same parent.
 	    • Prior sidecars with DIFFERENT leaf names (e.g. left over from a previous run before
 	      you renamed the AppendFile target) are NOT auto-deleted. Clean them up manually if you
 	      want zero orphans in the destination namespace.
-	    • For first-time append: run once WITHOUT -AppendFile to produce the initial '_Rollup.csv'
-	      (plus its sidecars), then point -AppendFile at that '_Rollup.csv' on subsequent runs.
-	  Fabric Tables/ destinations: the table name is the leaf stem (no suffix strip needed
-	  because the leaf ends in '_Rollup' / '_UserStats' / '_SessionCohort', not in '_<ts>'),
-	  so all 3 Delta tables stay at stable names across runs and Convert-CsvToDelta -Mode
-	  overwrite replaces table contents with the merged-and-recomputed CSVs.
+	    • For first-time append: run once WITHOUT -AppendFile to produce the initial timestamped
+	      Rollup (plus its sidecars), then point -AppendFile at that Rollup on subsequent runs
+	      (either keep the timestamped leaf or rename to drop the timestamp — both shapes are
+	      accepted).
+	  Fabric Tables/ destinations: the table name follows the AppendFile leaf stem and stays
+	  stable across runs (the customer sets that stem; only the current-run scratch output
+	  carries a fresh timestamp, and the merge anchors back to the fixed AppendFile target).
+	  Convert-CsvToDelta -Mode overwrite replaces table contents with the merged-and-recomputed CSVs.
 	
 	**Independent companion switches:**
 	  • -AppendUserInfo <path>      → merges into the EntraUsers CSV (auto-enables -IncludeUserInfo)
@@ -1050,7 +1070,8 @@
 
 .PARAMETER Force
 	Force execution without interactive prompts. Automatically accepts defaults for:
-	1. DSPM for AI Billing Information: Automatically continues when AIAppInteraction / AIInteraction / ConnectedAIAppInteraction are included via -ActivityTypes
+	1. DSPM for AI Billing Information: Automatically continues when AIAppInteraction / AIInteraction / ConnectedAIAppInteraction are included via -ActivityTypes.
+	   The DSPM informational prompt is ALSO auto-suppressed (without -Force) on -IncludeM365Usage runs that do not include AIAppInteraction, because ConnectedAIAppInteraction is part of the curated M365 usage bundle. The PAYG prompt for AIAppInteraction still fires unless -Force is set.
 	2. Conflict Resolution (ExcludeCopilotInteraction): Automatically honors -ExcludeCopilotInteraction when conflict with -ActivityTypes
 	Use this switch for unattended/automated executions (CI/CD pipelines, scheduled tasks).
 
@@ -1516,8 +1537,8 @@ param(
 	# Mutually exclusive with -RollupPlusRaw. Requires PowerShell 7+. Auto-installs Python 3.10+ and
 	# the optional 'orjson' package on first use. Only valid for default (CopilotInteraction-only) runs,
 	# explicit -ActivityTypes 'CopilotInteraction', or -IncludeM365Usage runs. Not compatible with
-	# -UseEOM, -ExportWorkbook, -OnlyUserInfo, -OnlyAgent365Info, -RAWInputCSV, or
-	# -AppendFile. See documentation for full gating matrix.
+	# -UseEOM, -ExportWorkbook, -OnlyUserInfo, -OnlyAgent365Info, or -RAWInputCSV. See documentation
+	# for full gating matrix.
 	[Parameter(Mandatory = $false)]
 	[switch]$Rollup,
 
@@ -1535,6 +1556,23 @@ param(
 )
 
 # ============================================================
+# CULTURE GUARD — DO NOT REMOVE
+# Pin the main thread to InvariantCulture for the entire run.
+# Rationale: .NET's custom date/time format string treats ':' not as a
+# literal colon but as the culture's DateTimeFormatInfo.TimeSeparator.
+# On da-DK and fi-FI hosts TimeSeparator is '.', so an unscoped
+# .ToString('yyyy-MM-ddTHH:mm:ss.fffZ') produces 'T20.35.42.000Z',
+# which the Purview audit query endpoint rejects with HTTP 500.
+# Setting CurrentCulture here makes every downstream .ToString(format),
+# Get-Date -Format, and ParseExact($x,$fmt,$null) call in the main
+# thread emit / consume invariant ISO 8601. ThreadJob runspaces get
+# their own per-thread guard inside $queryJobScriptBlock because
+# PowerShell 5.1 does not inherit parent culture into ThreadJobs.
+# ============================================================
+[System.Threading.Thread]::CurrentThread.CurrentCulture   = [System.Globalization.CultureInfo]::InvariantCulture
+[System.Threading.Thread]::CurrentThread.CurrentUICulture = [System.Globalization.CultureInfo]::InvariantCulture
+
+# ============================================================
 # BOOTSTRAP LOG
 # Open a deterministic log file IMMEDIATELY after param() so every Write-Host /
 # Write-Log call from this point forward lands on disk. The final log location
@@ -1544,7 +1582,7 @@ param(
 # belt-and-braces fallback if the bootstrap file itself cannot be created
 # (read-only volume, permissions, etc.).
 #
-# Path resolution order (durability fix for Azure Container Instances):
+# Path resolution order (durable bootstrap-log location for Azure Container Instances):
 #   1. $env:PAX_BOOTSTRAP_LOG_DIR  — operator-supplied durable location.
 #      In the PAX.Dockerfile this defaults to "/pax-logs" and is declared as a
 #      VOLUME so operators can mount Azure Files at that path. When mounted,
@@ -2016,73 +2054,28 @@ $serviceOperationMap = @{
 $copilotBaseActivityType = 'CopilotInteraction'
 $m365UsageServiceBundle = @('Exchange','SharePoint','OneDrive','Teams')
 $m365UsageRecordBundle = @('ExchangeAdmin','ExchangeItem','ExchangeMailbox','SharePointFileOperation','SharePointSharingOperation','SharePoint','OneDrive','MicrosoftTeams','OfficeNative','MicrosoftForms','MicrosoftStream','PlannerPlan','PlannerTask','PowerAppsApp')
-# Curated M365 usage operations spanning Exchange/SharePoint/OneDrive/Teams/Forms/Stream/Planner/PowerApps and Office desktop apps (Word/Excel/PowerPoint/OneNote)
+# Curated, trimmed M365 usage operations targeted at the Analytics-Hub M365 Usage Analytics
+# dashboard. Scope: Exchange mail access, SharePoint/OneDrive file access, Teams chat/messaging,
+# Teams meeting lifecycle, and Copilot/Connected-AI interaction signals.
 $m365UsageActivityBundle = @(
-	# === Exchange/Email ===
-	'MailItemsAccessed','Send','SendOnBehalf','SoftDelete','HardDelete','MoveToDeletedItems','CopyToFolder',
-	
-	# === SharePoint/OneDrive - Files ===
-	'FileAccessed','FileDownloaded','FileUploaded','FileModified','FileDeleted','FileMoved',
-	'FileCheckedIn','FileCheckedOut','FileRecycled','FileRestored','FileVersionsAllDeleted',
-	
-	# === SharePoint/OneDrive - Sharing ===
-	'SharingInvitationCreated','SharingInvitationAccepted','SharedLinkCreated','SharingRevoked',
-	'RemovedFromSecureLink',
-	
-	# === Groups/Unified Groups ===
-	'AddMemberToUnifiedGroup','RemoveMemberFromUnifiedGroup',
-	
-	# === Teams - Team/Channel management ===
-	'TeamCreated','TeamDeleted','TeamArchived','TeamSettingChanged',
-	'TeamMemberAdded','TeamMemberRemoved','MemberAdded','MemberRemoved','MemberRoleChanged',
-	'ChannelAdded','ChannelDeleted','ChannelSettingChanged','ChannelOwnerResponded',
-	'ChannelMessageSent','ChannelMessageDeleted',
-	'BotAddedToTeam','BotRemovedFromTeam',
-	'TabAdded','TabRemoved','TabUpdated',
-	'ConnectorAdded','ConnectorRemoved','ConnectorUpdated',
-	
-	# === Teams - Chat/Messaging (1:1 and group chats) ===
-	'TeamsSessionStarted',
-	'ChatCreated','ChatRetrieved','ChatUpdated',
-	'MessageSent','MessageRead','MessageDeleted','MessageUpdated','MessagesListed',
-	'MessageCreation','MessageCreatedHasLink','MessageEditedHasLink',
-	'MessageHostedContentRead','MessageHostedContentsListed',
-	'SensitiveContentShared',
-	
+	# === Exchange / Email ===
+	'MailItemsAccessed','MailboxLogin','Send',
+
+	# === SharePoint / OneDrive - File access ===
+	'FileAccessed','FileViewed','FilePreviewed','FileModified','FileDownloaded','FileUploaded',
+
+	# === Teams - Chat / Messaging ===
+	'MessageSent','MessageRead','MessagesListed','ChatRetrieved','ChatCreated','TeamsSessionStarted',
+
 	# === Teams - Meeting lifecycle ===
-	'MeetingCreated','MeetingUpdated','MeetingDeleted',
-	'MeetingStarted','MeetingEnded',
-	'MeetingParticipantJoined','MeetingParticipantLeft','MeetingParticipantRoleChanged',
-	'MeetingRecordingStarted','MeetingRecordingEnded',
-	'MeetingDetail','MeetingParticipantDetail',
-	'LiveNotesUpdate','AINotesUpdate',
-	'RecordingExported','TranscriptsExported',
-	
-	# === Teams - Apps/Approvals ===
-	'AppInstalled','AppUpgraded','AppUninstalled',
-	'CreatedApproval','ApprovedRequest','RejectedApprovalRequest','CanceledApprovalRequest',
-	
-	# === Office apps (Word, Excel, PowerPoint, etc.) ===
-	'Create','Edit','Open','Save','Print',
-	
-	# === Microsoft Forms ===
-	'CreateForm','EditForm','DeleteForm','ViewForm','CreateResponse','SubmitResponse','ViewResponse','DeleteResponse',
-	
-	# === Microsoft Stream ===
-	'StreamModified','StreamViewed','StreamDeleted','StreamDownloaded',
-	
-	# === Planner ===
-	'PlanCreated','PlanDeleted','PlanModified','TaskCreated','TaskDeleted','TaskModified','TaskAssigned','TaskCompleted',
-	
-	# === Power Apps ===
-	'LaunchedApp','CreatedApp','EditedApp','DeletedApp','PublishedApp',
-	
-	# === Copilot ===
-	'CopilotInteraction'
+	'MeetingParticipantJoined','MeetingStarted','MeetingEnded','MeetingParticipantDetail','MeetingDetail',
+
+	# === Copilot / Connected AI ===
+	'CopilotInteraction','ConnectedAIAppInteraction'
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.11.2'
+$ScriptVersion = '1.11.3'
 
 # --- Initialize/Clear persistent script variables to prevent cross-run contamination ---
 # Note: Script-scoped variables persist across multiple script invocations in the same PowerShell session
@@ -2269,6 +2262,19 @@ if ($AppendFile -and $ExportWorkbook -eq $false) {
 
 if ($AppendFile -and -not $ExportWorkbook -and -not $PSBoundParameters.ContainsKey('ExportWorkbook')) {
 	# User wants AppendFile but didn't specify format - this is OK, will default to CSV append
+}
+
+# Rollup post-processor always requires a single combined Purview CSV. When
+# -Rollup / -RollupPlusRaw is bound but -CombineOutput is not, force it on
+# here so the export-mode banner below reflects the resolved (combined) shape
+# instead of the user's default separate-files layout. The broader
+# -Rollup / -RollupPlusRaw validation (mutual exclusion, blockers, processor
+# mode detection) still runs later in the rollup-handling block; that block's
+# own -CombineOutput auto-enable is a no-op once this one has fired.
+if (($Rollup -or $RollupPlusRaw) -and -not $CombineOutput) {
+	$_rollupSwitchName = if ($Rollup) { '-Rollup' } else { '-RollupPlusRaw' }
+	$CombineOutput     = [System.Management.Automation.SwitchParameter]::new($true)
+	Write-Host "INFO: $_rollupSwitchName auto-enabled -CombineOutput (rollup post-processor requires a single combined Purview CSV)." -ForegroundColor Cyan
 }
 
 # Log export mode
@@ -2635,12 +2641,12 @@ if ($ExportWorkbook) {
 # Full-path-with-basename Local forms are also accepted; downstream auto-basename
 # logic detects the file form and uses the supplied basename verbatim.
 if (-not $PSBoundParameters.ContainsKey('OutputPath') -or [string]::IsNullOrWhiteSpace($OutputPath)) {
-	# Fix #11 (BUG-D): When -OutputPath is omitted, infer the run's scratch+log
-	# directory from the DOMINANT in-scope stream's bound -Append* / -OutputPath*
-	# target. Without this, $OutputPath falls back to $PSScriptRoot — polluting the
-	# script's own folder with the run log, .pax_incremental shards/seed JSONs, and
-	# any rollup temp files even though the customer pinned a real data destination
-	# elsewhere via -AppendFile / -AppendUserInfo / -AppendAgent365Info.
+	# When -OutputPath is omitted, infer the run's scratch+log directory from the
+	# DOMINANT in-scope stream's bound -Append* / -OutputPath* target. Otherwise
+	# $OutputPath would fall back to $PSScriptRoot — polluting the script's own
+	# folder with the run log, .pax_incremental shards/seed JSONs, and any rollup
+	# temp files even though the customer pinned a real data destination elsewhere
+	# via -AppendFile / -AppendUserInfo / -AppendAgent365Info.
 	#
 	# Dominant stream resolution (mirrors XOR validator's scope rules):
 	#   -OnlyUserInfo      -> UserInfo     (AppendUserInfo / OutputPathUserInfo)
@@ -2729,11 +2735,30 @@ if ($script:DestTier.ContainsKey('Purview') -and $script:DestTier['Purview'] -eq
 	}
 }
 
-# Runbook context: if a managed-identity environment is detected, require -Auth ManagedIdentity explicitly.
+# Managed-identity-aware host guard. IDENTITY_ENDPOINT is set by Azure runtimes
+# (Functions, App Service, Container Apps, Container Instances, Fabric notebook /
+# container runtimes, etc.) to advertise that a managed-identity token endpoint
+# is available on the host. It does NOT mean managed identity is the only valid
+# auth choice. Two shapes are accepted in MI-aware hosts:
+#   1. -Auth ManagedIdentity (uses the assigned identity on the host), or
+#   2. -Auth AppRegistration with bound credentials (-ClientId plus one of
+#      -ClientSecret / -ClientCertificateThumbprint / -ClientCertificatePath) -
+#      legitimate for cross-tenant runs where a service-provider tenant calls
+#      into a customer tenant from a host that also happens to expose a local
+#      managed identity.
+# Only block when neither shape applies (e.g. the operator forgot
+# -Auth ManagedIdentity in a runbook, or invoked an interactive auth mode with
+# no credentials in a non-interactive host).
 if ($env:IDENTITY_ENDPOINT -and $Auth -ne 'ManagedIdentity') {
-	Write-Host "ERROR: Detected a managed-identity environment (IDENTITY_ENDPOINT is set) but -Auth is '$Auth'." -ForegroundColor Red
-	Write-Host "       Re-run with -Auth ManagedIdentity to use the assigned identity." -ForegroundColor Yellow
-	exit 1
+	$hasAppRegCreds = ($Auth -eq 'AppRegistration') -and `
+		$ClientId -and `
+		($ClientSecret -or $ClientCertificateThumbprint -or $ClientCertificatePath)
+	if (-not $hasAppRegCreds) {
+		Write-Host "ERROR: Detected a managed-identity environment (IDENTITY_ENDPOINT is set) but -Auth is '$Auth' without credentials." -ForegroundColor Red
+		Write-Host "       Re-run with -Auth ManagedIdentity to use the assigned identity, or supply -ClientId together with -ClientSecret / -ClientCertificateThumbprint / -ClientCertificatePath for -Auth AppRegistration." -ForegroundColor Yellow
+		exit 1
+	}
+	Write-Host "INFO: Managed identity available in host; proceeding with explicit -Auth AppRegistration as requested." -ForegroundColor DarkGray
 }
 
 # Resolve-DataTypePaths
@@ -3567,14 +3592,14 @@ if ($Rollup -or $RollupPlusRaw) {
 # resolved Python interpreter, and deleted in finally. Single-quoted here-
 # strings prevent any PowerShell variable expansion of the Python source.
 # ============================================================================
-$Script:EMBEDDED_PROCESSOR_COPILOT_VERSION = '3.0.0'
-$Script:EMBEDDED_PROCESSOR_M365_VERSION    = '2.1.0'
+$Script:EMBEDDED_PROCESSOR_COPILOT_VERSION = '3.1.0'
+$Script:EMBEDDED_PROCESSOR_M365_VERSION    = '2.6.0'
 
 # >>> BEGIN-EMBEDDED-COPILOT-PROCESSOR
 $Script:EMBEDDED_PROCESSOR_COPILOT = @'
 #!/usr/bin/env python3
 """
-Purview CopilotInteraction Processor v3.0.0
+Purview CopilotInteraction Processor v3.1.0
 -------------------------------------------
 Two-input / two-output preprocessor for the AI Business Value Dashboard
 and AI-in-One Rollup PBIPs.
@@ -3587,11 +3612,12 @@ Outputs (in --out-dir, default = directory of --purview):
     <purview_stem>_Interactions_<YYYYMMDD_HHMMSS>.csv   (fact table)
     <entra_stem>_Users_<YYYYMMDD_HHMMSS>.csv            (dim table)
 
-Grain (Option D):
+Grain:
     One row per (16-column grain x Message_Id). DAX measures use
-    DISTINCTCOUNT(Message_Id) which yields exact BEFORE-PBIP parity at
-    every visual / slicer combination. Replaces the v3.0.0 PromptCount
-    grain (which inflated counts by ~2.25x via per-resource explosion).
+    DISTINCTCOUNT(Message_Id) which yields exact parity with the
+    semantic-model definitions at every visual / slicer combination.
+    Per-resource accumulation is intentionally avoided so counts are
+    not inflated (~2.25x) by per (prompt x AccessedResource) iteration.
 
 INT-surrogated columns (perf):
     Message_Id, ThreadId, and UserKey (replaces Audit_UserId) are emitted
@@ -3661,7 +3687,7 @@ except ImportError:
     _JSON_ENGINE = "json (stdlib)"
 
 
-SCRIPT_VERSION = "3.0.0"
+SCRIPT_VERSION = "3.1.0"
 
 # ---------------------------------------------------------------------------
 # Output schemas
@@ -3784,6 +3810,34 @@ def to_text(value: Any) -> str:
 
 def normalize_user_id(value: Any) -> str:
     return to_text(value).strip().lower()
+
+
+# Non-human/system identities found in Purview audit logs (Teams Sync, SharePoint app,
+# SupervisoryReview bots, ServicePrincipals, NT-style accounts, SIDs, bare GUIDs, etc.).
+# These have no matching userPrincipalName in EntraUsers and would render as blank
+# User/Department rows in downstream visuals. Filter out before any record is emitted.
+_UPN_LOCAL_RE = re.compile(r"^[^\s\\@]+$")
+_BARE_GUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+
+
+def _is_human_upn(uid: str) -> bool:
+    """True iff uid is a syntactically valid human UPN (local@domain.tld), excluding
+    well-known service/bot patterns (SupervisoryReview{...}@..., bare GUIDs)."""
+    if not uid:
+        return False
+    s = uid.strip()
+    if _BARE_GUID_RE.match(s):
+        return False
+    if s.lower().startswith("supervisoryreview{"):
+        return False
+    if "@" not in s or s.count("@") != 1:
+        return False
+    local, domain = s.split("@", 1)
+    if not _UPN_LOCAL_RE.match(local):
+        return False
+    if "." not in domain or not domain or domain.startswith(".") or domain.endswith("."):
+        return False
+    return True
 
 
 def parse_creation_time(value: Any) -> datetime | None:
@@ -4549,6 +4603,8 @@ def explode_record(
     first_model = first_dict_item(get_array(ced, "ModelTransparencyDetails"))
 
     audit_user_id_raw = to_text(audit_data.get("UserId"))
+    if not _is_human_upn(audit_user_id_raw):
+        return []
     audit_user_id_norm = normalize_user_id(audit_user_id_raw)
     # UserKey INT surrogate. If this audit user wasn't in Entra, mint a new
     # INT and stash so subsequent rows for the same user reuse it. The
@@ -4721,21 +4777,18 @@ def run_processor(
     user_key_map: dict[str, int] = {}
     thread_key_map: dict[str, int] = {}
     mid_to_int: dict[str, int] = {}
-    # NOTE (Fix #22 / BUG-N-rollup-append-departed-misclassification):
-    # Earlier revisions tracked a 'seeded_mids' set here so the rollup loop
-    # could SKIP source rows whose Message_Id already appeared in the target
-    # Fact CSV (seeded via --seed-mid-map). That design produced a fatal
-    # interaction with the PowerShell-side Merge-FactCsv post-merge: when the
-    # current run found the same records the target already had, the rollup
-    # CSV was emitted EMPTY, so Merge-FactCsv (which keys on Message_Id_Raw
-    # and computes Retained/New/Departed = current∩target / current\target /
-    # target\current) saw zero current rows and misclassified every retained
-    # record as Departed (In_Latest_Append=FALSE). Surrogate-INT continuity
-    # is still preserved by pre-loading mid_to_int below (retained Message_Ids
-    # get their target-side INT on lookup, new ones extend the map); the PS
-    # merge ALSO carries Message_Id forward from the target on retained rows
-    # as belt-and-suspenders. The dedup itself is performed exclusively in
-    # Merge-FactCsv — the rollup loop now always emits the row.
+    # Rollup-loop dedup policy. Cross-run dedup against the target Fact CSV is
+    # performed exclusively in the PowerShell-side Merge-FactCsv (which keys on
+    # Message_Id_Raw and computes Retained / New / Departed = current∩target /
+    # current\target / target\current). The rollup loop ALWAYS emits the row,
+    # so when current and target overlap Merge-FactCsv sees real current rows
+    # and classifies them correctly (skipping seeded Message_Ids here would
+    # leave Merge-FactCsv with zero current rows and misclassify every
+    # retained record as Departed with In_Latest_Append=FALSE).
+    # Surrogate-INT continuity across appends is preserved by pre-loading
+    # mid_to_int below: retained Message_Ids get their target-side INT on
+    # lookup; new ones extend the map. Merge-FactCsv ALSO carries Message_Id
+    # forward from the target on retained rows as belt-and-suspenders.
 
     def _load_int_seed(path: str, target: dict[str, int]) -> None:
         with open(path, "r", encoding="utf-8") as f:
@@ -4763,10 +4816,11 @@ def run_processor(
         print()
         print("Flattening CopilotInteraction records...")
 
-    # v3.0.0 (Option D): one row per (grain x distinct Message_Id). Replaces
-    # the old PromptCount accumulator (which inflated counts ~2.25x by
-    # incrementing per (prompt x AccessedResource) iteration). Downstream
-    # measures use DISTINCTCOUNT(Message_Id) for exact BEFORE-PBIP parity.
+    # One row per (grain x distinct Message_Id). Per-resource accumulation
+    # is intentionally avoided here so counts are not inflated ~2.25x by
+    # per (prompt x AccessedResource) iteration. Downstream measures use
+    # DISTINCTCOUNT(Message_Id) for exact parity with the semantic-model
+    # definitions.
     #
     # Message_Id is INT-surrogated (1-based, encounter order) for CSV size
     # and parse-time win on the highest-cardinality column.
@@ -4806,11 +4860,9 @@ def run_processor(
                 continue
 
             for grain_key, message_id_str, nongrain, in_entra, audit_user_norm in rows:
-                # Fix #22 (BUG-N-rollup-append-departed-misclassification):
-                # always emit the row — cross-run dedup belongs to Merge-FactCsv,
-                # not here. Skipping seeded Message_Ids made the rollup CSV empty
-                # whenever current overlapped target, which made every retained
-                # record appear as Departed in the PS-side merge tally.
+                # Always emit the row — cross-run dedup belongs to Merge-FactCsv,
+                # not here. The rollup loop must surface every interaction so the
+                # downstream merge can compute Retained / New / Departed correctly.
                 stats["output_rows"] += 1
                 if not in_entra and audit_user_norm:
                     unmatched.add(audit_user_norm)
@@ -4974,18 +5026,38 @@ if __name__ == "__main__":
 $Script:EMBEDDED_PROCESSOR_M365 = @'
 #!/usr/bin/env python3
 """
-Purview M365 Usage Bundle Explosion Processor v2.1.0
+Purview M365 Usage Bundle Explosion Processor v2.6.0
 =====================================================
 Two-mode processor for Purview audit log CSV exports:
 
   ROLLUP MODE (default):  Aggregates exploded events into rolled-up rows keyed by
-      (UserId, CreationDate, Operation, Workload, SourceFileExtension, AppHost)
-      with EventCount, MIN(CreationTime), MAX(CreationTime).  Targets 80%+ row
-      reduction for Power BI ingestion.  Streaming — no exploded rows held in memory.
+      (UserId, CreationDate, Operation, Workload, SourceFileExtension, AppHost,
+       AgentId, AgentName, ContextType)
+      with EventCount, MIN(CreationTime), MAX(CreationTime), IsAgentInteraction.
+      Targets 80%+ row reduction for Power BI ingestion.
+      Streaming — no exploded rows held in memory.
+
+  v2.3.0 CHANGES (validated against MS Learn audit-log schema + DAX TMDL fingerprint):
+      • Canonical Operation names enforced. Three legacy/wrong names auto-renamed at
+        intake (OP_RENAME), preserving historical data while emitting canonical values:
+            FileViewed                 → FileAccessed
+            MeetingParticipantJoined   → MeetingParticipantDetail
+            ConnectedAIAppInteraction  → AIAppInteraction
+      • TEAMS_OPS / FILE_OPS / COPILOT_OPS updated to the 14 DAX-required ops only.
+      • Rollup CSV header extended with 4 agent telemetry columns (AgentId, AgentName,
+        ContextType, IsAgentInteraction) so M365Usage.tmdl fingerprint check passes
+        without Power Query post-processing.
+      • Multi-file input supported: pass --input/-i multiple paths (or repeat the flag)
+        to combine N Purview exports into one rollup + UserStats + SessionCohort bundle.
+        Validated 4-pull strategy: Teams + Outlook + Files + Copilot in a single run.
+      • is_copilot() now also recognises AIAppInteraction (agent/connected-app events).
+      • All performance characteristics preserved: streaming intake, orjson, no buffered
+        explosion, per-record cap. Goal is to move processing OUT of Power BI INTO Python
+        so the .pbix loads/refreshes faster without losing fidelity.
 
       After the rollup CSV is written, a second pass streams through it to produce
       two additional analytics files (unless --no-userstats is specified):
-        - UserStats:      One row per user with 27 columns of pre-computed metrics
+        - UserStats:      One row per user with 66 columns of pre-computed metrics
                           (Copilot/M365 event counts, tier classifications, priority
                           scores, usage ranks, active-day counts, activity segments).
         - SessionCohort:  One row per (UserId, App) pair with a session-count bucket
@@ -4994,8 +5066,8 @@ Two-mode processor for Purview audit log CSV exports:
       These files allow Power Query to join pre-computed results instead of
       recalculating expensive DAX/M expressions, cutting dashboard load times.
 
-  EVENT-LEVEL MODE (--mode event-level):  153-column row-per-event explosion output.
-      Used for debugging and reconciliation against the raw audit log.
+  EVENT-LEVEL MODE (--mode event-level):  v1-compatible 153-column explosion output.
+      Identical behavior to v1.0.0 for debugging and reconciliation.
       UserStats and SessionCohort files are NOT generated in this mode.
 
 Requirements:
@@ -5003,15 +5075,31 @@ Requirements:
     pip install orjson   (OPTIONAL - 5-10x faster JSON parsing; falls back to stdlib json)
 
 Usage:
-    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.1.0.py --input <CSV>
-        [--output-dir <DIR>] [--mode rollup|event-level]
-        [--prompt-filter Prompt|Response|Both|Null]
-        [--reconcile] [--no-userstats] [--quiet] [--version]
+    # (A) Single PAX / PowerShell export:
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.0.py --pax <CSV>
+
+    # (B) Manual 4-pull export from Purview Audit:
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.0.py \
+        --teams <CSV> --outlook <CSV> --files <CSV> --copilot <CSV>
+
+    Common optional flags:
+        --output-dir <DIR>          Where to write outputs (default: input folder)
+        --skip-precompute           Skip UserStats + SessionCohort
+        --reconcile                 Sample-based correctness check
+        --prompt-filter <MODE>      Prompt|Response|Both|Null
+        --debug-events              v1-compatible 153-column event-level CSV
+        --quiet                     Suppress progress output
 
 Output files (rollup mode — all share the same timestamp):
-    <input_stem>_Rollup_<YYYYMMDD_HHMMSS>.csv          9 columns — aggregated events
-    <input_stem>_UserStats_<YYYYMMDD_HHMMSS>.csv       27 columns — per-user metrics
-    <input_stem>_SessionCohort_<YYYYMMDD_HHMMSS>.csv    3 columns — (UserId, App, Bucket)
+    <stem>_Rollup_<YYYYMMDD_HHMMSS>.csv         13 columns — aggregated events + agent fields
+    <stem>_UserStats_<YYYYMMDD_HHMMSS>.csv      66 columns — per-user metrics
+    <stem>_SessionCohort_<YYYYMMDD_HHMMSS>.csv   3 columns — (UserId, App, Bucket)
+    <stem>_SessionStats_<YYYYMMDD_HHMMSS>.csv    7 columns — (UserId, Date, AppHost,
+                                                              SessionCount, PromptCount,
+                                                              ResponseCount, AgentSessionCount)
+                                                  matches AI in One DISTINCTCOUNT(ThreadId)
+    (<stem> = input file's stem for single input, or '<firstStem>_Combined' for multi-input.
+     Rename the output file or use --output-dir if you want a tenant-specific name.)
 
 Output file (event-level mode):
     <input_stem>_Exploded_<YYYYMMDD_HHMMSS>.csv       153 columns — one row per event
@@ -5027,46 +5115,52 @@ Arguments:
     --version             Show version and exit.
 
 Examples:
-    # Default rollup (9-column output + UserStats + SessionCohort)
-    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.1.0.py -i Purview_Export.csv
+    # Default rollup (13-column output + UserStats + SessionCohort)
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.0.py -i Purview_Export.csv
+
+    # Combine the validated 4-pull bundle (Teams + Outlook + Files + Copilot) in one run
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.0.py \
+        -i Teams_Export.csv Outlook_Export.csv Files_Export.csv Copilot_Export.csv \
+        --combined-stem ZavaCorp_2025_11
 
     # Rollup with output in a different directory
-    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.1.0.py -i Purview_Export.csv --output-dir ./output
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.0.py -i Purview_Export.csv --output-dir ./output
 
     # Rollup only — skip UserStats and SessionCohort generation
-    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.1.0.py -i Purview_Export.csv --no-userstats
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.0.py -i Purview_Export.csv --no-userstats
 
     # v1-compatible event-level explosion (153-column output)
-    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.1.0.py -i Purview_Export.csv --mode event-level
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.0.py -i Purview_Export.csv --mode event-level
 
     # Rollup with sample-based reconciliation check
-    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.1.0.py -i Purview_Export.csv --reconcile
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.0.py -i Purview_Export.csv --reconcile
+
+Validated 4-pull strategy (Purview Audit → Activities filter, type+click each chip):
+    Teams   (7d):  MessageSent, MessageRead, ChatCreated, TeamsSessionStarted,
+                   MeetingParticipantDetail
+    Outlook (30d): MailItemsAccessed, Send, MailboxLogin
+    Files   (60d): FileAccessed, FileModified, FileDownloaded, FileUploaded
+    Copilot (30d): CopilotInteraction, AIAppInteraction        (filter by record type)
 
 Author:  Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
-Version: 2.1.0
+Version: 2.6.0
 """
 
 from __future__ import annotations
 
 import argparse
+import bisect
 import csv
 import os
 import random
+import re
 import sys
 import time
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
 from typing import Any
-
-# Ensure stdout/stderr can emit non-ASCII characters (e.g., arrows) on Windows
-# consoles defaulting to cp1252. Safe no-op on already-UTF-8 streams.
-try:
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-except Exception:
-    pass
 
 # ─── Fast JSON: prefer orjson, fall back to stdlib ───────────────────────────
 try:
@@ -5098,7 +5192,7 @@ except ImportError:
 # CONSTANTS
 # ═════════════════════════════════════════════════════════════════════════════
 
-SCRIPT_VERSION = "2.1.0"
+SCRIPT_VERSION = "2.6.0"
 
 EXPLOSION_PER_RECORD_ROW_CAP = 1000
 STREAMING_CHUNK_SIZE = 5000
@@ -5153,15 +5247,26 @@ M365_UNIFIED_HEADER: list[str] = [
     "AccessedResource_ResourceType", "SensitivityLabel", "Context_Item",
 ]
 
-# Rollup output header (9 columns)
+# Rollup output header (13 columns) — matches M365Usage.tmdl fingerprint:
+# required keys + EventCount + temporal MIN/MAX + agent telemetry.
 ROLLUP_HEADER: list[str] = [
     "UserId", "CreationDate", "Operation", "Workload",
     "SourceFileExtension", "AppHost",
-    "EventCount", "CreationTime", "MaxCreationTime",
+    "EventCount", "ItemsAccessedCount", "CreationTime", "MaxCreationTime",
+    "AgentId", "AgentName", "ContextType", "IsAgentInteraction",
 ]
 
 # Reconciliation sample size
 RECONCILE_SAMPLE_SIZE = 10_000
+
+# ── Operation canonicalization (v2.3.0) ──────────────────────────────────────
+# Legacy/wrong names that have appeared in older exports or older DAX models.
+# Renamed at intake so historical data merges cleanly with current canonical pulls.
+OP_RENAME: dict[str, str] = {
+    "FileViewed":                "FileAccessed",
+    "MeetingParticipantJoined":  "MeetingParticipantDetail",
+    "ConnectedAIAppInteraction": "AIAppInteraction",
+}
 
 # ── UserStats classification sets (match Power Query logic exactly) ──────────
 WORD_EXTS: set[str] = {"docx", "doc", "dotx"}
@@ -5169,10 +5274,43 @@ EXCEL_EXTS: set[str] = {"xlsx", "xls", "xlsm", "csv"}
 PPT_EXTS: set[str] = {"pptx", "ppt", "ppsx"}
 OFFICE_EXTS: set[str] = WORD_EXTS | EXCEL_EXTS | PPT_EXTS
 
-FILE_OPS: set[str] = {"FileViewed", "FileModified", "FileDownloaded", "FileUploaded"}
-OUTLOOK_OPS: set[str] = {"Send", "MailItemsAccessed", "MailboxLogin"}           # active-DAY counting
-OUTLOOK_ACT_OPS: set[str] = {"Send", "MailItemsAccessed", "MailboxLogin"}      # event COUNT
-TEAMS_OPS: set[str] = {"MessageSent", "MessageRead", "MeetingParticipantJoined"}
+# Canonical 14 ops required by the CLO TMDL DAX measures, validated against MS Learn.
+FILE_OPS: set[str] = {
+    "FileAccessed",                            # canonical (was FileViewed in legacy)
+    "FileModified",
+    "FileDownloaded",
+    "FileUploaded",
+}
+OUTLOOK_OPS: set[str] = {"Send", "MailItemsAccessed", "MailboxLogin"}  # active-DAY + COUNT
+TEAMS_OPS: set[str] = {
+    "MessageSent",                             # Msgs Sent
+    "MessageRead", "ChatCreated",              # Msgs Read (Graph-API tenants emit ChatCreated)
+    "MeetingParticipantDetail",                # canonical (was MeetingParticipantJoined)
+    "TeamsSessionStarted",                     # Meetings/calls fallback
+}
+COPILOT_OPS: set[str] = {"CopilotInteraction", "AIAppInteraction"}  # AIAppInteraction = agents/connected apps
+
+# AppHost values that indicate an agent / connected-app interaction.
+AGENT_APPHOSTS: set[str] = {"agent", "copilotstudio", "declarativeagent", "customengineagent"}
+
+# ── DAX-aligned op/ext sets (for the CE/LP precomputed columns added in v2.4.0) ──
+# These mirror the exact filters in the PBIT measures Word/Excel/PowerPoint/Outlook/
+# Teams Activity *V2, Copilot All Apps Total, and CE Copilot Percentile.
+# Important: ops are matched AFTER OP_RENAME canonicalization, so the legacy names
+# ("FileViewed", "MeetingParticipantJoined") are listed under their canonical aliases.
+DAX_FILE_OPS: set[str] = {
+    "FileAccessed",      # canonical of legacy FileViewed (DAX checks both)
+    "FilePreviewed",
+    "FileModified",
+    "FileDownloaded",
+    "FileUploaded",
+}
+DAX_OUTLOOK_OPS: set[str] = {"Send", "MailItemsAccessed"}  # MailboxLogin intentionally excluded (matches DAX)
+DAX_TEAMS_OPS: set[str] = {
+    "MessageSent", "MessageRead", "MessagesListed", "ChatRetrieved",
+    "MeetingParticipantDetail",  # canonical of MeetingParticipantJoined
+    "MeetingStarted", "MeetingEnded", "TeamsSessionStarted",
+}
 
 USERSTATS_HEADER: list[str] = [
     "UserId",
@@ -5186,9 +5324,38 @@ USERSTATS_HEADER: list[str] = [
     "TeamsActivitySegment", "OutlookActivitySegment", "WordActivitySegment",
     "ExcelActivitySegment", "PowerPointActivitySegment",
     "OfficeFilesActivitySegment", "OverallM365ActivitySegment",
+    # ── v2.5.0: precomputed raw activity counts + CE percentile ranks per window.
+    # Windows: _L30 = trailing 30 days ending at max(CreationDate); _L60 = trailing 60;
+    # _Full  = entire data range. Filters match the corresponding DAX measures exactly
+    # (post-canonicalization). CE ranks are integer 0-100; blank when raw is 0.
+    "TeamsRaw_L30", "TeamsRaw_L60", "TeamsRaw_Full",
+    "OutlookRaw_L30", "OutlookRaw_L60", "OutlookRaw_Full",
+    "WordRaw_L30", "WordRaw_L60", "WordRaw_Full",
+    "ExcelRaw_L30", "ExcelRaw_L60", "ExcelRaw_Full",
+    "PowerPointRaw_L30", "PowerPointRaw_L60", "PowerPointRaw_Full",
+    "CopilotChatRaw_L30", "CopilotChatRaw_L60", "CopilotChatRaw_Full",
+    "CERank_Teams_L30", "CERank_Teams_L60", "CERank_Teams_Full",
+    "CERank_Outlook_L30", "CERank_Outlook_L60", "CERank_Outlook_Full",
+    "CERank_Word_L30", "CERank_Word_L60", "CERank_Word_Full",
+    "CERank_Excel_L30", "CERank_Excel_L60", "CERank_Excel_Full",
+    "CERank_PowerPoint_L30", "CERank_PowerPoint_L60", "CERank_PowerPoint_Full",
+    "CERank_M365AllApps_L30", "CERank_M365AllApps_L60", "CERank_M365AllApps_Full",
+    "CECopilotPercentile_L30", "CECopilotPercentile_L60", "CECopilotPercentile_Full",
 ]
 
+# v2.5.0: percentile window codes used in column names. Order matters for writer.
+RANK_WINDOWS: tuple[str, ...] = ("L30", "L60", "Full")
+
 SESSIONCOHORT_HEADER: list[str] = ["UserId", "AppColumn", "SessionCohort"]
+
+# v2.6.0: SessionStats — AI in One parity. Per (UserId, CreationDate, AppHost) we count
+# DISTINCT ThreadIds (matches Microsoft AI in One `Sessions` measure), plus prompt /
+# response counts and an agent-only thread count. License filtering happens downstream
+# in DAX via the EntraUsers relationship; this CSV stays license-agnostic.
+SESSIONSTATS_HEADER: list[str] = [
+    "UserId", "CreationDate", "AppHost",
+    "SessionCount", "PromptCount", "ResponseCount", "AgentSessionCount",
+]
 
 # Date formats accepted for CreationDate normalization (broadest to narrowest)
 _CREATION_DATE_FORMATS: tuple[str, ...] = (
@@ -5202,19 +5369,62 @@ _CREATION_DATE_FORMATS: tuple[str, ...] = (
     "%m/%d/%Y",
 )
 
-# GroupKey type: (user_id_lower, creation_date_normalized, operation, workload, sfe_lower, app_host)
-GroupKey = tuple[str, str, str, str, str, str]
+# GroupKey type (v2.3.0): adds agent_id, agent_name, context_type so multi-agent users
+# don't collapse rows together. IsAgentInteraction is derived on write from AgentId.
+# (user_id_lower, creation_date_normalized, operation, workload, sfe_lower, app_host,
+#  agent_id, agent_name, context_type)
+GroupKey = tuple[str, str, str, str, str, str, str, str, str]
 
 
 class RollupAccum:
     """Lightweight accumulator for one rollup group — avoids dataclass import overhead."""
-    __slots__ = ("event_count", "min_creation_time", "max_creation_time", "original_user_id")
+    __slots__ = (
+        "event_count", "items_accessed_count",
+        "min_creation_time", "max_creation_time",
+        "original_user_id",
+        "is_agent_interaction",
+    )
 
-    def __init__(self, event_count: int, min_ct: str, max_ct: str, original_uid: str) -> None:
+    def __init__(
+        self,
+        event_count: int,
+        items_accessed: int,
+        min_ct: str,
+        max_ct: str,
+        original_uid: str,
+        is_agent: bool = False,
+    ) -> None:
         self.event_count = event_count
+        self.items_accessed_count = items_accessed
         self.min_creation_time = min_ct
         self.max_creation_time = max_ct
         self.original_user_id = original_uid  # first-seen casing for output
+        self.is_agent_interaction = is_agent
+
+
+# SessionStats group key: (uid_lower, creation_date, app_host).
+SessionKey = tuple[str, str, str]
+
+
+class SessionAccum:
+    """Per-(user, date, app_host) Copilot session accumulator (v2.6.0).
+
+    Mirrors the AI in One `Sessions` measure: DISTINCTCOUNT(ThreadId) where at least
+    one message in the thread is a user prompt (isPrompt=True). Threads with only
+    AI responses (no user prompt) are excluded — same as the AI in One filter.
+    """
+    __slots__ = (
+        "thread_ids", "agent_thread_ids",
+        "prompt_count", "response_count",
+        "original_user_id",
+    )
+
+    def __init__(self, original_uid: str) -> None:
+        self.thread_ids: set[str] = set()
+        self.agent_thread_ids: set[str] = set()
+        self.prompt_count: int = 0
+        self.response_count: int = 0
+        self.original_user_id = original_uid
 
 
 def normalize_creation_date(raw: str) -> str:
@@ -5378,9 +5588,8 @@ def categorize_agent(agent_id: Any) -> str:
 # ═════════════════════════════════════════════════════════════════════════════
 
 def is_copilot(op: str, wl: str) -> bool:
-    """True if the row represents a Copilot event."""
-    return wl == "Copilot" or op == "CopilotInteraction"
-
+    """True if the row represents a Copilot or agent / connected-app event."""
+    return wl == "Copilot" or op in COPILOT_OPS
 
 def is_excel_file_op(ext: str, op: str) -> bool:
     """True if the row is a file operation on an Excel-family extension."""
@@ -5396,7 +5605,7 @@ def app_column(ext: str, op: str, wl: str) -> str:
         return "Excel"
     if e in PPT_EXTS and op in FILE_OPS:
         return "PowerPoint"
-    if wl == "Exchange" and op in OUTLOOK_ACT_OPS:
+    if wl == "Exchange" and op in OUTLOOK_OPS:
         return "Outlook"
     if wl == "MicrosoftTeams" and op in TEAMS_OPS:
         return "Teams"
@@ -5451,15 +5660,23 @@ def priority_fn(m365_tier: str, cop_tier: str) -> str:
     return "Low"
 
 
-def seg_fn(days: int) -> str:
-    """Map active-day count to an activity-segment label."""
-    if days <= 5:
-        return "1. 1-5 Days (Infrequent)"
-    if days <= 10:
-        return "2. 6-10 Days (Moderate)"
-    if days <= 19:
-        return "3. 11-19 Days (Frequent)"
-    return "4. 20+ Days (Daily)"
+def seg_fn(days: int, window_days: int) -> str:
+    """Map active-day count to a per-week engagement-segment label.
+
+    Normalizes to active days per week so labels mean the same thing regardless
+    of pull length: <1, 1-2, 3-4, 5+ days/week. Window_days is the calendar
+    span (max date - min date + 1) of the rolled-up data; 0 yields No Usage.
+    """
+    if window_days <= 0 or days <= 0:
+        return "0. No Usage"
+    rate = days * 7.0 / window_days
+    if rate < 1.0:
+        return "1. <1 Day/Week (Light)"
+    if rate < 3.0:
+        return "2. 1-2 Days/Week (Moderate)"
+    if rate < 5.0:
+        return "3. 3-4 Days/Week (Frequent)"
+    return "4. 5+ Days/Week (Daily)"
 
 
 def compute_ranks(values_by_uid: dict[str, float]) -> dict[str, int]:
@@ -5530,31 +5747,83 @@ def _compute_copilot_event_count(
     return min(max(row_count, 1), EXPLOSION_PER_RECORD_ROW_CAP)
 
 
+def _count_mail_items_accessed(audit_data: dict) -> int:
+    """Items represented by one MailItemsAccessed event.
+    Sums len(Folders[].FolderItems[]) when present; falls back to 1 (Bind-style)."""
+    folders = audit_data.get("Folders")
+    if isinstance(folders, list):
+        total = 0
+        for fld in folders:
+            if not isinstance(fld, dict):
+                continue
+            fi = fld.get("FolderItems")
+            if isinstance(fi, list):
+                total += len(fi)
+        if total > 0:
+            return total
+    return 1
+
+
+# Non-human/system identities found in Purview audit logs (Teams Sync, SharePoint app,
+# SupervisoryReview bots, ServicePrincipals, NT-style accounts, SIDs, bare GUIDs, etc.).
+# These have no matching userPrincipalName in EntraUsers and would render as blank
+# User/Department rows in license-recommendation visuals. Filter out at the rollup stage.
+_UPN_LOCAL_RE = re.compile(r"^[^\s\\@]+$")
+_BARE_GUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+
+
+def _is_human_upn(uid: str) -> bool:
+    """True iff uid is a syntactically valid human UPN (local@domain.tld), excluding
+    well-known service/bot patterns (SupervisoryReview{...}@..., bare GUIDs)."""
+    if not uid:
+        return False
+    s = uid.strip()
+    if _BARE_GUID_RE.match(s):
+        return False
+    if s.lower().startswith("supervisoryreview{"):
+        return False
+    if "@" not in s or s.count("@") != 1:
+        return False
+    local, domain = s.split("@", 1)
+    if not _UPN_LOCAL_RE.match(local):
+        return False
+    if "." not in domain or not domain or domain.startswith(".") or domain.endswith("."):
+        return False
+    return True
+
+
 def _extract_rollup_keys(
     record: dict,
     audit_data: dict,
     ced: dict | None,
     prompt_filter: str | None = None,
-) -> tuple[GroupKey, int, str, str] | None:
+) -> tuple[GroupKey, int, int, str, str, bool] | None:
     """
-    Extract rollup group key + event count + creation_time + original UserId.
+    Extract rollup group key + event count + items-accessed count + creation_time +
+    original UserId + is_agent_interaction flag.
 
     Returns None if the record is filtered out (e.g. prompt_filter eliminates all messages).
     Returns:
-        (group_key, event_count, creation_time_iso, original_user_id)
-    where group_key uses lowercased UserId for case-insensitive grouping.
+        (group_key, event_count, items_accessed_count, creation_time_iso,
+         original_user_id, is_agent_interaction)
+    where group_key uses lowercased UserId for case-insensitive grouping and
+    includes (agent_id, agent_name, context_type) so multi-agent users don't collapse.
     """
     # UserId: original casing preserved for output; lowered for grouping key
     raw_uid = _norm_key_str(safe_get(audit_data, "UserId") or record.get("UserId", ""))
+    # Filter non-human/system identities (Teams Sync, ServicePrincipals, SIDs, bots, etc.)
+    if not _is_human_upn(raw_uid):
+        return None
     uid_lower = raw_uid.lower()
 
     # CreationDate: from CSV, normalized to midnight
     creation_date = normalize_creation_date(record.get("CreationDate", ""))
 
-    # Operation: from audit_data → CSV fallback, preserve case
+    # Operation: from audit_data → CSV fallback, preserve case, then canonicalize via OP_RENAME
     operation = _norm_key_str(
         safe_get(audit_data, "Operation") or record.get("Operation", "") or record.get("Operations", "")
     )
+    operation = OP_RENAME.get(operation, operation)
 
     # Workload: from audit_data, preserve case
     workload = _norm_key_str(safe_get(audit_data, "Workload"))
@@ -5568,7 +5837,26 @@ def _extract_rollup_keys(
             safe_get(ced, "AppHost") or safe_get(audit_data, "AppHost")
         )
     else:
-        app_host = ""
+        app_host = _norm_key_str(safe_get(audit_data, "AppHost"))
+
+    # Agent telemetry: from CopilotEventData when present, fall back to top-level AuditData fields
+    agent_id = _norm_key_str(
+        (safe_get(ced, "AgentId") if ced else None)
+        or safe_get(audit_data, "AgentId")
+    )
+    agent_name = _norm_key_str(
+        (safe_get(ced, "AgentName") if ced else None)
+        or safe_get(audit_data, "AgentName")
+    )
+    context_type = ""
+    if ced:
+        contexts = get_array_fast(ced, "Contexts")
+        if contexts:
+            # First context wins for the key; multi-context records still collapse
+            # cleanly because event_count already reflects context-array length.
+            first_ctx = contexts[0]
+            if isinstance(first_ctx, dict):
+                context_type = _norm_key_str(safe_get(first_ctx, "Type"))
 
     # CreationTime: from audit_data, ISO formatted for lexicographic MIN/MAX
     creation_time = format_date_purview(safe_get(audit_data, "CreationTime"))
@@ -5581,8 +5869,31 @@ def _extract_rollup_keys(
     else:
         event_count = 1  # Non-Copilot: always 1:1
 
-    group_key: GroupKey = (uid_lower, creation_date, operation, workload, sfe, app_host)
-    return group_key, event_count, creation_time, raw_uid
+    # Items accessed count: only meaningful for MailItemsAccessed (Exchange).
+    items_accessed_count = 0
+    if operation == "MailItemsAccessed":
+        items_accessed_count = _count_mail_items_accessed(audit_data)
+
+    # IsAgentInteraction: TRUE iff AgentId present, AppHost is an agent surface,
+    # or Operation is an agent op (AIAppInteraction).
+    is_agent_interaction = bool(
+        agent_id
+        or app_host.lower() in AGENT_APPHOSTS
+        or operation == "AIAppInteraction"
+    )
+
+    group_key: GroupKey = (
+        uid_lower, creation_date, operation, workload, sfe, app_host,
+        agent_id, agent_name, context_type,
+    )
+    return (
+        group_key,
+        event_count,
+        items_accessed_count,
+        creation_time,
+        raw_uid,
+        is_agent_interaction,
+    )
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -6152,15 +6463,10 @@ def run_explosion(
     workers: int = 0,
     chunk_size: int = STREAMING_CHUNK_SIZE,
     quiet: bool = False,
-    exclude_record_ids: str | None = None,
 ) -> dict[str, Any]:
     """
     Main entry point: reads input CSV, explodes all records, writes output CSV.
     Uses multiprocessing for large files, single-process for small ones.
-
-    When ``exclude_record_ids`` is supplied, source rows whose RecordId is in the
-    file (one ID per line) are skipped before chunking. This enables cross-run
-    dedup against an existing Exploded.csv target.
 
     Returns a stats dict with counts and timing.
     """
@@ -6177,17 +6483,7 @@ def run_explosion(
         "output_rows": 0,
         "errors": 0,
         "chunks_processed": 0,
-        "skipped_seeded": 0,
     }
-
-    # ── Load exclude-record-ids set (cross-run dedup) ───────────────────────
-    exclude_ids: set[str] = set()
-    if exclude_record_ids and os.path.isfile(exclude_record_ids):
-        with open(exclude_record_ids, "r", encoding="utf-8") as f_excl:
-            for line in f_excl:
-                line = line.strip()
-                if line:
-                    exclude_ids.add(line)
 
     if not quiet:
         print(f"Purview M365 Usage Bundle Explosion Processor v{SCRIPT_VERSION}")
@@ -6197,8 +6493,6 @@ def run_explosion(
         print(f"  Prompt filter:  {prompt_filter or 'None'}")
         print(f"  Workers:        {workers}")
         print(f"  Chunk size:     {chunk_size}")
-        if exclude_ids:
-            print(f"  Exclude RecIds: {len(exclude_ids):,} (cross-run dedup)")
         print()
 
     # ── Phase 1: Fixed schema ─────────────────────────────────────────────
@@ -6220,11 +6514,6 @@ def run_explosion(
     with open(input_csv, "r", encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            if exclude_ids:
-                rid = (row.get("RecordId") or "").strip()
-                if rid and rid in exclude_ids:
-                    stats["skipped_seeded"] += 1
-                    continue
             current_chunk.append(row)
             if len(current_chunk) >= chunk_size:
                 chunks.append(current_chunk)
@@ -6314,137 +6603,158 @@ def run_explosion(
 # ═════════════════════════════════════════════════════════════════════════════
 
 def run_rollup(
-    input_csv: str,
+    input_csv: str | list[str],
     output_csv: str,
     prompt_filter: str | None = None,
     quiet: bool = False,
-    append_target_rollup: str | None = None,
+    session_stats_csv: str | None = None,
 ) -> dict[str, Any]:
     """
-    Streaming rollup: read CSV row-by-row → parse AuditData → extract 6 keys +
-    CreationTime → accumulate into dict[GroupKey, RollupAccum] → write 9-column CSV.
+    Streaming rollup: read one or more CSVs row-by-row → parse AuditData → extract
+    9 group keys + CreationTime + agent flag → accumulate into
+    dict[GroupKey, RollupAccum] → write 13-column CSV.
+
+    `input_csv` accepts a single path (PAX/PowerShell single-file export) or a
+    list of paths (manual 4-pull export from Purview Audit). Output schema is
+    identical either way — the same PBIT template ingests both modes.
+
+    When `session_stats_csv` is provided, a parallel pass over CopilotEventData
+    accumulates per-(UserId, CreationDate, AppHost) DISTINCTCOUNT(ThreadId) +
+    prompt/response counts and writes a 7-column SessionStats CSV. This matches
+    the AI in One `Sessions` measure unit (one thread = one session).
 
     No exploded row dicts are ever stored in memory.
-
-    When ``append_target_rollup`` is supplied and the file exists, the
-    accumulator dict is pre-seeded from that file before streaming new
-    records. EventCount / CreationTime / MaxCreationTime are union-merged
-    (sum / min / max). The target's UserId casing wins on key conflicts.
     """
-    if not os.path.isfile(input_csv):
-        print(f"ERROR: Input file not found: {input_csv}", file=sys.stderr)
-        sys.exit(1)
+    if isinstance(input_csv, (str, Path)):
+        input_paths: list[str] = [str(input_csv)]
+    else:
+        input_paths = [str(p) for p in input_csv]
+
+    for p in input_paths:
+        if not os.path.isfile(p):
+            print(f"ERROR: Input file not found: {p}", file=sys.stderr)
+            sys.exit(1)
 
     t_start = time.perf_counter()
     rollup: dict[GroupKey, RollupAccum] = {}
+    sessions: dict[SessionKey, SessionAccum] = {} if session_stats_csv else {}
+    track_sessions: bool = bool(session_stats_csv)
     stats: dict[str, Any] = {
         "input_records": 0,
         "virtual_exploded_event_count": 0,
         "output_rows": 0,
         "parse_errors": 0,
-        "seeded_rows": 0,
+        "session_rows": 0,
+        "session_threads": 0,
+        "session_prompts": 0,
     }
 
     if not quiet:
         print(f"Purview M365 Usage Bundle Explosion Processor v{SCRIPT_VERSION} [ROLLUP MODE]")
         print(f"  JSON engine:    {_JSON_ENGINE}")
-        print(f"  Input:          {input_csv}")
+        if len(input_paths) == 1:
+            print(f"  Input:          {input_paths[0]}")
+        else:
+            print(f"  Inputs ({len(input_paths)}):")
+            for p in input_paths:
+                print(f"                  {p}")
         print(f"  Output:         {output_csv}")
+        if session_stats_csv:
+            print(f"  Session stats:  {session_stats_csv}")
         print(f"  Prompt filter:  {prompt_filter or 'None'}")
-        if append_target_rollup:
-            print(f"  Append target:  {append_target_rollup}")
         print()
         print("Processing records (streaming rollup)...")
 
-    # ── Pre-seed accumulator from existing target Rollup CSV ──────────────
-    # Target's first-seen UserId casing wins (we set original_user_id from
-    # the target row; subsequent in-run encounters update event_count /
-    # creation_time bounds but do not overwrite casing).
-    if append_target_rollup and os.path.isfile(append_target_rollup):
-        try:
-            with open(append_target_rollup, "r", encoding="utf-8-sig", newline="") as ft:
-                tr = csv.DictReader(ft)
-                for trow in tr:
-                    user_id = (trow.get("UserId") or "").strip()
-                    cdate   = (trow.get("CreationDate") or "").strip()
-                    op      = (trow.get("Operation") or "").strip()
-                    wl      = (trow.get("Workload") or "").strip()
-                    sfe     = (trow.get("SourceFileExtension") or "").strip()
-                    ah      = (trow.get("AppHost") or "").strip()
-                    try:
-                        ec = int(trow.get("EventCount") or 0)
-                    except (TypeError, ValueError):
-                        ec = 0
-                    mint = (trow.get("CreationTime") or "").strip()
-                    maxt = (trow.get("MaxCreationTime") or "").strip()
-                    if not user_id:
-                        continue
-                    key: GroupKey = (user_id.lower(), cdate, op, wl, sfe.lower(), ah)
-                    rollup[key] = RollupAccum(
-                        event_count=ec,
-                        min_ct=mint,
-                        max_ct=maxt,
-                        original_uid=user_id,
+    # ── Streaming read + accumulate (across one OR many input files) ─────
+    for input_csv_path in input_paths:
+        with open(input_csv_path, "r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            for record in reader:
+                stats["input_records"] += 1
+
+                # Progress indicator
+                if not quiet and stats["input_records"] % 500_000 == 0:
+                    print(f"  {stats['input_records']:>12,} records processed, "
+                          f"{len(rollup):,} groups...")
+
+                # Parse AuditData JSON
+                audit_data_raw = record.get("AuditData", "")
+                if not audit_data_raw or not isinstance(audit_data_raw, str) or not audit_data_raw.strip():
+                    stats["parse_errors"] += 1
+                    continue
+                try:
+                    audit_data = json_loads(audit_data_raw)
+                except Exception:
+                    stats["parse_errors"] += 1
+                    continue
+                if not isinstance(audit_data, dict):
+                    stats["parse_errors"] += 1
+                    continue
+
+                ced = safe_get(audit_data, "CopilotEventData")
+                if ced and not isinstance(ced, dict):
+                    ced = None
+
+                # Extract rollup keys (lightweight — no row dict built)
+                result = _extract_rollup_keys(record, audit_data, ced, prompt_filter)
+                if result is None:
+                    continue  # filtered out by prompt_filter or non-human UPN
+
+                (group_key, event_count, items_accessed_count,
+                 creation_time, original_uid, is_agent) = result
+                stats["virtual_exploded_event_count"] += event_count
+
+                # Accumulate into rollup dict
+                if group_key in rollup:
+                    acc = rollup[group_key]
+                    acc.event_count += event_count
+                    acc.items_accessed_count += items_accessed_count
+                    if is_agent:
+                        acc.is_agent_interaction = True
+                    if creation_time:
+                        if not acc.min_creation_time or creation_time < acc.min_creation_time:
+                            acc.min_creation_time = creation_time
+                        if not acc.max_creation_time or creation_time > acc.max_creation_time:
+                            acc.max_creation_time = creation_time
+                else:
+                    rollup[group_key] = RollupAccum(
+                        event_count=event_count,
+                        items_accessed=items_accessed_count,
+                        min_ct=creation_time,
+                        max_ct=creation_time,
+                        original_uid=original_uid,
+                        is_agent=is_agent,
                     )
-            stats["seeded_rows"] = len(rollup)
-            if not quiet:
-                print(f"  Pre-seeded {stats['seeded_rows']:,} rollup row(s) from append target")
-        except Exception as e:
-            print(f"WARNING: Failed to load append-target rollup '{append_target_rollup}': {e}", file=sys.stderr)
 
-    # ── Streaming read + accumulate ──────────────────────────────────────
-    with open(input_csv, "r", encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
-        for record in reader:
-            stats["input_records"] += 1
-
-            # Progress indicator
-            if not quiet and stats["input_records"] % 500_000 == 0:
-                print(f"  {stats['input_records']:>12,} records processed, "
-                      f"{len(rollup):,} groups...")
-
-            # Parse AuditData JSON
-            audit_data_raw = record.get("AuditData", "")
-            if not audit_data_raw or not isinstance(audit_data_raw, str) or not audit_data_raw.strip():
-                stats["parse_errors"] += 1
-                continue
-            try:
-                audit_data = json_loads(audit_data_raw)
-            except Exception:
-                stats["parse_errors"] += 1
-                continue
-            if not isinstance(audit_data, dict):
-                stats["parse_errors"] += 1
-                continue
-
-            ced = safe_get(audit_data, "CopilotEventData")
-            if ced and not isinstance(ced, dict):
-                ced = None
-
-            # Extract rollup keys (lightweight — no row dict built)
-            result = _extract_rollup_keys(record, audit_data, ced, prompt_filter)
-            if result is None:
-                continue  # filtered out by prompt_filter
-
-            group_key, event_count, creation_time, original_uid = result
-            stats["virtual_exploded_event_count"] += event_count
-
-            # Accumulate into rollup dict
-            if group_key in rollup:
-                acc = rollup[group_key]
-                acc.event_count += event_count
-                if creation_time:
-                    if not acc.min_creation_time or creation_time < acc.min_creation_time:
-                        acc.min_creation_time = creation_time
-                    if not acc.max_creation_time or creation_time > acc.max_creation_time:
-                        acc.max_creation_time = creation_time
-            else:
-                rollup[group_key] = RollupAccum(
-                    event_count=event_count,
-                    min_ct=creation_time,
-                    max_ct=creation_time,
-                    original_uid=original_uid,
-                )
+                # ── SessionStats accumulation (v2.6.0 — AI in One parity) ───
+                # Only records with a CopilotEventData payload contribute. Threads
+                # without at least one user prompt are excluded (matches AI in One
+                # `Message_isPrompt = TRUE` filter).
+                if track_sessions and ced:
+                    msgs = get_array_fast(ced, "Messages")
+                    prompts_here = 0
+                    responses_here = 0
+                    for m in msgs:
+                        ip = safe_get(m, "isPrompt")
+                        if ip is True:
+                            prompts_here += 1
+                        elif ip is False:
+                            responses_here += 1
+                    thread_id = _norm_key_str(safe_get(ced, "ThreadId"))
+                    # group_key layout: (uid_lower, creation_date, op, wl, sfe,
+                    # app_host, agent_id, agent_name, context_type)
+                    skey: SessionKey = (group_key[0], group_key[1], group_key[5])
+                    sacc = sessions.get(skey)
+                    if sacc is None:
+                        sacc = SessionAccum(original_uid=original_uid)
+                        sessions[skey] = sacc
+                    sacc.prompt_count += prompts_here
+                    sacc.response_count += responses_here
+                    if thread_id and prompts_here > 0:
+                        sacc.thread_ids.add(thread_id)
+                        if is_agent:
+                            sacc.agent_thread_ids.add(thread_id)
+                        stats["session_prompts"] += prompts_here
 
     # ── Write rollup output CSV ──────────────────────────────────────────
     stats["output_rows"] = len(rollup)
@@ -6457,7 +6767,7 @@ def run_rollup(
     with open(output_csv, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f, lineterminator="\n")
         writer.writerow(ROLLUP_HEADER)
-        for (uid_lower, cdate, op, wl, sfe, ah), acc in rollup.items():
+        for (uid_lower, cdate, op, wl, sfe, ah, agent_id, agent_name, ctx_type), acc in rollup.items():
             writer.writerow([
                 acc.original_user_id,  # output original casing, NOT lowered key
                 cdate,
@@ -6466,9 +6776,36 @@ def run_rollup(
                 sfe,
                 ah,
                 acc.event_count,
+                acc.items_accessed_count,
                 acc.min_creation_time,   # CreationTime = MIN
                 acc.max_creation_time,   # MaxCreationTime = MAX
+                agent_id,
+                agent_name,
+                ctx_type,
+                "TRUE" if acc.is_agent_interaction else "FALSE",
             ])
+
+    # ── SessionStats CSV (v2.6.0 — AI in One parity) ─────────────────────
+    if track_sessions:
+        os.makedirs(os.path.dirname(os.path.abspath(session_stats_csv)), exist_ok=True)
+        with open(session_stats_csv, "w", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f, lineterminator="\n")
+            writer.writerow(SESSIONSTATS_HEADER)
+            for (uid_lower, cdate, ah), sacc in sessions.items():
+                session_count = len(sacc.thread_ids)
+                if session_count == 0 and sacc.prompt_count == 0:
+                    continue  # no signal — skip
+                writer.writerow([
+                    sacc.original_user_id,
+                    cdate,
+                    ah,
+                    session_count,
+                    sacc.prompt_count,
+                    sacc.response_count,
+                    len(sacc.agent_thread_ids),
+                ])
+                stats["session_rows"] += 1
+                stats["session_threads"] += session_count
 
     t_elapsed = time.perf_counter() - t_start
 
@@ -6491,6 +6828,13 @@ def run_rollup(
         if stats["input_records"] > 0 and t_elapsed > 0:
             print(f"  Throughput:                 {stats['input_records'] / t_elapsed:>12,.0f} input records/sec")
         print(f"  Output file:                {output_csv}")
+        if track_sessions:
+            print()
+            print("=== SESSIONSTATS SUMMARY (AI in One parity) ===")
+            print(f"  SessionStats rows:          {stats['session_rows']:>14,}")
+            print(f"  Distinct Copilot sessions:  {stats['session_threads']:>14,}")
+            print(f"  User prompts counted:       {stats['session_prompts']:>14,}")
+            print(f"  Output file:                {session_stats_csv}")
         print()
 
     return stats
@@ -6542,6 +6886,8 @@ def run_reconcile(
     for record in sample:
         try:
             rows = explode_record(record, prompt_filter=prompt_filter)
+            # Apply same non-human UPN filter as rollup path so totals reconcile
+            rows = [r for r in rows if _is_human_upn(r.get("UserId", ""))]
             event_rows.extend(rows)
         except Exception:
             event_errors += 1
@@ -6570,11 +6916,15 @@ def run_reconcile(
         result = _extract_rollup_keys(record, audit_data, ced, prompt_filter)
         if result is None:
             continue
-        group_key, event_count, creation_time, original_uid = result
+        (group_key, event_count, items_accessed_count,
+         creation_time, original_uid, is_agent) = result
 
         if group_key in rollup_sample:
             acc = rollup_sample[group_key]
             acc.event_count += event_count
+            acc.items_accessed_count += items_accessed_count
+            if is_agent:
+                acc.is_agent_interaction = True
             if creation_time:
                 if not acc.min_creation_time or creation_time < acc.min_creation_time:
                     acc.min_creation_time = creation_time
@@ -6583,9 +6933,11 @@ def run_reconcile(
         else:
             rollup_sample[group_key] = RollupAccum(
                 event_count=event_count,
+                items_accessed=items_accessed_count,
                 min_ct=creation_time,
                 max_ct=creation_time,
                 original_uid=original_uid,
+                is_agent=is_agent,
             )
 
     # ── Compare totals ───────────────────────────────────────────────────
@@ -6630,10 +6982,12 @@ def run_reconcile(
     # Helper: sum EventCount from rollup for matching groups
     def _ru_count(**filters: str | set) -> int:
         total = 0
-        for (uid_l, cdate, op, wl, sfe, ah), acc in rollup_sample.items():
+        for (uid_l, cdate, op, wl, sfe, ah, agent_id, agent_name, ctx_type), acc in rollup_sample.items():
             match = True
             key_map = {"Operation": op, "Workload": wl,
-                       "SourceFileExtension": sfe, "AppHost": ah}
+                       "SourceFileExtension": sfe, "AppHost": ah,
+                       "AgentId": agent_id, "AgentName": agent_name,
+                       "ContextType": ctx_type}
             for col, val in filters.items():
                 key_val = key_map.get(col, "")
                 if isinstance(val, set):
@@ -6663,10 +7017,10 @@ def run_reconcile(
            _ru_count(Operation="CopilotInteraction", AppHost="Teams"),
            _ev_count(Operation="CopilotInteraction", AppHost="Teams"))
 
-    # Check 4: Excel FileViewed
-    _check("Excel FileViewed (Operation=FileViewed, SourceFileExtension in xlsx/xls/xlsm/csv)",
-           _ru_count(Operation="FileViewed", SourceFileExtension={"xlsx", "xls", "xlsm", "csv"}),
-           _ev_count(Operation="FileViewed", SourceFileExtension={"xlsx", "xls", "xlsm", "csv"}))
+    # Check 4: Excel FileAccessed (was FileViewed in pre-v2.3 — renamed via OP_RENAME)
+    _check("Excel FileAccessed (Operation=FileAccessed, SourceFileExtension in xlsx/xls/xlsm/csv)",
+           _ru_count(Operation="FileAccessed", SourceFileExtension={"xlsx", "xls", "xlsm", "csv"}),
+           _ev_count(Operation="FileAccessed", SourceFileExtension={"xlsx", "xls", "xlsm", "csv"}))
 
     # ── Temporal checks ──────────────────────────────────────────────────
     rollup_min_ct = min((acc.min_creation_time for acc in rollup_sample.values() if acc.min_creation_time), default="")
@@ -6683,7 +7037,7 @@ def run_reconcile(
         reduction_pct = 0.0
         if event_total > 0:
             reduction_pct = (1 - len(rollup_sample) / event_total) * 100
-        print(f"  Event-level rows: {event_total:,}  →  Rollup groups: {len(rollup_sample):,}"
+        print(f"  Event-level rows: {event_total:,}  ->  Rollup groups: {len(rollup_sample):,}"
               f"  ({reduction_pct:.1f}% reduction)")
         print(f"  Overall: {'ALL CHECKS PASSED' if all_pass else 'SOME CHECKS FAILED'}")
         print()
@@ -6700,11 +7054,17 @@ def write_userstats_files(
     userstats_csv_path: str | Path,
     session_csv_path: str | Path,
     quiet: bool,
+    session_stats_csv_path: str | Path | None = None,
 ) -> tuple[int, int]:
     """
     Read the just-written aggregated rollup CSV and produce two additional files:
       *_UserStats.csv     — one row per unique UserId with pre-computed metrics
       *_SessionCohort.csv — one row per (UserId, AppColumn) with session cohort label
+
+    When `session_stats_csv_path` is provided (v2.6.0+), the CECopilotPercentile_*
+    columns are computed from per-user PromptCount (human interactions) instead of
+    raw audit-event counts. This matches the AI in One semantics and prevents
+    service-principal / plugin-chain inflation from skewing the CE Quadrant.
 
     Returns (user_count, session_cohort_row_count).
     """
@@ -6737,7 +7097,53 @@ def write_userstats_files(
     o_ec: dict[str, int] = defaultdict(int)
     off_ec: dict[str, int] = defaultdict(int)
 
+    # ── v2.5.0: DAX-aligned per-user raw activity counts, computed per window.
+    # Three windows (L30, L60, Full) feed both the LP <App> Weighted measures and the
+    # CE percentile ranks. Each is a dict keyed by window code → {uid: count}.
+    def _wbuckets() -> dict[str, dict[str, int]]:
+        return {w: defaultdict(int) for w in RANK_WINDOWS}
+    teams_raw = _wbuckets()
+    outlook_raw = _wbuckets()
+    word_raw = _wbuckets()
+    excel_raw = _wbuckets()
+    ppt_raw = _wbuckets()
+    copilot_chat_raw = _wbuckets()        # Operation = "CopilotInteraction" (LP)
+    ce_copilot_raw = _wbuckets()          # broad: Workload="Copilot" OR Op contains "CopilotInteraction" (CE)
+
     session_ops: dict[tuple[str, str], set[str]] = defaultdict(set)
+
+    # Track every distinct CreationDate seen in the rollup so we can
+    # derive the data-window span (max - min + 1 calendar days) and
+    # normalize the engagement segmentation to active-days-per-week.
+    all_dates: set[str] = set()
+
+    # ── v2.5.0: Pass 1 — determine the trailing-window cutoffs ──────────
+    # Scan CreationDate only to find the most-recent date in the rollup. Cutoffs
+    # are inclusive lower bounds; a row qualifies for window W iff date_key >= cutoff[W].
+    # The "Full" window has no cutoff and always qualifies.
+    _d_max_str = ""
+    with open(agg_path, "r", encoding="utf-8-sig", newline="") as _f:
+        _r = csv.DictReader(_f)
+        for _row in _r:
+            _dk = (_row.get("CreationDate", "") or "")[:10]
+            if _dk and _dk > _d_max_str:
+                _d_max_str = _dk
+    if _d_max_str:
+        try:
+            _d_max = date.fromisoformat(_d_max_str)
+            cutoff_l30 = (_d_max - timedelta(days=29)).isoformat()
+            cutoff_l60 = (_d_max - timedelta(days=59)).isoformat()
+        except ValueError:
+            # Bad date — fall back to "everything qualifies"
+            cutoff_l30 = ""
+            cutoff_l60 = ""
+    else:
+        # No data — sentinel that nothing qualifies for L30/L60 (Full still does)
+        cutoff_l30 = "9999-12-31"
+        cutoff_l60 = "9999-12-31"
+    if not quiet:
+        print(f"[UserStats] Window cutoffs: L30 >= {cutoff_l30 or '(all)'}, "
+              f"L60 >= {cutoff_l60 or '(all)'}, max date = {_d_max_str or '(none)'}")
 
     # ── Stream through aggregated CSV ────────────────────────────────────
     row_count = 0
@@ -6756,6 +7162,9 @@ def write_userstats_files(
             wl = row.get("Workload", "")
             ext = (row.get("SourceFileExtension", "") or "").lower()
             app_host = (row.get("AppHost", "") or "").lower()
+
+            if date_key:
+                all_dates.add(date_key)
 
             try:
                 event_count = int(row.get("EventCount", "1") or "1")
@@ -6792,10 +7201,37 @@ def write_userstats_files(
             # Activity event counts
             if wl == "MicrosoftTeams" and op in TEAMS_OPS:
                 t_ec[uid_lower] += event_count
-            if wl == "Exchange" and op in OUTLOOK_ACT_OPS:
+            if wl == "Exchange" and op in OUTLOOK_OPS:
                 o_ec[uid_lower] += event_count
             if ext in OFFICE_EXTS and op in FILE_OPS:
                 off_ec[uid_lower] += event_count
+
+            # ── v2.5.0: DAX-aligned raw counts, accumulated per window.
+            # Helper closure: write to Full always; to L60/L30 only if the row's
+            # date_key satisfies the trailing-window cutoff.
+            def _bump(buckets: dict[str, dict[str, int]], n: int) -> None:
+                buckets["Full"][uid_lower] += n
+                if date_key >= cutoff_l60:
+                    buckets["L60"][uid_lower] += n
+                if date_key >= cutoff_l30:
+                    buckets["L30"][uid_lower] += n
+
+            if wl == "MicrosoftTeams" and op in DAX_TEAMS_OPS:
+                _bump(teams_raw, event_count)
+            if wl == "Exchange" and op in DAX_OUTLOOK_OPS:
+                _bump(outlook_raw, event_count)
+            if op in DAX_FILE_OPS:
+                if ext in WORD_EXTS:
+                    _bump(word_raw, event_count)
+                elif ext in EXCEL_EXTS:
+                    _bump(excel_raw, event_count)
+                elif ext in PPT_EXTS:
+                    _bump(ppt_raw, event_count)
+            if op == "CopilotInteraction":
+                _bump(copilot_chat_raw, event_count)
+            # CE Copilot Percentile filter: Workload="Copilot" OR Operation contains "CopilotInteraction"
+            if wl == "Copilot" or "CopilotInteraction" in op:
+                _bump(ce_copilot_raw, event_count)
 
             # Session cohort: distinct active dates per (user, app)
             app = app_column(ext, op, wl)
@@ -6806,6 +7242,26 @@ def write_userstats_files(
         if not quiet:
             print("[UserStats] Aggregated CSV has 0 rows — skipping.")
         return 0, 0
+
+    # ── Data-window span ────────────────────────────────────────────────
+    # Calendar-day span between the earliest and latest CreationDate in the
+    # rollup, inclusive. Used to normalize per-app engagement segments to
+    # active-days-per-week, so labels mean the same thing whether the pull
+    # covers 8 days, 30 days, or 6 months.
+    if all_dates:
+        try:
+            d_min = min(all_dates)
+            d_max = max(all_dates)
+            window_days = (
+                date.fromisoformat(d_max) - date.fromisoformat(d_min)
+            ).days + 1
+        except ValueError:
+            window_days = max(len(all_dates), 1)
+    else:
+        window_days = 1
+    if not quiet:
+        print(f"[UserStats] Data window: {window_days} calendar day(s) "
+              f"({d_min if all_dates else '?'} -> {d_max if all_dates else '?'})")
 
     # ── Percentile thresholds ────────────────────────────────────────────
     all_uids = sorted(uid_original.keys())
@@ -6840,6 +7296,84 @@ def write_userstats_files(
     cop_rank = compute_ranks({u: cop_ec.get(u, 0) for u in copilot_uids})
     m365_rank = compute_ranks({u: m365_ec.get(u, 0) for u in all_uids})
 
+    # ── v2.5.0: CE percentile ranks per window (integer 0–100, match DAX exactly) ──
+    # DAX formula: ROUND( COUNTROWS(users with score <= mine) / COUNTROWS(users with score > 0) * 100 , 0)
+    # Users with score 0 / no activity → BLANK (we emit empty string).
+    def _ce_rank_pct(scores: dict[str, int]) -> dict[str, str]:
+        """Return DAX-exact CE percentile rank per user, as a string ('' for BLANK)."""
+        positives = sorted(v for v in scores.values() if v > 0)
+        total = len(positives)
+        out: dict[str, str] = {}
+        if total == 0:
+            return {u: "" for u in scores}
+        for u, v in scores.items():
+            if v <= 0:
+                out[u] = ""
+            else:
+                below = bisect.bisect_right(positives, v)
+                out[u] = str(round(below / total * 100))
+        return out
+
+    # M365 All Apps raw is derived per window (sum of 5 app raws). LP has no M365-AllApps
+    # measure, so we only compute the rank — not stored as a column.
+    m365_all_apps_raw = {
+        w: {
+            u: teams_raw[w].get(u, 0) + outlook_raw[w].get(u, 0) + word_raw[w].get(u, 0)
+               + excel_raw[w].get(u, 0) + ppt_raw[w].get(u, 0)
+            for u in all_uids
+        }
+        for w in RANK_WINDOWS
+    }
+    ce_rank_teams   = {w: _ce_rank_pct({u: teams_raw[w].get(u, 0)   for u in all_uids}) for w in RANK_WINDOWS}
+    ce_rank_outlook = {w: _ce_rank_pct({u: outlook_raw[w].get(u, 0) for u in all_uids}) for w in RANK_WINDOWS}
+    ce_rank_word    = {w: _ce_rank_pct({u: word_raw[w].get(u, 0)    for u in all_uids}) for w in RANK_WINDOWS}
+    ce_rank_excel   = {w: _ce_rank_pct({u: excel_raw[w].get(u, 0)   for u in all_uids}) for w in RANK_WINDOWS}
+    ce_rank_ppt     = {w: _ce_rank_pct({u: ppt_raw[w].get(u, 0)     for u in all_uids}) for w in RANK_WINDOWS}
+    ce_rank_all     = {w: _ce_rank_pct(m365_all_apps_raw[w])                              for w in RANK_WINDOWS}
+
+    # ── v2.6.0: CE Copilot Percentile based on PROMPT COUNT (human interactions) ──
+    # Read the SessionStats CSV (if produced by run_rollup) and tally PromptCount per
+    # user per window. This is the AI in One semantics: one count per `isPrompt=TRUE`
+    # message — resistant to AI-response fanout, plugin chains, retries, and most
+    # service-principal noise. Falls back to audit-event tally if SessionStats is
+    # missing (older script invocations).
+    prompt_raw = _wbuckets()
+    if session_stats_csv_path:
+        _ss = Path(session_stats_csv_path)
+        if _ss.is_file():
+            with open(_ss, "r", encoding="utf-8-sig", newline="") as _f:
+                _r = csv.DictReader(_f)
+                for _row in _r:
+                    _uid = (_row.get("UserId") or "").strip().lower()
+                    if not _uid:
+                        continue
+                    _date_key = (_row.get("CreationDate") or "")[:10]
+                    try:
+                        _pc = int(_row.get("PromptCount") or 0)
+                    except ValueError:
+                        _pc = 0
+                    if _pc <= 0:
+                        continue
+                    prompt_raw["Full"][_uid] += _pc
+                    if cutoff_l60 and _date_key >= cutoff_l60:
+                        prompt_raw["L60"][_uid] += _pc
+                    if cutoff_l30 and _date_key >= cutoff_l30:
+                        prompt_raw["L30"][_uid] += _pc
+            if not quiet:
+                _tot = sum(prompt_raw["Full"].values())
+                print(f"[UserStats] CE Copilot Percentile source: PromptCount "
+                      f"({_tot:,} prompts across {len(prompt_raw['Full']):,} users)")
+        else:
+            if not quiet:
+                print(f"[UserStats] WARNING: SessionStats CSV not found: {_ss} — "
+                      f"falling back to audit-event count for CE Copilot Percentile.",
+                      file=sys.stderr)
+            prompt_raw = ce_copilot_raw  # fallback to legacy event-based percentile
+    else:
+        prompt_raw = ce_copilot_raw  # legacy mode (script invoked without SessionStats)
+
+    ce_copilot_pct  = {w: _ce_rank_pct({u: prompt_raw[w].get(u, 0) for u in all_uids}) for w in RANK_WINDOWS}
+
     # ── Write *_UserStats.csv ────────────────────────────────────────────
     with open(userstats_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f, lineterminator="\n")
@@ -6873,21 +7407,21 @@ def write_userstats_files(
             o_act = o_ec.get(uid, 0)
             off_act = off_ec.get(uid, 0)
 
-            t_seg = "0. No Usage" if td == 0 else seg_fn(td)
-            o_seg = "0. No Usage" if od == 0 else seg_fn(od)
-            w_seg = "0. No Usage" if wd == 0 else seg_fn(wd)
-            x_seg = "0. No Usage" if xd == 0 else seg_fn(xd)
-            p_seg = "0. No Usage" if pd_ == 0 else seg_fn(pd_)
+            t_seg = "0. No Usage" if td == 0 else seg_fn(td, window_days)
+            o_seg = "0. No Usage" if od == 0 else seg_fn(od, window_days)
+            w_seg = "0. No Usage" if wd == 0 else seg_fn(wd, window_days)
+            x_seg = "0. No Usage" if xd == 0 else seg_fn(xd, window_days)
+            p_seg = "0. No Usage" if pd_ == 0 else seg_fn(pd_, window_days)
 
             office_days = wd + xd + pd_
-            off_seg = "0. No Usage" if office_days == 0 else seg_fn(office_days)
+            off_seg = "0. No Usage" if office_days == 0 else seg_fn(office_days, window_days)
 
             overall_days = len(
                 t_days.get(uid, set()) | o_days.get(uid, set()) |
                 w_days.get(uid, set()) | x_days.get(uid, set()) |
                 p_days.get(uid, set())
             )
-            overall_seg = "0. No Usage" if overall_days == 0 else seg_fn(overall_days)
+            overall_seg = "0. No Usage" if overall_days == 0 else seg_fn(overall_days, window_days)
 
             writer.writerow([
                 uid_original[uid],
@@ -6899,6 +7433,21 @@ def write_userstats_files(
                 t_act, o_act, off_act,
                 t_seg, o_seg, w_seg, x_seg, p_seg,
                 off_seg, overall_seg,
+                # v2.5.0: precomputed raw + CE rank columns per window (order must
+                # match USERSTATS_HEADER: 6 raws × 3 windows, then 7 ranks × 3 windows)
+                teams_raw["L30"].get(uid, 0),   teams_raw["L60"].get(uid, 0),   teams_raw["Full"].get(uid, 0),
+                outlook_raw["L30"].get(uid, 0), outlook_raw["L60"].get(uid, 0), outlook_raw["Full"].get(uid, 0),
+                word_raw["L30"].get(uid, 0),    word_raw["L60"].get(uid, 0),    word_raw["Full"].get(uid, 0),
+                excel_raw["L30"].get(uid, 0),   excel_raw["L60"].get(uid, 0),   excel_raw["Full"].get(uid, 0),
+                ppt_raw["L30"].get(uid, 0),     ppt_raw["L60"].get(uid, 0),     ppt_raw["Full"].get(uid, 0),
+                copilot_chat_raw["L30"].get(uid, 0), copilot_chat_raw["L60"].get(uid, 0), copilot_chat_raw["Full"].get(uid, 0),
+                ce_rank_teams["L30"][uid],     ce_rank_teams["L60"][uid],     ce_rank_teams["Full"][uid],
+                ce_rank_outlook["L30"][uid],   ce_rank_outlook["L60"][uid],   ce_rank_outlook["Full"][uid],
+                ce_rank_word["L30"][uid],      ce_rank_word["L60"][uid],      ce_rank_word["Full"][uid],
+                ce_rank_excel["L30"][uid],     ce_rank_excel["L60"][uid],     ce_rank_excel["Full"][uid],
+                ce_rank_ppt["L30"][uid],       ce_rank_ppt["L60"][uid],       ce_rank_ppt["Full"][uid],
+                ce_rank_all["L30"][uid],       ce_rank_all["L60"][uid],       ce_rank_all["Full"][uid],
+                ce_copilot_pct["L30"][uid],    ce_copilot_pct["L60"][uid],    ce_copilot_pct["Full"][uid],
             ])
 
     # ── Write *_SessionCohort.csv ────────────────────────────────────────
@@ -6931,9 +7480,9 @@ def write_userstats_files(
     t_elapsed = time.perf_counter() - t_start
 
     if not quiet:
-        print(f"[UserStats]     {total_users:,} users -> {userstats_path.name} "
+        print(f"[UserStats]     {total_users:,} users \u2192 {userstats_path.name} "
               f"({len(USERSTATS_HEADER)} columns)")
-        print(f"[SessionCohort] {session_count:,} (user, app) pairs -> {session_path.name}")
+        print(f"[SessionCohort] {session_count:,} (user, app) pairs \u2192 {session_path.name}")
         print(f"[UserStats]     Elapsed: {t_elapsed:.2f}s")
 
     return total_users, session_count
@@ -6945,80 +7494,173 @@ def write_userstats_files(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description=f"Purview M365 Usage Bundle Explosion Processor v{SCRIPT_VERSION} — "
-        "Rollup-aggregated or event-level export of Purview audit log CSV for Power BI.",
+        prog="purview_m365_processor",
+        description=(
+            f"Purview M365 Usage Bundle Processor v{SCRIPT_VERSION}\n"
+            "Pre-computes the M365 Usage rollup + UserStats + SessionCohort CSVs\n"
+            "consumed by the Power BI template. Accepts either layout:\n"
+            "  (A) ONE PAX / PowerShell export ............ use --pax\n"
+            "  (B) FOUR manual Purview Audit exports ...... use --teams --outlook --files --copilot\n"
+            "Output schema is IDENTICAL for both layouts — same PBIT template ingests either."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
-examples (rollup — default, 80%%+ row reduction):
-  python %(prog)s --input Purview_Export.csv
-  python %(prog)s -i Purview_Export.csv --output-dir ./output
+EXAMPLES
+========
 
-examples (event-level — v1-compatible 153-column output):
-  python %(prog)s --mode event-level -i Purview_Export.csv
-  python %(prog)s --mode event-level -i Purview_Export.csv --output-dir ./output
+(A) Single PAX export (PAX tool or PowerShell Search-UnifiedAuditLog):
 
-reconciliation (validate rollup correctness on a sample):
-  python %(prog)s -i Purview_Export.csv --reconcile
+    python %(prog)s --pax Purview_Export.csv
+
+    python %(prog)s --pax Purview_Export.csv --output-dir ./output
+
+
+(B) Manual 4-pull export from Purview Audit (validated chip strategy):
+
+      Teams   (7d):  MessageSent, MessageRead, ChatCreated, TeamsSessionStarted,
+                     MeetingParticipantDetail
+      Outlook (30d): MailItemsAccessed, Send, MailboxLogin
+      Files   (60d): FileAccessed, FileModified, FileDownloaded, FileUploaded
+      Copilot (30d): CopilotInteraction, AIAppInteraction   (filter by record type)
+
+    python %(prog)s ^
+        --teams   Teams_Export.csv ^
+        --outlook Outlook_Export.csv ^
+        --files   Files_Export.csv ^
+        --copilot Copilot_Export.csv ^
+        --output-dir .\output
+
+
+OUTPUT (rollup mode, both layouts produce the same three files):
+
+    <stem>_Rollup_<timestamp>.csv         13 cols  -> M365Usage table
+    <stem>_UserStats_<timestamp>.csv      40 cols  -> UserStats table
+    <stem>_SessionCohort_<timestamp>.csv   3 cols  -> SessionCohort table
+
+  <stem> defaults to the input file's name (single input) or '<firstInputStem>_Combined'
+  (multi-input). Rename the file or use --output-dir if you want a tenant-named folder.
+
+
+ADVANCED
+========
+  --reconcile         Sample-based correctness check vs full event-level explosion.
+  --debug-events      v1-compatible 153-column event-level CSV (single input only).
+  --skip-precompute   Skip UserStats and SessionCohort generation.
+  --prompt-filter     Copilot message filter: Prompt | Response | Both | Null.
+  --input/-i          Power-user / scripted fallback for one or more CSVs.
 """,
     )
-    parser.add_argument(
+
+    # ── Input layout (mutually exclusive, exactly one required) ──────────
+    layout = parser.add_argument_group(
+        "INPUT LAYOUT  (choose ONE shape that matches how you exported the data)"
+    )
+    layout.add_argument(
+        "--pax",
+        metavar="CSV",
+        help="(A) Single CSV from PAX or PowerShell Search-UnifiedAuditLog.",
+    )
+    layout.add_argument(
+        "--teams",
+        metavar="CSV",
+        help="(B) Teams workload pull from Purview Audit.",
+    )
+    layout.add_argument(
+        "--outlook",
+        metavar="CSV",
+        help="(B) Outlook / Exchange workload pull from Purview Audit.",
+    )
+    layout.add_argument(
+        "--files",
+        metavar="CSV",
+        help="(B) Files (SharePoint + OneDrive) workload pull from Purview Audit.",
+    )
+    layout.add_argument(
+        "--copilot",
+        metavar="CSV",
+        help="(B) Copilot record-type pull (CopilotInteraction + AIAppInteraction).",
+    )
+    layout.add_argument(
         "--input", "-i",
-        required=True,
-        help="Path to the input Purview audit log CSV file (must contain AuditData column).",
+        nargs="+",
+        metavar="CSV",
+        help="Power-user fallback: one or more CSV paths (any combination).",
     )
-    parser.add_argument(
+
+    # ── Output naming & location ─────────────────────────────────────────
+    output = parser.add_argument_group("OUTPUT")
+    output.add_argument(
         "--output-dir", "-o",
+        metavar="DIR",
         default=None,
-        help="Directory for output files. Default: same directory as the input file.",
+        help="Directory for output files. Default: same folder as the (first) input.",
     )
-    parser.add_argument(
-        "--mode", "-m",
-        choices=["rollup", "event-level"],
-        default="rollup",
-        help="Processing mode. 'rollup' (default): 9-column aggregated output with 80%%+ row reduction. "
-             "'event-level': v1-compatible 153-column output with one row per event.",
+
+    # ── Optional behaviour flags ─────────────────────────────────────────
+    advanced = parser.add_argument_group("ADVANCED")
+    advanced.add_argument(
+        "--skip-precompute",
+        action="store_true",
+        default=False,
+        help="Skip *_UserStats.csv and *_SessionCohort.csv (only the Rollup is written).",
     )
-    parser.add_argument(
+    advanced.add_argument(
+        "--no-session-stats",
+        action="store_true",
+        default=False,
+        help="Skip *_SessionStats.csv (the AI in One DISTINCTCOUNT(ThreadId) output).",
+    )
+    advanced.add_argument(
+        "--debug-events",
+        action="store_true",
+        default=False,
+        help="Emit v1-compatible 153-column event-level CSV instead of the rollup (single input only).",
+    )
+    advanced.add_argument(
         "--reconcile",
         action="store_true",
         default=False,
-        help="Run sample-based reconciliation after processing to validate rollup correctness.",
+        help="Run sample-based reconciliation against the first input.",
     )
-    parser.add_argument(
+    advanced.add_argument(
         "--prompt-filter",
         choices=["Prompt", "Response", "Both", "Null"],
         default=None,
-        help="Filter Copilot messages: Prompt (user only), Response (AI only), Both (non-null), Null (null isPrompt).",
+        help="Filter Copilot messages by isPrompt value.",
     )
-    parser.add_argument(
-        "--no-userstats",
-        action="store_true",
-        default=False,
-        help="Skip generating *_UserStats.csv and *_SessionCohort.csv (rollup mode only).",
-    )
-    parser.add_argument(
-        "--append-target-rollup",
-        default=None,
-        help=(
-            "Optional path to an existing target Rollup CSV. When supplied (rollup mode), "
-            "pre-seeds the accumulator dict before streaming new records, producing a "
-            "union merge. UserStats / SessionCohort are recomputed over the merged Rollup."
-        ),
-    )
-    parser.add_argument(
-        "--exclude-record-ids",
-        default=None,
-        help=(
-            "Optional path to a newline-delimited file of RecordIds to skip (event-level "
-            "mode only). Mirrors the PowerShell $seenIds semantic for cross-run dedup of "
-            "Exploded.csv outputs."
-        ),
-    )
-    parser.add_argument(
+    advanced.add_argument(
         "--quiet", "-q",
         action="store_true",
         default=False,
         help="Suppress progress output (only errors are printed).",
+    )
+    # Hidden legacy alias (kept for older scripts that referenced --no-userstats).
+    advanced.add_argument(
+        "--no-userstats",
+        dest="skip_precompute",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    advanced.add_argument(
+        "--rebuild-sidecars-from-rollup",
+        metavar="ROLLUP_CSV",
+        default=None,
+        help=(
+            "Regenerate UserStats and SessionCohort sidecars from an existing rollup CSV "
+            "(no Purview input required). Sidecars are written to --output-dir (default: "
+            "the rollup's parent directory) using the rollup's base stem."
+        ),
+    )
+    advanced.add_argument(
+        "--session-stats-for-rebuild",
+        metavar="SESSIONSTATS_CSV",
+        default=None,
+        help=(
+            "Optional companion to --rebuild-sidecars-from-rollup: when supplied, the "
+            "CECopilotPercentile_* columns are computed from this SessionStats CSV's "
+            "PromptCount (AI in One semantics). If omitted, the sidecar rebuild falls "
+            "back to the audit-event count (legacy behaviour)."
+        ),
     )
     parser.add_argument(
         "--version",
@@ -7028,55 +7670,134 @@ reconciliation (validate rollup correctness on a sample):
 
     args = parser.parse_args()
 
-    input_path = os.path.abspath(args.input)
-    if not os.path.isfile(input_path):
-        print(f"ERROR: Input file not found: {input_path}", file=sys.stderr)
-        sys.exit(1)
+    # ── Standalone sidecar regeneration mode ─────────────────────────────
+    # When --rebuild-sidecars-from-rollup is supplied, ignore every other
+    # input/dispatch flag and rebuild UserStats + SessionCohort sidecars
+    # from the given rollup CSV. Used by the PAX append-merge workflow
+    # after the PowerShell side unions the current run's rollup with a
+    # customer-supplied target.
+    if args.rebuild_sidecars_from_rollup:
+        rollup_in = os.path.abspath(args.rebuild_sidecars_from_rollup)
+        if not os.path.isfile(rollup_in):
+            print(f"ERROR: Rollup CSV not found: {rollup_in}", file=sys.stderr)
+            sys.exit(1)
+        session_stats_in: str | None = None
+        if args.session_stats_for_rebuild:
+            session_stats_in = os.path.abspath(args.session_stats_for_rebuild)
+            if not os.path.isfile(session_stats_in):
+                print(
+                    f"ERROR: SessionStats CSV not found: {session_stats_in}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+        out_dir = (
+            Path(os.path.abspath(args.output_dir))
+            if args.output_dir
+            else Path(rollup_in).parent
+        )
+        os.makedirs(out_dir, exist_ok=True)
+        rollup_stem = Path(rollup_in).stem
+        m = re.match(r"^(.*?)(?:_Rollup(?:_\d{8}_\d{6})?)$", rollup_stem)
+        base_stem = m.group(1) if m else rollup_stem
+        run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        userstats_path = str(out_dir / f"{base_stem}_UserStats_{run_ts}.csv")
+        session_path = str(out_dir / f"{base_stem}_SessionCohort_{run_ts}.csv")
+        write_userstats_files(
+            rollup_in, userstats_path, session_path, args.quiet,
+            session_stats_csv_path=session_stats_in,
+        )
+        sys.exit(0)
 
-    # ── Determine output directory & build filenames ─────────────────────
-    stem = Path(input_path).stem
-    output_dir = Path(os.path.abspath(args.output_dir)) if args.output_dir else Path(input_path).parent
+    # ── Resolve the input layout into a flat list ────────────────────────
+    pax_inputs:  list[str] = [args.pax] if args.pax else []
+    workload_inputs: list[tuple[str, str]] = []  # [(label, path), ...] preserves order
+    for label in ("teams", "outlook", "files", "copilot"):
+        path = getattr(args, label)
+        if path:
+            workload_inputs.append((label, path))
+    legacy_inputs: list[str] = list(args.input) if args.input else []
+
+    if pax_inputs and workload_inputs:
+        parser.error("--pax cannot be combined with --teams/--outlook/--files/--copilot. "
+                     "Pick the shape that matches your export.")
+    if (pax_inputs or workload_inputs) and legacy_inputs:
+        parser.error("--input/-i cannot be combined with --pax or the workload flags.")
+
+    if pax_inputs:
+        input_paths = [os.path.abspath(pax_inputs[0])]
+        layout_label = "pax"
+    elif workload_inputs:
+        input_paths = [os.path.abspath(p) for _, p in workload_inputs]
+        layout_label = "manual_4pull"
+    elif legacy_inputs:
+        input_paths = [os.path.abspath(p) for p in legacy_inputs]
+        layout_label = "legacy_input"
+    else:
+        parser.error(
+            "No input given. Use ONE of:\n"
+            "    --pax <CSV>                                                    (single PAX export)\n"
+            "    --teams <T> --outlook <O> --files <F> --copilot <C>            (manual 4-pull export)\n"
+            "    --input/-i <CSV> [<CSV> ...]                                   (power-user fallback)"
+        )
+
+    for p in input_paths:
+        if not os.path.isfile(p):
+            print(f"ERROR: Input file not found: {p}", file=sys.stderr)
+            sys.exit(1)
+
+    # ── Determine output directory & filenames ───────────────────────────
+    first_stem = Path(input_paths[0]).stem
+    stem = first_stem if len(input_paths) == 1 else f"{first_stem}_Combined"
+
+    output_dir = Path(os.path.abspath(args.output_dir)) if args.output_dir else Path(input_paths[0]).parent
     os.makedirs(output_dir, exist_ok=True)
 
-    # Output stems inherit the timestamp already in the input filename
-    # (Purview_Audit_*_<ts>.csv) so the rollup outputs share the run timestamp
-    # without duplicating it.
+    run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    event_level = args.debug_events
 
-    if args.mode == "rollup":
-        rollup_path = str(output_dir / f"{stem}_Rollup.csv")
-        userstats_path = str(output_dir / f"{stem}_UserStats.csv")
-        session_path = str(output_dir / f"{stem}_SessionCohort.csv")
+    if not event_level:
+        rollup_path = str(output_dir / f"{stem}_Rollup_{run_ts}.csv")
+        userstats_path = str(output_dir / f"{stem}_UserStats_{run_ts}.csv")
+        session_path = str(output_dir / f"{stem}_SessionCohort_{run_ts}.csv")
+        session_stats_path: str | None = (
+            None if args.no_session_stats
+            else str(output_dir / f"{stem}_SessionStats_{run_ts}.csv")
+        )
     else:
-        rollup_path = str(output_dir / f"{stem}_Exploded.csv")
+        if len(input_paths) > 1:
+            print("ERROR: --debug-events accepts only one input CSV.", file=sys.stderr)
+            sys.exit(1)
+        rollup_path = str(output_dir / f"{stem}_Exploded_{run_ts}.csv")
+        session_stats_path = None
 
     # ── Dispatch ─────────────────────────────────────────────────────────
-    if args.mode == "rollup":
+    if not event_level:
         stats = run_rollup(
-            input_csv=input_path,
+            input_csv=input_paths if len(input_paths) > 1 else input_paths[0],
             output_csv=rollup_path,
             prompt_filter=args.prompt_filter,
             quiet=args.quiet,
-            append_target_rollup=args.append_target_rollup,
+            session_stats_csv=session_stats_path,
         )
         exit_code = 1 if stats["parse_errors"] > stats["input_records"] * 0.1 else 0
 
-        # ── UserStats & SessionCohort (derived from aggregated output) ───
-        if not args.no_userstats:
-            write_userstats_files(rollup_path, userstats_path, session_path, args.quiet)
+        if not args.skip_precompute:
+            write_userstats_files(
+                rollup_path, userstats_path, session_path, args.quiet,
+                session_stats_csv_path=session_stats_path,
+            )
     else:
         stats = run_explosion(
-            input_csv=input_path,
+            input_csv=input_paths[0],
             output_csv=rollup_path,
             prompt_filter=args.prompt_filter,
             quiet=args.quiet,
-            exclude_record_ids=args.exclude_record_ids,
         )
         exit_code = 1 if stats["errors"] > 0 else 0
 
-    # ── Optional reconciliation ──────────────────────────────────────────
     if args.reconcile:
         reconcile_passed = run_reconcile(
-            input_csv=input_path,
+            input_csv=input_paths[0],
             prompt_filter=args.prompt_filter,
             quiet=args.quiet,
         )
@@ -7892,6 +8613,313 @@ function Merge-FactCsv {
 	}
 }
 
+function Merge-M365RollupCsv {
+	<#
+	.SYNOPSIS
+		Union-merge a target M365Bundle rollup CSV with the current run's freshly-emitted rollup.
+
+	.DESCRIPTION
+		Post-Python helper for -AppendFile in M365Bundle mode. Performs a 9-tuple-keyed
+		union-merge with additive counter semantics:
+
+		  Composite key      : (lower(UserId), CreationDate, Operation, Workload,
+		                        lower(SourceFileExtension), AppHost, AgentId,
+		                        AgentName, ContextType)
+		  EventCount         : target + current
+		  ItemsAccessedCount : target + current
+		  CreationTime       : min(target, current)  (lexicographic on ISO-8601)
+		  MaxCreationTime    : max(target, current)
+		  IsAgentInteraction : OR  (any TRUE -> TRUE)
+		  UserId             : target's casing wins on retained groups (first-seen)
+
+		Schema tolerance: target may be a legacy 9- or 10-column rollup. Missing
+		columns are padded with empty strings; IsAgentInteraction defaults to FALSE.
+
+		Atomic rewrite: writes to '<output>.merging' and renames over -OutputPath.
+		-OutputPath defaults to -TargetRollupCsv (in-place append semantics).
+
+	.OUTPUTS
+		PSCustomObject with stats (Retained / New / Updated / Union).
+	#>
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)] [string] $TargetRollupCsv,
+		[Parameter(Mandatory)] [string] $CurrentRollupCsv,
+		[Parameter()]          [string] $OutputPath
+	)
+
+	if (-not (Test-Path -LiteralPath $CurrentRollupCsv -PathType Leaf)) {
+		throw "Merge-M365RollupCsv: current rollup CSV not found: '$CurrentRollupCsv'"
+	}
+	if ([string]::IsNullOrWhiteSpace($OutputPath)) { $OutputPath = $TargetRollupCsv }
+
+	# Canonical 14-column rollup header (order is contractual for downstream sidecar regen).
+	$rollupHeader = @(
+		'UserId','CreationDate','Operation','Workload','SourceFileExtension',
+		'AppHost','EventCount','ItemsAccessedCount','CreationTime','MaxCreationTime',
+		'AgentId','AgentName','ContextType','IsAgentInteraction'
+	)
+
+	# Project an incoming row onto the 14 canonical columns. Missing columns
+	# become '' (except IsAgentInteraction which defaults to 'FALSE' so legacy
+	# 9/10-col targets contribute correctly to the OR aggregate).
+	$projectRow = {
+		param($row)
+		$obj = [ordered]@{}
+		foreach ($c in $rollupHeader) {
+			$p = $row.PSObject.Properties[$c]
+			$obj[$c] = if ($p) { [string]$p.Value } else { '' }
+		}
+		if ([string]::IsNullOrWhiteSpace([string]$obj['IsAgentInteraction'])) {
+			$obj['IsAgentInteraction'] = 'FALSE'
+		}
+		return $obj
+	}
+
+	# Composite 9-tuple key (case-folded UserId + SourceFileExtension).
+	$makeKey = {
+		param($obj)
+		$userLc = ([string]$obj['UserId']).ToLowerInvariant()
+		$extLc  = ([string]$obj['SourceFileExtension']).ToLowerInvariant()
+		'{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}' -f `
+			$userLc, $obj['CreationDate'], $obj['Operation'], $obj['Workload'], `
+			$extLc, $obj['AppHost'], $obj['AgentId'], $obj['AgentName'], $obj['ContextType']
+	}
+
+	# Accumulate one (already-projected) row into an existing bucket entry.
+	$accumulateInto = {
+		param($acc, $obj)
+		$accEC = 0; [void][int]::TryParse([string]$acc['EventCount'],         [ref]$accEC)
+		$rEC   = 0; [void][int]::TryParse([string]$obj['EventCount'],         [ref]$rEC)
+		$accIA = 0; [void][int]::TryParse([string]$acc['ItemsAccessedCount'], [ref]$accIA)
+		$rIA   = 0; [void][int]::TryParse([string]$obj['ItemsAccessedCount'], [ref]$rIA)
+		$acc['EventCount']         = ($accEC + $rEC).ToString()
+		$acc['ItemsAccessedCount'] = ($accIA + $rIA).ToString()
+		$rCT  = [string]$obj['CreationTime']
+		$rMCT = [string]$obj['MaxCreationTime']
+		if (-not [string]::IsNullOrWhiteSpace($rCT)) {
+			$accCT = [string]$acc['CreationTime']
+			if ([string]::IsNullOrWhiteSpace($accCT) -or ($rCT -lt $accCT)) { $acc['CreationTime'] = $rCT }
+		}
+		if (-not [string]::IsNullOrWhiteSpace($rMCT)) {
+			$accMCT = [string]$acc['MaxCreationTime']
+			if ([string]::IsNullOrWhiteSpace($accMCT) -or ($rMCT -gt $accMCT)) { $acc['MaxCreationTime'] = $rMCT }
+		}
+		if (([string]$obj['IsAgentInteraction']).Equals('TRUE', [System.StringComparison]::OrdinalIgnoreCase)) {
+			$acc['IsAgentInteraction'] = 'TRUE'
+		}
+	}
+
+	# Load inputs.
+	$targetRows = @()
+	if (Test-Path -LiteralPath $TargetRollupCsv -PathType Leaf) {
+		$targetRows = @(script:Import-CsvDeduped -LiteralPath $TargetRollupCsv)
+	}
+	$currentRows = @(script:Import-CsvDeduped -LiteralPath $CurrentRollupCsv)
+
+	# Schema-narrowing warning for legacy 9/10-col targets.
+	if ($targetRows.Count -gt 0) {
+		$targetHeaders = @($targetRows[0].PSObject.Properties.Name)
+		$missing = @($rollupHeader | Where-Object { $_ -notin $targetHeaders })
+		if ($missing.Count -gt 0) {
+			Microsoft.PowerShell.Utility\Write-Host (
+				("WARNING: Merge-M365RollupCsv: target rollup is missing {0} of the {1} canonical columns " +
+				 "({2}). Padding with empty values; IsAgentInteraction defaults to FALSE. " +
+				 "Target: {3}") -f $missing.Count, $rollupHeader.Count, ($missing -join ','), $TargetRollupCsv
+			) -ForegroundColor Yellow
+		}
+	}
+
+	# Bucket: composite key -> accumulator ordered hashtable.
+	# Seed target rows first so the target's UserId casing wins on retained groups.
+	$bucket = [ordered]@{}
+	foreach ($r in $targetRows) {
+		$obj = & $projectRow $r
+		$k   = & $makeKey $obj
+		if ($bucket.Contains($k)) {
+			& $accumulateInto $bucket[$k] $obj
+		} else {
+			$bucket[$k] = $obj
+		}
+	}
+
+	# Snapshot keys present after target-seed (to classify Retained vs New for current rows).
+	$targetKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+	foreach ($k in $bucket.Keys) { [void]$targetKeys.Add($k) }
+
+	# Merge in current-run rows.
+	$newCount      = 0
+	$retainedCount = 0
+	$updatedCount  = 0
+	foreach ($r in $currentRows) {
+		$obj = & $projectRow $r
+		$k   = & $makeKey $obj
+		if ($bucket.Contains($k)) {
+			& $accumulateInto $bucket[$k] $obj
+			$updatedCount++
+			if ($targetKeys.Contains($k)) { $retainedCount++ }
+		} else {
+			$bucket[$k] = $obj
+			$newCount++
+		}
+	}
+
+	# Atomic rewrite: write to <out>.merging, rename over $OutputPath.
+	$unionCount = $bucket.Count
+	$tmpPath = "$OutputPath.merging"
+	[pscustomobject[]]$mergedRows = $bucket.Values | ForEach-Object { [pscustomobject]$_ }
+	$mergedRows | Select-Object -Property $rollupHeader | Export-Csv -LiteralPath $tmpPath -NoTypeInformation -Encoding UTF8
+	Move-Item -LiteralPath $tmpPath -Destination $OutputPath -Force
+
+	return [pscustomobject]@{
+		Retained = $retainedCount
+		New      = $newCount
+		Updated  = $updatedCount
+		Union    = $unionCount
+	}
+}
+
+function Merge-M365SessionStatsCsv {
+	<#
+	.SYNOPSIS
+		Union-merge a target M365Bundle SessionStats CSV with the current run's freshly-emitted SessionStats.
+
+	.DESCRIPTION
+		Post-Python helper for -AppendFile in M365Bundle mode. Performs a 3-tuple-keyed
+		union-merge with additive counter semantics on the SessionStats sidecar (v2.6.0+):
+
+		  Composite key      : (lower(UserId), CreationDate, AppHost)
+		  SessionCount       : target + current
+		  PromptCount        : target + current
+		  ResponseCount      : target + current
+		  AgentSessionCount  : target + current
+		  UserId             : target's casing wins on retained groups (first-seen)
+
+		Schema tolerance: target may be missing one or more counter columns (e.g. a
+		pre-2.6.0 placeholder). Missing counters are treated as 0 during accumulation
+		and emitted as the union value.
+
+		Atomic rewrite: writes to '<output>.merging' and renames over -OutputPath.
+		-OutputPath defaults to -TargetSessionStatsCsv (in-place append semantics).
+
+	.OUTPUTS
+		PSCustomObject with stats (Retained / New / Updated / Union).
+	#>
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)] [string] $TargetSessionStatsCsv,
+		[Parameter(Mandatory)] [string] $CurrentSessionStatsCsv,
+		[Parameter()]          [string] $OutputPath
+	)
+
+	if (-not (Test-Path -LiteralPath $CurrentSessionStatsCsv -PathType Leaf)) {
+		throw "Merge-M365SessionStatsCsv: current SessionStats CSV not found: '$CurrentSessionStatsCsv'"
+	}
+	if ([string]::IsNullOrWhiteSpace($OutputPath)) { $OutputPath = $TargetSessionStatsCsv }
+
+	# Canonical 7-column SessionStats header (matches SESSIONSTATS_HEADER in the embedded processor).
+	$ssHeader = @(
+		'UserId','CreationDate','AppHost',
+		'SessionCount','PromptCount','ResponseCount','AgentSessionCount'
+	)
+
+	# Project an incoming row onto the 7 canonical columns. Missing columns become ''.
+	$projectRow = {
+		param($row)
+		$obj = [ordered]@{}
+		foreach ($c in $ssHeader) {
+			$p = $row.PSObject.Properties[$c]
+			$obj[$c] = if ($p) { [string]$p.Value } else { '' }
+		}
+		return $obj
+	}
+
+	# Composite 3-tuple key (case-folded UserId).
+	$makeKey = {
+		param($obj)
+		$userLc = ([string]$obj['UserId']).ToLowerInvariant()
+		'{0}|{1}|{2}' -f $userLc, $obj['CreationDate'], $obj['AppHost']
+	}
+
+	# Accumulate one (already-projected) row into an existing bucket entry.
+	$accumulateInto = {
+		param($acc, $obj)
+		foreach ($col in @('SessionCount','PromptCount','ResponseCount','AgentSessionCount')) {
+			$accV = 0; [void][int]::TryParse([string]$acc[$col], [ref]$accV)
+			$rV   = 0; [void][int]::TryParse([string]$obj[$col], [ref]$rV)
+			$acc[$col] = ($accV + $rV).ToString()
+		}
+	}
+
+	# Load inputs.
+	$targetRows = @()
+	if (Test-Path -LiteralPath $TargetSessionStatsCsv -PathType Leaf) {
+		$targetRows = @(script:Import-CsvDeduped -LiteralPath $TargetSessionStatsCsv)
+	}
+	$currentRows = @(script:Import-CsvDeduped -LiteralPath $CurrentSessionStatsCsv)
+
+	# Schema-narrowing warning for legacy targets missing canonical columns.
+	if ($targetRows.Count -gt 0) {
+		$targetHeaders = @($targetRows[0].PSObject.Properties.Name)
+		$missing = @($ssHeader | Where-Object { $_ -notin $targetHeaders })
+		if ($missing.Count -gt 0) {
+			Microsoft.PowerShell.Utility\Write-Host (
+				("WARNING: Merge-M365SessionStatsCsv: target SessionStats is missing {0} of the {1} canonical columns " +
+				 "({2}). Padding with empty values; missing counters treated as 0. Target: {3}") `
+				-f $missing.Count, $ssHeader.Count, ($missing -join ','), $TargetSessionStatsCsv
+			) -ForegroundColor Yellow
+		}
+	}
+
+	# Bucket: composite key -> accumulator ordered hashtable.
+	# Seed target rows first so the target's UserId casing wins on retained groups.
+	$bucket = [ordered]@{}
+	foreach ($r in $targetRows) {
+		$obj = & $projectRow $r
+		$k   = & $makeKey $obj
+		if ($bucket.Contains($k)) {
+			& $accumulateInto $bucket[$k] $obj
+		} else {
+			$bucket[$k] = $obj
+		}
+	}
+
+	# Snapshot keys present after target-seed (to classify Retained vs New for current rows).
+	$targetKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+	foreach ($k in $bucket.Keys) { [void]$targetKeys.Add($k) }
+
+	# Merge in current-run rows.
+	$newCount      = 0
+	$retainedCount = 0
+	$updatedCount  = 0
+	foreach ($r in $currentRows) {
+		$obj = & $projectRow $r
+		$k   = & $makeKey $obj
+		if ($bucket.Contains($k)) {
+			& $accumulateInto $bucket[$k] $obj
+			$updatedCount++
+			if ($targetKeys.Contains($k)) { $retainedCount++ }
+		} else {
+			$bucket[$k] = $obj
+			$newCount++
+		}
+	}
+
+	# Atomic rewrite: write to <out>.merging, rename over $OutputPath.
+	$unionCount = $bucket.Count
+	$tmpPath = "$OutputPath.merging"
+	[pscustomobject[]]$mergedRows = $bucket.Values | ForEach-Object { [pscustomobject]$_ }
+	$mergedRows | Select-Object -Property $ssHeader | Export-Csv -LiteralPath $tmpPath -NoTypeInformation -Encoding UTF8
+	Move-Item -LiteralPath $tmpPath -Destination $OutputPath -Force
+
+	return [pscustomobject]@{
+		Retained = $retainedCount
+		New      = $newCount
+		Updated  = $updatedCount
+		Union    = $unionCount
+	}
+}
+
 function Convert-CsvToDelta {
 	<#
 	.SYNOPSIS
@@ -8278,15 +9306,14 @@ function Get-DisplayPath {
 	# upstream normalizer in the param-validation block strips the file leaf
 	# from RemoteOutputUrl when it can recognize the extension, but this
 	# helper is called from many sites and must remain robust if a caller
-	# (or future regression) leaves $base as a file URL.
+	# leaves $base as a file URL.
 	#
 	# Two doubling cases to defend against:
 	#   1) Same name  ('.../foo.csv' + 'foo.csv'  -> '.../foo.csv'        )
 	#   2) Sibling    ('.../foo.csv' + 'foo.log'  -> '.../foo.log'        )
-	# Case 2 is the regression that produced '.../foo.csv/foo.log' before
-	# the normalizer was added. When $baseLeaf carries a data-artifact
-	# extension, strip it before appending $leaf so siblings land in the
-	# correct parent folder. .Lakehouse is a folder marker; do NOT strip.
+	# When $baseLeaf carries a data-artifact extension, strip it before
+	# appending $leaf so siblings land in the correct parent folder.
+	# .Lakehouse is a folder marker; do NOT strip.
 	$baseLeaf = ($base -split '/') | Select-Object -Last 1
 	if ($baseLeaf -ieq $leaf) { return $base }
 	if ($baseLeaf -match '\.(csv|log|xlsx|json|parquet|txt)$') {
@@ -8461,12 +9488,26 @@ function Resolve-FabricTarget {
 	[CmdletBinding()]
 	param([Parameter(Mandatory)] [string] $Url)
 
-	# Expected: https://onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Lakehouse/Files[/<rel>]
+	# Accepted URL shapes (all return enough metadata for callers to route correctly):
+	#   1. https://onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Lakehouse
+	#      (root mode - recommended; operational artifacts auto-routed under Files/,
+	#      Delta tables under Tables/)
+	#   2. https://onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Lakehouse/Files[/<rel>]
+	#      (explicit Files; FilesPath = <rel>)
+	#   3. https://onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Lakehouse/Tables[/<schema>]
+	#      (explicit Tables for table-typed destinations; TablesPath = <schema>)
+	# All three shapes are accepted here; the call-site helpers
+	# (Send-FileToOneLake / Get-RemoteFile-OneLake) route operational artifacts
+	# under /Files/ regardless of TablesPath, so an -OutputPath that points at
+	# the lakehouse root or at an explicit /Tables/<schema> still lands
+	# log / checkpoint / mirror artifacts in the correct /Files/ subtree.
 	$u = [Uri]$Url
 	$accountUrl = "{0}://{1}" -f $u.Scheme, $u.Host
-	$segments = ($u.AbsolutePath.TrimStart('/') -split '/')
-	if ($segments.Count -lt 3) {
-		throw "Fabric URL must include workspace, item, and Files segment: '$Url'"
+	$segments = ($u.AbsolutePath.TrimStart('/') -split '/' | Where-Object { $_ -ne '' })
+	# Force into an array shape so .Count is reliable even for 1- or 0-element results.
+	$segments = @($segments)
+	if ($segments.Count -lt 2) {
+		throw "Fabric URL must include workspace and item: '$Url'"
 	}
 	$workspace = $segments[0]
 	$itemFull  = $segments[1]   # e.g. MyLakehouse.Lakehouse
@@ -8475,18 +9516,32 @@ function Resolve-FabricTarget {
 	}
 	$itemType  = $Matches[1]
 	$itemName  = $itemFull.Substring(0, $itemFull.Length - ($itemType.Length + 1))
-	if ($segments[2] -ne 'Files') {
-		throw "Fabric URL must include the 'Files' segment: '$Url'"
+
+	$filesPath  = ''
+	$tablesPath = ''
+	$rootMode   = $false
+	if ($segments.Count -eq 2) {
+		$rootMode = $true
 	}
-	$rel = if ($segments.Count -gt 3) { ($segments | Select-Object -Skip 3) -join '/' } else { '' }
+	elseif ($segments[2] -eq 'Files') {
+		$filesPath = if ($segments.Count -gt 3) { ($segments | Select-Object -Skip 3) -join '/' } else { '' }
+	}
+	elseif ($segments[2] -eq 'Tables') {
+		$tablesPath = if ($segments.Count -gt 3) { ($segments | Select-Object -Skip 3) -join '/' } else { '' }
+	}
+	else {
+		throw "Fabric URL third segment must be 'Files', 'Tables', or absent (lakehouse root): '$Url'"
+	}
 
 	return [pscustomobject]@{
-		AccountUrl = $accountUrl
-		Workspace  = $workspace
-		ItemName   = $itemName
-		ItemType   = $itemType
-		ItemFull   = $itemFull
-		FilesPath  = $rel.TrimEnd('/')
+		AccountUrl     = $accountUrl
+		Workspace      = $workspace
+		ItemName       = $itemName
+		ItemType       = $itemType
+		ItemFull       = $itemFull
+		FilesPath      = $filesPath.TrimEnd('/')
+		TablesPath     = $tablesPath.TrimEnd('/')
+		RootMode       = $rootMode
 		FilesystemBase = "$accountUrl/$workspace"
 	}
 }
@@ -8767,7 +9822,16 @@ function Test-RemoteDestination {
 				$accumulated = ''
 				foreach ($p in $parts) {
 					$parentUri = if ($accumulated) { "https://graph.microsoft.com/v1.0/drives/$($resolved.DriveId)/root:/${accumulated}:/children" } else { "https://graph.microsoft.com/v1.0/drives/$($resolved.DriveId)/root/children" }
-					$body = @{ name = $p; folder = @{}; '@microsoft.graph.conflictBehavior' = 'replace' } | ConvertTo-Json
+					# FolderPath segments come from [Uri].AbsolutePath, which percent-encodes spaces
+					# and other reserved characters (e.g. 'PAX Exports' -> 'PAX%20Exports'). The
+					# parent addressing above (root:/...:/children) is colon-path syntax that Graph
+					# DECODES, but the 'name' field below is a literal display name that Graph does
+					# NOT decode — so passing the raw segment created a folder literally named
+					# 'PAX%20Exports' alongside the decoded 'PAX Exports' that the upload path
+					# (Send-FileToSharePoint, also colon-path) resolves to. Decode the segment for
+					# the display name so both mechanisms agree and only one folder is created.
+					$folderDisplayName = [System.Uri]::UnescapeDataString($p)
+					$body = @{ name = $folderDisplayName; folder = @{}; '@microsoft.graph.conflictBehavior' = 'replace' } | ConvertTo-Json
 					try { Invoke-MgGraphRequest -Method POST -Uri $parentUri -Body $body -ContentType 'application/json' -ErrorAction Stop | Out-Null } catch {}
 					$accumulated = if ($accumulated) { "$accumulated/$p" } else { $p }
 				}
@@ -8958,8 +10022,13 @@ function Send-FileToOneLake {
 		$resolved = $script:FabricResolved
 	}
 	$fileName = if ($RemoteFileName) { $RemoteFileName } else { Split-Path -Leaf $LocalPath }
-	# Per-segment URI escaping for the filename (see Send-FileToSharePoint).
-	$fileNameEnc = [System.Uri]::EscapeDataString($fileName)
+	# Per-SEGMENT URI escaping. $RemoteFileName may contain '/' separators
+	# (e.g. ".pax_resume/<ts>/<file>" from Sync-FabricResumeMirror); escaping the
+	# whole string as one data segment would percent-encode the slashes ('%2F'),
+	# malforming the DFS path so PUT (Create File) and PATCH (Append) target
+	# different resolved files, surfacing as "400 (position not equal to length)".
+	# Split-then-escape-per-segment preserves the hierarchical path.
+	$fileNameEnc = ($fileName -split '/' | ForEach-Object { [System.Uri]::EscapeDataString($_) }) -join '/'
 	$relInItem = if ($resolved.FilesPath) { "$($resolved.FilesPath)/$fileNameEnc" } else { $fileNameEnc }
 	$dfsPath   = "$($resolved.FilesystemBase)/$($resolved.ItemFull)/Files/$relInItem"
 	$fileInfo  = Get-Item -LiteralPath $LocalPath
@@ -8967,6 +10036,25 @@ function Send-FileToOneLake {
 
 	# Authorization + x-ms-version are set per-request by Invoke-FabricWebRequest using the
 	# current $script:AzAuthState. Do not cache headers locally - the token may rotate.
+
+	# Step 0: Pre-create any parent directories. OneLake Lakehouse Files/ uses a
+	# hierarchical namespace; PUT ?resource=file does not auto-create intermediate
+	# directories. Without this, mirroring artifacts to e.g. ".pax_resume/<ts>/"
+	# can land the leaf file in an inconsistent state that surfaces downstream as
+	# a 400 (position not equal to length) on the first append. Idempotent: a 409
+	# response means the directory already exists and is treated as success.
+	$parentRel = $null
+	if ($relInItem -match '/') { $parentRel = $relInItem.Substring(0, $relInItem.LastIndexOf('/')) }
+	if ($parentRel) {
+		$dirUri = "$($resolved.FilesystemBase)/$($resolved.ItemFull)/Files/$parentRel`?resource=directory"
+		try {
+			$null = Invoke-FabricWebRequest -Uri $dirUri -Method PUT
+		}
+		catch {
+			$dirStatus = try { $_.Exception.Response.StatusCode.value__ } catch { 0 }
+			if ($dirStatus -ne 409) { throw }
+		}
+	}
 
 	# Step 1: Create (PUT ?resource=file) - overwrites any existing file.
 	$createUri = "$dfsPath`?resource=file"
@@ -9053,7 +10141,12 @@ function Get-RemoteFile-OneLake {
 		if (-not $script:FabricResolved) { $script:FabricResolved = Resolve-FabricTarget -Url $script:RemoteOutputUrl }
 		$resolved = $script:FabricResolved
 	}
-	$relName   = [System.Uri]::EscapeDataString($RelativeName)
+	# Per-SEGMENT URI escaping. $RelativeName may contain '/' separators (e.g.
+	# ".pax_resume/<ts>/<file>" from Restore-FabricResumeMirror); escaping the
+	# whole string as one data segment would percent-encode the slashes to '%2F'
+	# and resolve to a different (or non-existent) DFS path than the uploader
+	# wrote to. Mirrors the Send-FileToOneLake fix.
+	$relName   = ($RelativeName -split '/' | ForEach-Object { [System.Uri]::EscapeDataString($_) }) -join '/'
 	$relInItem = if ($resolved.FilesPath) { "$($resolved.FilesPath)/$relName" } else { $relName }
 	$dfsPath   = "$($resolved.FilesystemBase)/$($resolved.ItemFull)/Files/$relInItem"
 	# Invoke-FabricWebRequest handles Authorization, x-ms-version, proactive refresh, 401 retry.
@@ -9142,7 +10235,22 @@ function Invoke-EmbeddedProcessor {
 	Write-LogFile "Rollup: args        -> $($ProcessorArgs -join ' ')"
 
 	$exitCode = 1
+	# Force UTF-8 across the Python subprocess boundary so Unicode glyphs the
+	# processor emits to stdout / stderr (right-arrow, section separators,
+	# bullets) are not mojibaked when captured through PowerShell on hosts
+	# whose console output encoding defaults to a legacy OEM code page.
+	# Both sides matter:
+	#   * [Console]::OutputEncoding controls how PowerShell decodes the bytes
+	#     it reads back from the subprocess.
+	#   * $env:PYTHONIOENCODING tells the Python interpreter what to encode
+	#     its stdout / stderr text streams as.
+	# Outer values are captured here and restored in the finally block so the
+	# host's session-wide encoding is not perturbed.
+	$prevConsoleOutEnc = [Console]::OutputEncoding
+	$prevPyIoEnc       = $env:PYTHONIOENCODING
 	try {
+		[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+		$env:PYTHONIOENCODING     = 'utf-8'
 		$fullArgs = @($LauncherArgs) + @($tempPyPath) + @($ProcessorArgs)
 		# In remote-output mode, suppress the Python processors' echoed input/output PATH
 		# lines (e.g. "Purview input:", "Output file:"). Those values are LOCAL scratch
@@ -9166,6 +10274,15 @@ function Invoke-EmbeddedProcessor {
 		$exitCode = 1
 	}
 	finally {
+		# Restore the outer console output encoding and PYTHONIOENCODING regardless
+		# of outcome so subsequent host writes (and any later subprocess) see the
+		# same environment they would have without this call.
+		try { [Console]::OutputEncoding = $prevConsoleOutEnc } catch { }
+		if ($null -eq $prevPyIoEnc) {
+			Remove-Item Env:PYTHONIOENCODING -ErrorAction SilentlyContinue
+		} else {
+			$env:PYTHONIOENCODING = $prevPyIoEnc
+		}
 		try {
 			if (Test-Path -LiteralPath $tempPyPath) { Remove-Item -LiteralPath $tempPyPath -Force -ErrorAction SilentlyContinue }
 		}
@@ -9401,10 +10518,10 @@ if ($MaxConcurrency -lt 1 -or $MaxConcurrency -gt 10) {
 if ($RAWInputCSV) {
 	$parsedStart = $null; $parsedEnd = $null
 	if ($PSBoundParameters.ContainsKey('StartDate')) {
-		try { $parsedStart = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null) } catch { Write-Host "ERROR: StartDate must be yyyy-MM-dd if provided." -ForegroundColor Red; exit 1 }
+		try { $parsedStart = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture) } catch { Write-Host "ERROR: StartDate must be yyyy-MM-dd if provided." -ForegroundColor Red; exit 1 }
 	}
 	if ($PSBoundParameters.ContainsKey('EndDate')) {
-		try { $parsedEnd = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null) } catch { Write-Host "ERROR: EndDate must be yyyy-MM-dd if provided." -ForegroundColor Red; exit 1 }
+		try { $parsedEnd = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture) } catch { Write-Host "ERROR: EndDate must be yyyy-MM-dd if provided." -ForegroundColor Red; exit 1 }
 	}
 	if ($parsedStart -and $parsedEnd -and $parsedEnd -lt $parsedStart) { Write-Host "ERROR: EndDate ($EndDate) is earlier than StartDate ($StartDate)." -ForegroundColor Red; exit 1 }
 	if (-not $PSBoundParameters.ContainsKey('StartDate')) { $StartDate = '*' }
@@ -9419,19 +10536,19 @@ else {
 	elseif (-not $PSBoundParameters.ContainsKey('StartDate')) {
 		$StartDate = '*'
 		try {
-			$parsedEnd = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null)
+			$parsedEnd = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
 		} catch { Write-Host "ERROR: EndDate must be yyyy-MM-dd format." -ForegroundColor Red; exit 1 }
 	}
 	elseif (-not $PSBoundParameters.ContainsKey('EndDate')) {
 		$EndDate = '*'
 		try {
-			$parsedStart = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null)
+			$parsedStart = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
 		} catch { Write-Host "ERROR: StartDate must be yyyy-MM-dd format." -ForegroundColor Red; exit 1 }
 	}
 	else {
 		try {
-			$parsedStart = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null)
-			$parsedEnd = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null)
+			$parsedStart = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
+			$parsedEnd = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
 		}
 		catch { Write-Host "ERROR: StartDate/EndDate must be in yyyy-MM-dd format." -ForegroundColor Red; exit 1 }
 		if ($parsedEnd -lt $parsedStart) { Write-Host "ERROR: EndDate ($EndDate) is earlier than StartDate ($StartDate)." -ForegroundColor Red; exit 1 }
@@ -9443,8 +10560,8 @@ else {
 # These UTC boundaries are used after dedup to trim any out-of-range records.
 # SpecifyKind(Utc) is critical: ParseExact returns Kind=Unspecified, and .ToUniversalTime()
 # on Unspecified assumes LOCAL time, shifting the boundary by the machine's UTC offset.
-$script:TrimStartDateUTC = if ($StartDate -ne '*') { [datetime]::SpecifyKind([datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null), [System.DateTimeKind]::Utc) } else { $null }
-$script:TrimEndDateUTC   = if ($EndDate   -ne '*') { [datetime]::SpecifyKind([datetime]::ParseExact($EndDate,   'yyyy-MM-dd', $null), [System.DateTimeKind]::Utc) } else { $null }
+$script:TrimStartDateUTC = if ($StartDate -ne '*') { [datetime]::SpecifyKind([datetime]::ParseExact($StartDate, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture), [System.DateTimeKind]::Utc) } else { $null }
+$script:TrimEndDateUTC   = if ($EndDate   -ne '*') { [datetime]::SpecifyKind([datetime]::ParseExact($EndDate,   'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture), [System.DateTimeKind]::Utc) } else { $null }
 $script:DateTrimCount    = 0
 
 if ($BlockHours -le 0) { Write-Host "ERROR: BlockHours must be positive." -ForegroundColor Red; exit 1 }
@@ -9587,7 +10704,7 @@ function Assert-MetricsShape {
 	}
 	foreach ($k in $script:MetricsRequiredFields) {
 		if (-not $Metrics.ContainsKey($k)) {
-			throw "Assert-MetricsShape: \$script:metrics is missing required field '$k'. This indicates a shape regression."
+			throw "Assert-MetricsShape: \$script:metrics is missing required field '$k'. This indicates a structural mismatch."
 		}
 	}
 }
@@ -9611,7 +10728,7 @@ function Assert-PartitionStatusEntry {
 	}
 	foreach ($k in $script:PartitionStatusRequiredFields) {
 		if (-not $Entry.ContainsKey($k)) {
-			throw "Assert-PartitionStatusEntry [$Context]: missing required field '$k'. This indicates a shape regression."
+			throw "Assert-PartitionStatusEntry [$Context]: missing required field '$k'. This indicates a structural mismatch."
 		}
 	}
 }
@@ -11200,26 +12317,22 @@ function Initialize-CheckpointForNewRun {
 			maxPartitions = if ($AllParameters.MaxPartitions) { $AllParameters.MaxPartitions } else { 160 }
 			
 			# Output settings
-			# v1.11.2 Fix #8 (BUG-A, corrected by Fix #8b): persist the user-supplied -OutputPath
-			# (SharePoint URL / Fabric OneLake URL / local path), NOT the script-rewritten local
-			# scratch dir. At checkpoint-save time $OutputPath has already been redirected to
-			# $script:RemoteScratchDir for remote modes (parse-time redirect block ~L2895), so
-			# saving $OutputPath here loses the destination URL and a -Resume run re-resolves the
-			# tier as 'Local' (no upload sweep ever fires).
+			# Persist the USER-SUPPLIED -OutputPath (SharePoint URL / Fabric OneLake URL /
+			# local path), NOT the script-rewritten local scratch dir. At checkpoint-save
+			# time $OutputPath has already been redirected to $script:RemoteScratchDir for
+			# remote modes (the parse-time redirect block earlier in the script), so saving
+			# $OutputPath here would lose the destination URL and a -Resume run would
+			# re-resolve the tier as 'Local' — no upload sweep would ever fire.
 			#
-			# Original Fix #8 (BUG-A) read $AllParameters.OutputPath, but the caller
-			# (Initialize-CheckpointForNewRun call site ~L16531) builds $allParams WITHOUT an
-			# 'OutputPath' key, so that read always returned $null and the conditional always
-			# fell through to $OutputPath (scratch dir) — the fix was structurally inert.
-			#
-			# Fix #8b reads $script:DestRaw['Purview'] instead. That hashtable is populated at
-			# parse-time L2545 from the ORIGINAL CLI-bound value (the SharePoint / Fabric URL or
-			# local path) BEFORE the scratch redirect at L2895 runs, and is REPOPULATED on each
-			# resume at L19422 from the restored value BEFORE Fix #8 (BUG-A part 2) rewrites
-			# $OutputPath to the scratch dir at L19503 — so it is the canonical source of truth
-			# across both fresh runs and resumes. Falls back to $OutputPath for unbound -OutputPath
-			# runs (default PSScriptRoot) where $script:DestRaw['Purview'] is unset. Tier-agnostic:
-			# works identically for Local, SharePoint, and Fabric (OneLake) modes.
+			# $script:DestRaw['Purview'] is the canonical source of truth. It is populated
+			# at parse-time from the ORIGINAL CLI-bound value (the SharePoint / Fabric URL
+			# or local path) BEFORE the scratch redirect runs, and is REPOPULATED on each
+			# resume from the restored value BEFORE the resume-side scratch redirect
+			# rewrites $OutputPath — so it carries the user-supplied destination across
+			# both fresh runs and resumes. Falls back to $OutputPath only for runs where
+			# -OutputPath was never bound and $script:DestRaw['Purview'] is unset
+			# (default PSScriptRoot). Tier-agnostic: identical behavior for Local,
+			# SharePoint, and Fabric (OneLake) modes.
 			outputPath = if ($script:DestRaw -and $script:DestRaw['Purview']) { [string]$script:DestRaw['Purview'] } else { $OutputPath }
 			exportWorkbook = [bool]$AllParameters.ExportWorkbook
 			combineOutput = [bool]$AllParameters.CombineOutput
@@ -12082,8 +13195,8 @@ function Find-Checkpoints {
 				FileName = $file.Name
 				RunTimestamp = $data.runTimestamp
 				LastUpdated = script:Parse-DateSafe $data.lastUpdated
-				StartDate = if ($data.parameters.startDate) { $d = script:Parse-DateSafe $data.parameters.startDate; if ($d) { $d.ToString('yyyy-MM-dd') } else { 'Unknown' } } else { 'Unknown' }
-				EndDate = if ($data.parameters.endDate) { $d = script:Parse-DateSafe $data.parameters.endDate; if ($d) { $d.ToString('yyyy-MM-dd') } else { 'Unknown' } } else { 'Unknown' }
+				StartDate = if ($data.parameters.startDate) { $d = script:Parse-DateSafe $data.parameters.startDate; if ($d) { $d.ToLocalTime().ToString('yyyy-MM-dd') } else { 'Unknown' } } else { 'Unknown' }
+				EndDate = if ($data.parameters.endDate) { $d = script:Parse-DateSafe $data.parameters.endDate; if ($d) { $d.ToLocalTime().ToString('yyyy-MM-dd') } else { 'Unknown' } } else { 'Unknown' }
 				PartitionsComplete = $data.statistics.partitionsComplete
 				PartitionsTotal = $data.partitions.total
 				RecordsSaved = $data.statistics.totalRecordsSaved
@@ -12665,7 +13778,7 @@ function Merge-IncrementalSaves-Streaming {
 						$normalizedRecord = [pscustomobject]@{
 							RecordId                  = if ($record.RecordId) { $record.RecordId } elseif ($record.Identity) { $record.Identity } elseif ($record.Id) { $record.Id } elseif ($parsedAudit -and $parsedAudit.Id) { $parsedAudit.Id } else { $null }
 							CreationDate              = if ($record.CreationDate) { 
-								$dt = script:Parse-DateSafe $record.CreationDate; if ($dt) { $dt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $record.CreationDate }
+								$dt = script:Parse-DateSafe $record.CreationDate; if ($dt) { $dt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ', [System.Globalization.CultureInfo]::InvariantCulture) } else { $record.CreationDate }
 							} else { '' }
 							RecordType                = $record.RecordType
 							Operation                 = $opValue
@@ -12835,25 +13948,26 @@ function Show-CheckpointExitMessage {
 		}
 	}
 	Write-Host "  Records saved: $($recordsSaved.ToString('N0'))" -ForegroundColor White
-	# v1.11.2 Fix #9: build the Partitions status line as a single string before
-	# emission so the global Write-Host proxy at L2300 (which mirrors every
-	# Write-Host call to the log file as ONE timestamped [INFO] entry regardless
-	# of -NoNewline) writes one log line instead of 2-3 fragmented entries. The
-	# console output is unchanged — both forms produce an identical
+	# Build the Partitions status line as a single string before emission so the
+	# global Write-Host proxy (which mirrors every Write-Host call to the log
+	# file as ONE timestamped [INFO] entry regardless of -NoNewline) writes one
+	# log line instead of 2-3 fragmented entries. The console output is the same
+	# either way — both forms produce an identical
 	# "Partitions: X/Y complete[, N queries pending][, M not started]" line —
-	# but the log capture used to produce orphan lines like ", 1 queries pending"
-	# on their own timestamp because -NoNewline only concatenates on the host
-	# stream, not in the proxy's Add-Content path.
+	# but a multi-call -NoNewline approach produces orphan log lines like
+	# ", 1 queries pending" on their own timestamp because -NoNewline only
+	# concatenates on the host stream, not in the proxy's Add-Content path.
 	$partitionLine = "  Partitions: $completedCount/$totalCount complete"
 	if ($queryCreatedCount -gt 0) { $partitionLine += ", $queryCreatedCount queries pending" }
 	if ($remaining -gt 0)        { $partitionLine += ", $remaining not started" }
 	Write-Host $partitionLine -ForegroundColor White
 	Write-Host ""
 	Write-Host "  To resume later:" -ForegroundColor Cyan
-	# v1.11.2 Fix #7: AppRegistration runs require -ClientSecret on every invocation
-	# (the secret is never persisted to the checkpoint). Append a placeholder hint so
-	# the operator copy/pastes a complete command. Interactive auth modes (WebLogin,
-	# DeviceCode) don't need a secret, so leave the line unchanged in those cases.
+	# AppRegistration runs require -ClientSecret on every invocation (the secret
+	# is never persisted to the checkpoint). Append a placeholder hint so the
+	# operator copy/pastes a complete command. Interactive auth modes
+	# (WebLogin, DeviceCode) don't need a secret, so the line is unchanged in
+	# those cases.
 	if ($Auth -eq 'AppRegistration') {
 		Write-Host "    -Resume `"$($script:CheckpointPath)`" -ClientSecret '<your client secret>'" -ForegroundColor White
 	} else {
@@ -13433,8 +14547,8 @@ function Invoke-GraphAuditQuery {
 	
 	try {
 		# Format dates to ISO 8601 format required by Graph API
-		$startDateStr = $StartDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
-		$endDateStr = $EndDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+		$startDateStr = $StartDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ', [System.Globalization.CultureInfo]::InvariantCulture)
+		$endDateStr = $EndDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ', [System.Globalization.CultureInfo]::InvariantCulture)
 		
 		# Build request body
 		$body = @{
@@ -14095,8 +15209,8 @@ function Get-Agent365AuditEnrichment {
 	# Resolve time window: prefer main-run StartDate/EndDate; else last 30 days.
 	$rangeStart = $null; $rangeEnd = $null
 	try {
-		if ($StartDate) { $rangeStart = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null) }
-		if ($EndDate)   { $rangeEnd   = [datetime]::ParseExact($EndDate,   'yyyy-MM-dd', $null) }
+		if ($StartDate) { $rangeStart = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture) }
+		if ($EndDate)   { $rangeEnd   = [datetime]::ParseExact($EndDate,   'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture) }
 	} catch {}
 	if (-not $rangeStart) { $rangeStart = (Get-Date).ToUniversalTime().AddDays(-30) }
 	if (-not $rangeEnd)   { $rangeEnd   = (Get-Date).ToUniversalTime() }
@@ -14671,8 +15785,8 @@ function Test-PurviewAuditCapability {
 			# Test actual query endpoint with minimal test query
 			$testQueryBody = @{
 				displayName = "PAX-Diagnostic-Test-$(Get-Date -Format 'HHmmss')"
-				filterStartDateTime = (Get-Date).AddMinutes(-1).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
-			filterEndDateTime = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+				filterStartDateTime = (Get-Date).AddMinutes(-1).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ', [System.Globalization.CultureInfo]::InvariantCulture)
+			filterEndDateTime = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ', [System.Globalization.CultureInfo]::InvariantCulture)
 			operationFilters = @('UserLoggedIn')  # Common activity type for quick test
 		}
 		
@@ -15659,12 +16773,12 @@ function script:Format-DatePurviewFast($dt) {
 	if (-not $dt) { return '' }
 	try {
 		if ($dt -is [datetime]) { 
-			return $dt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+			return $dt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ', [System.Globalization.CultureInfo]::InvariantCulture)
 		}
 		else { 
 			$p = script:Parse-DateSafe $dt
 			if ($null -eq $p) { return '' }
-			return $p.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+			return $p.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ', [System.Globalization.CultureInfo]::InvariantCulture)
 		}
 	}
 	catch { return '' }
@@ -16306,12 +17420,15 @@ elseif ($AppendFile) {
 	} else { 'Local' }
 
 	# Rollup-output detection. The embedded Python processors emit rollup outputs
-	# with one of the following suffixes on the original raw stem:
+	# with one of the following suffixes on the original raw stem (the M365Bundle
+	# processor appends a current-run timestamp; the CopilotInteraction processor
+	# does not):
 	#   CopilotInteraction processor    : '<purview_stem>_Interactions.csv'
 	#                                     '<entra_stem>_Users.csv'
-	#   M365Bundle processor (rollup)   : '<purview_stem>_Rollup.csv'
-	#                                     '<purview_stem>_UserStats.csv'
-	#                                     '<purview_stem>_SessionCohort.csv'
+	#   M365Bundle processor (rollup)   : '<purview_stem>_Rollup_<YYYYMMDD_HHMMSS>.csv'
+	#                                     '<purview_stem>_UserStats_<YYYYMMDD_HHMMSS>.csv'
+	#                                     '<purview_stem>_SessionCohort_<YYYYMMDD_HHMMSS>.csv'
+	#                                     '<purview_stem>_SessionStats_<YYYYMMDD_HHMMSS>.csv'
 	#   M365Bundle processor (event)    : '<purview_stem>_Exploded.csv'
 	# When the user passes any such file as -AppendFile UNDER -Rollup / -RollupPlusRaw
 	# (or under -IncludeM365Usage event-level mode), they are pointing at the previous
@@ -16319,12 +17436,18 @@ elseif ($AppendFile) {
 	# writer must NOT be re-pointed to the rollup leaf, or it will overwrite the
 	# rollup target with raw audit rows and produce zero actual raw output (defeating
 	# the whole point of -RollupPlusRaw). Instead: keep $OutputFile on its natural
-	# timestamped raw-audit name, and let -AppendFile flow through to the rollup
-	# processor as --append-target-rollup (M365Bundle) / seed-map source
-	# (CopilotInteraction) / --exclude-record-ids source (M365Bundle event-level)
-	# downstream.
+	# timestamped raw-audit name, and let -AppendFile flow through downstream:
+	#   • CopilotInteraction: seed-map source merged inside Python.
+	#   • M365Bundle (rollup): union-merged PS-side via Merge-M365RollupCsv after
+	#     the processor emits its timestamped Rollup; sidecars are then regenerated
+	#     from the merged union via --rebuild-sidecars-from-rollup.
+	#   • M365Bundle (event): --exclude-record-ids source for de-duplication.
 	$appendLeaf = [System.IO.Path]::GetFileName($AppendFile)
-	$appendIsRollupShaped = ($appendLeaf -match '_(Interactions|Rollup|UserStats|SessionCohort|Exploded)\.csv$')
+	# Rollup-shape match accepts both the anchored '<stem>_<Suffix>.csv' shape
+	# (typical for customer-renamed long-lived targets) and the timestamped
+	# '<stem>_<Suffix>_<YYYYMMDD_HHMMSS>.csv' shape (when the customer points
+	# AppendFile at a previous run's raw output without renaming).
+	$appendIsRollupShaped = ($appendLeaf -match '_(Interactions|Rollup|UserStats|SessionCohort|Exploded)(?:_\d{8}_\d{6})?\.csv$')
 	# The embedded Python processor only runs under -Rollup / -RollupPlusRaw.
 	# Outside those switches a rollup-shaped leaf is just a coincidence (the user
 	# is presumably appending to a real raw-audit CSV that happens to share the
@@ -16333,31 +17456,33 @@ elseif ($AppendFile) {
 	$treatAppendAsRollupTarget = ($appendIsRollupShaped -and $rollupActive)
 
 	# M365 rollup-mode leaf validation. When -IncludeM365Usage is set with -Rollup
-	# or -RollupPlusRaw, the embedded M365Bundle processor produces 3 outputs
-	# ('<stem>_Rollup.csv', '<stem>_UserStats.csv', '<stem>_SessionCohort.csv').
-	# Only '_Rollup.csv' supports the union-merge semantic (via Python's
-	# --append-target-rollup); UserStats and SessionCohort are recomputed sidecars
-	# anchored off the AppendFile leaf stem at the post-Python re-anchoring step.
+	# or -RollupPlusRaw, the embedded M365Bundle processor produces 4 outputs
+	# ('<stem>_Rollup_<ts>.csv', '<stem>_UserStats_<ts>.csv', '<stem>_SessionCohort_<ts>.csv',
+	# '<stem>_SessionStats_<ts>.csv'). Only the Rollup file supports the union-merge
+	# semantic as the AppendFile anchor (PS-side via Merge-M365RollupCsv);
+	# UserStats, SessionCohort, and SessionStats are recomputed/merged sidecars
+	# anchored off the AppendFile leaf stem at the post-processor regen step.
 	# Pointing -AppendFile at a sidecar (or at a CopilotInteraction _Interactions
 	# leaf, or at an M365 event-level _Exploded leaf) would either silently feed
-	# Python the wrong schema or anchor sidecars at the wrong stem, so we reject
-	# upfront with a leaf-specific error.
+	# the processor the wrong schema or anchor sidecars at the wrong stem, so we
+	# reject upfront with a leaf-specific error.
 	if ($IncludeM365Usage -and $rollupActive) {
 		$m365LeafErr = $null
-		if      ($appendLeaf -match '_UserStats\.csv$')     { $m365LeafErr = "'_UserStats.csv' is a recomputed sidecar of the M365 rollup; it cannot be the merge anchor." }
-		elseif  ($appendLeaf -match '_SessionCohort\.csv$') { $m365LeafErr = "'_SessionCohort.csv' is a recomputed sidecar of the M365 rollup; it cannot be the merge anchor." }
-		elseif  ($appendLeaf -match '_Interactions\.csv$')  { $m365LeafErr = "'_Interactions.csv' is the CopilotInteraction rollup shape, not M365. Remove -IncludeM365Usage or supply a '_Rollup.csv' leaf." }
-		elseif  ($appendLeaf -match '_Exploded\.csv$')      { $m365LeafErr = "'_Exploded.csv' is the M365 event-level output. To append under -Rollup/-RollupPlusRaw you need a '_Rollup.csv' anchor (event-level append via --exclude-record-ids is not currently exposed through -AppendFile)." }
-		elseif  ($appendLeaf -notmatch '_Rollup\.csv$')     { $m365LeafErr = "Under -IncludeM365Usage with -Rollup/-RollupPlusRaw the -AppendFile leaf must end in '_Rollup.csv' (the M365 rollup anchor). The UserStats and SessionCohort sidecars are derived from the anchor stem and overwritten in-place." }
+		if      ($appendLeaf -match '_UserStats(?:_\d{8}_\d{6})?\.csv$')     { $m365LeafErr = "'_UserStats.csv' is a recomputed sidecar of the M365 rollup; it cannot be the merge anchor." }
+		elseif  ($appendLeaf -match '_SessionCohort(?:_\d{8}_\d{6})?\.csv$') { $m365LeafErr = "'_SessionCohort.csv' is a recomputed sidecar of the M365 rollup; it cannot be the merge anchor." }
+		elseif  ($appendLeaf -match '_SessionStats(?:_\d{8}_\d{6})?\.csv$')  { $m365LeafErr = "'_SessionStats.csv' is a recomputed sidecar of the M365 rollup; it cannot be the merge anchor." }
+		elseif  ($appendLeaf -match '_Interactions(?:_\d{8}_\d{6})?\.csv$')  { $m365LeafErr = "'_Interactions.csv' is the CopilotInteraction rollup shape, not M365. Remove -IncludeM365Usage or supply a '_Rollup.csv' leaf." }
+		elseif  ($appendLeaf -match '_Exploded(?:_\d{8}_\d{6})?\.csv$')      { $m365LeafErr = "'_Exploded.csv' is the M365 event-level output. To append under -Rollup/-RollupPlusRaw you need a '_Rollup.csv' anchor (event-level append via --exclude-record-ids is not currently exposed through -AppendFile)." }
+		elseif  ($appendLeaf -notmatch '_Rollup(?:_\d{8}_\d{6})?\.csv$')     { $m365LeafErr = "Under -IncludeM365Usage with -Rollup/-RollupPlusRaw the -AppendFile leaf must end in '_Rollup.csv' or '_Rollup_<YYYYMMDD_HHMMSS>.csv' (the M365 rollup anchor). The UserStats, SessionCohort, and SessionStats sidecars are derived from the anchor stem and overwritten in-place." }
 		if ($m365LeafErr) {
 			Write-Host ""                                                                                                                                                                                  -ForegroundColor Red
 			Write-Host ("ERROR: -AppendFile leaf '{0}' is not valid in this mode: {1}" -f $appendLeaf, $m365LeafErr)                                                                                          -ForegroundColor Red
 			Write-Host ""                                                                                                                                                                                  -ForegroundColor Yellow
-			Write-Host  "Expected: a '_Rollup.csv' leaf (filename, full local path, or remote URL)."                                                                                                          -ForegroundColor Yellow
+			Write-Host  "Expected: a '_Rollup.csv' or '_Rollup_<YYYYMMDD_HHMMSS>.csv' leaf (filename, full local path, or remote URL)."                                                                       -ForegroundColor Yellow
 			Write-Host  "Example:  -AppendFile 'Purview_Audit_UsageActivity_CombinedActivityTypes_20260101_120000_Rollup.csv'"                                                                                -ForegroundColor Yellow
 			Write-Host ""                                                                                                                                                                                  -ForegroundColor Yellow
-			Write-Host  "If you do not yet have a Rollup target on the destination, run once WITHOUT -AppendFile to produce the initial '_Rollup.csv' (plus its UserStats / SessionCohort sidecars), then" -ForegroundColor Gray
-			Write-Host  "use that '_Rollup.csv' as the -AppendFile target on subsequent runs."                                                                                                                -ForegroundColor Gray
+			Write-Host  "If you do not yet have a Rollup target on the destination, run once WITHOUT -AppendFile to produce the initial timestamped Rollup (plus its UserStats / SessionCohort / SessionStats sidecars)," -ForegroundColor Gray
+			Write-Host  "then point -AppendFile at that Rollup on subsequent runs (keep the timestamp or rename — both shapes are accepted)."                                                                -ForegroundColor Gray
 			exit 1
 		}
 	}
@@ -16660,10 +17785,10 @@ if ($IncludeM365Usage -and -not ($PSBoundParameters.ContainsKey('ActivityTypes')
 # Resume: suppress the parse-time mode/permissions/rollup/start/mode banner.
 # On -Resume only the bootstrap log path, $Auth=WebLogin default, and a NEW
 # $startTimeStamp are in scope at this point — the real values are restored
-# AFTER this block by Read-Checkpoint at L19260+. The resume restore block and
-# the (Step 9c–patched) Parameter Snapshot print the authoritative auth context,
-# file paths, and timestamps post-restore. Without this gate the early banner
-# shows DELEGATED/WebLogin/bootstrap-log/new-timestamp on every resume run.
+# AFTER this block by Read-Checkpoint. The resume restore block and the
+# post-restore Parameter Snapshot print the authoritative auth context, file
+# paths, and timestamps. Without this gate the early banner shows
+# DELEGATED / WebLogin / bootstrap-log / new-timestamp on every resume run.
 if (-not $ResumeSpecified) {
 Write-LogHost ""
 if ($RAWInputCSV) {
@@ -16859,7 +17984,10 @@ else {
 		}
 	}
 
-	# Agent 365 enrichment - ALWAYS uses delegated scopes; ALSO requires Entra role
+	# Agent 365 enrichment - ALWAYS uses delegated scopes; ALSO requires Entra role.
+	# Suppressed from the permissions table while the Agent 365 switches are parked at
+	# the temporarily-disabled gate. Restore this block when the switches are re-enabled.
+	<#
 	if ($IncludeAgent365Info -or $OnlyAgent365Info) {
 		$agent365Trigger = if ($OnlyAgent365Info) { '-OnlyAgent365Info' } else { '-IncludeAgent365Info' }
 		Write-LogHost "" -ForegroundColor White
@@ -16883,6 +18011,7 @@ else {
 		Write-LogHost "                      [Delegated] Application.Read.All         (resolve developer/owner via /applications)" -ForegroundColor DarkGray
 		Write-LogHost "                      [Role]      AI Administrator OR Global Administrator (signed-in user)" -ForegroundColor DarkGray
 	}
+	#>
 
 	Write-LogHost "═══════════════════════════════════════════════════════" -ForegroundColor Green
 }
@@ -16944,16 +18073,13 @@ if ($script:RemoteOutputMode -ne 'None' -or $anyDestBound) {
 		# when -Append* is set), then a resolved FILE URL per row, then sensible
 		# defaults.
 		#
-		# Fix #21 (BUG-M-banner-row-folder-vs-file-asymmetry): Pre-Fix the Purview,
-		# UserInfo, and Agent365Info rows surfaced the customer-supplied folder URL
-		# from $script:DestRaw[$key], while the Run log row already resolved to a
-		# full file URL (Fix #19). That made adjacent rows in the same banner look
-		# mismatched (folder / folder / folder / file) and left customers guessing
-		# what leaf would actually land at each destination. Every row now renders
-		# as <folder>/<expected-leaf> via Get-DisplayPath (or a pattern leaf in
-		# per-activity-split mode where the leaf varies by ActivityType), keeping
-		# the banner internally consistent and giving customers a verifiable URL
-		# per stream.
+		# Every row renders as <folder>/<expected-leaf> via Get-DisplayPath (or a
+		# pattern leaf in per-activity-split mode where the leaf varies by
+		# ActivityType), so adjacent rows in the same banner stay internally
+		# consistent (file URL on every row, not a mix of folder + file URLs)
+		# and give customers a verifiable destination per stream. The Run log
+		# row uses the same Get-DisplayPath transform via $displayLogFile so the
+		# banner and the 'Log File:' preamble agree on the final destination.
 		$path = if ($row.AppendName -and $row.AppendVar) { $row.AppendVar }
 		        elseif ($row.Key -eq 'Purview') {
 		            if ($OutputFile) {
@@ -16979,7 +18105,20 @@ if ($script:RemoteOutputMode -ne 'None' -or $anyDestBound) {
 		            else { '(inherits -OutputPath)' }
 		        }
 		        elseif ($row.Key -eq 'UserInfo') {
-		            if ($OutputFile -and $script:GetEffectiveEntraBasename) {
+		            # Honor -OutputPathUserInfo (or an Append-side promotion of DestRaw) when bound;
+		            # otherwise inherit -OutputPath. Without consulting Resolve-DataTypePaths the
+		            # banner unconditionally joined the EntraUsers leaf onto $OutputFile's parent
+		            # (the Purview -OutputPath dir), masking any -OutputPathUserInfo override that
+		            # the runtime writer correctly routed to.
+		            $_uiDt = script:Resolve-DataTypePaths -DataType 'UserInfo' -DefaultBasename (& $script:GetEffectiveEntraBasename)
+		            if ($_uiDt -and $_uiDt.IsBound -and $_uiDt.Tier -eq 'Local') {
+		                Get-DisplayPath -LocalPath (Join-Path $_uiDt.EffectiveDir $_uiDt.Basename)
+		            }
+		            elseif ($_uiDt -and $_uiDt.IsBound) {
+		                # Remote per-stream override (Fabric / SharePoint URL) — surface the resolved file URL.
+		                ($_uiDt.EffectiveDir.TrimEnd('/') + '/' + $_uiDt.Basename)
+		            }
+		            elseif ($OutputFile -and $script:GetEffectiveEntraBasename) {
 		                $_entraLeaf  = & $script:GetEffectiveEntraBasename
 		                $_entraLocal = Join-Path (Split-Path $OutputFile -Parent) $_entraLeaf
 		                Get-DisplayPath -LocalPath $_entraLocal
@@ -16988,7 +18127,16 @@ if ($script:RemoteOutputMode -ne 'None' -or $anyDestBound) {
 		            else { '(inherits -OutputPath)' }
 		        }
 		        elseif ($row.Key -eq 'Agent365Info') {
-		            if ($OutputFile -and $script:GetEffectiveAgent365Basename) {
+		            # Symmetric fix to the UserInfo branch above: honor -OutputPathAgent365Info
+		            # (or an Append-side promotion) before falling back to the Purview -OutputPath dir.
+		            $_a365Dt = script:Resolve-DataTypePaths -DataType 'Agent365Info' -DefaultBasename (& $script:GetEffectiveAgent365Basename)
+		            if ($_a365Dt -and $_a365Dt.IsBound -and $_a365Dt.Tier -eq 'Local') {
+		                Get-DisplayPath -LocalPath (Join-Path $_a365Dt.EffectiveDir $_a365Dt.Basename)
+		            }
+		            elseif ($_a365Dt -and $_a365Dt.IsBound) {
+		                ($_a365Dt.EffectiveDir.TrimEnd('/') + '/' + $_a365Dt.Basename)
+		            }
+		            elseif ($OutputFile -and $script:GetEffectiveAgent365Basename) {
 		                $_a365Leaf  = & $script:GetEffectiveAgent365Basename
 		                $_a365Local = Join-Path (Split-Path $OutputFile -Parent) $_a365Leaf
 		                Get-DisplayPath -LocalPath $_a365Local
@@ -16997,16 +18145,15 @@ if ($script:RemoteOutputMode -ne 'None' -or $anyDestBound) {
 		            else { '(inherits -OutputPath)' }
 		        }
 		        elseif ($row.Key -eq 'Log') {
-		            # Fix #19 (BUG-K-banner-run-log-local-path): Surface the resolved
-		            # log destination URL (or final local path), not the local
-		            # _PARTIAL scratch path. $script:LogFile is the _PARTIAL working
-		            # copy throughout the run; strip the suffix and pass through
-		            # Get-DisplayPath so remote-mode banners show the SharePoint /
-		            # OneLake URL the log will land at — matching the 'Log File:'
-		            # preamble line which uses the same transform via $displayLogFile.
-		            # (Previous wording from Fix #12 / BUG-E assumed $script:LogFile
-		            # was already resolved at this point; it is not — only the local
-		            # _PARTIAL path exists until end-of-run upload + rename.)
+		            # Surface the resolved log destination URL (or final local path),
+		            # NOT the local _PARTIAL scratch path. $script:LogFile is the
+		            # _PARTIAL working copy throughout the run; strip the suffix and
+		            # pass through Get-DisplayPath so remote-mode banners show the
+		            # SharePoint / OneLake URL the log will land at — matching the
+		            # 'Log File:' preamble line which uses the same transform via
+		            # $displayLogFile. ($script:LogFile is not yet resolved to its
+		            # final path at this point; only the local _PARTIAL copy exists
+		            # until end-of-run upload + rename.)
 		            if ($script:LogFile) {
 		                $_logFinal = $script:LogFile -replace '_PARTIAL(?=\.log$)', ''
 		                Get-DisplayPath -LocalPath $_logFinal
@@ -17039,14 +18186,14 @@ if ($script:RemoteOutputMode -ne 'None' -or $anyDestBound) {
 	Write-LogHost ""
 }
 
-# Fix #16 (BUG-H-merge-label-ambiguity): one-time legend explaining the
-# Append/Merge tally vocabulary used by the various 'EntraUsers append-merge
-# complete:' / 'Rollup: -AppendUserInfo merge:' / 'Rollup: -AppendFile merge:'
-# lines emitted later in the run. The label 'Departed' in particular can
-# mislead a casual reader into thinking rows were REMOVED from the file —
-# they are not; 'Departed' rows are carried forward into the union with
-# In_Latest_Append=FALSE. Gated on any -Append* switch being bound so the
-# legend only appears when at least one merge tally will actually be emitted.
+# One-time legend explaining the Append/Merge tally vocabulary used by the
+# various 'EntraUsers append-merge complete:' / 'Rollup: -AppendUserInfo
+# merge:' / 'Rollup: -AppendFile merge:' lines emitted later in the run.
+# The label 'Departed' in particular can mislead a casual reader into thinking
+# rows were REMOVED from the file — they are not; 'Departed' rows are carried
+# forward into the union with In_Latest_Append=FALSE. Gated on any -Append*
+# switch being bound so the legend only appears when at least one merge tally
+# will actually be emitted.
 if ($AppendFile -or $AppendUserInfo -or $AppendAgent365Info) {
 	Write-LogHost "═══════════════════════════════════════════════════════" -ForegroundColor Cyan
 	Write-LogHost "  APPEND/MERGE TALLY LEGEND" -ForegroundColor Cyan
@@ -17119,12 +18266,12 @@ if ($Rollup -or $RollupPlusRaw) {
 	# Destination-aware Output line. The per-data-type destination banner above
 	# already shows the resolved tier/path for every stream, so this line just
 	# summarizes where the rollup output lands relative to the audit CSV.
-	# In M365Bundle mode the processor emits three files (Rollup + UserStats +
-	# SessionCohort sidecars) sharing a common stem, all written to the same
-	# destination; CopilotInteraction emits a single Interactions Fact CSV.
+	# In M365Bundle mode the processor emits four files (Rollup + UserStats +
+	# SessionCohort + SessionStats sidecars) sharing a common stem, all written
+	# to the same destination; CopilotInteraction emits a single Interactions Fact CSV.
 	$rollupOutputLabel = switch ($script:RollupProcessorMode) {
 		'CopilotInteraction' { 'Rollup Fact CSV' }
-		'M365Bundle'         { 'Rollup CSV bundle (Rollup + UserStats + SessionCohort sidecars sharing the same stem)' }
+		'M365Bundle'         { 'Rollup CSV bundle (Rollup + UserStats + SessionCohort + SessionStats sidecars sharing the same stem)' }
 		default              { 'Rollup CSV' }
 	}
 	$rollupOutputSummary =
@@ -17242,7 +18389,12 @@ elseif ($isMultiOutputScenario -and $Force) {
 
 # --- DSPM for AI: Billing Information Warning ---
 if (($finalActivityTypes -contains 'AIAppInteraction') -or ($finalActivityTypes -contains 'ConnectedAIAppInteraction') -or ($finalActivityTypes -contains 'AIInteraction')) {
-	if (-not $Force) {
+	if ($IncludeM365Usage -and -not ($finalActivityTypes -contains 'AIAppInteraction')) {
+		# Bundle-attributed DSPM signal: -IncludeM365Usage carries ConnectedAIAppInteraction
+		# as part of the curated activity bundle. The DSPM informational prompt is redundant
+		# because AIAppInteraction (the PAYG path) is not requested; silently bypass.
+	}
+	elseif (-not $Force) {
 		Write-LogHost ""
 		Write-LogHost "============================================================================================================" -ForegroundColor Yellow
 		Write-Host "INFORMATION: DSPM for AI Audit Logging - Billing Details" -ForegroundColor Cyan
@@ -17351,11 +18503,11 @@ if (($finalActivityTypes -contains 'AIAppInteraction') -or ($finalActivityTypes 
 # Resume: suppress the parse-time Output Directory / Output Files / Log File /
 # Authentication / Append/Destination banner. On -Resume the destination state
 # ($OutputFile, $script:RemoteOutputMode, $displayLogFile, $Auth, $AppendFile…)
-# is restored AFTER this point by Read-Checkpoint at L19260+ and re-resolved by
-# the post-restore destination block. The Parameter Snapshot (Step 9c–patched)
-# prints the authoritative values post-restore. Without this gate the early
-# banner shows the bootstrap log path, a fresh non-restored timestamp in the
-# Output Files line, and stale Auth=WebLogin on every resume run.
+# is restored AFTER this point by Read-Checkpoint and re-resolved by the
+# post-restore destination block. The post-restore Parameter Snapshot prints
+# the authoritative values. Without this gate the early banner shows the
+# bootstrap log path, a fresh non-restored timestamp in the Output Files line,
+# and stale Auth=WebLogin on every resume run.
 if (-not $ResumeSpecified) {
 # Output file/directory display based on export mode
 # Note: If activity type switches are used, detailed filenames will be shown after activity types are finalized
@@ -17366,18 +18518,33 @@ if ($OnlyUserInfo) {
 		$entraOutputFile = Join-Path $outputDir "EntraUsers_MAClicensing_${global:ScriptRunTimestamp}.xlsx"
 		Write-LogHost "Output File: $(Get-DisplayPath -LocalPath $entraOutputFile) (Entra users workbook)" -ForegroundColor White
 	} else {
-		$entraOutputFile = Join-Path $outputDir (& $script:GetEffectiveEntraBasename)
-		Write-LogHost "Output File: $(Get-DisplayPath -LocalPath $entraOutputFile)" -ForegroundColor White
+		# Honor -OutputPathUserInfo (or an Append-side promotion of DestRaw) when bound; otherwise inherit $outputDir.
+		$_uiDt6 = script:Resolve-DataTypePaths -DataType 'UserInfo' -DefaultBasename (& $script:GetEffectiveEntraBasename)
+		$entraOutputFile = if ($_uiDt6 -and $_uiDt6.IsBound -and $_uiDt6.Tier -eq 'Local') { Join-Path $_uiDt6.EffectiveDir $_uiDt6.Basename }
+			elseif ($_uiDt6 -and $_uiDt6.IsBound) { $_uiDt6.EffectiveDir.TrimEnd('/') + '/' + $_uiDt6.Basename }
+			else { Join-Path $outputDir (& $script:GetEffectiveEntraBasename) }
+		if ($_uiDt6 -and $_uiDt6.IsBound -and $_uiDt6.Tier -ne 'Local') { Write-LogHost "Output File: $entraOutputFile" -ForegroundColor White }
+		else { Write-LogHost "Output File: $(Get-DisplayPath -LocalPath $entraOutputFile)" -ForegroundColor White }
 	}
 	if ($IncludeAgent365Info) {
-		$agent365PreviewFile = Join-Path $outputDir (& $script:GetEffectiveAgent365Basename)
-		Write-LogHost "  Agent 365 File: $(Get-DisplayPath -LocalPath $agent365PreviewFile)" -ForegroundColor Gray
+		# Honor -OutputPathAgent365Info (or an Append-side promotion of DestRaw) when bound; otherwise inherit $outputDir.
+		$_aiDt6 = script:Resolve-DataTypePaths -DataType 'Agent365Info' -DefaultBasename (& $script:GetEffectiveAgent365Basename)
+		$agent365PreviewFile = if ($_aiDt6 -and $_aiDt6.IsBound -and $_aiDt6.Tier -eq 'Local') { Join-Path $_aiDt6.EffectiveDir $_aiDt6.Basename }
+			elseif ($_aiDt6 -and $_aiDt6.IsBound) { $_aiDt6.EffectiveDir.TrimEnd('/') + '/' + $_aiDt6.Basename }
+			else { Join-Path $outputDir (& $script:GetEffectiveAgent365Basename) }
+		if ($_aiDt6 -and $_aiDt6.IsBound -and $_aiDt6.Tier -ne 'Local') { Write-LogHost "  Agent 365 File: $agent365PreviewFile" -ForegroundColor Gray }
+		else { Write-LogHost "  Agent 365 File: $(Get-DisplayPath -LocalPath $agent365PreviewFile)" -ForegroundColor Gray }
 	}
 } elseif ($OnlyAgent365Info) {
 	# OnlyAgent365Info mode: only the Agents365 catalog CSV is produced
 	$outputDir = if ($OutputPath) { $OutputPath } else { "C:\Temp\" }
-	$agent365PreviewFile = Join-Path $outputDir (& $script:GetEffectiveAgent365Basename)
-	Write-LogHost "Output File: $(Get-DisplayPath -LocalPath $agent365PreviewFile) (Microsoft Agent 365 catalog)" -ForegroundColor White
+	# Honor -OutputPathAgent365Info (or an Append-side promotion of DestRaw) when bound; otherwise inherit $outputDir.
+	$_aiDt7 = script:Resolve-DataTypePaths -DataType 'Agent365Info' -DefaultBasename (& $script:GetEffectiveAgent365Basename)
+	$agent365PreviewFile = if ($_aiDt7 -and $_aiDt7.IsBound -and $_aiDt7.Tier -eq 'Local') { Join-Path $_aiDt7.EffectiveDir $_aiDt7.Basename }
+		elseif ($_aiDt7 -and $_aiDt7.IsBound) { $_aiDt7.EffectiveDir.TrimEnd('/') + '/' + $_aiDt7.Basename }
+		else { Join-Path $outputDir (& $script:GetEffectiveAgent365Basename) }
+	if ($_aiDt7 -and $_aiDt7.IsBound -and $_aiDt7.Tier -ne 'Local') { Write-LogHost "Output File: $agent365PreviewFile (Microsoft Agent 365 catalog)" -ForegroundColor White }
+	else { Write-LogHost "Output File: $(Get-DisplayPath -LocalPath $agent365PreviewFile) (Microsoft Agent 365 catalog)" -ForegroundColor White }
 } elseif ($AppendFile) {
 	# AppendFile mode: the destination URL is already surfaced by the parameter
 	# snapshot's AppendFile row. Re-emitting an 'Output File: ...' + 'Mode:
@@ -17386,13 +18553,17 @@ if ($OnlyUserInfo) {
 	# emit Agent 365 sibling info, which the snapshot does not cover.
 	if ($IncludeAgent365Info) {
 		# Agent 365 always writes a separate CSV alongside the appended file (or its own tab if Excel).
-		# Use the LOCAL OutputFile parent for path math; display gets routed through Get-DisplayPath.
+		# Honor -OutputPathAgent365Info (or an Append-side promotion of DestRaw) when bound; otherwise inherit the LOCAL OutputFile parent.
 		$agent365TargetDir = Split-Path $OutputFile -Parent
 		if ($ExportWorkbook) {
 			Write-LogHost "  Agent 365 Tab: Agents365 (appended to workbook)" -ForegroundColor Gray
 		} else {
-			$agent365PreviewFile = Join-Path $agent365TargetDir (& $script:GetEffectiveAgent365Basename)
-			Write-LogHost "  Agent 365 File: $(Get-DisplayPath -LocalPath $agent365PreviewFile)" -ForegroundColor Gray
+			$_aiDt8 = script:Resolve-DataTypePaths -DataType 'Agent365Info' -DefaultBasename (& $script:GetEffectiveAgent365Basename)
+			$agent365PreviewFile = if ($_aiDt8 -and $_aiDt8.IsBound -and $_aiDt8.Tier -eq 'Local') { Join-Path $_aiDt8.EffectiveDir $_aiDt8.Basename }
+				elseif ($_aiDt8 -and $_aiDt8.IsBound) { $_aiDt8.EffectiveDir.TrimEnd('/') + '/' + $_aiDt8.Basename }
+				else { Join-Path $agent365TargetDir (& $script:GetEffectiveAgent365Basename) }
+			if ($_aiDt8 -and $_aiDt8.IsBound -and $_aiDt8.Tier -ne 'Local') { Write-LogHost "  Agent 365 File: $agent365PreviewFile" -ForegroundColor Gray }
+			else { Write-LogHost "  Agent 365 File: $(Get-DisplayPath -LocalPath $agent365PreviewFile)" -ForegroundColor Gray }
 		}
 	}
 } elseif ($ExcludeCopilotInteraction) {
@@ -17427,12 +18598,39 @@ if ($OnlyUserInfo) {
 		$_combinedQualifier = if ($_isSingleActivityRun) { '' } else { ' (combined - all activity types)' }
 		Write-LogHost "Output File: ${displayOutputFile}${_combinedQualifier}" -ForegroundColor White
 		if ($IncludeUserInfo -and -not $UseEOM) {
-			$entraFile = (Join-Path (Split-Path $OutputFile -Parent) (& $script:GetEffectiveEntraBasename))
-			Write-LogHost "  Entra Users File: $(Get-DisplayPath -LocalPath $entraFile)" -ForegroundColor Gray
+			# Honor -OutputPathUserInfo (or an Append-side promotion of DestRaw) when bound, so the
+			# preview line matches the runtime writer's actual destination instead of unconditionally
+			# joining the EntraUsers leaf onto $OutputFile's parent (the Purview -OutputPath dir).
+			$_uiDt = script:Resolve-DataTypePaths -DataType 'UserInfo' -DefaultBasename (& $script:GetEffectiveEntraBasename)
+			$entraFile = if ($_uiDt -and $_uiDt.IsBound -and $_uiDt.Tier -eq 'Local') {
+				Join-Path $_uiDt.EffectiveDir $_uiDt.Basename
+			} elseif ($_uiDt -and $_uiDt.IsBound) {
+				$_uiDt.EffectiveDir.TrimEnd('/') + '/' + $_uiDt.Basename
+			} else {
+				Join-Path (Split-Path $OutputFile -Parent) (& $script:GetEffectiveEntraBasename)
+			}
+			if ($_uiDt -and $_uiDt.IsBound -and $_uiDt.Tier -ne 'Local') {
+				Write-LogHost "  Entra Users File: $entraFile" -ForegroundColor Gray
+			} else {
+				Write-LogHost "  Entra Users File: $(Get-DisplayPath -LocalPath $entraFile)" -ForegroundColor Gray
+			}
 		}
 		if ($IncludeAgent365Info) {
-			$agent365PreviewFile = (Join-Path (Split-Path $OutputFile -Parent) (& $script:GetEffectiveAgent365Basename))
-			Write-LogHost "  Agent 365 File: $(Get-DisplayPath -LocalPath $agent365PreviewFile)" -ForegroundColor Gray
+			# Honor -OutputPathAgent365Info (or an Append-side promotion of DestRaw) when bound; same
+			# rationale as the EntraUsers branch above.
+			$_aiDt = script:Resolve-DataTypePaths -DataType 'Agent365Info' -DefaultBasename (& $script:GetEffectiveAgent365Basename)
+			$agent365PreviewFile = if ($_aiDt -and $_aiDt.IsBound -and $_aiDt.Tier -eq 'Local') {
+				Join-Path $_aiDt.EffectiveDir $_aiDt.Basename
+			} elseif ($_aiDt -and $_aiDt.IsBound) {
+				$_aiDt.EffectiveDir.TrimEnd('/') + '/' + $_aiDt.Basename
+			} else {
+				Join-Path (Split-Path $OutputFile -Parent) (& $script:GetEffectiveAgent365Basename)
+			}
+			if ($_aiDt -and $_aiDt.IsBound -and $_aiDt.Tier -ne 'Local') {
+				Write-LogHost "  Agent 365 File: $agent365PreviewFile" -ForegroundColor Gray
+			} else {
+				Write-LogHost "  Agent 365 File: $(Get-DisplayPath -LocalPath $agent365PreviewFile)" -ForegroundColor Gray
+			}
 		}
 	} else {
 		# Separate CSV files per activity type
@@ -17442,12 +18640,39 @@ if ($OnlyUserInfo) {
 		Write-LogHost "Output Directory: $displayDir\" -ForegroundColor White
 		Write-LogHost "Output Files: ${displayDir}\Purview_Audit_UsageActivity_<ActivityType>_${timestamp}.csv" -ForegroundColor Gray
 		if ($IncludeUserInfo -and -not $UseEOM) {
-			$entraFile = Join-Path $outputDir (& $script:GetEffectiveEntraBasename)
-			Write-LogHost "  Entra Users: $(Get-DisplayPath -LocalPath $entraFile)" -ForegroundColor Gray
+			# Honor -OutputPathUserInfo (or an Append-side promotion of DestRaw) when bound, so the
+			# separate-files preview matches the runtime writer's actual destination instead of
+			# unconditionally joining the EntraUsers leaf onto $OutputFile's parent.
+			$_uiDt = script:Resolve-DataTypePaths -DataType 'UserInfo' -DefaultBasename (& $script:GetEffectiveEntraBasename)
+			$entraFile = if ($_uiDt -and $_uiDt.IsBound -and $_uiDt.Tier -eq 'Local') {
+				Join-Path $_uiDt.EffectiveDir $_uiDt.Basename
+			} elseif ($_uiDt -and $_uiDt.IsBound) {
+				$_uiDt.EffectiveDir.TrimEnd('/') + '/' + $_uiDt.Basename
+			} else {
+				Join-Path $outputDir (& $script:GetEffectiveEntraBasename)
+			}
+			if ($_uiDt -and $_uiDt.IsBound -and $_uiDt.Tier -ne 'Local') {
+				Write-LogHost "  Entra Users: $entraFile" -ForegroundColor Gray
+			} else {
+				Write-LogHost "  Entra Users: $(Get-DisplayPath -LocalPath $entraFile)" -ForegroundColor Gray
+			}
 		}
 		if ($IncludeAgent365Info) {
-			$agent365PreviewFile = Join-Path $outputDir (& $script:GetEffectiveAgent365Basename)
-			Write-LogHost "  Agent 365: $(Get-DisplayPath -LocalPath $agent365PreviewFile)" -ForegroundColor Gray
+			# Honor -OutputPathAgent365Info (or an Append-side promotion of DestRaw) when bound; same
+			# rationale as the EntraUsers branch above.
+			$_aiDt = script:Resolve-DataTypePaths -DataType 'Agent365Info' -DefaultBasename (& $script:GetEffectiveAgent365Basename)
+			$agent365PreviewFile = if ($_aiDt -and $_aiDt.IsBound -and $_aiDt.Tier -eq 'Local') {
+				Join-Path $_aiDt.EffectiveDir $_aiDt.Basename
+			} elseif ($_aiDt -and $_aiDt.IsBound) {
+				$_aiDt.EffectiveDir.TrimEnd('/') + '/' + $_aiDt.Basename
+			} else {
+				Join-Path $outputDir (& $script:GetEffectiveAgent365Basename)
+			}
+			if ($_aiDt -and $_aiDt.IsBound -and $_aiDt.Tier -ne 'Local') {
+				Write-LogHost "  Agent 365: $agent365PreviewFile" -ForegroundColor Gray
+			} else {
+				Write-LogHost "  Agent 365: $(Get-DisplayPath -LocalPath $agent365PreviewFile)" -ForegroundColor Gray
+			}
 		}
 	}
 }
@@ -17606,6 +18831,14 @@ if ($RAWInputCSV) {
 			$folder = if ($script:DestParentUrl -and $script:DestParentUrl.ContainsKey($DataTypeKey) -and $script:DestParentUrl[$DataTypeKey]) { $script:DestParentUrl[$DataTypeKey] } else { $script:DestRaw[$DataTypeKey] }
 			return ($folder.TrimEnd('/','\') + '/' + $FileName)
 		}
+		# Local tier: honor a per-stream -OutputPath<DataType> override (or an Append-side promotion of
+		# DestRaw) so the snapshot reflects the actual on-disk destination, not the inherited -OutputPath
+		# dir. Without this, EntraUsersOutput / Agents365Output displayed the -OutputPath parent even
+		# when the runtime writer was routing the stream to its own -OutputPath<DataType> directory.
+		$auxDt = script:Resolve-DataTypePaths -DataType $DataTypeKey -DefaultBasename $FileName
+		if ($auxDt -and $auxDt.IsBound -and $auxDt.Tier -eq 'Local') {
+			return (Get-DisplayPath -LocalPath (Join-Path $auxDt.EffectiveDir $FileName))
+		}
 		$localSibling = Join-Path (Split-Path $OutputFile -Parent) $FileName
 		return (Get-DisplayPath -LocalPath $localSibling)
 	}
@@ -17703,6 +18936,14 @@ else {
 		if ($script:DestTier -and $script:DestTier.ContainsKey($DataTypeKey) -and $script:DestTier[$DataTypeKey] -and $script:DestTier[$DataTypeKey] -ne 'Local') {
 			$folder = if ($script:DestParentUrl -and $script:DestParentUrl.ContainsKey($DataTypeKey) -and $script:DestParentUrl[$DataTypeKey]) { $script:DestParentUrl[$DataTypeKey] } else { $script:DestRaw[$DataTypeKey] }
 			return ($folder.TrimEnd('/','\') + '/' + $FileName)
+		}
+		# Local tier: honor a per-stream -OutputPath<DataType> override (or an Append-side promotion of
+		# DestRaw) so the snapshot reflects the actual on-disk destination, not the inherited -OutputPath
+		# dir. Without this, EntraUsersOutput / Agents365Output displayed the -OutputPath parent even
+		# when the runtime writer was routing the stream to its own -OutputPath<DataType> directory.
+		$auxDt = script:Resolve-DataTypePaths -DataType $DataTypeKey -DefaultBasename $FileName
+		if ($auxDt -and $auxDt.IsBound -and $auxDt.Tier -eq 'Local') {
+			return (Get-DisplayPath -LocalPath (Join-Path $auxDt.EffectiveDir $FileName))
 		}
 		$localSibling = Join-Path (Split-Path $OutputFile -Parent) $FileName
 		return (Get-DisplayPath -LocalPath $localSibling)
@@ -19058,7 +20299,7 @@ function Convert-ToStructuredRecord {
 		if (-not $EnableExplosion -and -not $ExplodeDeep) {
 			$compactRecord = [pscustomobject]@{
 				RecordId               = $(if ($Record.RecordId) { $Record.RecordId } elseif ($Record.Identity) { $Record.Identity } elseif ($Record.Id) { $Record.Id } else { $auditData.Id })
-				CreationDate           = $Record.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+				CreationDate           = $Record.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ', [System.Globalization.CultureInfo]::InvariantCulture)
 				RecordType             = $Record.RecordType
 				Operation              = $(try { $auditData.Operation } catch { if ($Record.Operation) { $Record.Operation } else { $Record.Operations } })
 				UserId                 = if ($Record.UserId) { $Record.UserId } elseif ($Record.UserIds) { $Record.UserIds } else { '' }
@@ -19141,14 +20382,14 @@ function Convert-ToStructuredRecord {
 		$baseRecord = [pscustomobject]@{
 			RecordId           = $(if ($Record.RecordId) { $Record.RecordId } elseif ($Record.Identity) { $Record.Identity } elseif ($Record.Id) { $Record.Id } else { $auditData.Id })
 			RecordType         = $Record.RecordType
-			CreationDate       = $Record.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+			CreationDate       = $Record.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ', [System.Globalization.CultureInfo]::InvariantCulture)
 			ResultStatus       = $Record.ResultStatus
 			ResultCount        = $Record.ResultCount
 			Identity           = $Record.Identity
 			IsValid            = $Record.IsValid
 			ObjectState        = $Record.ObjectState
 			Id                 = $auditData.Id
-			CreationTime       = & { $ct = script:Parse-DateSafe $auditData.CreationTime; if ($ct) { $ct.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { $auditData.CreationTime } }
+			CreationTime       = & { $ct = script:Parse-DateSafe $auditData.CreationTime; if ($ct) { $ct.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ', [System.Globalization.CultureInfo]::InvariantCulture) } else { $auditData.CreationTime } }
 			Operation          = $auditData.Operation
 			OrganizationId     = $auditData.OrganizationId
 			RecordTypeNum      = $auditData.RecordType
@@ -19450,8 +20691,8 @@ try {
 		Write-LogHost ""
 		Write-LogHost "Checkpoint loaded successfully:" -ForegroundColor Green
 		Write-LogHost "  Original Run:       $($checkpointData.runTimestamp)" -ForegroundColor White
-		$cpStartDate = if ($checkpointData.parameters.startDate) { $d = script:Parse-DateSafe $checkpointData.parameters.startDate; if ($d) { $d.ToString('yyyy-MM-dd') } else { 'Unknown' } } else { 'Unknown' }
-		$cpEndDate = if ($checkpointData.parameters.endDate) { $d = script:Parse-DateSafe $checkpointData.parameters.endDate; if ($d) { $d.ToString('yyyy-MM-dd') } else { 'Unknown' } } else { 'Unknown' }
+		$cpStartDate = if ($checkpointData.parameters.startDate) { $d = script:Parse-DateSafe $checkpointData.parameters.startDate; if ($d) { $d.ToLocalTime().ToString('yyyy-MM-dd') } else { 'Unknown' } } else { 'Unknown' }
+		$cpEndDate = if ($checkpointData.parameters.endDate) { $d = script:Parse-DateSafe $checkpointData.parameters.endDate; if ($d) { $d.ToLocalTime().ToString('yyyy-MM-dd') } else { 'Unknown' } } else { 'Unknown' }
 		Write-LogHost "  Date Range:         $cpStartDate to $cpEndDate" -ForegroundColor White
 		Write-LogHost "  Total Partitions:   $totalPartitions" -ForegroundColor White
 		Write-LogHost "  Completed:          $completedCount" -ForegroundColor Green
@@ -19475,11 +20716,17 @@ try {
 		# Date range (required) - using locale-safe parsing
 		$parsedStart = script:Parse-DateSafe $cp.startDate
 		if (-not $parsedStart) { throw "Failed to parse checkpoint startDate: $($cp.startDate)" }
-		$StartDate = $parsedStart.ToString('yyyy-MM-dd')
+		# Checkpoint stores the date as a UTC instant (local midnight -> ToUniversalTime at save).
+		# Parse-DateSafe returns a UTC-kind value, so convert back to local before formatting the
+		# calendar date; otherwise positive-UTC-offset hosts (e.g. IST) render the prior day,
+		# shifting the trim window by one day on resume.
+		$StartDate = $parsedStart.ToLocalTime().ToString('yyyy-MM-dd')
 		
 		$parsedEnd = script:Parse-DateSafe $cp.endDate
 		if (-not $parsedEnd) { throw "Failed to parse checkpoint endDate: $($cp.endDate)" }
-		$EndDate = $parsedEnd.ToString('yyyy-MM-dd')
+		# See StartDate note above: convert the UTC-kind parse result back to local before
+		# formatting so the restored end date matches the originally requested calendar date.
+		$EndDate = $parsedEnd.ToLocalTime().ToString('yyyy-MM-dd')
 		
 		# Activity/Record filtering
 		if ($cp.activityTypes -and $cp.activityTypes.Count -gt 0) { $ActivityTypes = $cp.activityTypes }
@@ -19637,15 +20884,16 @@ try {
 		}
 		Write-LogHost "  Resume: re-resolved destination state (RemoteOutputMode=$script:RemoteOutputMode, tiers=$(($script:DestTier.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '))" -ForegroundColor DarkGray
 
-		# v1.11.2 Fix #8 (BUG-A part 2): Mirror the parse-time scratch-dir rewrite (search
-		# for "Redirect OutputPath to a per-run scratch dir") for the -Resume code path.
-		# Once we know the destination is SharePoint / Fabric, downstream code must continue
-		# to treat $OutputPath as the LOCAL scratch directory (where _PARTIAL.csv and
-		# .pax_incremental live) — exactly as it did during the interrupted run. The
-		# scratch dir on a -Resume is the parent of the checkpoint file (every PAX_<ts>/
-		# scratch is self-contained). Without this rewrite, downstream code re-uses the
-		# remote URL string as a local Join-Path target and crashes / writes nowhere.
-		# Tier-agnostic: applies identically to SharePoint and Fabric (OneLake) modes.
+		# Resume-side scratch-dir rewrite. Mirrors the parse-time scratch-dir rewrite
+		# (search for "Redirect OutputPath to a per-run scratch dir") for the -Resume
+		# code path. Once we know the destination is SharePoint / Fabric, downstream
+		# code must continue to treat $OutputPath as the LOCAL scratch directory
+		# (where _PARTIAL.csv and .pax_incremental live) — exactly as it did during
+		# the interrupted run. The scratch dir on a -Resume is the parent of the
+		# checkpoint file (every PAX_<ts>/ scratch is self-contained). Without this
+		# rewrite, downstream code would re-use the remote URL string as a local
+		# Join-Path target and crash / write nowhere. Tier-agnostic: applies
+		# identically to SharePoint and Fabric (OneLake) modes.
 		if ($script:RemoteOutputMode -ne 'None') {
 			$script:RemoteScratchDir = Split-Path -Parent $script:CheckpointPath
 			$sep = [System.IO.Path]::DirectorySeparatorChar
@@ -19779,21 +21027,20 @@ try {
 		$hasIncrementalData = (Test-Path $incrementalDir) -and @(Get-ChildItem -Path $incrementalDir -Filter "*.jsonl" -ErrorAction SilentlyContinue).Count -gt 0
 		
 		if (-not (Test-Path $script:PartialOutputPath) -and -not $hasIncrementalData) {
-			# v1.11.2 Fix #8 (BUG-F): wording. "Will start fresh data collection" implied a
-			# clean slate even when the checkpoint preserves server-side QueryIds that the
-			# resume reuses (so the server query is NOT recreated). Differentiate the two
+			# Wording note. "Will start fresh data collection" would imply a clean slate
+			# even when the checkpoint preserves server-side QueryIds that the resume
+			# reuses (so the server query is NOT recreated). Differentiate the two
 			# scenarios so operators understand whether QueryId reuse is active.
 			#
-			# Fix #8c correction: $checkpointData is an OrderedHashtable (Read-Checkpoint
-			# at L11975 calls `ConvertFrom-Json -AsHashtable`), NOT a PSCustomObject. The
-			# prior Fix #8b check used `.PSObject.Properties.Name -contains 'partitions'`,
-			# which on a hashtable returns the CLR property names of the dictionary type
-			# (Keys, Values, Count, …) — not the dictionary keys. The presence check
-			# therefore always returned $false and $hasQueryCreated stayed $false even when
-			# `$checkpointData.partitions.queryCreated` clearly had entries (proven by the
-			# resume summary at L19324 printing "Query Created: N" with the same access
-			# pattern). Use dot-access (which hashtable dispatches to key lookup, returning
-			# $null for missing keys) rather than CLR property introspection.
+			# $checkpointData is an OrderedHashtable (Read-Checkpoint calls
+			# `ConvertFrom-Json -AsHashtable`), NOT a PSCustomObject. A naive presence
+			# check using `.PSObject.Properties.Name -contains 'partitions'` on a
+			# hashtable returns the CLR property names of the dictionary type
+			# (Keys, Values, Count, …) — not the dictionary keys — so the check
+			# always returns $false even when `$checkpointData.partitions.queryCreated`
+			# clearly has entries. Use dot-access (which hashtable dispatches to key
+			# lookup, returning $null for missing keys) rather than CLR property
+			# introspection.
 			$hasQueryCreated = $false
 			try {
 				$qcArr = $checkpointData.partitions.queryCreated
@@ -19935,8 +21182,8 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		# Re-compute date-range trim boundaries from checkpoint-restored dates.
 		# TrimStartDateUTC/TrimEndDateUTC were initially set from command-line defaults (yesterday)
 		# before the checkpoint restore overwrote $StartDate/$EndDate with the original run's dates.
-		$script:TrimStartDateUTC = if ($StartDate -ne '*') { [datetime]::SpecifyKind([datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null), [System.DateTimeKind]::Utc) } else { $null }
-		$script:TrimEndDateUTC   = if ($EndDate   -ne '*') { [datetime]::SpecifyKind([datetime]::ParseExact($EndDate,   'yyyy-MM-dd', $null), [System.DateTimeKind]::Utc) } else { $null }
+		$script:TrimStartDateUTC = if ($StartDate -ne '*') { [datetime]::SpecifyKind([datetime]::ParseExact($StartDate, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture), [System.DateTimeKind]::Utc) } else { $null }
+		$script:TrimEndDateUTC   = if ($EndDate   -ne '*') { [datetime]::SpecifyKind([datetime]::ParseExact($EndDate,   'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture), [System.DateTimeKind]::Utc) } else { $null }
 		
 		# Re-run MaxMemoryMB resolution after checkpoint restore (may have restored -1 for auto-detect)
 		$script:ResolvedMaxMemoryMB = $MaxMemoryMB
@@ -20163,8 +21410,8 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		$applyActivityFilter = ($PSBoundParameters.ContainsKey('ActivityTypes') -and $ActivityTypes -and $ActivityTypes.Count -gt 0)
 		$startFilter = $null; $endFilter = $null
 		if ($applyDateFilter) {
-			if ($PSBoundParameters.ContainsKey('StartDate')) { try { $startFilter = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null) } catch {} }
-			if ($PSBoundParameters.ContainsKey('EndDate')) { try { $endFilter = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null) } catch {} }
+			if ($PSBoundParameters.ContainsKey('StartDate')) { try { $startFilter = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture) } catch {} }
+			if ($PSBoundParameters.ContainsKey('EndDate')) { try { $endFilter = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture) } catch {} }
 		}
 		$activitySet = $null
 		if ($applyActivityFilter) { $activitySet = New-Object System.Collections.Generic.HashSet[string] ([System.StringComparer]::OrdinalIgnoreCase); foreach ($a in $ActivityTypes) { if ($a) { [void]$activitySet.Add($a) } } }
@@ -20236,8 +21483,8 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 			$script:targetUsers = $script:targetUsers | Select-Object -Unique
 			Write-LogHost "  Total target users after deduplication: $($script:targetUsers.Count)" -ForegroundColor Green; Write-LogHost ""
 		}
-		$startDateObj = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', $null)
-		$endDateObj = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', $null)
+		$startDateObj = [datetime]::ParseExact($StartDate, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
+		$endDateObj = [datetime]::ParseExact($EndDate, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
 		
 		if ($OnlyUserInfo) {
 			Write-LogHost "Fetching Entra user directory and license data only (no audit logs)..." -ForegroundColor Cyan
@@ -20348,16 +21595,16 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		# Step 9: Apply to ActivityTypes variable
 	$ActivityTypes = $finalActivityTypes
 	
-		# Step 9b: Update Parameter Snapshot with final ActivityTypes (if it exists)
+		# Update Parameter Snapshot with final ActivityTypes (if it exists)
 	if ($paramSnapshot -and $paramSnapshot.Contains('ActivityTypes')) {
 		$paramSnapshot['ActivityTypes'] = ($ActivityTypes -join ';')
 	}
 
-	# Step 9c: On a -Resume run, refresh other snapshot fields that the parse-time
-	# build captured BEFORE the checkpoint restore mutated them. Without this patch
-	# the displayed banner shows stale CLI-bound defaults (Auth=WebLogin, TenantId=<empty>,
-	# RollupPlusRaw=False, etc.) even though the run is actually executing the restored
-	# values. Resume-only so non-resume runs are untouched.
+	# On a -Resume run, refresh other snapshot fields that the parse-time build
+	# captured BEFORE the checkpoint restore mutated them. Without this patch the
+	# displayed banner shows stale CLI-bound defaults (Auth=WebLogin, TenantId=<empty>,
+	# RollupPlusRaw=False, etc.) even though the run is actually executing the
+	# restored values. Resume-only so non-resume runs are untouched.
 	if ($script:IsResumeMode -and $paramSnapshot) {
 		# Auth identity
 		if ($paramSnapshot.Contains('Auth'))     { $paramSnapshot['Auth']     = $Auth }
@@ -20396,18 +21643,18 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		if ($paramSnapshot.Contains('PartitionHours')) {
 			$paramSnapshot['PartitionHours'] = if ($PartitionHours -gt 0) { $PartitionHours } else { 'auto' }
 		}
-		# Date range (v1.11.2 Fix #6): the parse-time snapshot captured $StartDate/$EndDate
-		# BEFORE the checkpoint restore overwrote them, so the displayed banner showed the
+		# Date range: the parse-time snapshot captured $StartDate/$EndDate BEFORE the
+		# checkpoint restore overwrote them, so the displayed banner would show the
 		# auto-populated yesterday/today defaults instead of the original run's dates.
 		# Patch with the post-restore values so the snapshot reflects what is actually
 		# being processed.
 		if ($paramSnapshot.Contains('StartDate (inclusive)')) { $paramSnapshot['StartDate (inclusive)'] = $StartDate }
 		if ($paramSnapshot.Contains('EndDate (exclusive)'))   { $paramSnapshot['EndDate (exclusive)']   = $EndDate }
 
-		# v1.11.2 Fix #8 (BUG-B / BUG-E): refresh destination-cluster fields. Parse-time
-		# captured $displayOutputFile / $displayLogFile from the user-bound (default) values
-		# and routed them through Get-DisplayPath while $script:RemoteOutputMode was still
-		# 'None' (resume-mode parse time). After the destination re-resolution above,
+		# Refresh destination-cluster fields. Parse-time captured $displayOutputFile /
+		# $displayLogFile from the user-bound (default) values and routed them through
+		# Get-DisplayPath while $script:RemoteOutputMode was still 'None' (resume-mode
+		# parse time). After the destination re-resolution above,
 		# $script:RemoteOutputMode/$script:RemoteOutputUrl are correct and $OutputFile /
 		# $LogFile have been restored to the checkpoint's _PARTIAL paths. Re-derive both
 		# display values using the same formula so SharePoint AND Fabric resumes show the
@@ -20423,20 +21670,33 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		# Aux streams (EntraUsers / Agents365). $resolveAuxDisplayPath was a parse-time
 		# closure not in scope here; rebuild the equivalent inline. Only patch when the
 		# corresponding stream is enabled and a path was already captured in the snapshot.
+		# Consult script:Resolve-DataTypePaths so Local-tier per-stream overrides
+		# (-OutputPathUserInfo / -OutputPathAgent365Info pointing at a local directory)
+		# are honored — not just remote tiers — matching the parse-time closure semantics.
 		if ($paramSnapshot.Contains('EntraUsersOutput') -and ($IncludeUserInfo -or $OnlyUserInfo) -and -not $ExportWorkbook) {
 			$auxLeaf = & $script:GetEffectiveEntraBasename
-			if ($script:DestRaw.ContainsKey('UserInfo') -and $script:DestTier['UserInfo'] -ne 'Local') {
+			$_uiDtR = script:Resolve-DataTypePaths -DataType 'UserInfo' -DefaultBasename $auxLeaf
+			if ($_uiDtR -and $_uiDtR.IsBound -and $_uiDtR.Tier -eq 'Local') {
+				$paramSnapshot['EntraUsersOutput'] = Get-DisplayPath -LocalPath (Join-Path $_uiDtR.EffectiveDir $_uiDtR.Basename)
+			} elseif ($_uiDtR -and $_uiDtR.IsBound) {
+				$paramSnapshot['EntraUsersOutput'] = $_uiDtR.EffectiveDir.TrimEnd('/') + '/' + $_uiDtR.Basename
+			} elseif ($script:DestRaw.ContainsKey('UserInfo') -and $script:DestTier['UserInfo'] -ne 'Local') {
 				$paramSnapshot['EntraUsersOutput'] = (($script:DestParentUrl['UserInfo'] ?? $script:DestRaw['UserInfo']).TrimEnd('/') + '/' + $auxLeaf)
 			} elseif ($OutputPath) {
-				$paramSnapshot['EntraUsersOutput'] = Join-Path $OutputPath $auxLeaf
+				$paramSnapshot['EntraUsersOutput'] = Get-DisplayPath -LocalPath (Join-Path $OutputPath $auxLeaf)
 			}
 		}
 		if ($paramSnapshot.Contains('Agents365Output') -and ($IncludeAgent365Info -or $OnlyAgent365Info) -and -not $ExportWorkbook) {
 			$auxLeaf = & $script:GetEffectiveAgent365Basename
-			if ($script:DestRaw.ContainsKey('Agent365Info') -and $script:DestTier['Agent365Info'] -ne 'Local') {
+			$_aiDtR = script:Resolve-DataTypePaths -DataType 'Agent365Info' -DefaultBasename $auxLeaf
+			if ($_aiDtR -and $_aiDtR.IsBound -and $_aiDtR.Tier -eq 'Local') {
+				$paramSnapshot['Agents365Output'] = Get-DisplayPath -LocalPath (Join-Path $_aiDtR.EffectiveDir $_aiDtR.Basename)
+			} elseif ($_aiDtR -and $_aiDtR.IsBound) {
+				$paramSnapshot['Agents365Output'] = $_aiDtR.EffectiveDir.TrimEnd('/') + '/' + $_aiDtR.Basename
+			} elseif ($script:DestRaw.ContainsKey('Agent365Info') -and $script:DestTier['Agent365Info'] -ne 'Local') {
 				$paramSnapshot['Agents365Output'] = (($script:DestParentUrl['Agent365Info'] ?? $script:DestRaw['Agent365Info']).TrimEnd('/') + '/' + $auxLeaf)
 			} elseif ($OutputPath) {
-				$paramSnapshot['Agents365Output'] = Join-Path $OutputPath $auxLeaf
+				$paramSnapshot['Agents365Output'] = Get-DisplayPath -LocalPath (Join-Path $OutputPath $auxLeaf)
 			}
 		}
 	}
@@ -20484,8 +21744,24 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 				$_isSingleActivityRun2 = ($ActivityTypes -and @($ActivityTypes).Count -eq 1 -and -not $IncludeM365Usage)
 				$_combinedQualifier2 = if ($_isSingleActivityRun2) { '' } else { ' (combined - all activity types)' }
 				Write-LogHost "Output File: $(Get-DisplayPath -LocalPath $displayPath)${_combinedQualifier2}" -ForegroundColor White
-				if ($IncludeUserInfo -and -not $UseEOM) { $entraFileLater = (Join-Path (Split-Path $displayPath -Parent) (& $script:GetEffectiveEntraBasename)); Write-LogHost "  Entra Users File: $(Get-DisplayPath -LocalPath $entraFileLater)" -ForegroundColor Gray }
-				if ($agent365WillProduceFile) { $agent365FileLater = (Join-Path (Split-Path $displayPath -Parent) (& $script:GetEffectiveAgent365Basename)); Write-LogHost "  Agent 365 File: $(Get-DisplayPath -LocalPath $agent365FileLater)" -ForegroundColor Gray }
+				if ($IncludeUserInfo -and -not $UseEOM) {
+					# Honor -OutputPathUserInfo (or an Append-side promotion of DestRaw) when bound; otherwise inherit $displayPath's parent.
+					$_uiDt2 = script:Resolve-DataTypePaths -DataType 'UserInfo' -DefaultBasename (& $script:GetEffectiveEntraBasename)
+					$entraFileLater = if ($_uiDt2 -and $_uiDt2.IsBound -and $_uiDt2.Tier -eq 'Local') { Join-Path $_uiDt2.EffectiveDir $_uiDt2.Basename }
+						elseif ($_uiDt2 -and $_uiDt2.IsBound) { $_uiDt2.EffectiveDir.TrimEnd('/') + '/' + $_uiDt2.Basename }
+						else { Join-Path (Split-Path $displayPath -Parent) (& $script:GetEffectiveEntraBasename) }
+					if ($_uiDt2 -and $_uiDt2.IsBound -and $_uiDt2.Tier -ne 'Local') { Write-LogHost "  Entra Users File: $entraFileLater" -ForegroundColor Gray }
+					else { Write-LogHost "  Entra Users File: $(Get-DisplayPath -LocalPath $entraFileLater)" -ForegroundColor Gray }
+				}
+				if ($agent365WillProduceFile) {
+					# Honor -OutputPathAgent365Info (or an Append-side promotion of DestRaw) when bound; otherwise inherit $displayPath's parent.
+					$_aiDt2 = script:Resolve-DataTypePaths -DataType 'Agent365Info' -DefaultBasename (& $script:GetEffectiveAgent365Basename)
+					$agent365FileLater = if ($_aiDt2 -and $_aiDt2.IsBound -and $_aiDt2.Tier -eq 'Local') { Join-Path $_aiDt2.EffectiveDir $_aiDt2.Basename }
+						elseif ($_aiDt2 -and $_aiDt2.IsBound) { $_aiDt2.EffectiveDir.TrimEnd('/') + '/' + $_aiDt2.Basename }
+						else { Join-Path (Split-Path $displayPath -Parent) (& $script:GetEffectiveAgent365Basename) }
+					if ($_aiDt2 -and $_aiDt2.IsBound -and $_aiDt2.Tier -ne 'Local') { Write-LogHost "  Agent 365 File: $agent365FileLater" -ForegroundColor Gray }
+					else { Write-LogHost "  Agent 365 File: $(Get-DisplayPath -LocalPath $agent365FileLater)" -ForegroundColor Gray }
+				}
 			} else {
 				# Separate CSV files per activity type
 				$outputDir   = Split-Path $OutputFile -Parent
@@ -20493,8 +21769,24 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 				$timestamp   = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile) -replace '.*_(\d{8}_\d{6}).*', '$1'
 				Write-LogHost "Output Directory: $displayDir2\" -ForegroundColor White
 				Write-LogHost "Output Files: ${displayDir2}\Purview_Audit_UsageActivity_<ActivityType>_${timestamp}.csv" -ForegroundColor Gray
-				if ($IncludeUserInfo -and -not $UseEOM) { $entraFileSplit = (Join-Path $outputDir (& $script:GetEffectiveEntraBasename)); Write-LogHost "  Entra Users: $(Get-DisplayPath -LocalPath $entraFileSplit)" -ForegroundColor Gray }
-				if ($agent365WillProduceFile) { $agent365FileSplit = (Join-Path $outputDir (& $script:GetEffectiveAgent365Basename)); Write-LogHost "  Agent 365: $(Get-DisplayPath -LocalPath $agent365FileSplit)" -ForegroundColor Gray }
+				if ($IncludeUserInfo -and -not $UseEOM) {
+					# Honor -OutputPathUserInfo (or an Append-side promotion of DestRaw) when bound; otherwise inherit $outputDir.
+					$_uiDt3 = script:Resolve-DataTypePaths -DataType 'UserInfo' -DefaultBasename (& $script:GetEffectiveEntraBasename)
+					$entraFileSplit = if ($_uiDt3 -and $_uiDt3.IsBound -and $_uiDt3.Tier -eq 'Local') { Join-Path $_uiDt3.EffectiveDir $_uiDt3.Basename }
+						elseif ($_uiDt3 -and $_uiDt3.IsBound) { $_uiDt3.EffectiveDir.TrimEnd('/') + '/' + $_uiDt3.Basename }
+						else { Join-Path $outputDir (& $script:GetEffectiveEntraBasename) }
+					if ($_uiDt3 -and $_uiDt3.IsBound -and $_uiDt3.Tier -ne 'Local') { Write-LogHost "  Entra Users: $entraFileSplit" -ForegroundColor Gray }
+					else { Write-LogHost "  Entra Users: $(Get-DisplayPath -LocalPath $entraFileSplit)" -ForegroundColor Gray }
+				}
+				if ($agent365WillProduceFile) {
+					# Honor -OutputPathAgent365Info (or an Append-side promotion of DestRaw) when bound; otherwise inherit $outputDir.
+					$_aiDt3 = script:Resolve-DataTypePaths -DataType 'Agent365Info' -DefaultBasename (& $script:GetEffectiveAgent365Basename)
+					$agent365FileSplit = if ($_aiDt3 -and $_aiDt3.IsBound -and $_aiDt3.Tier -eq 'Local') { Join-Path $_aiDt3.EffectiveDir $_aiDt3.Basename }
+						elseif ($_aiDt3 -and $_aiDt3.IsBound) { $_aiDt3.EffectiveDir.TrimEnd('/') + '/' + $_aiDt3.Basename }
+						else { Join-Path $outputDir (& $script:GetEffectiveAgent365Basename) }
+					if ($_aiDt3 -and $_aiDt3.IsBound -and $_aiDt3.Tier -ne 'Local') { Write-LogHost "  Agent 365: $agent365FileSplit" -ForegroundColor Gray }
+					else { Write-LogHost "  Agent 365: $(Get-DisplayPath -LocalPath $agent365FileSplit)" -ForegroundColor Gray }
+				}
 			}
 		}
 	}
@@ -20668,7 +21960,13 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 						$_auiDisplay = if ($script:AppendRaw.ContainsKey('UserInfo') -and $script:AppendRaw['UserInfo']) { $script:AppendRaw['UserInfo'] } else { $AppendUserInfo }
 						Write-LogHost "EntraUsers file: appended to $_auiDisplay" -ForegroundColor Gray
 					} else {
-						Write-LogHost "EntraUsers file (separate): $(Get-DisplayPath -LocalPath (Join-Path $OutputDir (& $script:GetEffectiveEntraBasename)))" -ForegroundColor Gray
+						# Honor -OutputPathUserInfo (or an Append-side promotion of DestRaw) when bound; otherwise inherit $OutputDir (the Purview parent already computed above).
+						$_uiDt4 = script:Resolve-DataTypePaths -DataType 'UserInfo' -DefaultBasename (& $script:GetEffectiveEntraBasename)
+						$_uiPath4 = if ($_uiDt4 -and $_uiDt4.IsBound -and $_uiDt4.Tier -eq 'Local') { Join-Path $_uiDt4.EffectiveDir $_uiDt4.Basename }
+							elseif ($_uiDt4 -and $_uiDt4.IsBound) { $_uiDt4.EffectiveDir.TrimEnd('/') + '/' + $_uiDt4.Basename }
+							else { Join-Path $OutputDir (& $script:GetEffectiveEntraBasename) }
+						if ($_uiDt4 -and $_uiDt4.IsBound -and $_uiDt4.Tier -ne 'Local') { Write-LogHost "EntraUsers file (separate): $_uiPath4" -ForegroundColor Gray }
+						else { Write-LogHost "EntraUsers file (separate): $(Get-DisplayPath -LocalPath $_uiPath4)" -ForegroundColor Gray }
 					}
 				}
 				if ($agent365WillProduceFile) {
@@ -20676,7 +21974,13 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 						$_aaiDisplay = if ($script:AppendRaw.ContainsKey('Agent365Info') -and $script:AppendRaw['Agent365Info']) { $script:AppendRaw['Agent365Info'] } else { $AppendAgent365Info }
 						Write-LogHost "Agent 365 file: appended to $_aaiDisplay" -ForegroundColor Gray
 					} else {
-						Write-LogHost "Agent 365 file (separate): $(Get-DisplayPath -LocalPath (Join-Path $OutputDir (& $script:GetEffectiveAgent365Basename)))" -ForegroundColor Gray
+						# Honor -OutputPathAgent365Info (or an Append-side promotion of DestRaw) when bound; otherwise inherit $OutputDir.
+						$_aiDt4 = script:Resolve-DataTypePaths -DataType 'Agent365Info' -DefaultBasename (& $script:GetEffectiveAgent365Basename)
+						$_aiPath4 = if ($_aiDt4 -and $_aiDt4.IsBound -and $_aiDt4.Tier -eq 'Local') { Join-Path $_aiDt4.EffectiveDir $_aiDt4.Basename }
+							elseif ($_aiDt4 -and $_aiDt4.IsBound) { $_aiDt4.EffectiveDir.TrimEnd('/') + '/' + $_aiDt4.Basename }
+							else { Join-Path $OutputDir (& $script:GetEffectiveAgent365Basename) }
+						if ($_aiDt4 -and $_aiDt4.IsBound -and $_aiDt4.Tier -ne 'Local') { Write-LogHost "Agent 365 file (separate): $_aiPath4" -ForegroundColor Gray }
+						else { Write-LogHost "Agent 365 file (separate): $(Get-DisplayPath -LocalPath $_aiPath4)" -ForegroundColor Gray }
 					}
 				}
 			} else {
@@ -20686,8 +21990,24 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 			$filePrefix = "Purview_Audit"
 			Write-LogHost "Output directory: $displayDir" -ForegroundColor Gray
 				Write-LogHost "Activity file pattern: ${filePrefix}_<ActivityType>_${global:ScriptRunTimestamp}.csv" -ForegroundColor Gray
-				if ($IncludeUserInfo) { Write-LogHost "EntraUsers file: $(Get-DisplayPath -LocalPath (Join-Path $outputDir (& $script:GetEffectiveEntraBasename)))" -ForegroundColor Gray }
-				if ($agent365WillProduceFile) { Write-LogHost "Agent 365 file: $(Get-DisplayPath -LocalPath (Join-Path $outputDir (& $script:GetEffectiveAgent365Basename)))" -ForegroundColor Gray }
+				if ($IncludeUserInfo) {
+					# Honor -OutputPathUserInfo (or an Append-side promotion of DestRaw) when bound; otherwise inherit $outputDir.
+					$_uiDt5 = script:Resolve-DataTypePaths -DataType 'UserInfo' -DefaultBasename (& $script:GetEffectiveEntraBasename)
+					$_uiPath5 = if ($_uiDt5 -and $_uiDt5.IsBound -and $_uiDt5.Tier -eq 'Local') { Join-Path $_uiDt5.EffectiveDir $_uiDt5.Basename }
+						elseif ($_uiDt5 -and $_uiDt5.IsBound) { $_uiDt5.EffectiveDir.TrimEnd('/') + '/' + $_uiDt5.Basename }
+						else { Join-Path $outputDir (& $script:GetEffectiveEntraBasename) }
+					if ($_uiDt5 -and $_uiDt5.IsBound -and $_uiDt5.Tier -ne 'Local') { Write-LogHost "EntraUsers file: $_uiPath5" -ForegroundColor Gray }
+					else { Write-LogHost "EntraUsers file: $(Get-DisplayPath -LocalPath $_uiPath5)" -ForegroundColor Gray }
+				}
+				if ($agent365WillProduceFile) {
+					# Honor -OutputPathAgent365Info (or an Append-side promotion of DestRaw) when bound; otherwise inherit $outputDir.
+					$_aiDt5 = script:Resolve-DataTypePaths -DataType 'Agent365Info' -DefaultBasename (& $script:GetEffectiveAgent365Basename)
+					$_aiPath5 = if ($_aiDt5 -and $_aiDt5.IsBound -and $_aiDt5.Tier -eq 'Local') { Join-Path $_aiDt5.EffectiveDir $_aiDt5.Basename }
+						elseif ($_aiDt5 -and $_aiDt5.IsBound) { $_aiDt5.EffectiveDir.TrimEnd('/') + '/' + $_aiDt5.Basename }
+						else { Join-Path $outputDir (& $script:GetEffectiveAgent365Basename) }
+					if ($_aiDt5 -and $_aiDt5.IsBound -and $_aiDt5.Tier -ne 'Local') { Write-LogHost "Agent 365 file: $_aiPath5" -ForegroundColor Gray }
+					else { Write-LogHost "Agent 365 file: $(Get-DisplayPath -LocalPath $_aiPath5)" -ForegroundColor Gray }
+				}
 		}
 	}
 	Write-LogHost "===================================" -ForegroundColor Cyan
@@ -21193,7 +22513,17 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 		param($pStart, $pEnd, [array]$activity, $resultSize, $userIds, $idx, $tot, $sharedAuthState, $partition, $maxOutageMinutes, $apiVersion, $logPath, $existingQueryId, $incrementalDir, $runTimestamp, $memoryFlushEnabled)
 			# Suppress web request progress bar in job runspace
 			$ProgressPreference = 'SilentlyContinue'
-			
+
+			# Culture guard for ThreadJob runspaces. PowerShell 5.1 does not
+			# inherit the parent runspace's CurrentCulture into ThreadJobs,
+			# so the main-thread guard at the top of the script does not
+			# reach this scope. Without this line, on a da-DK or fi-FI host
+			# the audit query body emitted below substitutes ':' with the
+			# culture's TimeSeparator ('.'), producing an invalid ISO 8601
+			# datetime that the Purview audit endpoint rejects with HTTP 500.
+			[System.Threading.Thread]::CurrentThread.CurrentCulture   = [System.Globalization.CultureInfo]::InvariantCulture
+			[System.Threading.Thread]::CurrentThread.CurrentUICulture = [System.Globalization.CultureInfo]::InvariantCulture
+
 			# Helper function to build audit API URIs with correct version
 			function Get-AuditUri { param($path) return "https://graph.microsoft.com/$apiVersion/security/auditLog/$path" }
 			
@@ -21208,8 +22538,8 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 				}
 			}
 			
-			# FIX C: Helper function to check if token is expired or near-expiry
-			# Returns $true if token is still valid with at least 2 minute buffer
+			# Helper function to check if token is expired or near-expiry.
+			# Returns $true if token is still valid with at least 2 minute buffer.
 			function Test-TokenValid {
 				if (-not $sharedAuthState.ExpiresOn) {
 					# No expiry info - assume valid (will fail with 401 if not)
@@ -21293,8 +22623,9 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 		}
 						
 		try {
-			# FIX C: Check token validity BEFORE starting any API work
-			# If token is expired or near-expiry, return early so main thread can retry with fresh token
+			# Check token validity BEFORE starting any API work. If the token is
+			# expired or near-expiry, return early so the main thread can retry
+			# with a fresh token.
 			if (-not (Test-TokenValid)) {
 				$telemetry.Status = 'token_expired'
 				Write-Output "[TOKEN-EXPIRED] Partition $idx/$tot - Token expired or near-expiry, returning for retry with fresh token"
@@ -21396,8 +22727,8 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 			# Build query body ONCE before retry loop
 			$queryBody = @{
 				displayName = $displayName
-				filterStartDateTime = $pStart.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
-				filterEndDateTime = $pEnd.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+				filterStartDateTime = $pStart.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ', [System.Globalization.CultureInfo]::InvariantCulture)
+				filterEndDateTime = $pEnd.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ', [System.Globalization.CultureInfo]::InvariantCulture)
 				operationFilters = @($queryActivities)
 			}
 			if ($activeRecordFilters -and $activeRecordFilters.Count -gt 0) {
@@ -21723,11 +23054,11 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 				$lastNetHeartbeat = Get-Date
 				$lastNetMessage = $null  # Throttle repetitive network messages
 				$netMessageMinInterval = 60  # Minimum seconds between network status messages
-				# v1.11.2 Fix #5: Flood suppression. Only emit the green
-				# "[NET] Connectivity restored" line when we ACTUALLY printed a
-				# "[NETWORK] Transient network issue" message for the current outage.
-				# Short blips silently absorbed by the throttle must not produce noisy
-				# recovery banners on every successful poll.
+				# Flood suppression. Only emit the green "[NET] Connectivity
+				# restored" line when we ACTUALLY printed a "[NETWORK] Transient
+				# network issue" message for the current outage. Short blips silently
+				# absorbed by the throttle must not produce noisy recovery banners on
+				# every successful poll.
 				$netOutageAnnounced = $false
 				$pollCount = 0
 				
@@ -21755,11 +23086,11 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 						if ($netOutageStart) {
 							$duration = (Get-Date) - $netOutageStart
 							# Only log recovery if outage lasted > 1 minute AND we actually announced
-							# a transient-network message for it (v1.11.2 Fix #5). Without the
-							# announced-gate, rapid blip→recover→blip→recover cycles flooded the
-							# console with identical "[NET] Connectivity restored after 1.1 minutes"
-							# lines because the error path was throttled to silence but the recovery
-							# path had no matching suppression.
+							# a transient-network message for it. Without the announced-gate, rapid
+							# blip→recover→blip→recover cycles would flood the console with identical
+							# "[NET] Connectivity restored after 1.1 minutes" lines because the error
+							# path is throttled to silence but the recovery path has no matching
+							# suppression.
 							if ($duration.TotalMinutes -ge 1 -and $netOutageAnnounced) {
 								Write-Host "[NET] Connectivity restored after $([Math]::Round($duration.TotalMinutes,1)) minutes - Partition $idx/$tot" -ForegroundColor Green
 							}
@@ -21936,7 +23267,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 								if ($shouldShowMessage) {
 									Write-Output "[NETWORK] Transient network issue (streak $netErrorStreak, outage $([Math]::Round($elapsedOutage.TotalMinutes,1))m) - Partition $idx/$tot"
 									$lastNetMessage = Get-Date
-									$netOutageAnnounced = $true  # v1.11.2 Fix #5: unlock the matching "Connectivity restored" line
+									$netOutageAnnounced = $true  # unlock the matching "Connectivity restored" line
 								}
 								
 								# Adaptive backoff during outage
@@ -22626,9 +23957,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 		while (-not $allPartitionsProcessed) {
 			$subdivisionPass++
 			
-			# Find partitions that need jobs created (haven't been processed yet)
-			# FIX E: Include 'Failed' status to enable retry of failed partitions
-			# For Failed partitions, we allow retry even if they're in partitionsWithJobs (their previous job failed)
+			# Find partitions that need jobs created (haven't been processed yet).
+			# Include 'Failed' status to enable retry of failed partitions — for
+			# Failed partitions, allow retry even if they're already tracked in
+			# $script:partitionsWithJobs (their previous job failed).
 			$pendingPartitions = @($partitions | Where-Object { 
 				$statusObj = $script:partitionStatus[$_.Index]
 				if (-not $statusObj) { return $false }
@@ -23831,8 +25163,9 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 							# Re-authenticated successfully - token updated for retry phase
 							Write-LogHost "  [AUTH] Resuming job monitoring with fresh token" -ForegroundColor Green
 							
-							# FIX D: Drain all job buffers to clear old 401 errors
-							# Without this, old errors in buffers re-trigger auth detection on next loop iteration
+							# Drain all job buffers to clear old 401 errors. Without this,
+							# old errors in the buffers re-trigger auth detection on the
+							# next loop iteration.
 							foreach ($drainJob in $jobs) {
 								if ($drainJob.State -ne 'Completed' -and $drainJob.State -ne 'Failed') {
 									try {
@@ -24064,7 +25397,8 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 						break  # Break from the job processing loop to re-start with new sub-partitions
 					}
 					elseif ($res.TokenExpired -eq $true) {
-						# FIX C: Token expired in job - mark for retry with fresh token
+						# Token expired inside the job — mark the partition for retry
+						# with a fresh token.
 						Write-LogHost "[TOKEN-RETRY] Partition $($pt.Index)/$($pt.Total) returned due to expired token - will retry with fresh token" -ForegroundColor Yellow
 						
 						# Reset partition status to allow retry
@@ -25550,7 +26884,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 		Complete-Progress
 		Write-LogHost ""
 		Write-LogHost "Pipeline Summary:" -ForegroundColor Cyan
-		Write-LogHost "  Retrieved: 0 records" -ForegroundColor White
+		Write-LogHost "  Retained:  0 records" -ForegroundColor White
 		Write-LogHost "  Exported:  0 rows"    -ForegroundColor White
 		Write-LogHost ("Log file: {0}" -f (Get-DisplayPath -LocalPath $LogFile)) -ForegroundColor White
 		$script:ScriptCompleted = $true
@@ -25657,6 +26991,30 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 			$fastPathStart = Get-Date
 			$fastPathColumns = @('RecordId', 'CreationDate', 'RecordType', 'Operation', 'UserId', 'AuditData', 'AssociatedAdminUnits', 'AssociatedAdminUnitsNames')
 			
+			# [RESUME-RECONCILE] Include this-run partition shards that exist on disk but are missing
+			# from the streaming-merge set. On resume, partitions completed during THIS run can flush
+			# their records to JSONL shards (thread-side parallel persistence) while $allLogs stays
+			# empty and $script:memoryFlushed never latches (e.g. a missed worker result event). In
+			# that case the resume path set $script:StreamingMergePartitions to previously-skipped
+			# partitions only, and the worker-flush recovery guard ($effectiveRecordCount -eq 0) could
+			# not fire because the prior-run deferred merge already contributed records — so the
+			# this-run shards were silently dropped from the export. Reconcile against on-disk truth.
+			# Safe by construction: only partitions that actually have a shard file are added (so the
+			# DATA-LOSS validation below cannot be tripped), and any records also present in memory are
+			# de-duplicated downstream via -ExcludeRecordIds $inMemoryRecordIds.
+			if ($script:IsResumeMode) {
+				$reconcileIncrDir = Join-Path $script:StreamingMergeDirectory ".pax_incremental"
+				if (Test-Path $reconcileIncrDir) {
+					$reconcileShardFiles = @(Get-ChildItem -Path $reconcileIncrDir -Filter "*_${global:ScriptRunTimestamp}_*.jsonl" -ErrorAction SilentlyContinue)
+					$reconcileShardIndices = @($reconcileShardFiles | ForEach-Object { if ($_.Name -match '^Part(\d+)_') { [int]$Matches[1] } } | Sort-Object -Unique)
+					$reconcileMissing = @($reconcileShardIndices | Where-Object { $_ -notin @($script:StreamingMergePartitions) })
+					if ($reconcileMissing.Count -gt 0) {
+						$script:StreamingMergePartitions = @(@($script:StreamingMergePartitions) + $reconcileMissing | Where-Object { $null -ne $_ } | Select-Object -Unique | Sort-Object)
+						Write-LogHost "  [RESUME-RECONCILE] Recovered $($reconcileMissing.Count) this-run partition shard(s) missing from merge set: $($reconcileMissing -join ', ')" -ForegroundColor Cyan
+					}
+				}
+			}
+			
 			# First, write any in-memory records from THIS run's partitions (if any)
 			$inMemoryCount = $allLogs.Count
 			$streamingActivityCounts = @{}
@@ -25681,7 +27039,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 					
 					$fastRecord = [pscustomobject]@{
 						RecordId                  = if ($log.RecordId) { $log.RecordId } elseif ($log.Identity) { $log.Identity } elseif ($log.Id) { $log.Id } elseif ($parsedAudit -and $parsedAudit.Id) { $parsedAudit.Id } else { $null }
-						CreationDate              = if ($log.CreationDate) { $log.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { '' }
+						CreationDate              = if ($log.CreationDate) { $log.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ', [System.Globalization.CultureInfo]::InvariantCulture) } else { '' }
 						RecordType                = $log.RecordType
 						Operation                 = $opValue
 						UserId                    = if ($log.UserId) { $log.UserId } elseif ($log.UserIds) { $log.UserIds } else { '' }
@@ -25892,15 +27250,14 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 			$_purviewVerb = if ($_smAppendFile -and -not $_rollupActive) { 'Purview CSV updated (append-merge)' }
 			                 elseif ($_rollupActive)                    { 'Raw Purview CSV' }
 			                 else                                       { 'Purview CSV created' }
-			# Fix #20 (BUG-L-summary-raw-purview-csv-partial): $OutputFile is the local
-			# scratch _PARTIAL.csv path at this point in the run (it gets renamed to
-			# the non-_PARTIAL leaf at end-of-run, just before the upload sweep). The
-			# previous remote-mode branch joined $script:RemoteOutputUrl to
-			# GetFileName($OutputFile) verbatim, baking '_PARTIAL.csv' into the
-			# advertised SharePoint/OneLake URL — an object that never exists remotely.
-			# Strip _PARTIAL from the leaf first so the displayed URL matches what the
-			# end-of-run upload sweep actually creates (same fix shape as Fix #19 for
-			# the banner Run log row).
+			# $OutputFile is the local scratch _PARTIAL.csv path at this point in
+			# the run (it gets renamed to the non-_PARTIAL leaf at end-of-run, just
+			# before the upload sweep). A naive remote-mode branch that joined
+			# $script:RemoteOutputUrl to GetFileName($OutputFile) verbatim would bake
+			# '_PARTIAL.csv' into the advertised SharePoint/OneLake URL — an object
+			# that never exists remotely. Strip _PARTIAL from the leaf first so the
+			# displayed URL matches what the end-of-run upload sweep actually creates
+			# (same shape as the banner Run log row resolution above).
 			$_purviewLeaf = [System.IO.Path]::GetFileName($OutputFile) -replace '_PARTIAL(?=\.[^.]+$)', ''
 			$_purviewDisplay = if ($_smAppendFile -and -not $_rollupActive -and $script:AppendRaw.ContainsKey('Purview') -and $script:AppendRaw['Purview']) {
 				$script:AppendRaw['Purview']
@@ -25978,7 +27335,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 			
 			$fastRecord = [pscustomobject]@{
 				RecordId                  = if ($log.RecordId) { $log.RecordId } elseif ($log.Identity) { $log.Identity } elseif ($log.Id) { $log.Id } elseif ($parsedAudit -and $parsedAudit.Id) { $parsedAudit.Id } else { $null }
-				CreationDate              = if ($log.CreationDate) { $log.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } else { '' }
+				CreationDate              = if ($log.CreationDate) { $log.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ', [System.Globalization.CultureInfo]::InvariantCulture) } else { '' }
 				RecordType                = $log.RecordType
 				Operation                 = $opValue
 				UserId                    = if ($log.UserId) { $log.UserId } elseif ($log.UserIds) { $log.UserIds } else { '' }
@@ -26361,9 +27718,9 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 					}
 					function script:Format-DatePurviewFast($dt) {
 						if (-not $dt) { return '' }
-						if ($dt -is [datetime]) { return $dt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') }
+						if ($dt -is [datetime]) { return $dt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ', [System.Globalization.CultureInfo]::InvariantCulture) }
 						$parsed = script:Parse-DateSafe $dt
-						if ($parsed) { return $parsed.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') }
+						if ($parsed) { return $parsed.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ', [System.Globalization.CultureInfo]::InvariantCulture) }
 						return ''
 					}
 					function script:BoolTFFast($v) {
@@ -27058,17 +28415,18 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				Write-LogHost ("Raw EntraUsers CSV: {0}" -f (Get-DisplayPath -LocalPath $entraFile)) -ForegroundColor Green
 			}
 			if ($AppendUserInfo -and (Test-Path -LiteralPath $entraFile -PathType Leaf)) {
-				# Fix #15 (BUG-G-double-merge): when the embedded Python rollup post-processor
-				# will run AND it is in CopilotInteraction mode, the rollup performs its own
-				# -AppendUserInfo merge against the Python-emitted Users CSV later (see
-				# 'Rollup: -AppendUserInfo merge:' tally). Doing the PS-side pre-rollup
-				# merge here would write the union, then be overwritten by the post-rollup
-				# merge — wasted I/O AND a transient (potentially wrong-stats) state on
-				# disk visible to any parallel reader (the PS-side keys on PersonId_Normalized
-				# against the rolled-up target schema, while the Python rollup re-normalizes
-				# UserKey; mismatched keys produce inflated unions). Defer to the post-rollup
-				# merge in that case. M365Bundle rollup mode does NOT consume the Entra CSV
-				# and so does NOT do a Python-side AppendUserInfo merge — its AppendUserInfo
+				# Double-merge avoidance: when the embedded Python rollup post-processor
+				# will run AND it is in CopilotInteraction mode, the rollup performs its
+				# own -AppendUserInfo merge against the Python-emitted Users CSV later
+				# (see 'Rollup: -AppendUserInfo merge:' tally). Doing the PS-side
+				# pre-rollup merge here would write the union, then have it overwritten
+				# by the post-rollup merge — wasted I/O AND a transient
+				# (potentially wrong-stats) state on disk visible to any parallel reader
+				# (the PS-side keys on PersonId_Normalized against the rolled-up target
+				# schema, while the Python rollup re-normalizes UserKey; mismatched keys
+				# would produce inflated unions). Defer to the post-rollup merge in that
+				# case. M365Bundle rollup mode does NOT consume the Entra CSV and so
+				# does NOT do a Python-side AppendUserInfo merge — its AppendUserInfo
 				# merge MUST still happen here.
 				$_deferUsersMergeToRollup = (($Rollup -or $RollupPlusRaw) -and ($script:RollupProcessorMode -eq 'CopilotInteraction'))
 				if ($_deferUsersMergeToRollup) {
@@ -27562,7 +28920,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 		# In resume mode with skipped partitions, the "Retrieved" counts only reflect THIS run's fetches
 		# Records from previously-completed partitions (merged from incremental saves) are not counted in Retrieved
 		if ($script:IsResumeMode -and $script:OriginallySkippedPartitionIndices -and $script:OriginallySkippedPartitionIndices.Count -gt 0) {
-			Write-LogHost "  Note: Resume mode - 'Retrieved' counts reflect only this run's fetches" -ForegroundColor DarkGray
+			Write-LogHost "  Note: Resume mode - 'Retained' counts reflect only this run's fetches" -ForegroundColor DarkGray
 			Write-LogHost "        (excludes $($script:OriginallySkippedPartitionIndices.Count) previously-completed partition(s))" -ForegroundColor DarkGray
 			Write-LogHost ""
 		}
@@ -27578,7 +28936,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 			$ratio = if ($retrieved -gt 0) { [Math]::Round($structured / $retrieved, 1) } else { 0 }
 			
 			Write-LogHost "  $actKey" -ForegroundColor White
-			Write-LogHost "    Retrieved: $retrieved records" -ForegroundColor Gray
+			Write-LogHost "    Retained:  $retrieved records" -ForegroundColor Gray
 			
 			# Show filtering breakdown if records were filtered for this activity type
 			$actFiltered = $retrieved - $structured
@@ -27662,7 +29020,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 		# Final pipeline summary
 		Write-LogHost ""
 		Write-LogHost "Pipeline Summary:" -ForegroundColor Cyan
-		Write-LogHost "  Retrieved: $totalRetrieved records" -ForegroundColor White
+		Write-LogHost "  Retained:  $totalRetrieved records" -ForegroundColor White
 		if ($totalFiltered -gt 0) {
 			Write-LogHost "  Filtered:  $totalFiltered records" -ForegroundColor White
 		}
@@ -27716,8 +29074,25 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 			$totalSize = ($script:CsvSplitFiles | ForEach-Object { (Get-Item $_).Length } | Measure-Object -Sum).Sum
 			Write-LogHost "Total size: $([math]::Round($totalSize / 1KB,2)) KB" -ForegroundColor White
 			if ($IncludeUserInfo -and -not $UseEOM) {
-				$entraSplit = (Join-Path (Split-Path $OutputFile -Parent) (& $script:GetEffectiveEntraBasename))
-				if (Test-Path $entraSplit) { $entraSize = [math]::Round((Get-Item $entraSplit).Length / 1KB,2); Write-LogHost "Entra Users File: $(Get-DisplayPath -LocalPath $entraSplit) ($entraSize KB)" -ForegroundColor Gray } else { Write-LogHost "Entra Users File: $(Get-DisplayPath -LocalPath $entraSplit) (pending generation)" -ForegroundColor Gray }
+				# Honor -OutputPathUserInfo when bound; otherwise inherit $OutputFile's parent.
+				$_uiDtE1 = script:Resolve-DataTypePaths -DataType 'UserInfo' -DefaultBasename (& $script:GetEffectiveEntraBasename)
+				$entraSplit = if ($_uiDtE1 -and $_uiDtE1.IsBound -and $_uiDtE1.Tier -eq 'Local') { Join-Path $_uiDtE1.EffectiveDir $_uiDtE1.Basename }
+					elseif ($_uiDtE1 -and $_uiDtE1.IsBound) { $_uiDtE1.EffectiveDir.TrimEnd('/') + '/' + $_uiDtE1.Basename }
+					else { Join-Path (Split-Path $OutputFile -Parent) (& $script:GetEffectiveEntraBasename) }
+				$_entraSplitDisplay = if ($_uiDtE1 -and $_uiDtE1.IsBound -and $_uiDtE1.Tier -ne 'Local') { $entraSplit } else { Get-DisplayPath -LocalPath $entraSplit }
+				# Test-Path is only meaningful for local tiers; for remote tiers the writer
+				# has already pushed the artifact and we just surface the destination.
+				$_entraSplitLocalExists = ($_uiDtE1 -and $_uiDtE1.IsBound -and $_uiDtE1.Tier -ne 'Local') -or (Test-Path $entraSplit)
+				if ($_entraSplitLocalExists) {
+					if ($_uiDtE1 -and $_uiDtE1.IsBound -and $_uiDtE1.Tier -ne 'Local') {
+						Write-LogHost "Entra Users File: $_entraSplitDisplay" -ForegroundColor Gray
+					} else {
+						$entraSize = [math]::Round((Get-Item $entraSplit).Length / 1KB,2)
+						Write-LogHost "Entra Users File: $_entraSplitDisplay ($entraSize KB)" -ForegroundColor Gray
+					}
+				} else {
+					Write-LogHost "Entra Users File: $_entraSplitDisplay (pending generation)" -ForegroundColor Gray
+				}
 			}
 			
 			# Show filename pattern instead of listing each file
@@ -27740,13 +29115,24 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				Write-LogHost "Output file: $(Get-DisplayPath -LocalPath $OutputFile)" -ForegroundColor White
 			}
 			if ($IncludeUserInfo -and -not $UseEOM) {
-				$entraCombined = (Join-Path (Split-Path $OutputFile -Parent) (& $script:GetEffectiveEntraBasename))
+				# Honor -OutputPathUserInfo when bound; otherwise inherit $OutputFile's parent.
+				$_uiDtE2 = script:Resolve-DataTypePaths -DataType 'UserInfo' -DefaultBasename (& $script:GetEffectiveEntraBasename)
+				$entraCombined = if ($_uiDtE2 -and $_uiDtE2.IsBound -and $_uiDtE2.Tier -eq 'Local') { Join-Path $_uiDtE2.EffectiveDir $_uiDtE2.Basename }
+					elseif ($_uiDtE2 -and $_uiDtE2.IsBound) { $_uiDtE2.EffectiveDir.TrimEnd('/') + '/' + $_uiDtE2.Basename }
+					else { Join-Path (Split-Path $OutputFile -Parent) (& $script:GetEffectiveEntraBasename) }
+				$_entraCombinedDisplay = if ($_uiDtE2 -and $_uiDtE2.IsBound -and $_uiDtE2.Tier -ne 'Local') { $entraCombined } else { Get-DisplayPath -LocalPath $entraCombined }
 				if ($AppendUserInfo -and -not $_rollupActive) {
 					$_auiDisplay2 = if ($script:AppendRaw.ContainsKey('UserInfo') -and $script:AppendRaw['UserInfo']) { $script:AppendRaw['UserInfo'] } else { $AppendUserInfo }
 					Write-LogHost "Entra Users File: appended to $_auiDisplay2" -ForegroundColor Gray
 				} elseif ($AppendUserInfo -and $_rollupActive) {
-					Write-LogHost "Raw Entra Users CSV: $(Get-DisplayPath -LocalPath $entraCombined)" -ForegroundColor Gray
-				} elseif (Test-Path $entraCombined) { Write-LogHost "Entra Users File: $(Get-DisplayPath -LocalPath $entraCombined)" -ForegroundColor Gray } else { Write-LogHost "Entra Users File: $(Get-DisplayPath -LocalPath $entraCombined) (pending)" -ForegroundColor Gray }
+					Write-LogHost "Raw Entra Users CSV: $_entraCombinedDisplay" -ForegroundColor Gray
+				} else {
+					# Test-Path is only meaningful for local tiers; for remote tiers the writer
+					# has already pushed the artifact and we just surface the destination.
+					$_entraCombinedLocalExists = ($_uiDtE2 -and $_uiDtE2.IsBound -and $_uiDtE2.Tier -ne 'Local') -or (Test-Path $entraCombined)
+					if ($_entraCombinedLocalExists) { Write-LogHost "Entra Users File: $_entraCombinedDisplay" -ForegroundColor Gray }
+					else { Write-LogHost "Entra Users File: $_entraCombinedDisplay (pending)" -ForegroundColor Gray }
+				}
 			}
 		} else {
 			$_rollupActive2 = ($Rollup -or $RollupPlusRaw)
@@ -27759,14 +29145,19 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				Write-LogHost "Output file: $(Get-DisplayPath -LocalPath $OutputFile)" -ForegroundColor White
 			}
 			if ($IncludeUserInfo -and -not $UseEOM) {
-				$entraCombined = (Join-Path (Split-Path $OutputFile -Parent) (& $script:GetEffectiveEntraBasename))
+				# Honor -OutputPathUserInfo when bound; otherwise inherit $OutputFile's parent.
+				$_uiDtE3 = script:Resolve-DataTypePaths -DataType 'UserInfo' -DefaultBasename (& $script:GetEffectiveEntraBasename)
+				$entraCombined = if ($_uiDtE3 -and $_uiDtE3.IsBound -and $_uiDtE3.Tier -eq 'Local') { Join-Path $_uiDtE3.EffectiveDir $_uiDtE3.Basename }
+					elseif ($_uiDtE3 -and $_uiDtE3.IsBound) { $_uiDtE3.EffectiveDir.TrimEnd('/') + '/' + $_uiDtE3.Basename }
+					else { Join-Path (Split-Path $OutputFile -Parent) (& $script:GetEffectiveEntraBasename) }
+				$_entraCombinedDisplay3 = if ($_uiDtE3 -and $_uiDtE3.IsBound -and $_uiDtE3.Tier -ne 'Local') { $entraCombined } else { Get-DisplayPath -LocalPath $entraCombined }
 				if ($AppendUserInfo -and -not $_rollupActive2) {
 					$_auiDisplay3 = if ($script:AppendRaw.ContainsKey('UserInfo') -and $script:AppendRaw['UserInfo']) { $script:AppendRaw['UserInfo'] } else { $AppendUserInfo }
 					Write-LogHost "Entra Users File: appended to $_auiDisplay3" -ForegroundColor Gray
 				} elseif ($AppendUserInfo -and $_rollupActive2) {
-					Write-LogHost "Raw Entra Users CSV: $(Get-DisplayPath -LocalPath $entraCombined) (pending generation)" -ForegroundColor Gray
+					Write-LogHost "Raw Entra Users CSV: $_entraCombinedDisplay3 (pending generation)" -ForegroundColor Gray
 				} else {
-					Write-LogHost "Entra Users File: $(Get-DisplayPath -LocalPath $entraCombined) (pending)" -ForegroundColor Gray
+					Write-LogHost "Entra Users File: $_entraCombinedDisplay3 (pending)" -ForegroundColor Gray
 				}
 			}
 		}
@@ -27835,13 +29226,21 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 		}
 	} elseif ($OnlyUserInfo) {
 		# -OnlyUserInfo mode: Show only EntraUsers file
-		$entraFile = (Join-Path (Split-Path $OutputFile -Parent) (& $script:GetEffectiveEntraBasename))
-		if (Test-Path $entraFile) {
+		# Honor -OutputPathUserInfo when bound; otherwise inherit $OutputFile's parent.
+		$_uiDtE4 = script:Resolve-DataTypePaths -DataType 'UserInfo' -DefaultBasename (& $script:GetEffectiveEntraBasename)
+		$entraFile = if ($_uiDtE4 -and $_uiDtE4.IsBound -and $_uiDtE4.Tier -eq 'Local') { Join-Path $_uiDtE4.EffectiveDir $_uiDtE4.Basename }
+			elseif ($_uiDtE4 -and $_uiDtE4.IsBound) { $_uiDtE4.EffectiveDir.TrimEnd('/') + '/' + $_uiDtE4.Basename }
+			else { Join-Path (Split-Path $OutputFile -Parent) (& $script:GetEffectiveEntraBasename) }
+		$_entraFileDisplay = if ($_uiDtE4 -and $_uiDtE4.IsBound -and $_uiDtE4.Tier -ne 'Local') { $entraFile } else { Get-DisplayPath -LocalPath $entraFile }
+		if ($_uiDtE4 -and $_uiDtE4.IsBound -and $_uiDtE4.Tier -ne 'Local') {
+			# Remote tier: writer has already pushed the artifact; surface the destination.
+			Write-LogHost "EntraUsers file: $_entraFileDisplay" -ForegroundColor White
+		} elseif (Test-Path $entraFile) {
 			$entraSize = [math]::Round((Get-Item $entraFile).Length / 1KB, 2)
-			Write-LogHost "EntraUsers file: $(Get-DisplayPath -LocalPath $entraFile)" -ForegroundColor White
+			Write-LogHost "EntraUsers file: $_entraFileDisplay" -ForegroundColor White
 			Write-LogHost "File size: $entraSize KB" -ForegroundColor White
 		} else {
-			Write-LogHost "EntraUsers file: $(Get-DisplayPath -LocalPath $entraFile) (not found)" -ForegroundColor Yellow
+			Write-LogHost "EntraUsers file: $_entraFileDisplay (not found)" -ForegroundColor Yellow
 		}
 	} else {
 		# -OnlyAgent365Info mode: Agent 365 file path is printed by the Agent 365 phase block below
@@ -27944,7 +29343,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				if (-not (Test-Path -LiteralPath $rollupPurviewCsv)) {
 					throw "Rollup: expected combined Purview CSV not found at '$rollupPurviewCsv'."
 				}
-				$rollupArgs = @('--input', $rollupPurviewCsv, '--output-dir', $rollupOutputDir, '--mode', 'rollup')
+				$rollupArgs = @('--input', $rollupPurviewCsv, '--output-dir', $rollupOutputDir)
 				$rollupRawCsvList.Add($rollupPurviewCsv)
 				# The M365Bundle processor does NOT consume the Entra users CSV. When
 				# -IncludeUserInfo produced one, it is always retained — surface it in
@@ -27953,20 +29352,6 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 					$rollupEntraCsvM365 = Join-Path $rollupOutputDir (& $script:GetEffectiveEntraBasename)
 					if (Test-Path -LiteralPath $rollupEntraCsvM365) {
 						$rollupRetainedExtraList.Add($rollupEntraCsvM365)
-					}
-				}
-
-				# -AppendFile (M365Bundle rollup): when the customer specified a target
-				# rollup CSV to append to, the embedded processor pre-seeds its RollupAccum
-				# dict from the target so retained PersonId/Date groupings keep their
-				# stable casing and additive counters merge correctly.
-				if ($AppendFile) {
-					if (Test-Path -LiteralPath $AppendFile -PathType Leaf) {
-						$rollupArgs += @('--append-target-rollup', $AppendFile)
-						Write-LogHost ("Rollup: -AppendFile: pre-seeding M365Bundle rollup from '{0}'." -f (Get-DisplayPath -LocalPath $AppendFile)) -ForegroundColor DarkCyan
-					}
-					else {
-						Write-LogHost ("Rollup: -AppendFile target '{0}' not found; rollup will produce a fresh CSV (no pre-seed)." -f (Get-DisplayPath -LocalPath $AppendFile)) -ForegroundColor Yellow
 					}
 				}
 			}
@@ -28011,7 +29396,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 						# Get-DisplayPath would then synthesize a phantom remote URL (folder +
 						# scratch leaf) that does not exist on the destination. Surface the
 						# canonical customer-supplied URL from $script:AppendRaw['UserInfo']
-						# when available (Fix #17 / BUG-I-seed-from-url-misleading).
+						# when available.
 						$auiDisplayPath = if ($script:AppendRaw.ContainsKey('UserInfo') -and $script:AppendRaw['UserInfo']) { $script:AppendRaw['UserInfo'] } else { Get-DisplayPath -LocalPath $AppendUserInfo }
 						if ($rollupUserInfoSeedCount -gt 0) {
 							Write-LogHost ("Rollup: -AppendUserInfo: seeded {0:N0} retained UserKey(s)" -f $rollupUserInfoSeedCount) -ForegroundColor DarkCyan
@@ -28046,8 +29431,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 							# Differentiate populated vs empty target. Use the canonical customer-supplied
 							# URL from $script:AppendRaw['Purview'] when available so remote-output runs
 							# don't surface a scratch-leaf-derived URL if the scratch file's leaf ever
-							# diverges from the remote leaf (parity with the AppendUserInfo seed display;
-							# Fix #17 / BUG-I-seed-from-url-misleading).
+							# diverges from the remote leaf (parity with the AppendUserInfo seed display).
 							$afDisplayPath = if ($script:AppendRaw.ContainsKey('Purview') -and $script:AppendRaw['Purview']) { $script:AppendRaw['Purview'] } else { Get-DisplayPath -LocalPath $AppendFile }
 							if (($rollupFactSeed.MidCount -gt 0) -or ($rollupFactSeed.ThreadCount -gt 0)) {
 								Write-LogHost ("Rollup: -AppendFile: seeded {0:N0} Message_Id and {1:N0} ThreadKey surrogate(s)" -f $rollupFactSeed.MidCount, $rollupFactSeed.ThreadCount) -ForegroundColor DarkCyan
@@ -28132,10 +29516,11 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				# -AppendFile (CopilotInteraction mode only): union-merge the target Fact CSV
 				# with the just-produced rolled-up Fact CSV. Python emits
 				# '<purview_stem>_Interactions.csv' beside the input Purview CSV. M365Bundle
-				# handles its own AppendFile merge inside Python via --append-target-rollup
-				# and so does NOT need this PowerShell post-merge step. Failure here logs
-				# a warning but does NOT roll the rollup back — the new Fact file is still
-				# on disk and customer can merge manually.
+				# has its own dedicated AppendFile merge + sidecar regen step further below
+				# (Merge-M365RollupCsv + --rebuild-sidecars-from-rollup) and so does NOT use
+				# this CopilotInteraction post-merge block. Failure here logs a warning but
+				# does NOT roll the rollup back — the new Fact file is still on disk and
+				# customer can merge manually.
 				if ($AppendFile -and $script:RollupProcessorMode -eq 'CopilotInteraction') {
 					try {
 						$rollupPurviewStem = [System.IO.Path]::GetFileNameWithoutExtension($rollupPurviewCsv)
@@ -28174,49 +29559,121 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 					}
 				}
 
-				# -AppendFile (M365Bundle mode): re-anchor the 3 Python outputs onto
-				# the AppendFile leaf so the merged Rollup overwrites the customer's
-				# target URL in-place and the recomputed UserStats / SessionCohort
-				# sidecars adopt the same stem (and therefore overwrite the same
-				# sidecar URLs on every subsequent run). Without this step:
-				#   • Python's --append-target-rollup pre-seeds correctly (content
-				#     merge is right), but Python emits '<new_purview_stem>_*.csv'
-				#     using the current run's raw-audit timestamp;
-				#   • the customer's AppendFile URL would be re-uploaded with the
-				#     untouched scratch seed copy (stale pre-merge content);
-				#   • the merged content would land at a brand-new <new_stem>_*.csv
-				#     URL each run, leaving the target abandoned and accumulating
-				#     timestamped duplicates of UserStats / SessionCohort.
+				# -AppendFile (M365Bundle mode): merge the current run's rollup into
+				# the customer's target rollup, then regenerate the UserStats and
+				# SessionCohort sidecars from the merged content and union-merge
+				# the SessionStats sidecar in place so all four outputs share the
+				# customer's stem and overwrite the same URLs on every subsequent run.
+				#
+				# Flow:
+				#   1. Glob-resolve the 4 timestamped current-run outputs (Rollup,
+				#      UserStats, SessionCohort, SessionStats) inside $rollupOutputDir.
+				#   2. Merge-M365RollupCsv unions the current rollup with
+				#      $AppendFile (column-tolerant — legacy 9/10-col targets are
+				#      padded with empty agent columns + IsAgentInteraction=FALSE)
+				#      and writes the union back to $AppendFile.
+				#   2b. Merge-M365SessionStatsCsv (v2.6.0+) unions the current
+				#      SessionStats with the anchored '<stem>_SessionStats.csv'
+				#      target (creating it on first run) using additive counter
+				#      semantics keyed on (UserId, CreationDate, AppHost).
+				#   3. A second embedded-processor invocation runs with
+				#      --rebuild-sidecars-from-rollup against $AppendFile (with
+				#      --session-stats-for-rebuild pointing at the merged
+				#      SessionStats leaf so the regenerated UserStats inherits the
+				#      PromptCount-based CECopilotPercentile_* columns from the
+				#      unioned SessionStats history), writing fresh timestamped
+				#      UserStats + SessionCohort sidecars into the AppendFile parent.
+				#   4. The new sidecars are anchor-renamed to the customer's stem
+				#      (timestamp dropped) so the same URLs are overwritten each run.
+				#   5. The current-run rollup and stale sidecars in $rollupOutputDir
+				#      are removed (their content lives in $AppendFile + the
+				#      anchored sidecars now); leaving them would cause duplicates
+				#      to appear in the run-timestamp upload sweep.
 				# The pre-flight leaf validator (see AppendFile resolution block)
-				# guarantees $AppendFile ends in '_Rollup.csv' when we get here.
-				# In remote mode, $AppendFile has been redirected to a scratch path
-				# in $OutputPath whose leaf matches the original remote leaf, so
-				# Split-Path -Parent and Move-Item operate on local paths and the
-				# upload sweep's leaf-match logic picks up all 3 anchored files.
+				# guarantees $AppendFile ends in '_Rollup.csv' (with or without a
+				# timestamp suffix) when we get here. In remote mode, $AppendFile
+				# has been redirected to a scratch path in $OutputPath whose leaf
+				# matches the original remote leaf, so Split-Path -Parent and
+				# Move-Item operate on local paths and the upload sweep's leaf-match
+				# logic picks up all 4 anchored files.
 				if ($AppendFile -and $script:RollupProcessorMode -eq 'M365Bundle') {
 					try {
-						$m365PurviewStem    = [System.IO.Path]::GetFileNameWithoutExtension($rollupPurviewCsv)
-						$m365NewRollup      = Join-Path $rollupOutputDir ("{0}_Rollup.csv"        -f $m365PurviewStem)
-						$m365NewUserStats   = Join-Path $rollupOutputDir ("{0}_UserStats.csv"     -f $m365PurviewStem)
-						$m365NewSession     = Join-Path $rollupOutputDir ("{0}_SessionCohort.csv" -f $m365PurviewStem)
+						$m365PurviewStem = [System.IO.Path]::GetFileNameWithoutExtension($rollupPurviewCsv)
 
-						# Anchor stem from the AppendFile leaf (validated to end in '_Rollup.csv').
-						$m365AnchorLeaf     = [System.IO.Path]::GetFileName($AppendFile)
-						$m365AnchorStem     = ($m365AnchorLeaf -replace '_Rollup\.csv$', '')
-						$m365AnchorDir      = Split-Path $AppendFile -Parent
+						# Glob-resolve the 4 current-run timestamped outputs.
+						$m365CurRollupInfo       = @(Get-ChildItem -LiteralPath $rollupOutputDir -Filter ("{0}_Rollup_*.csv"        -f $m365PurviewStem) -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+						$m365CurUserStatsInfo    = @(Get-ChildItem -LiteralPath $rollupOutputDir -Filter ("{0}_UserStats_*.csv"     -f $m365PurviewStem) -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+						$m365CurSessionInfo      = @(Get-ChildItem -LiteralPath $rollupOutputDir -Filter ("{0}_SessionCohort_*.csv" -f $m365PurviewStem) -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+						$m365CurSessionStatsInfo = @(Get-ChildItem -LiteralPath $rollupOutputDir -Filter ("{0}_SessionStats_*.csv"  -f $m365PurviewStem) -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+						if ($m365CurRollupInfo.Count -lt 1) {
+							throw ("Current-run rollup not found in '{0}' (expected '{1}_Rollup_*.csv')." -f $rollupOutputDir, $m365PurviewStem)
+						}
+						$m365CurRollupPath       = $m365CurRollupInfo[0].FullName
+						$m365CurUserStatsPath    = if ($m365CurUserStatsInfo.Count    -gt 0) { $m365CurUserStatsInfo[0].FullName    } else { $null }
+						$m365CurSessionPath      = if ($m365CurSessionInfo.Count      -gt 0) { $m365CurSessionInfo[0].FullName      } else { $null }
+						$m365CurSessionStatsPath = if ($m365CurSessionStatsInfo.Count -gt 0) { $m365CurSessionStatsInfo[0].FullName } else { $null }
 
-						$m365AnchorRollup    = Join-Path $m365AnchorDir ("{0}_Rollup.csv"        -f $m365AnchorStem)
-						$m365AnchorUserStats = Join-Path $m365AnchorDir ("{0}_UserStats.csv"     -f $m365AnchorStem)
-						$m365AnchorSession   = Join-Path $m365AnchorDir ("{0}_SessionCohort.csv" -f $m365AnchorStem)
+						# Anchor stem from the AppendFile leaf (validator widened to
+						# accept either '<stem>_Rollup.csv' or '<stem>_Rollup_<ts>.csv').
+						$m365AnchorLeaf = [System.IO.Path]::GetFileName($AppendFile)
+						$m365AnchorStem = ($m365AnchorLeaf -replace '_Rollup(?:_\d{8}_\d{6})?\.csv$', '')
+						$m365AnchorDir  = Split-Path $AppendFile -Parent
+						$m365AnchorSessionStats = Join-Path $m365AnchorDir ("{0}_SessionStats.csv" -f $m365AnchorStem)
 
+						# 1. Union-merge current rollup -> $AppendFile (in-place).
+						$m365MergeStats = Merge-M365RollupCsv -TargetRollupCsv $AppendFile -CurrentRollupCsv $m365CurRollupPath -OutputPath $AppendFile
+						Write-LogHost ("Rollup: -AppendFile M365 merge: Retained={0:N0}  New={1:N0}  Updated={2:N0}  Union={3:N0}" -f $m365MergeStats.Retained, $m365MergeStats.New, $m365MergeStats.Updated, $m365MergeStats.Union) -ForegroundColor Green
+
+						# 2. Union-merge current SessionStats -> anchored
+						#    '<stem>_SessionStats.csv' (in-place, creating on first run)
+						#    using additive counter semantics keyed on
+						#    (UserId, CreationDate, AppHost). The merged target then
+						#    feeds the sidecar-rebuild call below so the regenerated
+						#    UserStats inherits the unioned PromptCount-based percentiles.
+						if ($m365CurSessionStatsPath -and (Test-Path -LiteralPath $m365CurSessionStatsPath)) {
+							$m365SsMergeStats = Merge-M365SessionStatsCsv `
+								-TargetSessionStatsCsv  $m365AnchorSessionStats `
+								-CurrentSessionStatsCsv $m365CurSessionStatsPath `
+								-OutputPath             $m365AnchorSessionStats
+							Write-LogHost ("Rollup: -AppendFile M365 SessionStats merge: Retained={0:N0}  New={1:N0}  Updated={2:N0}  Union={3:N0}" -f $m365SsMergeStats.Retained, $m365SsMergeStats.New, $m365SsMergeStats.Updated, $m365SsMergeStats.Union) -ForegroundColor Green
+						}
+
+						# 3. Regenerate UserStats + SessionCohort sidecars from the
+						#    unioned $AppendFile via a second embedded-processor
+						#    invocation. When the merged SessionStats target exists
+						#    we pass it via --session-stats-for-rebuild so the
+						#    PromptCount-based CECopilotPercentile_* columns reflect
+						#    the union history (otherwise the python code falls back
+						#    to the raw CECopilot signal computed from the rollup).
+						$m365SidecarArgs = @('--rebuild-sidecars-from-rollup', $AppendFile, '--output-dir', $m365AnchorDir, '--quiet')
+						if (Test-Path -LiteralPath $m365AnchorSessionStats) {
+							$m365SidecarArgs += @('--session-stats-for-rebuild', $m365AnchorSessionStats)
+						}
+						$m365SidecarExit = Invoke-EmbeddedProcessor `
+							-ProcessorMode  $script:RollupProcessorMode `
+							-PythonExe      $pyResolved.Path `
+							-LauncherArgs   $pyResolved.Args `
+							-ProcessorArgs  $m365SidecarArgs `
+							-IncrementalDir $rollupIncDir
+						if ($m365SidecarExit -ne 0) {
+							throw ("Sidecar regeneration exited with code {0}." -f $m365SidecarExit)
+						}
+
+						# 4. Glob-resolve the regenerated timestamped sidecars (newest by mtime).
+						$m365NewUserStatsInfo = @(Get-ChildItem -LiteralPath $m365AnchorDir -Filter ("{0}_UserStats_*.csv"     -f $m365AnchorStem) -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+						$m365NewSessionInfo   = @(Get-ChildItem -LiteralPath $m365AnchorDir -Filter ("{0}_SessionCohort_*.csv" -f $m365AnchorStem) -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+						$m365AnchorUserStats  = Join-Path $m365AnchorDir ("{0}_UserStats.csv"     -f $m365AnchorStem)
+						$m365AnchorSession    = Join-Path $m365AnchorDir ("{0}_SessionCohort.csv" -f $m365AnchorStem)
+
+						# 5. Anchor-rename the regenerated sidecars onto the customer's stem.
+						#    SessionStats is already anchored in step 2 (merged in-place).
 						$m365AnchorPairs = @(
-							@{ Src = $m365NewRollup;    Dst = $m365AnchorRollup;    Label = 'Rollup'        },
-							@{ Src = $m365NewUserStats; Dst = $m365AnchorUserStats; Label = 'UserStats'     },
-							@{ Src = $m365NewSession;   Dst = $m365AnchorSession;   Label = 'SessionCohort' }
+							@{ Src = if ($m365NewUserStatsInfo.Count -gt 0) { $m365NewUserStatsInfo[0].FullName } else { $null }; Dst = $m365AnchorUserStats; Label = 'UserStats'     },
+							@{ Src = if ($m365NewSessionInfo.Count   -gt 0) { $m365NewSessionInfo[0].FullName   } else { $null }; Dst = $m365AnchorSession;   Label = 'SessionCohort' }
 						)
 						foreach ($m365Pair in $m365AnchorPairs) {
-							if (-not (Test-Path -LiteralPath $m365Pair.Src)) {
-								Write-LogHost ("Rollup: M365 anchoring: expected {0} output not found at '{1}'; skipping." -f $m365Pair.Label, $m365Pair.Src) -ForegroundColor Yellow
+							if (-not $m365Pair.Src -or -not (Test-Path -LiteralPath $m365Pair.Src)) {
+								Write-LogHost ("Rollup: M365 sidecar regen: expected {0} output not found in '{1}'; skipping." -f $m365Pair.Label, $m365AnchorDir) -ForegroundColor Yellow
 								continue
 							}
 							$m365SrcFull = [System.IO.Path]::GetFullPath($m365Pair.Src)
@@ -28226,11 +29683,30 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 							}
 						}
 
-						# Register the two sidecar leaves so the upload sweep + local listing
+						# 6. Remove the current-run rollup + stale current-run sidecars
+						#    from $rollupOutputDir. Their content lives in $AppendFile
+						#    plus the anchored sidecars now.
+						foreach ($m365StalePath in @($m365CurRollupPath, $m365CurUserStatsPath, $m365CurSessionPath, $m365CurSessionStatsPath)) {
+							if (-not $m365StalePath) { continue }
+							try {
+								if (Test-Path -LiteralPath $m365StalePath) {
+									Remove-Item -LiteralPath $m365StalePath -Force -ErrorAction Stop
+								}
+							}
+							catch {
+								Write-LogHost ("Rollup: failed to remove stale current-run file at '{0}': {1}" -f $m365StalePath, $_.Exception.Message) -ForegroundColor Yellow
+							}
+						}
+
+						# Register the three sidecar leaves so the upload sweep + local listing
 						# pick them up. The Rollup leaf is already covered via
 						# $script:AppendRaw['Purview'] in the existing $appendLeafs loop.
 						if (-not $script:M365SidecarLeafs) { $script:M365SidecarLeafs = New-Object System.Collections.Generic.List[string] }
-						foreach ($m365SidecarLeaf in @([System.IO.Path]::GetFileName($m365AnchorUserStats), [System.IO.Path]::GetFileName($m365AnchorSession))) {
+						foreach ($m365SidecarLeaf in @(
+							[System.IO.Path]::GetFileName($m365AnchorUserStats),
+							[System.IO.Path]::GetFileName($m365AnchorSession),
+							[System.IO.Path]::GetFileName($m365AnchorSessionStats)
+						)) {
 							if ($m365SidecarLeaf -and -not $script:M365SidecarLeafs.Contains($m365SidecarLeaf)) {
 								[void]$script:M365SidecarLeafs.Add($m365SidecarLeaf)
 							}
@@ -28241,34 +29717,39 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 						# sidecars, synthesize the destination URL from the AppendFile parent
 						# plus the derived sidecar leaf so remote runs show actual remote URLs
 						# instead of scratch paths.
-						$m365RollupDisplay = if ($script:AppendRaw.ContainsKey('Purview') -and $script:AppendRaw['Purview']) { $script:AppendRaw['Purview'] } else { Get-DisplayPath -LocalPath $m365AnchorRollup }
+						$m365RollupDisplay = if ($script:AppendRaw.ContainsKey('Purview') -and $script:AppendRaw['Purview']) { $script:AppendRaw['Purview'] } else { Get-DisplayPath -LocalPath $AppendFile }
 						$m365SidecarUsDisplay = $null
 						$m365SidecarScDisplay = $null
+						$m365SidecarSsDisplay = $null
 						if ($script:AppendIsRemote.ContainsKey('Purview') -and $script:AppendIsRemote['Purview'] -and $script:AppendRaw.ContainsKey('Purview') -and $script:AppendRaw['Purview']) {
 							$m365AfUrl       = $script:AppendRaw['Purview']
 							$m365AfUrlParent = $m365AfUrl -replace '/[^/]+$', ''
 							$m365SidecarUsDisplay = "{0}/{1}" -f $m365AfUrlParent, [System.IO.Path]::GetFileName($m365AnchorUserStats)
 							$m365SidecarScDisplay = "{0}/{1}" -f $m365AfUrlParent, [System.IO.Path]::GetFileName($m365AnchorSession)
-						} else {
+							$m365SidecarSsDisplay = "{0}/{1}" -f $m365AfUrlParent, [System.IO.Path]::GetFileName($m365AnchorSessionStats)
+						}
+						else {
 							$m365SidecarUsDisplay = Get-DisplayPath -LocalPath $m365AnchorUserStats
 							$m365SidecarScDisplay = Get-DisplayPath -LocalPath $m365AnchorSession
+							$m365SidecarSsDisplay = Get-DisplayPath -LocalPath $m365AnchorSessionStats
 						}
 
-						Write-LogHost ("Rollup: -AppendFile M365 anchoring: 3 outputs re-anchored onto stem '{0}' (merged Rollup overwrites the AppendFile target; UserStats / SessionCohort sidecars overwrite their derived URLs)." -f $m365AnchorStem) -ForegroundColor Green
+						Write-LogHost ("Rollup: -AppendFile M365: merged Rollup overwrites the AppendFile target; UserStats / SessionCohort sidecars regenerated from the union and SessionStats union-merged in-place, all anchored onto stem '{0}'." -f $m365AnchorStem) -ForegroundColor Green
 						Write-LogHost ("  Rollup        -> {0}" -f $m365RollupDisplay)    -ForegroundColor Gray
 						Write-LogHost ("  UserStats     -> {0}" -f $m365SidecarUsDisplay) -ForegroundColor Gray
 						Write-LogHost ("  SessionCohort -> {0}" -f $m365SidecarScDisplay) -ForegroundColor Gray
+						Write-LogHost ("  SessionStats  -> {0}" -f $m365SidecarSsDisplay) -ForegroundColor Gray
 						Write-LogHost  "  NOTE: any prior sidecars in the destination folder with different leaf names (e.g. from a renamed AppendFile) are NOT auto-deleted." -ForegroundColor DarkGray
 					}
 					catch {
-						# Non-fatal: Python's outputs are still on disk at their natural
-						# timestamped leaves; the customer just gets new-stemmed files
-						# instead of in-place anchored overwrites. Surface both facts.
-						Write-LogHost ("Rollup: -AppendFile M365 anchoring FAILED: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
-						Write-LogHost ("Rollup:   -> Merged Rollup preserved at: {0}" -f (Get-DisplayPath -LocalPath $m365NewRollup))    -ForegroundColor Yellow
-						Write-LogHost ("Rollup:   -> UserStats preserved at:     {0}" -f (Get-DisplayPath -LocalPath $m365NewUserStats)) -ForegroundColor Yellow
-						Write-LogHost ("Rollup:   -> SessionCohort preserved at: {0}" -f (Get-DisplayPath -LocalPath $m365NewSession))   -ForegroundColor Yellow
-						Write-LogHost  "Rollup:   -> Manual rename/move required to anchor the 3 outputs onto the AppendFile target." -ForegroundColor Yellow
+						# Non-fatal: the current-run outputs may still be on disk at
+						# their timestamped leaves in $rollupOutputDir if the merge or
+						# sidecar regen failed mid-flight. Surface where they live so
+						# the customer can recover.
+						Write-LogHost ("Rollup: -AppendFile M365 merge/anchor FAILED: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+						Write-LogHost ("Rollup:   -> Customer's target may or may not be updated: {0}" -f (Get-DisplayPath -LocalPath $AppendFile)) -ForegroundColor Yellow
+						Write-LogHost ("Rollup:   -> Any preserved current-run outputs are in: {0}" -f (Get-DisplayPath -LocalPath $rollupOutputDir)) -ForegroundColor Yellow
+						Write-LogHost  "Rollup:   -> Manual union-merge required to reconcile this run with the target." -ForegroundColor Yellow
 					}
 				}
 			}
@@ -28298,10 +29779,9 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				# In remote-output mode this intermediate raw CSV lives on local scratch only
 				# and is consumed by the rollup post-processor BEFORE the end-of-run upload
 				# sweep — it never reaches the remote destination. Showing its phantom remote
-				# URL (via Get-DisplayPath) implies a remote DELETE happened when no such
+				# URL (via Get-DisplayPath) would imply a remote DELETE happened when no such
 				# remote object ever existed. Surface the actual local-scratch path and add
-				# a 'scratch only; not uploaded' qualifier in remote mode
-				# (Fix #18 / BUG-J-rollup-deleted-cosmetic-url).
+				# a 'scratch only; not uploaded' qualifier in remote mode.
 				$rollupDelNote = if ($script:RemoteOutputMode -ne 'None') { ' (scratch only; not uploaded)' } else { '' }
 				try {
 					if (Test-Path -LiteralPath $rollupRawPath) {
@@ -28347,10 +29827,10 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 		# regardless of -Rollup vs -RollupPlusRaw. On failure they are preserved alongside
 		# the raw Purview CSV so the user can re-invoke the rollup manually.
 		if ($rollupSuccess) {
-			# Same scratch-only / never-uploaded reasoning as the raw-CSV delete block above
-			# (Fix #18 / BUG-J-rollup-deleted-cosmetic-url) — these Entra users CSVs are
-			# rollup inputs that live on local scratch in remote-output mode and are reaped
-			# before the upload sweep, so the displayed path must be the actual local path.
+			# Same scratch-only / never-uploaded reasoning as the raw-CSV delete block
+			# above — these Entra users CSVs are rollup inputs that live on local scratch
+			# in remote-output mode and are reaped before the upload sweep, so the
+			# displayed path must be the actual local path.
 			$rollupAlwaysDelNote = if ($script:RemoteOutputMode -ne 'None') { ' (scratch only; not uploaded)' } else { '' }
 			foreach ($rollupAlwaysDeletePath in $rollupAlwaysDeleteList) {
 				try {
@@ -28387,15 +29867,30 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 	# scoping logic so customers see the same picture whether output is local or remote.
 	if ($script:RemoteOutputMode -eq 'None' -and $global:ScriptRunTimestamp) {
 		$listingDir = Split-Path $OutputFile -Parent
-		if ($listingDir -and (Test-Path $listingDir)) {
-			# Fix #14 (BUG-F-local-listing): Mirror the remote upload sweep's append-leaf
-			# collection (~30 lines below) so the local listing surfaces the merged
-			# Append* targets even though their filenames carry the target's ORIGINAL
-			# timestamp (not $global:ScriptRunTimestamp). Without this, an -AppendFile /
-			# -AppendUserInfo / -AppendAgent365Info run hides every merged output from the
-			# end-of-run banner — the only file matching the current-run timestamp filter
-			# is the .log itself, so the listing prints '(1)' and shows just the log even
-			# though the run also updated the customer's append targets in-place.
+		# Also sweep any LOCAL-tier per-stream override directories so that
+		# -OutputPathUserInfo / -OutputPathAgent365Info / -LogPath pointing at a
+		# directory OTHER than $OutputFile's parent doesn't hide that stream's
+		# artifact from the end-of-run banner. Remote tiers are handled by the
+		# remote upload sweep below; this branch only runs when RemoteOutputMode
+		# is 'None' (i.e., all streams resolved to local destinations).
+		$listingDirs = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
+		if ($listingDir) { $null = $listingDirs.Add($listingDir) }
+		foreach ($_streamKey in @('UserInfo','Agent365Info','Log')) {
+			$_streamDt = script:Resolve-DataTypePaths -DataType $_streamKey
+			if ($_streamDt -and $_streamDt.IsBound -and $_streamDt.Tier -eq 'Local' -and $_streamDt.EffectiveDir) {
+				$null = $listingDirs.Add($_streamDt.EffectiveDir)
+			}
+		}
+		if ($listingDirs.Count -gt 0) {
+			# Mirror the remote upload sweep's append-leaf collection (~30 lines below)
+			# so the local listing surfaces the merged Append* targets even though
+			# their filenames carry the target's ORIGINAL timestamp (not
+			# $global:ScriptRunTimestamp). Without this, an -AppendFile /
+			# -AppendUserInfo / -AppendAgent365Info run would hide every merged output
+			# from the end-of-run banner — the only file matching the current-run
+			# timestamp filter is the .log itself, so the listing would print '(1)'
+			# and show just the log even though the run also updated the customer's
+			# append targets in-place.
 			$listingAppendLeafs = New-Object System.Collections.Generic.List[string]
 			foreach ($k in @('Purview','UserInfo','Agent365Info')) {
 				if ($script:AppendIsBound.ContainsKey($k) -and $script:AppendIsBound[$k] -and $script:AppendRaw.ContainsKey($k)) {
@@ -28412,13 +29907,20 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 					if ($m365Sc -and -not $listingAppendLeafs.Contains($m365Sc)) { [void]$listingAppendLeafs.Add($m365Sc) }
 				}
 			}
-			$listingCandidates = Get-ChildItem -Path $listingDir -File -ErrorAction SilentlyContinue |
-				Where-Object {
-					($_.Name -like "*${global:ScriptRunTimestamp}*" -or $listingAppendLeafs.Contains($_.Name)) `
-					-and $_.Name -notlike '.pax_*' `
-					-and $_.Name -notlike '*_PARTIAL.*'
-				} |
-				Sort-Object Name
+			$listingCandidates = @()
+			foreach ($_sweepDir in $listingDirs) {
+				if (-not (Test-Path $_sweepDir)) { continue }
+				$listingCandidates += Get-ChildItem -Path $_sweepDir -File -ErrorAction SilentlyContinue |
+					Where-Object {
+						($_.Name -like "*${global:ScriptRunTimestamp}*" -or $listingAppendLeafs.Contains($_.Name)) `
+						-and $_.Name -notlike '.pax_*' `
+						-and $_.Name -notlike '*_PARTIAL.*'
+					}
+			}
+			# Dedupe by full path (a stream override directory could theoretically
+			# coincide with $listingDir, in which case the per-dir sweeps overlap)
+			# and sort by name to preserve the prior ordering for the unsplit case.
+			$listingCandidates = $listingCandidates | Sort-Object FullName -Unique | Sort-Object Name
 			if ($listingCandidates -and $listingCandidates.Count -gt 0) {
 				Write-LogHost ("Output files created ({0}):" -f $listingCandidates.Count) -ForegroundColor Cyan
 				foreach ($listingFile in $listingCandidates) {
@@ -28627,7 +30129,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				Write-LogHost "Note: Could not remove rollup temp .py files: $($_.Exception.Message)" -ForegroundColor DarkGray
 			}
 		}
-		# Reap rollup seed JSONs scoped to THIS run (Fix #13 / BUG-D-companion).
+		# Reap rollup seed JSONs scoped to THIS run.
 		# ConvertTo-UsersSeedMap and ConvertTo-FactSeedMaps emit these one-shot files
 		# (PAX_AppendUserInfo_seed_<ts>.json, PAX_AppendFile_midseed_<ts>.json,
 		# PAX_AppendFile_threadseed_<ts>.json) into .pax_incremental for the embedded
@@ -28713,7 +30215,7 @@ finally {
 					if ($cleanupPyFiles -and $cleanupPyFiles.Count -gt 0) {
 						$cleanupPyFiles | Remove-Item -Force -ErrorAction SilentlyContinue
 					}
-					# Also reap rollup seed JSONs scoped to this run (Fix #13 / BUG-D-companion).
+					# Also reap rollup seed JSONs scoped to this run.
 					# Mirrors the success-path sweep above for the late-exception path.
 					$cleanupSeedFiles = Get-ChildItem -Path $cleanupIncDir -Filter "PAX_Append*_${global:ScriptRunTimestamp}.json" -ErrorAction SilentlyContinue
 					if ($cleanupSeedFiles -and $cleanupSeedFiles.Count -gt 0) {

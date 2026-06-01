@@ -1,8 +1,8 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.2.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.2/PAX_Purview_Audit_Log_Processor_v1.11.2.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.3.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.3/PAX_Purview_Audit_Log_Processor_v1.11.3.ps1)
 >
-> **📅 Script v1.11.2 Release Date:** 2026-05-17
+> **📅 Script v1.11.3 Release Date:** 2026-06-01
 >
 > **📋 Release Notes:** See what's new → [v1.11.x Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
@@ -10,7 +10,7 @@
 >
 > **📚 Documentation Archive:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
-**Documentation Version:** v1.11.x (Current Script Version: v1.11.2)
+**Documentation Version:** v1.11.x (Current Script Version: v1.11.3)
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 7+ (required for default Graph API mode); PowerShell 5.1 supported only with `-UseEOM`  
 **License:** MIT
@@ -390,7 +390,7 @@ The **Purview Audit Reader** role is only required for EOM mode (`-UseEOM`) and 
 
 ### Download the Script
 
-- **Script:** [PAX_Purview_Audit_Log_Processor_v1.11.2.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.2/PAX_Purview_Audit_Log_Processor_v1.11.2.ps1)
+- **Script:** [PAX_Purview_Audit_Log_Processor_v1.11.3.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.3/PAX_Purview_Audit_Log_Processor_v1.11.3.ps1)
 - **Release Notes:** [v1.11.x](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md)
 
 Save the downloaded script to a working directory (e.g., `C:\Scripts\PAX\`).
@@ -2965,199 +2965,61 @@ The `-IncludeM365Usage` switch activates a curated bundle of activity types span
 
 ### Activity Types by Category
 
-The bundle includes activities from 10 categories:
+The bundle includes a curated set of 22 activity types across five groups:
 
-#### Outlook / Exchange
+#### Exchange / Email
 
 | Operation | Description |
 |-----------|-------------|
 | MailItemsAccessed | Email items accessed (read/preview) |
+| MailboxLogin | Mailbox sign-in |
 | Send | Email sent |
-| SendOnBehalf | Email sent on behalf of another user |
-| SoftDelete | Item moved to Deleted Items |
-| HardDelete | Item permanently deleted |
-| MoveToDeletedItems | Item moved to Deleted Items folder |
-| CopyToFolder | Item copied to folder |
 
-#### SharePoint / OneDrive - Files
+#### SharePoint / OneDrive - File Access
 
 | Operation | Description |
 |-----------|-------------|
 | FileAccessed | File accessed |
+| FileViewed | File viewed |
+| FilePreviewed | File previewed |
+| FileModified | File modified |
 | FileDownloaded | File downloaded |
 | FileUploaded | File uploaded |
-| FileModified | File modified |
-| FileDeleted | File deleted |
-| FileMoved | File moved |
-| FileCheckedIn | File checked in |
-| FileCheckedOut | File checked out |
-| FileRecycled | File moved to recycle bin |
-| FileRestored | File restored from recycle bin |
-| FileVersionsAllDeleted | All file versions deleted |
-
-#### SharePoint / OneDrive - Sharing
-
-| Operation | Description |
-|-----------|-------------|
-| SharingInvitationCreated | Sharing invitation created |
-| SharingInvitationAccepted | Sharing invitation accepted |
-| SharedLinkCreated | Shared link created |
-| SharingRevoked | Sharing permissions revoked |
-| RemovedFromSecureLink | User removed from secure link |
-
-#### Groups
-
-| Operation | Description |
-|-----------|-------------|
-| AddMemberToUnifiedGroup | Member added to M365 group |
-| RemoveMemberFromUnifiedGroup | Member removed from M365 group |
-
-#### Teams - Team/Channel
-
-| Operation | Description |
-|-----------|-------------|
-| TeamCreated | Team created |
-| TeamDeleted | Team deleted |
-| TeamArchived | Team archived |
-| TeamSettingChanged | Team settings changed |
-| TeamMemberAdded | Member added to team |
-| TeamMemberRemoved | Member removed from team |
-| MemberAdded | Member added |
-| MemberRemoved | Member removed |
-| MemberRoleChanged | Member role changed |
-| ChannelAdded | Channel added |
-| ChannelDeleted | Channel deleted |
-| ChannelSettingChanged | Channel settings changed |
-| ChannelOwnerResponded | Channel owner responded |
-| ChannelMessageSent | Message sent in channel |
-| ChannelMessageDeleted | Message deleted in channel |
-| BotAddedToTeam | Bot added to team |
-| BotRemovedFromTeam | Bot removed from team |
-| TabAdded | Tab added to channel |
-| TabRemoved | Tab removed from channel |
-| TabUpdated | Tab updated |
-| ConnectorAdded | Connector added |
-| ConnectorRemoved | Connector removed |
-| ConnectorUpdated | Connector updated |
 
 #### Teams - Chat/Messaging
 
 | Operation | Description |
 |-----------|-------------|
-| TeamsSessionStarted | Teams session started |
-| ChatCreated | Chat created |
-| ChatRetrieved | Chat retrieved |
-| ChatUpdated | Chat updated |
 | MessageSent | Message sent |
 | MessageRead | Message read |
-| MessageDeleted | Message deleted |
-| MessageUpdated | Message updated |
 | MessagesListed | Messages listed |
-| MessageCreation | Message created |
-| MessageCreatedHasLink | Message created with link |
-| MessageEditedHasLink | Message edited with link |
-| MessageHostedContentRead | Hosted content read |
-| MessageHostedContentsListed | Hosted contents listed |
-| SensitiveContentShared | Sensitive content shared |
+| ChatRetrieved | Chat retrieved |
+| ChatCreated | Chat created |
+| TeamsSessionStarted | Teams session started |
 
-#### Teams - Meetings
+#### Teams - Meeting Lifecycle
 
 | Operation | Description |
 |-----------|-------------|
-| MeetingCreated | Meeting created |
-| MeetingUpdated | Meeting updated |
-| MeetingDeleted | Meeting deleted |
+| MeetingParticipantJoined | Participant joined meeting |
 | MeetingStarted | Meeting started |
 | MeetingEnded | Meeting ended |
-| MeetingParticipantJoined | Participant joined meeting |
-| MeetingParticipantLeft | Participant left meeting |
-| MeetingParticipantRoleChanged | Participant role changed |
-| MeetingRecordingStarted | Recording started |
-| MeetingRecordingEnded | Recording ended |
-| MeetingDetail | Meeting details accessed |
 | MeetingParticipantDetail | Participant details accessed |
-| LiveNotesUpdate | Live notes updated |
-| AINotesUpdate | AI notes updated |
-| RecordingExported | Recording exported |
-| TranscriptsExported | Transcripts exported |
+| MeetingDetail | Meeting details accessed |
 
-#### Teams - Apps/Approvals
-
-| Operation | Description |
-|-----------|-------------|
-| AppInstalled | App installed |
-| AppUpgraded | App upgraded |
-| AppUninstalled | App uninstalled |
-| CreatedApproval | Approval created |
-| ApprovedRequest | Request approved |
-| RejectedApprovalRequest | Approval request rejected |
-| CanceledApprovalRequest | Approval request canceled |
-
-#### Word, Excel, PowerPoint, OneNote
-
-| Operation | Description |
-|-----------|-------------|
-| Create | Document created |
-| Edit | Document edited |
-| Open | Document opened |
-| Save | Document saved |
-| Print | Document printed |
-
-#### Forms
-
-| Operation | Description |
-|-----------|-------------|
-| CreateForm | Form created |
-| EditForm | Form edited |
-| DeleteForm | Form deleted |
-| ViewForm | Form viewed |
-| CreateResponse | Response created |
-| SubmitResponse | Response submitted |
-| ViewResponse | Response viewed |
-| DeleteResponse | Response deleted |
-
-#### Stream
-
-| Operation | Description |
-|-----------|-------------|
-| StreamModified | Video modified |
-| StreamViewed | Video viewed |
-| StreamDeleted | Video deleted |
-| StreamDownloaded | Video downloaded |
-
-#### Planner
-
-| Operation | Description |
-|-----------|-------------|
-| PlanCreated | Plan created |
-| PlanDeleted | Plan deleted |
-| PlanModified | Plan modified |
-| TaskCreated | Task created |
-| TaskDeleted | Task deleted |
-| TaskModified | Task modified |
-| TaskAssigned | Task assigned |
-| TaskCompleted | Task completed |
-
-#### PowerApps
-
-| Operation | Description |
-|-----------|-------------|
-| LaunchedApp | App launched |
-| CreatedApp | App created |
-| EditedApp | App edited |
-| DeletedApp | App deleted |
-| PublishedApp | App published |
-
-#### Copilot
+#### Copilot / Connected AI
 
 | Operation | Description |
 |-----------|-------------|
 | CopilotInteraction | Microsoft 365 Copilot interaction |
+| ConnectedAIAppInteraction | Connected AI app interaction |
 
-For easy copy/paste into scripts or pipelines, the full list of activity types enabled by `-IncludeM365Usage` (including `CopilotInteraction`) is provided below as a single comma-separated list.
+Any Microsoft 365 operation outside this curated set can still be requested individually through `-ActivityTypes` (the bundle operations are added to whatever you supply there).
+
+For easy copy/paste into scripts or pipelines, the full list of activity types enabled by `-IncludeM365Usage` is provided below as a single comma-separated list.
 
 ```text
-MailItemsAccessed,Send,SendOnBehalf,SoftDelete,HardDelete,MoveToDeletedItems,CopyToFolder,FileAccessed,FileDownloaded,FileUploaded,FileModified,FileDeleted,FileMoved,FileCheckedIn,FileCheckedOut,FileRecycled,FileRestored,FileVersionsAllDeleted,SharingInvitationCreated,SharingInvitationAccepted,SharedLinkCreated,SharingRevoked,RemovedFromSecureLink,AddMemberToUnifiedGroup,RemoveMemberFromUnifiedGroup,TeamCreated,TeamDeleted,TeamArchived,TeamSettingChanged,TeamMemberAdded,TeamMemberRemoved,MemberAdded,MemberRemoved,MemberRoleChanged,ChannelAdded,ChannelDeleted,ChannelSettingChanged,ChannelOwnerResponded,ChannelMessageSent,ChannelMessageDeleted,BotAddedToTeam,BotRemovedFromTeam,TabAdded,TabRemoved,TabUpdated,ConnectorAdded,ConnectorRemoved,ConnectorUpdated,TeamsSessionStarted,ChatCreated,ChatRetrieved,ChatUpdated,MessageSent,MessageRead,MessageDeleted,MessageUpdated,MessagesListed,MessageCreation,MessageCreatedHasLink,MessageEditedHasLink,MessageHostedContentRead,MessageHostedContentsListed,SensitiveContentShared,MeetingCreated,MeetingUpdated,MeetingDeleted,MeetingStarted,MeetingEnded,MeetingParticipantJoined,MeetingParticipantLeft,MeetingParticipantRoleChanged,MeetingRecordingStarted,MeetingRecordingEnded,MeetingDetail,MeetingParticipantDetail,LiveNotesUpdate,AINotesUpdate,RecordingExported,TranscriptsExported,AppInstalled,AppUpgraded,AppUninstalled,CreatedApproval,ApprovedRequest,RejectedApprovalRequest,CanceledApprovalRequest,Create,Edit,Open,Save,Print,CreateForm,EditForm,DeleteForm,ViewForm,CreateResponse,SubmitResponse,ViewResponse,DeleteResponse,StreamModified,StreamViewed,StreamDeleted,StreamDownloaded,PlanCreated,PlanDeleted,PlanModified,TaskCreated,TaskDeleted,TaskModified,TaskAssigned,TaskCompleted,LaunchedApp,CreatedApp,EditedApp,DeletedApp,PublishedApp,CopilotInteraction
+MailItemsAccessed,MailboxLogin,Send,FileAccessed,FileViewed,FilePreviewed,FileModified,FileDownloaded,FileUploaded,MessageSent,MessageRead,MessagesListed,ChatRetrieved,ChatCreated,TeamsSessionStarted,MeetingParticipantJoined,MeetingStarted,MeetingEnded,MeetingParticipantDetail,MeetingDetail,CopilotInteraction,ConnectedAIAppInteraction
 ```
 
 ### Record Types
@@ -3257,8 +3119,8 @@ When `-Rollup` or `-RollupPlusRaw` is specified, PAX runs an **embedded Python p
 
 | Run shape | Embedded processor | Inputs consumed | Target Analytics-Hub dashboard(s) |
 | --- | --- | --- | --- |
-| **CopilotInteraction-only** (default activity type, or `-ActivityTypes 'CopilotInteraction'`) | `Purview_CopilotInteraction_Processor` v3.0.0 | Purview CSV **+** Entra users CSV (`EntraUsers_MAClicensing_<timestamp>.csv`) | **AI-in-One** and **AI Business Value** |
-| **`-IncludeM365Usage`** | `Purview_M365_Usage_Bundle_Explosion_Processor` v2.1.0 | Combined Purview CSV (single file) | **M365 Usage Analytics** |
+| **CopilotInteraction-only** (default activity type, or `-ActivityTypes 'CopilotInteraction'`) | `Purview_CopilotInteraction_Processor` | Purview CSV **+** Entra users CSV (`EntraUsers_MAClicensing_<timestamp>.csv`) | **AI-in-One** and **AI Business Value** |
+| **`-IncludeM365Usage`** | `Purview_M365_Usage_Bundle_Explosion_Processor` | Combined Purview CSV (single file) | **M365 Usage Analytics** |
 
 ### Switches
 
@@ -3298,7 +3160,6 @@ The rollup feature is intentionally narrow in scope. The script exits with an ex
 
 - `-UseEOM` (PowerShell 5.1 path)
 - `-OnlyUserInfo`
-- `-AppendFile`
 - `-ExcludeCopilotInteraction` **without** `-IncludeM365Usage`
 
 ### Output Files
@@ -3310,14 +3171,14 @@ Rolled-up CSVs are written to the same directory as the raw Purview CSV (default
 ```powershell
 # CopilotInteraction-only rollup → AI-in-One + AI Business Value dashboards.
 # Raw CSV(s) deleted on success; only the rollup output remains.
-.\PAX_Purview_Audit_Log_Processor_v1.11.2.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -Rollup
+.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -Rollup
 
 # Same as above but keep the raw Purview + Entra users CSVs alongside the rollup output.
-.\PAX_Purview_Audit_Log_Processor_v1.11.2.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -RollupPlusRaw
+.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -RollupPlusRaw
 
 # M365 Usage Analytics dashboard input. -IncludeM365Usage auto-enables -CombineOutput;
 # -Rollup deletes the raw combined CSV after the rollup output is produced.
-.\PAX_Purview_Audit_Log_Processor_v1.11.2.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -IncludeM365Usage -Rollup
+.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -IncludeM365Usage -Rollup
 ```
 
 ### Best Practices
