@@ -24,6 +24,24 @@
 
 ---
 
+<div align="center">
+
+<a href="https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md">
+  <img src="assets/pax-logo.png" alt="PAX — Portable Audit eXporter" width="380">
+</a>
+
+</div>
+
+## 🔍 Purview Audit Log Processor
+
+> Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.3.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.3/PAX_Purview_Audit_Log_Processor_v1.11.3.ps1) | Release Date: 2026-06-01
+>
+> **📖 Resources:** [Latest Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md) | [Latest Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md)
+>
+> **📚 Archives:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor) | [Previous Versions](https://github.com/microsoft/PAX/tree/release/script_archive/Purview_Audit_Log_Processor)
+
+---
+
 ## What is PAX?
 
 **Portable Audit eXporter (PAX)** is a set of enterprise-grade PowerShell scripts that export Microsoft 365 Copilot, AI agent, and broader workload usage data out of Microsoft Purview and Microsoft Graph into analysis-ready CSV or Excel — ready for Power BI, Microsoft Fabric, or your preferred analysis tool.
@@ -48,13 +66,59 @@ The PAX set also includes two specialized companion scripts for narrower use cas
 
 ---
 
-## 🔍 Purview Audit Log Processor — primary script
+<div align="center">
 
-> Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.3.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.3/PAX_Purview_Audit_Log_Processor_v1.11.3.ps1) | Release Date: 2026-06-01
->
-> **📖 Resources:** [Latest Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md) | [Latest Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md)
->
-> **📚 Archives:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor) | [Previous Versions](https://github.com/microsoft/PAX/tree/release/script_archive/Purview_Audit_Log_Processor)
+<a href="https://paxcookbook.com">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/pax-cookbook-logo-horizontal-white.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/pax-cookbook-logo-horizontal-blue.png">
+    <img src="assets/pax-cookbook-logo-horizontal-blue.png" alt="PAX Cookbook" width="420">
+  </picture>
+</a>
+
+### PAX is the engine. **PAX Cookbook** is the kitchen around it. 🧑‍🍳
+
+</div>
+
+The scripts above are the **PAX engine** — powerful, but you bring every switch, path, and command yourself. **[PAX Cookbook](https://paxcookbook.com)** is a friendly Windows app that runs that same engine *for* you: guided forms instead of switches, saved recipes instead of copy-paste, and a tidy kitchen instead of a terminal. It's the easiest way to get the most out of PAX — and it's free and open source on Microsoft GitHub.
+
+**Why most people use PAX Cookbook instead of running the script by hand:**
+
+- 🍳 **Recipes** — save a run once (dates, scope, output), reopen and re-run it in a click; no syntax to memorize
+- ✅ **Taste Tests** — a preflight check catches missing fields and bad paths *before* you commit to a full run
+- 📒 **Bakes & history** — every run is recorded with status, output files, and scrollable logs
+- 🔑 **Chef's Keys** — credentials live in Windows Credential Manager, never in recipes, logs, commands, or output
+- 📤 **Flexible destinations** — bake straight to a local folder, a **SharePoint** document library, or **Microsoft Fabric (OneLake)** Delta tables — no extra scripting
+- ⏰ **Scheduled bakes** — hand any recipe to Windows Task Scheduler for automatic daily/weekly/monthly runs
+- 🔄 **Always current** — on install the app fetches the latest PAX engine straight from this repo for you, and it keeps both the app and the engine up to date in place — no return trips to GitHub, no version hunting
+
+<div align="center">
+
+### ⬇️ **[Get PAX Cookbook →](https://paxcookbook.com)**
+
+*Free · open source · local-first · credential-safe · no audit data stored in the app*
+
+</div>
+
+<br>
+
+<div align="center">
+
+### Prefer the command line? Meet **PAX Cookbook Mini-Kitchen**
+
+</div>
+
+Still want to run PAX directly in PowerShell? **[Mini-Kitchen](https://paxcookbook.com/Mini-Kitchen)** is a browser-only companion (no install) whose whole job is to **build a clean, copy-ready PAX command line for you to paste into your own terminal** — so you never hand-write paths and switches again. You point-and-click your options, Mini-Kitchen renders the exact `pwsh` command, you copy it, and **you run it yourself against the PAX script downloaded from this repo.** Mini-Kitchen never runs PAX for you; it only writes the command. It ships ready-made presets for the **AI-in-One** and **M365 Usage Analytics** dashboards (and others), saves recipes right in your browser, and exports portable **`.paxlite`** files you can later import into the full PAX Cookbook app.
+
+**It does not touch your tenant or your data.** Mini-Kitchen uses **no user credentials, app-registration secrets, or certificates**, and it pulls **no audit data and no user/Entra information** — none of that is ever entered into or handled by Mini-Kitchen. It does **not** connect to your Microsoft 365 tenant, Microsoft Graph, Purview, or your SharePoint/Fabric/local storage. The *only* thing it reads or writes is the recipe file you choose to export or import (`.paxlite`) — and that file likewise contains **no user credentials, app-registration secrets, or certificates, and no audit or user data**; it only holds your saved command options and stays entirely on your device. All of the actual authentication and data export happens later, when **you** run the generated command yourself in your terminal.
+
+<div align="center">
+
+### ⌨️ **[Open Mini-Kitchen →](https://paxcookbook.com/Mini-Kitchen)**
+
+*Browser-only · no install · no tenant connection · no credentials or data*
+
+</div>
 
 ---
 
