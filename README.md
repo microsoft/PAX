@@ -32,7 +32,7 @@
 
 </div>
 
-## 🔍 Purview Audit Log Processor — primary script
+## 🔍 Purview Audit Log Processor
 
 > Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.3.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.3/PAX_Purview_Audit_Log_Processor_v1.11.3.ps1) | Release Date: 2026-06-01
 >
