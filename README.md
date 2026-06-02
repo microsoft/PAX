@@ -32,6 +32,16 @@
 
 </div>
 
+## 🔍 Purview Audit Log Processor — primary script
+
+> Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.3.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.3/PAX_Purview_Audit_Log_Processor_v1.11.3.ps1) | Release Date: 2026-06-01
+>
+> **📖 Resources:** [Latest Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md) | [Latest Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md)
+>
+> **📚 Archives:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor) | [Previous Versions](https://github.com/microsoft/PAX/tree/release/script_archive/Purview_Audit_Log_Processor)
+
+---
+
 ## What is PAX?
 
 **Portable Audit eXporter (PAX)** is a set of enterprise-grade PowerShell scripts that export Microsoft 365 Copilot, AI agent, and broader workload usage data out of Microsoft Purview and Microsoft Graph into analysis-ready CSV or Excel — ready for Power BI, Microsoft Fabric, or your preferred analysis tool.
@@ -109,16 +119,6 @@ Still want to run PAX directly in PowerShell? **[Mini-Kitchen](https://paxcookbo
 *Browser-only · no install · no tenant connection · no credentials or data*
 
 </div>
-
----
-
-## 🔍 Purview Audit Log Processor — primary script
-
-> Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.3.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.3/PAX_Purview_Audit_Log_Processor_v1.11.3.ps1) | Release Date: 2026-06-01
->
-> **📖 Resources:** [Latest Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md) | [Latest Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md)
->
-> **📚 Archives:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor) | [Previous Versions](https://github.com/microsoft/PAX/tree/release/script_archive/Purview_Audit_Log_Processor)
 
 ---
 
