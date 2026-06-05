@@ -2,25 +2,17 @@
 
 # Portable Audit eXporter (PAX) Solution Set
 
-<table border="0">
-<tr>
-<td valign="middle" align="center">
 <a href="https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md">
-  <img src="assets/pax-logo.png" alt="PAX — Portable Audit eXporter" width="300">
+  <img src="assets/pax-logo.png" alt="PAX — Portable Audit eXporter" height="85" align="middle">
 </a>
-</td>
-<td valign="middle" align="center">
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 <a href="https://microsoft.github.io/PAX-Cookbook">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/pax-cookbook-logo-horizontal-white.png">
     <source media="(prefers-color-scheme: light)" srcset="assets/pax-cookbook-logo-horizontal-blue.png">
-    <img src="assets/pax-cookbook-logo-horizontal-blue.png" alt="PAX Cookbook" width="340">
+    <img src="assets/pax-cookbook-logo-horizontal-blue.png" alt="PAX Cookbook" height="85" align="middle">
   </picture>
 </a>
-<br><br>
-</td>
-</tr>
-</table>
 
 <br>
 
