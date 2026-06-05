@@ -2,8 +2,8 @@
 
 ## Release Information
 
-- **Latest Version:** 1.11.3
-- **Latest Release Date:** 2026-06-01
+- **Latest Version:** 1.11.4
+- **Latest Release Date:** 2026-06-04
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,6 +12,7 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
+- **PAX Purview Audit Log Processor Script v1.11.4:** [PAX_Purview_Audit_Log_Processor_v1.11.4.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.4/PAX_Purview_Audit_Log_Processor_v1.11.4.ps1)
 - **PAX Purview Audit Log Processor Script v1.11.3:** [PAX_Purview_Audit_Log_Processor_v1.11.3.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.3/PAX_Purview_Audit_Log_Processor_v1.11.3.ps1)
 - **PAX Purview Audit Log Processor Script v1.11.2:** [PAX_Purview_Audit_Log_Processor_v1.11.2.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.2/PAX_Purview_Audit_Log_Processor_v1.11.2.ps1)
 - **Documentation v1.11.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md)
@@ -19,6 +20,18 @@ Download the script below.  For questions or issues, refer to the documentation.
 ---
 
 ## Overview
+
+### v1.11.4
+
+Version 1.11.4 is a small, targeted update. It adds one new column — `AgentPromptCount` — to the M365 Usage rollup's SessionStats sidecar so dashboards can separate agent-driven prompts from direct Copilot prompts, and it fixes a SharePoint upload failure that prevented larger rollup CSVs (those over 4 MB) from being saved to a SharePoint destination. All other v1.11.3 behavior is preserved, and no switches are added or removed.
+
+#### New `AgentPromptCount` Column in the M365 SessionStats Sidecar
+
+The M365 Usage SessionStats sidecar now includes an `AgentPromptCount` column alongside its existing prompt, response, and session counts. It reports how many of a user's prompts on a given day and app surface landed on agent-flagged conversations, letting the Analytics-Hub M365 Usage Analytics dashboard show an agent-versus-direct prompt split without re-querying the underlying data. The column is added immediately after `PromptCount`, so dashboards and tools that reference columns by name are unaffected, and it is produced automatically on every rollup run, carried through `-AppendFile` merge runs, and written across all three storage tiers (local CSV, SharePoint, Fabric/OneLake). This rolls the embedded M365 rollup processor from v2.6.0 to v2.6.1; the Copilot rollup processor is unchanged.
+
+#### SharePoint Upload Fix for Larger Files
+
+A bug that caused output files larger than 4 MB — most commonly the CopilotInteraction / M365 rollup CSV on real tenants — to fail their SharePoint upload with a `400 (Bad Request)` error is fixed. Smaller artifacts in the same destination folder (such as the run log) were unaffected, which made the failure look like a per-file permission or folder problem when it was neither. Large CSVs now upload to SharePoint reliably. See [Bug Fixes → v1.11.4](#v1114-2) for details.
 
 ### v1.11.3
 
@@ -117,6 +130,21 @@ New sixth value on the `-Auth` ValidateSet for Azure-hosted headless execution (
 ---
 
 ## What's New
+
+### v1.11.4
+
+#### M365 SessionStats Sidecar — New `AgentPromptCount` Column (v1.11.4)
+
+| Area | Details |
+| --- | --- |
+| **What changed** | The M365 Usage SessionStats sidecar (`<stem>_SessionStats_<timestamp>.csv`) gains one new column, `AgentPromptCount`, widening it from seven columns to eight. The new column is placed immediately after `PromptCount`. |
+| **What it reports** | Per user, per date, per app surface, how many of the user's prompts landed on agent-flagged conversations — the agent-attributed share of the existing `PromptCount` total. It is always a subset of `PromptCount`, so subtracting it yields the direct (non-agent) Copilot prompt count. |
+| **Why it's useful** | Lets the Analytics-Hub M365 Usage Analytics dashboard show an agent-versus-direct **prompt** split alongside the agent-versus-direct **session** split already provided by `AgentSessionCount`, computed during the rollup so the dashboard does not have to derive it. |
+| **When it's produced** | Automatically on every `-Rollup` / `-RollupPlusRaw` M365 run, and carried through `-AppendFile` cross-run merges (it sums across runs like the other counts). A SessionStats file from a v1.11.3 run is accepted and gains the new column on its first v1.11.4 merge. |
+| **Storage tiers** | Written across local CSV, SharePoint, and Fabric/OneLake with no tier-specific change; the Fabric Delta table absorbs the new column automatically. |
+| **Compatibility** | No new switches, no changed grain, and no change to the seven existing columns. Readers that bind columns by name are unaffected; only readers that bind by fixed column position past `PromptCount` need to account for the inserted column. The embedded M365 processor rolls from v2.6.0 to v2.6.1; the Copilot processor is unchanged. |
+
+---
 
 ### v1.11.3
 
@@ -366,6 +394,10 @@ Excel filenames, Excel tab names, and the `EntraUsers_*` / `Agent365_*` filename
 ---
 
 ## Bug Fixes
+
+### v1.11.4
+
+- **(v1.11.4) SharePoint upload of files larger than 4 MB no longer fails with `400 (Bad Request)`.** PAX uploads small files to SharePoint in a single request but sends larger files in chunks, and a defect in the chunked path caused the final piece of any file over 4 MB to be rejected by Microsoft Graph with a `400 (Bad Request)` error. The most common casualty was the CopilotInteraction / M365 rollup CSV on real tenants: smaller artifacts such as the run log landed in the same destination folder successfully, so the failure looked like a per-file permission or folder issue when it was neither. The chunked-upload path now sends each piece correctly, so large CSVs upload to SharePoint as expected. The rollup data itself was never affected — it is written locally before upload — so this fix applies only to the SharePoint delivery step; the small-file upload path and the Fabric/OneLake upload path are unchanged.
 
 ### v1.11.3
 

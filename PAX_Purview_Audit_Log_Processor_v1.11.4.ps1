@@ -1,5 +1,5 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.11.3
+# Version: v1.11.4
 # Requirements: PowerShell 7+ for default Graph API mode; PowerShell 5.1 supported ONLY with -UseEOM (serial Exchange Online Management mode, no parallel query/explosion).
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI activity types (specified via -ActivityTypes): AIInteraction, ConnectedAIAppInteraction, AIAppInteraction
@@ -951,7 +951,8 @@
 	    • '<stem>_SessionCohort_<YYYYMMDD_HHMMSS>.csv' — recomputed (UserId, App, Bucket) cohorts (sidecar).
 	    • '<stem>_SessionStats_<YYYYMMDD_HHMMSS>.csv'  — (v2.6.0+) per-(UserId, Date, AppHost)
 	                                                     DISTINCTCOUNT(ThreadId) + PromptCount /
-	                                                     ResponseCount / AgentSessionCount.
+	                                                     AgentPromptCount / ResponseCount /
+	                                                     AgentSessionCount.
 	                                                     Drives the v2.6.0 CECopilotPercentile_*
 	                                                     measures from PromptCount semantics.
 	  Only the Rollup file supports the union-merge semantic. Under -AppendFile, the current
@@ -2075,7 +2076,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.11.3'
+$ScriptVersion = '1.11.4'
 
 # --- Initialize/Clear persistent script variables to prevent cross-run contamination ---
 # Note: Script-scoped variables persist across multiple script invocations in the same PowerShell session
@@ -3593,7 +3594,7 @@ if ($Rollup -or $RollupPlusRaw) {
 # strings prevent any PowerShell variable expansion of the Python source.
 # ============================================================================
 $Script:EMBEDDED_PROCESSOR_COPILOT_VERSION = '3.1.0'
-$Script:EMBEDDED_PROCESSOR_M365_VERSION    = '2.6.0'
+$Script:EMBEDDED_PROCESSOR_M365_VERSION    = '2.6.1'
 
 # >>> BEGIN-EMBEDDED-COPILOT-PROCESSOR
 $Script:EMBEDDED_PROCESSOR_COPILOT = @'
@@ -5026,7 +5027,7 @@ if __name__ == "__main__":
 $Script:EMBEDDED_PROCESSOR_M365 = @'
 #!/usr/bin/env python3
 """
-Purview M365 Usage Bundle Explosion Processor v2.6.0
+Purview M365 Usage Bundle Explosion Processor v2.6.1
 =====================================================
 Two-mode processor for Purview audit log CSV exports:
 
@@ -5076,10 +5077,10 @@ Requirements:
 
 Usage:
     # (A) Single PAX / PowerShell export:
-    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.0.py --pax <CSV>
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.1.py --pax <CSV>
 
     # (B) Manual 4-pull export from Purview Audit:
-    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.0.py \
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.1.py \
         --teams <CSV> --outlook <CSV> --files <CSV> --copilot <CSV>
 
     Common optional flags:
@@ -5094,10 +5095,13 @@ Output files (rollup mode — all share the same timestamp):
     <stem>_Rollup_<YYYYMMDD_HHMMSS>.csv         13 columns — aggregated events + agent fields
     <stem>_UserStats_<YYYYMMDD_HHMMSS>.csv      66 columns — per-user metrics
     <stem>_SessionCohort_<YYYYMMDD_HHMMSS>.csv   3 columns — (UserId, App, Bucket)
-    <stem>_SessionStats_<YYYYMMDD_HHMMSS>.csv    7 columns — (UserId, Date, AppHost,
+    <stem>_SessionStats_<YYYYMMDD_HHMMSS>.csv    8 columns — (UserId, Date, AppHost,
                                                               SessionCount, PromptCount,
+                                                              AgentPromptCount,
                                                               ResponseCount, AgentSessionCount)
-                                                  matches AI in One DISTINCTCOUNT(ThreadId)
+                                                  matches AI in One DISTINCTCOUNT(ThreadId);
+                                                  AgentPromptCount = prompts on agent-flagged
+                                                  threads (v2.6.1)
     (<stem> = input file's stem for single input, or '<firstStem>_Combined' for multi-input.
      Rename the output file or use --output-dir if you want a tenant-specific name.)
 
@@ -5116,24 +5120,24 @@ Arguments:
 
 Examples:
     # Default rollup (13-column output + UserStats + SessionCohort)
-    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.0.py -i Purview_Export.csv
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.1.py -i Purview_Export.csv
 
     # Combine the validated 4-pull bundle (Teams + Outlook + Files + Copilot) in one run
-    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.0.py \
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.1.py \
         -i Teams_Export.csv Outlook_Export.csv Files_Export.csv Copilot_Export.csv \
         --combined-stem ZavaCorp_2025_11
 
     # Rollup with output in a different directory
-    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.0.py -i Purview_Export.csv --output-dir ./output
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.1.py -i Purview_Export.csv --output-dir ./output
 
     # Rollup only — skip UserStats and SessionCohort generation
-    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.0.py -i Purview_Export.csv --no-userstats
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.1.py -i Purview_Export.csv --no-userstats
 
     # v1-compatible event-level explosion (153-column output)
-    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.0.py -i Purview_Export.csv --mode event-level
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.1.py -i Purview_Export.csv --mode event-level
 
     # Rollup with sample-based reconciliation check
-    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.0.py -i Purview_Export.csv --reconcile
+    python Purview_M365_Usage_Bundle_Explosion_Processor_v2.6.1.py -i Purview_Export.csv --reconcile
 
 Validated 4-pull strategy (Purview Audit → Activities filter, type+click each chip):
     Teams   (7d):  MessageSent, MessageRead, ChatCreated, TeamsSessionStarted,
@@ -5143,7 +5147,7 @@ Validated 4-pull strategy (Purview Audit → Activities filter, type+click each 
     Copilot (30d): CopilotInteraction, AIAppInteraction        (filter by record type)
 
 Author:  Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
-Version: 2.6.0
+Version: 2.6.1
 """
 
 from __future__ import annotations
@@ -5192,7 +5196,7 @@ except ImportError:
 # CONSTANTS
 # ═════════════════════════════════════════════════════════════════════════════
 
-SCRIPT_VERSION = "2.6.0"
+SCRIPT_VERSION = "2.6.1"
 
 EXPLOSION_PER_RECORD_ROW_CAP = 1000
 STREAMING_CHUNK_SIZE = 5000
@@ -5352,9 +5356,12 @@ SESSIONCOHORT_HEADER: list[str] = ["UserId", "AppColumn", "SessionCohort"]
 # DISTINCT ThreadIds (matches Microsoft AI in One `Sessions` measure), plus prompt /
 # response counts and an agent-only thread count. License filtering happens downstream
 # in DAX via the EntraUsers relationship; this CSV stays license-agnostic.
+# v2.6.1: Added AgentPromptCount — exact chat vs agent split at message-tally time
+# (uses the same is_agent flag the rollup already determines per record).
 SESSIONSTATS_HEADER: list[str] = [
     "UserId", "CreationDate", "AppHost",
-    "SessionCount", "PromptCount", "ResponseCount", "AgentSessionCount",
+    "SessionCount", "PromptCount", "AgentPromptCount",
+    "ResponseCount", "AgentSessionCount",
 ]
 
 # Date formats accepted for CreationDate normalization (broadest to narrowest)
@@ -5415,7 +5422,7 @@ class SessionAccum:
     """
     __slots__ = (
         "thread_ids", "agent_thread_ids",
-        "prompt_count", "response_count",
+        "prompt_count", "agent_prompt_count", "response_count",
         "original_user_id",
     )
 
@@ -5423,6 +5430,7 @@ class SessionAccum:
         self.thread_ids: set[str] = set()
         self.agent_thread_ids: set[str] = set()
         self.prompt_count: int = 0
+        self.agent_prompt_count: int = 0  # v2.6.1: prompts on agent-flagged threads
         self.response_count: int = 0
         self.original_user_id = original_uid
 
@@ -6620,7 +6628,7 @@ def run_rollup(
 
     When `session_stats_csv` is provided, a parallel pass over CopilotEventData
     accumulates per-(UserId, CreationDate, AppHost) DISTINCTCOUNT(ThreadId) +
-    prompt/response counts and writes a 7-column SessionStats CSV. This matches
+    prompt/response counts and writes an 8-column SessionStats CSV. This matches
     the AI in One `Sessions` measure unit (one thread = one session).
 
     No exploded row dicts are ever stored in memory.
@@ -6750,6 +6758,8 @@ def run_rollup(
                         sessions[skey] = sacc
                     sacc.prompt_count += prompts_here
                     sacc.response_count += responses_here
+                    if is_agent:
+                        sacc.agent_prompt_count += prompts_here  # v2.6.1: exact chat/agent split
                     if thread_id and prompts_here > 0:
                         sacc.thread_ids.add(thread_id)
                         if is_agent:
@@ -6801,6 +6811,7 @@ def run_rollup(
                     ah,
                     session_count,
                     sacc.prompt_count,
+                    sacc.agent_prompt_count,  # v2.6.1
                     sacc.response_count,
                     len(sacc.agent_thread_ids),
                 ])
@@ -8791,6 +8802,7 @@ function Merge-M365SessionStatsCsv {
 		  Composite key      : (lower(UserId), CreationDate, AppHost)
 		  SessionCount       : target + current
 		  PromptCount        : target + current
+		  AgentPromptCount   : target + current
 		  ResponseCount      : target + current
 		  AgentSessionCount  : target + current
 		  UserId             : target's casing wins on retained groups (first-seen)
@@ -8817,13 +8829,13 @@ function Merge-M365SessionStatsCsv {
 	}
 	if ([string]::IsNullOrWhiteSpace($OutputPath)) { $OutputPath = $TargetSessionStatsCsv }
 
-	# Canonical 7-column SessionStats header (matches SESSIONSTATS_HEADER in the embedded processor).
+	# Canonical 8-column SessionStats header (matches SESSIONSTATS_HEADER in the embedded processor).
 	$ssHeader = @(
 		'UserId','CreationDate','AppHost',
-		'SessionCount','PromptCount','ResponseCount','AgentSessionCount'
+		'SessionCount','PromptCount','AgentPromptCount','ResponseCount','AgentSessionCount'
 	)
 
-	# Project an incoming row onto the 7 canonical columns. Missing columns become ''.
+	# Project an incoming row onto the 8 canonical columns. Missing columns become ''.
 	$projectRow = {
 		param($row)
 		$obj = [ordered]@{}
@@ -8844,7 +8856,7 @@ function Merge-M365SessionStatsCsv {
 	# Accumulate one (already-projected) row into an existing bucket entry.
 	$accumulateInto = {
 		param($acc, $obj)
-		foreach ($col in @('SessionCount','PromptCount','ResponseCount','AgentSessionCount')) {
+		foreach ($col in @('SessionCount','PromptCount','AgentPromptCount','ResponseCount','AgentSessionCount')) {
 			$accV = 0; [void][int]::TryParse([string]$acc[$col], [ref]$accV)
 			$rV   = 0; [void][int]::TryParse([string]$obj[$col], [ref]$rV)
 			$acc[$col] = ($accV + $rV).ToString()
@@ -9972,12 +9984,31 @@ function Send-FileToSharePoint {
 			$buffer = New-Object byte[] $chunkSize
 			$offset = 0L
 			while ($offset -lt $fileInfo.Length) {
-				$toRead = [Math]::Min([int64]$chunkSize, $fileInfo.Length - $offset)
-				$read   = $fs.Read($buffer, 0, [int]$toRead)
+				$toRead = [int][Math]::Min([int64]$chunkSize, $fileInfo.Length - $offset)
+				# FileStream.Read may return fewer bytes than requested; loop until the
+				# fragment is fully populated (or EOF) so every Content-Range fragment
+				# carries exactly the byte count its header declares.
+				$read = 0
+				while ($read -lt $toRead) {
+					$n = $fs.Read($buffer, $read, $toRead - $read)
+					if ($n -le 0) { break }
+					$read += $n
+				}
 				if ($read -le 0) { break }
 				$end = $offset + $read - 1
 				$range = "bytes $offset-$end/$($fileInfo.Length)"
-				$slice = if ($read -eq $chunkSize) { $buffer } else { $buffer[0..($read-1)] }
+				# Send a true byte[] body. PowerShell range-indexing ($buffer[0..N])
+				# returns an Object[] of boxed bytes, which Invoke-WebRequest stringifies
+				# instead of sending as raw bytes — producing a body whose length does not
+				# match the declared Content-Range and a 400 (Bad Request) from Graph on
+				# the final partial fragment. Copy into a right-sized byte[] instead.
+				if ($read -eq $chunkSize) {
+					$slice = $buffer
+				}
+				else {
+					$slice = New-Object byte[] $read
+					[System.Array]::Copy($buffer, 0, $slice, 0, $read)
+				}
 				$attempt = 0
 				while ($true) {
 					try {
