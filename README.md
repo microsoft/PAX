@@ -14,7 +14,7 @@
 
 <h3 align="center">PAX PowerShell Script&nbsp;&nbsp;|&nbsp;&nbsp;PAX Cookbook&nbsp;&nbsp;|&nbsp;&nbsp;PAX Cookbook Mini-Kitchen</h3>
 
-**⬇️ Download the script:** [`PAX_Purview_Audit_Log_Processor_v1.11.4.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.4/PAX_Purview_Audit_Log_Processor_v1.11.4.ps1) &nbsp;|&nbsp; Release Date: 2026-06-04
+**⬇️ Download the script:** [`PAX_Purview_Audit_Log_Processor_v1.11.5.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.5/PAX_Purview_Audit_Log_Processor_v1.11.5.ps1) &nbsp;|&nbsp; Release Date: 2026-06-12
 
 **📖 Script Resources:** [Latest Documentation](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md) | [Latest Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md)
 

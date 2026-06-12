@@ -2,8 +2,8 @@
 
 ## Release Information
 
-- **Latest Version:** 1.11.4
-- **Latest Release Date:** 2026-06-04
+- **Latest Version:** 1.11.5
+- **Latest Release Date:** 2026-06-12
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,14 +12,24 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.11.4:** [PAX_Purview_Audit_Log_Processor_v1.11.4.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.4/PAX_Purview_Audit_Log_Processor_v1.11.4.ps1)
-- **PAX Purview Audit Log Processor Script v1.11.3:** [PAX_Purview_Audit_Log_Processor_v1.11.3.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.3/PAX_Purview_Audit_Log_Processor_v1.11.3.ps1)
-- **PAX Purview Audit Log Processor Script v1.11.2:** [PAX_Purview_Audit_Log_Processor_v1.11.2.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.2/PAX_Purview_Audit_Log_Processor_v1.11.2.ps1)
+- **PAX Purview Audit Log Processor Script v1.11.5:** [PAX_Purview_Audit_Log_Processor_v1.11.5.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.5/PAX_Purview_Audit_Log_Processor_v1.11.5.ps1)
 - **Documentation v1.11.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md)
 
 ---
 
 ## Overview
+
+### v1.11.5
+
+Version 1.11.5 adds support for the new **AI Business Value (AIBV)** Power BI dashboard and fixes a large-tenant reliability problem in the Entra user directory export. The headline change lets a single CopilotInteraction rollup run target either the existing AI-in-One (AIO) dashboard or the new AIBV dashboard from the same audit + Entra/MAC licensing data, selected by a new `-Dashboard` parameter. Existing rollup commands are unchanged — the default is AIO and produces byte-identical output to v1.11.4. Everything else is a reliability fix and its supporting tweaks; no existing switch is removed.
+
+#### AI Business Value (AIBV) Dashboard Support
+
+PAX now produces rollup input for two Copilot Power BI dashboards from the same CopilotInteraction run: the existing **AI-in-One (AIO)** dashboard and the new **AI Business Value (AIBV)** dashboard. A new `-Dashboard <AIO|AIBV|M365>` parameter (default `AIO`) chooses the target. AIO and AIBV both run the embedded CopilotInteraction processor — upgraded from v3.1.0 to v4.0.0 — with the appropriate output profile, while `M365` continues to route to the existing M365 Usage Bundle processor. The data PAX collects is identical for AIO and AIBV; the only difference is the shape of the rolled-up output the embedded processor writes, so no other switch or collection behavior changes. Smart defaulting keeps the command line minimal: omitting `-Dashboard` reproduces today's behavior exactly (AIO for a CopilotInteraction rollup, M365 when `-IncludeM365Usage` is present), `-Dashboard M365` auto-enables `-IncludeM365Usage`, and supplying `-Dashboard` without a rollup switch auto-enables `-Rollup`. Cross-run append (`-AppendFile` / `-AppendUserInfo`) is supported for both the AIO and AIBV paths, and the selected dashboard is persisted in the checkpoint so a resumed AIBV run stays AIBV.
+
+#### Reliable Entra User Directory Export on Very Large Tenants
+
+A failure that silently dropped the EntraUsers / MAC licensing file on tenants with very large directories (hundreds of thousands of users) is fixed. Previously the directory fetch aborted partway through with an internal paging-safety stop, the error was swallowed as a warning, and the run still printed `=== Enterprise Export Complete ===` while no EntraUsers file was written — making total data loss look like a clean success. The directory fetch now scales to large tenants, reports a failed or partial fetch loudly (in the end-of-run summary and via a new non-zero exit code), and still emits whatever was collected when a fetch stops early. Manager / org-hierarchy columns are unaffected. See [Bug Fixes → v1.11.5](#v1115-2) for details.
 
 ### v1.11.4
 
@@ -130,6 +140,35 @@ New sixth value on the `-Auth` ValidateSet for Azure-hosted headless execution (
 ---
 
 ## What's New
+
+### v1.11.5
+
+#### Embedded CopilotInteraction Processor v4.0.0 + `-Dashboard` Selector (v1.11.5)
+
+| Area | Details |
+| --- | --- |
+| **Purpose** | Let a single CopilotInteraction rollup run target either the AI-in-One (AIO) or the new AI Business Value (AIBV) Power BI dashboard from the same audit + Entra/MAC licensing data, and keep the existing M365 Usage Analytics path. |
+| **New parameter** | `-Dashboard <AIO|AIBV|M365>` (default `AIO`). AIO / AIBV run the embedded CopilotInteraction processor with `--profile aio` / `--profile aibv`; M365 runs the embedded M365 Usage Bundle processor. Case-insensitive. |
+| **Embedded processor upgrade** | The embedded CopilotInteraction processor rolls from v3.1.0 to v4.0.0. `-Dashboard AIO` (the default) is byte-identical to the prior v3.1.0 output for the same inputs; `-Dashboard AIBV` produces the AI Business Value 50-column superset Fact CSV. The embedded M365 processor (v2.6.1) is unchanged. |
+| **Smart defaulting** | Omitting `-Dashboard` reproduces prior behavior exactly (AIO for a CopilotInteraction rollup, M365 when `-IncludeM365Usage` is present). `-Dashboard M365` auto-enables `-IncludeM365Usage`; `-Dashboard <any>` supplied without a rollup switch auto-enables `-Rollup` (never `-RollupPlusRaw`). |
+| **Conflict guard** | `-Dashboard AIO|AIBV` together with `-IncludeM365Usage` is a hard error — they select different data sources AND different processors. |
+| **Append parity** | `-AppendFile` / `-AppendUserInfo` are supported for both the AIO and AIBV paths via the embedded processor's surrogate-seed inputs feeding the unchanged PowerShell-side `Merge-FactCsv` / `Merge-UsersCsv` union step. Because the AIBV Fact CSV is a 50-column superset of AIO's, an append target must match the dashboard profile it was created with. |
+| **Resume** | The resolved dashboard is persisted in the checkpoint (`rollupDashboard`) and restored on `-Resume` with last-write-wins, honored at both the parse-time and resume mode-derivation sites, so a resumed AIBV run stays AIBV rather than reverting to the AIO default. |
+| **Parameter snapshot** | The displayed Parameter Snapshot (terminal + log) lists `Dashboard` alongside `Rollup` / `RollupPlusRaw`. |
+| **Compatibility** | Additive parameter; no switch removed. The standalone reference processor under `scripts\PythonProcessors\` is unchanged; the embedded copy differs from it only by PAX-only surrogate-seed flags and non-timestamped output filenames — the same embed model already used for the M365 processor. |
+
+#### Entra User Directory — Scale-Aware Paging & Loud Failure (v1.11.5)
+
+| Area | Details |
+| --- | --- |
+| **What changed** | The Entra user directory fetch (`-IncludeUserInfo` / `-OnlyUserInfo`, Graph API mode) is hardened for very large tenants. The page-paging safety ceiling is now scale-aware (sized for ~800K users) instead of a fixed limit that tripped mid-fetch around ~400K users, and the page accumulator switched to an amortized-O(1) collection so large directories assemble efficiently. |
+| **Loud failure** | A failed or partial directory fetch is now surfaced explicitly in the end-of-run summary and drives a new non-zero exit code (`30`), instead of being swallowed behind `=== Enterprise Export Complete ===`. |
+| **Partial emit** | When the fetch stops after collecting some pages, the already-retrieved users are still written (schema-complete) and flagged as partial, rather than discarding everything collected so far. |
+| **Progress heartbeat** | A periodic "users retrieved so far" line is emitted during the directory pull (suppressed under `-Quiet`) so a multi-minute large-tenant fetch is visibly progressing rather than appearing hung. |
+| **Manager columns retained** | The Graph `$expand=manager` enrichment is kept, so manager identity / org-hierarchy columns are populated exactly as before — no schema change to the EntraUsers output. |
+| **Compatibility** | No new switches. New exit code `30` indicates a failed/partial directory fetch; existing exit codes (`0` success, `10` completeness/result-limit, `20` circuit-breaker) are unchanged. Behavior on tenants that already succeeded is identical. |
+
+---
 
 ### v1.11.4
 
@@ -395,6 +434,10 @@ Excel filenames, Excel tab names, and the `EntraUsers_*` / `Agent365_*` filename
 
 ## Bug Fixes
 
+### v1.11.5
+
+- **(v1.11.5) Entra user directory export no longer fails silently on very large tenants.** On tenants with very large directories (hundreds of thousands of users), the EntraUsers / MAC licensing fetch hit an internal paging-safety stop partway through, the error was caught and downgraded to a warning, and — because the downstream writers are gated on a populated result — the EntraUsers file was never written, yet the run still printed `=== Enterprise Export Complete ===`, making total data loss look like a clean success. The fetch is now scale-aware (it pages through large directories instead of aborting), reports a failed or partial fetch loudly in the end-of-run summary, and returns a new non-zero exit code (`30`) so automation can detect it; when a fetch stops after collecting some pages, the partial directory is still written (schema-complete) and flagged as partial rather than discarded. The Microsoft Graph `$expand=manager` enrichment is retained, so manager / org-hierarchy columns are unaffected. The fix is scoped to the Entra directory collection path and its end-of-run reporting; the audit-log query/export paths and all storage-tier upload paths are unchanged.
+
 ### v1.11.4
 
 - **(v1.11.4) SharePoint upload of files larger than 4 MB no longer fails with `400 (Bad Request)`.** PAX uploads small files to SharePoint in a single request but sends larger files in chunks, and a defect in the chunked path caused the final piece of any file over 4 MB to be rejected by Microsoft Graph with a `400 (Bad Request)` error. The most common casualty was the CopilotInteraction / M365 rollup CSV on real tenants: smaller artifacts such as the run log landed in the same destination folder successfully, so the failure looked like a per-file permission or folder issue when it was neither. The chunked-upload path now sends each piece correctly, so large CSVs upload to SharePoint as expected. The rollup data itself was never affected — it is written locally before upload — so this fix applies only to the SharePoint delivery step; the small-file upload path and the Fabric/OneLake upload path are unchanged.
@@ -472,6 +515,18 @@ The following authentication and certificate-handling fixes apply to `-Auth AppR
 ---
 
 ## Known Considerations
+
+### v1.11.5
+
+- **(v1.11.5) New `-Dashboard <AIO|AIBV|M365>` parameter (default AIO):** Chooses the rollup target dashboard. Omitting it reproduces prior behavior exactly — AIO for a CopilotInteraction rollup, M365 when `-IncludeM365Usage` is present. `-Dashboard M365` auto-enables `-IncludeM365Usage`; `-Dashboard` supplied without a rollup switch auto-enables `-Rollup` (never `-RollupPlusRaw`). `-Dashboard AIO|AIBV` together with `-IncludeM365Usage` is rejected as a hard error.
+
+- **(v1.11.5) Embedded CopilotInteraction processor rolls v3.1.0 → v4.0.0:** `-Dashboard AIO` (the default) is byte-identical to the prior v3.1.0 output for the same inputs; `-Dashboard AIBV` produces the AI Business Value 50-column superset Fact CSV. The embedded M365 processor (v2.6.1) and the standalone reference processor under `scripts\PythonProcessors\` are unchanged.
+
+- **(v1.11.5) Append target must match the dashboard profile:** Because the AIBV Fact CSV is a 50-column superset of the AIO Fact CSV, `-AppendFile` targets are not interchangeable across profiles — do not append an AIBV run onto an AIO target, or vice-versa. Append (`-AppendFile` / `-AppendUserInfo`) is otherwise supported for both paths.
+
+- **(v1.11.5) New exit code `30` for Entra directory failure:** A failed or partial Entra user directory fetch now sets exit code `30` (and is surfaced in the end-of-run summary). Existing exit codes are unchanged: `0` success, `10` completeness/result-limit, `20` circuit-breaker. Automation that only checked for `0` should treat `30` as a directory-collection failure warranting a re-run.
+
+- **(v1.11.5) Checkpoint gains one optional field (`rollupDashboard`):** Checkpoints written by v1.11.4 (which lack it) resume cleanly under v1.11.5 — the restore is guarded and falls back to the normal derivation. An explicit `-Dashboard` on the resume command line overrides the checkpoint (last-write-wins).
 
 ### v1.11.3
 

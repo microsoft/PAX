@@ -99,6 +99,8 @@ This is the fastest possible Fabric-from-laptop on-ramp. It uses `-Auth WebLogin
    (No `-StartDate` / `-EndDate` => script defaults to the last 30 days, UTC. To pin a window, pass e.g. `-StartDate '2026-04-14' -EndDate '2026-05-14'`.)
    You will get a browser prompt for the Graph scopes and (separately) for Az.Accounts to mint the OneLake storage token. After both succeed the script writes the audit Delta table(s) under `Tables/dbo/` and the run log under `Files/pax_logs/`.
 
+   > **Dashboard selection.** `-Rollup` targets the **AI-in-One (AIO)** dashboard by default. Add `-Dashboard AIBV` for the **AI Business Value** dashboard, or `-Dashboard M365` (equivalently `-IncludeM365Usage`) for **M365 Usage Analytics**. AIO and AIBV are produced from the same CopilotInteraction + Entra/MAC licensing data — no other switches change.
+
 That is the full minimum path. The rest of this README covers the variants you are likely to want next.
 
 ---

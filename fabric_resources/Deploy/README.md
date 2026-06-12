@@ -63,6 +63,8 @@ The container image itself is **auth-agnostic** — it just bakes in PowerShell 
 
 ## Deploy
 
+> **Dashboard selection.** In `-ScriptArgs`, `-Rollup` targets the **AI-in-One (AIO)** dashboard by default. Add `'-Dashboard','AIBV'` for the **AI Business Value** dashboard, or `'-Dashboard','M365'` (equivalently `'-IncludeM365Usage'`) for **M365 Usage Analytics**. AIO and AIBV are produced from the same CopilotInteraction + Entra/MAC licensing data — no other args change.
+
 ### SharePoint destination, daily 06:00 UTC
 
 ```powershell

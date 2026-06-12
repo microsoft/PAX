@@ -1,5 +1,5 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.11.4
+# Version: v1.11.5
 # Requirements: PowerShell 7+ for default Graph API mode; PowerShell 5.1 supported ONLY with -UseEOM (serial Exchange Online Management mode, no parallel query/explosion).
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI activity types (specified via -ActivityTypes): AIInteraction, ConnectedAIAppInteraction, AIAppInteraction
@@ -1548,6 +1548,17 @@ param(
 	[Parameter(Mandatory = $false)]
 	[switch]$RollupPlusRaw,
 
+	# Rollup target dashboard selector (v1.11.5+). Chooses which embedded Python
+	# post-processor + output profile a rollup run produces:
+	#   AIO   (default) - AI-in-One dashboard          -> CopilotInteraction processor, --profile aio
+	#   AIBV            - AI Business Value dashboard   -> CopilotInteraction processor, --profile aibv
+	#   M365            - M365 Usage Analytics          -> M365 bundle processor (auto-enables -IncludeM365Usage)
+	# Only meaningful with -Rollup / -RollupPlusRaw; if supplied without either, -Rollup is auto-enabled.
+	# If omitted: M365 when -IncludeM365Usage is present, otherwise AIO. Case-insensitive.
+	[Parameter(Mandatory = $false)]
+	[ValidateSet('AIO', 'AIBV', 'M365')]
+	[string]$Dashboard = 'AIO',
+
 	# Resume from checkpoint file - HANDLED VIA $args (not param block) to support:
 	#   -Resume                    (auto-discover checkpoint in OutputPath)
 	#   -Resume "path/to/file"     (explicit checkpoint path)
@@ -2076,7 +2087,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.11.4'
+$ScriptVersion = '1.11.5'
 
 # --- Initialize/Clear persistent script variables to prevent cross-run contamination ---
 # Note: Script-scoped variables persist across multiple script invocations in the same PowerShell session
@@ -3510,6 +3521,40 @@ if ($ExcludeAgents -and ($AgentId -or $AgentsOnly)) {
 #   'M365Bundle'          - run Purview_M365_Usage_Bundle_Explosion_Processor (needs Purview CSV only)
 # ============================================================================
 $script:RollupProcessorMode = 'None'
+$script:RollupDashboard = 'None'
+$script:RollupDashboardProfile = $null
+
+# --- v1.11.5 Dashboard selector resolution (runs BEFORE the rollup gate) ---
+# Resolves -Dashboard <AIO|AIBV|M365> into auto-enabled switches so the existing
+# rollup gate + mode decision below operate on a consistent state. Acts only when
+# the user explicitly passed -Dashboard; the default 'AIO' is inert so a bare
+# -Rollup / -RollupPlusRaw keeps today's behavior exactly.
+$dashboardExplicit = $PSBoundParameters.ContainsKey('Dashboard')
+$dashboardUC = $Dashboard.ToUpperInvariant()
+$dashboardImpliedRollup = $false
+if ($dashboardExplicit) {
+	# C1: AIO/AIBV (CopilotInteraction) and the M365 usage bundle are different data
+	# pulls AND different processors — refuse to guess; make the user pick one.
+	if (($dashboardUC -eq 'AIO' -or $dashboardUC -eq 'AIBV') -and $IncludeM365Usage) {
+		Write-Host "ERROR: -Dashboard $Dashboard and -IncludeM365Usage are incompatible (different data source AND different processor). Pick one." -ForegroundColor Red
+		Write-Host "  -Dashboard AIO|AIBV : CopilotInteraction rollup (AI-in-One / AI Business Value dashboards)." -ForegroundColor Yellow
+		Write-Host "  -Dashboard M365     : M365 Usage Analytics rollup (or simply use -IncludeM365Usage)." -ForegroundColor Yellow
+		exit 1
+	}
+	# Rule: -Dashboard M365 implies the M365 usage pull; auto-enable it if absent.
+	if ($dashboardUC -eq 'M365' -and -not $IncludeM365Usage) {
+		$IncludeM365Usage = [System.Management.Automation.SwitchParameter]::new($true)
+		Write-Host "INFO: -Dashboard M365 auto-enabled -IncludeM365Usage (the M365 dashboard consumes the M365 usage bundle)." -ForegroundColor Cyan
+	}
+	# Rule: -Dashboard implies a rollup run; default to -Rollup when neither rollup
+	# switch is present (never -RollupPlusRaw).
+	if (-not $Rollup -and -not $RollupPlusRaw) {
+		$Rollup = [System.Management.Automation.SwitchParameter]::new($true)
+		$dashboardImpliedRollup = $true
+		Write-Host "INFO: -Dashboard $Dashboard auto-enabled -Rollup (dashboard output is produced by the rollup post-processor)." -ForegroundColor Cyan
+	}
+}
+
 if ($Rollup -or $RollupPlusRaw) {
 	# Mutually exclusive
 	if ($Rollup -and $RollupPlusRaw) {
@@ -3529,7 +3574,10 @@ if ($Rollup -or $RollupPlusRaw) {
 	if ($ExcludeCopilotInteraction -and -not $IncludeM365Usage) { $rollupBlockers += '-ExcludeCopilotInteraction' }
 
 	if ($rollupBlockers.Count -gt 0) {
-		Write-Host "ERROR: $rollupSwitchName is not supported with the following switch(es): $($rollupBlockers -join ', ')" -ForegroundColor Red
+		# Name -Dashboard in the message when it is what implied the rollup, so the
+		# error references a switch the user actually typed.
+		$rollupTrigger = if ($dashboardImpliedRollup) { "-Dashboard $Dashboard (which implies $rollupSwitchName)" } else { $rollupSwitchName }
+		Write-Host "ERROR: $rollupTrigger is not supported with the following switch(es): $($rollupBlockers -join ', ')" -ForegroundColor Red
 		Write-Host "" -ForegroundColor Yellow
 		Write-Host "  $rollupSwitchName runs an embedded Python post-processor at the end of the run." -ForegroundColor Yellow
 		Write-Host "  It is only valid for the default CopilotInteraction-only run, an explicit" -ForegroundColor Yellow
@@ -3548,6 +3596,8 @@ if ($Rollup -or $RollupPlusRaw) {
 	#   - Otherwise: hard-fail (rollup is not defined for arbitrary activity-type combinations).
 	if ($IncludeM365Usage) {
 		$script:RollupProcessorMode = 'M365Bundle'
+		$script:RollupDashboard = 'M365'
+		$script:RollupDashboardProfile = $null
 	}
 	else {
 		$userPassedActivityTypes = $PSBoundParameters.ContainsKey('ActivityTypes')
@@ -3560,6 +3610,11 @@ if ($Rollup -or $RollupPlusRaw) {
 
 		if ($isCopilotOnly) {
 			$script:RollupProcessorMode = 'CopilotInteraction'
+			# AIO/AIBV only reach here — an explicit -Dashboard M365 auto-enabled
+			# -IncludeM365Usage above and took the M365Bundle branch. Default to AIO
+			# when -Dashboard was not supplied (preserves today's behavior).
+			$script:RollupDashboard = if ($dashboardExplicit) { $dashboardUC } else { 'AIO' }
+			$script:RollupDashboardProfile = $script:RollupDashboard.ToLowerInvariant()
 		}
 		else {
 			Write-Host "ERROR: $rollupSwitchName is only valid for CopilotInteraction-only runs or -IncludeM365Usage runs." -ForegroundColor Red
@@ -3593,17 +3648,31 @@ if ($Rollup -or $RollupPlusRaw) {
 # resolved Python interpreter, and deleted in finally. Single-quoted here-
 # strings prevent any PowerShell variable expansion of the Python source.
 # ============================================================================
-$Script:EMBEDDED_PROCESSOR_COPILOT_VERSION = '3.1.0'
+$Script:EMBEDDED_PROCESSOR_COPILOT_VERSION = '4.0.0'
 $Script:EMBEDDED_PROCESSOR_M365_VERSION    = '2.6.1'
 
 # >>> BEGIN-EMBEDDED-COPILOT-PROCESSOR
 $Script:EMBEDDED_PROCESSOR_COPILOT = @'
 #!/usr/bin/env python3
 """
-Purview CopilotInteraction Processor v3.1.0
+Purview CopilotInteraction Processor v4.0.0
 -------------------------------------------
 Two-input / two-output preprocessor for the AI Business Value Dashboard
 and AI-in-One Rollup PBIPs.
+
+Output profiles (--profile):
+    aibv  (default) : AI Business Value Dashboard. 50-column fact superset —
+                      3-value Environment {Cowork, Licensed, Unlicensed},
+                      all DAX calc-columns pre-computed (Behavior_*, Usage_Mode,
+                      Expertise_Role, Efficiency_Breakdown, Human_Baseline_Min,
+                      Behavior_Plausible, Workflow_Action, Delegation_Event_Key,
+                      Is_Agent_Activity/Web_Grounded_Signal promoted into the
+                      grain for sliceability) + Audit_UserId passthrough.
+    aio             : AI-in-One Dashboard. 36-column fact — 5-value Environment
+                      {Autonomous Agent, Cowork, Agents, Licensed M365 Copilot,
+                      Unlicensed Chat}. Reproduces the v3.1.0 AIO output
+                      BYTE-IDENTICALLY (validated), so the AIO dashboard is
+                      unaffected. ~41% smaller than the aibv fact.
 
 Inputs:
     --purview <raw Purview audit log CSV>     (required)
@@ -3613,11 +3682,21 @@ Outputs (in --out-dir, default = directory of --purview):
     <purview_stem>_Interactions_<YYYYMMDD_HHMMSS>.csv   (fact table)
     <entra_stem>_Users_<YYYYMMDD_HHMMSS>.csv            (dim table)
 
+    These two files are all the AIBV template needs. Pass --with-aggregates
+    (aibv only) to ALSO write 5 pre-aggregated tables for a future calc-table
+    offload:
+        <purview_stem>_ActiveDaysSummary_<ts>.csv
+        <purview_stem>_UserMonthMetrics_<ts>.csv
+        <purview_stem>_LicensedUserRankings_<ts>.csv
+        <purview_stem>_UnlicensedUserRankings_<ts>.csv
+        <purview_stem>_LicensedUserSummary_<ts>.csv
+
 Grain:
-    One row per (16-column grain x Message_Id). DAX measures use
-    DISTINCTCOUNT(Message_Id) which yields exact parity with the
-    semantic-model definitions at every visual / slicer combination.
-    Per-resource accumulation is intentionally avoided so counts are
+    One row per (16-column grain x Message_Id; aibv adds 3 sliceable flag
+    keys -> 19). DAX measures use DISTINCTCOUNT(Message_Id) which yields exact
+    parity with the semantic-model definitions at every visual / slicer
+    combination. Per-resource accumulation is intentionally avoided so counts
+    are
     not inflated (~2.25x) by per (prompt x AccessedResource) iteration.
 
 INT-surrogated columns (perf):
@@ -3660,14 +3739,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-# Ensure stdout/stderr can emit non-ASCII characters (e.g., arrows) on Windows
-# consoles defaulting to cp1252. Safe no-op on already-UTF-8 streams.
-try:
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-except Exception:
-    pass
-
 try:
     import orjson
 
@@ -3688,18 +3759,25 @@ except ImportError:
     _JSON_ENGINE = "json (stdlib)"
 
 
-SCRIPT_VERSION = "3.1.0"
+SCRIPT_VERSION = "4.0.0"
 
 # ---------------------------------------------------------------------------
-# Output schemas
+# Output schemas — TWO PROFILES
+#
+#   --profile aio   : reproduces the v3.1.0 AIO-faithful output EXACTLY
+#                     (36-col fact, 5-value Environment vocabulary). This is
+#                     the contract the AI-in-One dashboard already consumes;
+#                     it must remain byte-identical to v3.1.0.
+#   --profile aibv  : the AIBV-faithful superset (50-col fact, 3-value
+#                     Environment, all offloaded calc cols + grain-promoted
+#                     sliceable flags) built in this v4.0.0 effort.
+#
+# Both share one classification CODEBASE; the per-profile vocabulary is
+# selected by the `profile` argument threaded through the classifiers.
 # ---------------------------------------------------------------------------
 
-# Grain keys used for rollup groupby. Mirrors the slicer/filter dimensions
-# that any AIO or AIBV BEFORE PBIP visual binds to. AccessedResource_*,
-# CreationDate, Resource_Count, etc. are NOT in the grain because they are
-# either per-resource (would fan rows back out and break parity) or
-# derivable / per-prompt-only.
-GRAIN_KEYS: tuple[str, ...] = (
+# Common grain prefix (identical in both profiles).
+_GRAIN_KEYS_COMMON: tuple[str, ...] = (
     "UserKey",
     "InteractionDate",
     "AgentId",
@@ -3718,14 +3796,21 @@ GRAIN_KEYS: tuple[str, ...] = (
     "ThreadId",
 )
 
-# Per-(grain x Message_Id) attributes carried through to the output row.
-# Some are constant per Message_Id (CreationDate, Has license, Agent_TitleID,
-# WeekStart/MonthStart/UserMonthKey, AppIdentity_DisplayName, ModelName,
-# AISystemPlugin_Id, Audit_UserId_Normalized); a few may vary across the
-# resources collapsed into one row (SensitivityLabelId, AccessedResource_*)
-# for which last-resource-wins is the deterministic choice — same semantic
-# as the prior dict-overwrite behavior.
-_NONGRAIN_ATTRS: tuple[str, ...] = (
+# AIO grain = the common 16 (matches v3.1.0 exactly).
+GRAIN_KEYS_AIO: tuple[str, ...] = _GRAIN_KEYS_COMMON
+
+# AIBV grain = common 16 + 3 promoted per-resource flags (sliceability fix).
+GRAIN_KEYS_AIBV: tuple[str, ...] = _GRAIN_KEYS_COMMON + (
+    # Promoted into the grain (sliceability fix): computed per-resource and
+    # bound to AIBV slicers/filters, so they MUST be grain-faithful. Validated
+    # at 0.000% row inflation on real data.
+    "Is_Agent_Activity",
+    "Web_Grounded_Signal",
+    "Workflow_Action",
+)
+
+# AIO non-grain carried attrs = exactly the v3.1.0 set (ends at ActivityDate).
+_NONGRAIN_ATTRS_AIO: tuple[str, ...] = (
     "CreationDate",
     "WeekStart",
     "MonthStart",
@@ -3742,19 +3827,45 @@ _NONGRAIN_ATTRS: tuple[str, ...] = (
     "ModelTransparencyDetails_ModelName",
     "Agent_TitleID",
     "Message_isPrompt",
-    # Calc cols ported from DAX
+    # Calc cols ported from DAX (present in AIO since v3.1.0)
     "Behavior_Source",
     "Value_Outcome",
     "ActivityDate",
-    # Raw audit GUIDs preserved for cross-run merge (seed mid_to_int / thread_key_map).
-    # Always emitted; PBIT model ignores these columns at refresh time.
-    "Message_Id_Raw",
-    "ThreadId_Raw",
 )
 
-# Final fact CSV schema. One row per (grain x Message_Id). Message_Id is
+# AIBV non-grain carried attrs = AIO set + AIBV-only offloaded columns.
+_NONGRAIN_ATTRS_AIBV: tuple[str, ...] = _NONGRAIN_ATTRS_AIO + (
+    # M1: UPN passthrough for AIBV joins + DISTINCTCOUNT.
+    "Audit_UserId",
+    "Audit_UserId_Normalized",
+    # AIBV-faithful row-level flags. (Is_Agent_Activity / Web_Grounded_Signal /
+    # Workflow_Action were promoted into GRAIN_KEYS_AIBV.) `Agent Filter`
+    # derives from Is_Agent_Activity, so it stays a grain-consistent carried attr.
+    "Agent Filter",
+    "Agent Publish Status",
+    # Downstream classification chain (offloaded; faithful without Agents 365 per F2).
+    "Behavior_Enriched_Full",
+    "Usage_Mode",
+    "Expertise_Role",
+    "Efficiency_Breakdown",
+    # ROI baseline pre-join (offloads the Human Equivalent Hours SUMX+RELATED).
+    "Human_Baseline_Min",
+    # Remaining row-level calc cols (offloaded).
+    "Behavior_Plausible",
+    "Delegation_Event_Key",
+)
+
+# Final fact CSV schemas. One row per (grain x Message_Id). Message_Id is
 # emitted as a sequential INT surrogate (1-based, assigned in input order).
-FACT_HEADER: list[str] = list(GRAIN_KEYS) + ["Message_Id"] + list(_NONGRAIN_ATTRS)
+FACT_HEADER_AIO: list[str] = list(GRAIN_KEYS_AIO) + ["Message_Id"] + list(_NONGRAIN_ATTRS_AIO)
+FACT_HEADER_AIBV: list[str] = list(GRAIN_KEYS_AIBV) + ["Message_Id"] + list(_NONGRAIN_ATTRS_AIBV)
+
+
+def schema_for(profile: str) -> tuple[tuple[str, ...], tuple[str, ...], list[str]]:
+    """Return (grain_keys, nongrain_attrs, fact_header) for the profile."""
+    if profile == "aio":
+        return GRAIN_KEYS_AIO, _NONGRAIN_ATTRS_AIO, FACT_HEADER_AIO
+    return GRAIN_KEYS_AIBV, _NONGRAIN_ATTRS_AIBV, FACT_HEADER_AIBV
 
 # Entra column-name aliases used by the existing PBIP M-code. We mirror the
 # same renaming so the dim CSV is drop-in compatible with all downstream DAX.
@@ -3993,29 +4104,12 @@ def resource_rows(ced: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def is_copilot_interaction(audit_data: dict[str, Any], raw_row: dict[str, Any]) -> bool:
-    # Case-insensitive comparison AND a RecordType fallback. The canonical
-    # Microsoft Purview schema spells the value 'CopilotInteraction' with that
-    # exact casing in the AuditData JSON, but real-world exports occasionally
-    # arrive with mixed casing ("copilotinteraction"), extra whitespace, or
-    # with Operation only populated on RecordType=261 rows. Treat any of those
-    # signals as a positive match — being strict here was producing false
-    # 'Skipped (non-Copilot)' counts on perfectly valid CopilotInteraction rows.
     operation = to_text(
         safe_get(audit_data, "Operation")
         or raw_row.get("Operation")
         or raw_row.get("Operations")
     ).strip()
-    if operation.lower() == "copilotinteraction":
-        return True
-    record_type = to_text(
-        safe_get(audit_data, "RecordType")
-        or raw_row.get("RecordType")
-    ).strip()
-    # RecordType 261 == CopilotInteraction in the M365 audit schema. The value
-    # may arrive as an int, a numeric string, or the symbolic name.
-    if record_type == "261" or record_type.lower() == "copilotinteraction":
-        return True
-    return False
+    return operation == "CopilotInteraction"
 
 
 # ---------------------------------------------------------------------------
@@ -4048,19 +4142,29 @@ def compute_license_status(has_license_raw: str) -> str:
 
 
 @functools.lru_cache(maxsize=None)
-def compute_environment(has_license_raw: str, agent_name: str, agent_id: str, app_host: str) -> str:
-    host = (app_host or "").lower()
-    has_agent = bool((agent_name or "").strip()) or bool((agent_id or "").strip())
+def compute_environment(profile: str, has_license_raw: str, agent_name: str, agent_id: str, app_host: str) -> str:
     license_val = (has_license_raw or "").strip().upper()
-    if host in {"autonomous", "logic app"}:
-        return "Autonomous Agent"
-    if "cowork" in host:
+    if profile == "aio":
+        # v3.1.0 AIO vocabulary (5-value, keyed off app_host + agent presence).
+        host = (app_host or "").lower()
+        has_agent = bool((agent_name or "").strip()) or bool((agent_id or "").strip())
+        if host in {"autonomous", "logic app"}:
+            return "Autonomous Agent"
+        if "cowork" in host:
+            return "Cowork"
+        if has_agent:
+            return "Agents"
+        if license_val in _LICENSE_TRUTHY:
+            return "Licensed M365 Copilot"
+        return "Unlicensed Chat"
+    # AIBV vocabulary (verbatim port of current AIBV calc col `Environment`):
+    #   IF(CONTAINSSTRING(LOWER(TRIM(AgentName)),"cowork"),"Cowork",
+    #   IF(isLicensed,"Licensed","Unlicensed"))
+    if "cowork" in (agent_name or "").strip().lower():
         return "Cowork"
-    if has_agent:
-        return "Agents"
     if license_val in _LICENSE_TRUTHY:
-        return "Licensed M365 Copilot"
-    return "Unlicensed Chat"
+        return "Licensed"
+    return "Unlicensed"
 
 
 @functools.lru_cache(maxsize=None)
@@ -4099,7 +4203,7 @@ def compute_ai_model(model_name: str) -> str:
 
 
 def _resource_behavior(
-    res_type: str, res_action: str, site_url: str, is_active: bool
+    profile: str, res_type: str, res_action: str, site_url: str, is_active: bool
 ) -> str:
     if res_action in {"sendemailv2", "draftemail", "senddraftemail", "updatedraftemail"}:
         return "Email Drafting"
@@ -4113,8 +4217,16 @@ def _resource_behavior(
         return "Teams Messaging"
     if res_type in {"teamsmessage", "teamschat", "teamschannel"}:
         return "Teams Messaging"
-    if res_type in {"flow", "connector", "http"}:
-        return "Workflow Execution"
+    if profile == "aio":
+        # v3.1.0: any flow/connector/http resource -> "Workflow Execution".
+        if res_type in {"flow", "connector", "http"}:
+            return "Workflow Execution"
+    else:
+        # AIBV: explicit Flow always; connector/http only with an active verb.
+        if res_type == "flow":
+            return "Running a Workflow"
+        if res_type in {"connector", "http"} and is_active:
+            return "Running a Workflow"
     if res_action in {"executedatasetquery", "getitems", "getalltables", "gettableviews"}:
         return "Data Querying"
     if res_type in {"xlsx", "csv", "xlsm", "xlsb", "xls"}:
@@ -4172,7 +4284,7 @@ def _resource_behavior(
     return ""
 
 
-def _context_behavior(app_host: str, ctx_type: str, is_active: bool) -> str:
+def _context_behavior(profile: str, app_host: str, ctx_type: str, is_active: bool, has_agent: bool) -> str:
     if ctx_type == "teamsmeeting":
         return "Meeting Prep"
     if ctx_type == "streamvideo":
@@ -4211,8 +4323,16 @@ def _context_behavior(app_host: str, ctx_type: str, is_active: bool) -> str:
         return "Real-time Collaboration"
     if app_host == "copilot studio":
         return "Domain-Specific Agent"
-    if app_host in {"autonomous", "logic app"}:
-        return "Workflow Execution"
+    if profile == "aio":
+        # v3.1.0: autonomous OR logic app -> "Workflow Execution".
+        if app_host in {"autonomous", "logic app"}:
+            return "Workflow Execution"
+    else:
+        # AIBV: autonomous always; logic app only when an agent context is present.
+        if app_host == "autonomous":
+            return "Running a Workflow"
+        if app_host == "logic app" and has_agent:
+            return "Running a Workflow"
     if app_host in {"datawarehousing core", "power bi"}:
         return "Data Querying"
     return "General Chat"
@@ -4220,12 +4340,14 @@ def _context_behavior(app_host: str, ctx_type: str, is_active: bool) -> str:
 
 @functools.lru_cache(maxsize=None)
 def compute_behavior_category(
+    profile: str,
     app_host: str,
     ctx_type: str,
     res_type: str,
     res_action: str,
     site_url: str,
     plugin_id: str,
+    has_agent: bool,
 ) -> str:
     app_host_l = (app_host or "").lower()
     ctx_l = (ctx_type or "").lower()
@@ -4235,12 +4357,12 @@ def compute_behavior_category(
     plugin_l = (plugin_id or "").lower()
     is_active = any(tok in res_a_l for tok in _ACTIVE_RES_ACTION_TOKENS)
 
-    from_resource = _resource_behavior(res_t_l, res_a_l, site_l, is_active)
+    from_resource = _resource_behavior(profile, res_t_l, res_a_l, site_l, is_active)
     if from_resource:
         return from_resource
     if plugin_l == "enterprisesearch":
         return "Enterprise Searching"
-    return _context_behavior(app_host_l, ctx_l, is_active)
+    return _context_behavior(profile, app_host_l, ctx_l, is_active, has_agent)
 
 
 _GENERIC_QA_BEHAVIORS = {"General Q&A", "M365 Chat Q&A", "Teams Q&A", "Browser Q&A", "General Chat"}
@@ -4259,8 +4381,11 @@ _AGENT_NAME_RULES: tuple[tuple[tuple[str, ...], str], ...] = (
 
 
 @functools.lru_cache(maxsize=None)
-def compute_behavior_enriched(behavior_category: str, agent_name: str, environment: str) -> str:
-    if environment not in {"Agents", "Autonomous Agent"}:
+def compute_behavior_enriched(profile: str, behavior_category: str, agent_name: str, environment: str) -> str:
+    # AIO enriches agent/autonomous rows; AIBV enriches agents/cowork rows.
+    # (In practice AIBV `Environment` never returns "Agents", so only Cowork enriches.)
+    enrich_envs = {"Agents", "Autonomous Agent"} if profile == "aio" else {"Agents", "Cowork"}
+    if environment not in enrich_envs:
         return behavior_category
     if behavior_category not in _GENERIC_QA_BEHAVIORS:
         return behavior_category
@@ -4271,20 +4396,32 @@ def compute_behavior_enriched(behavior_category: str, agent_name: str, environme
     return "Agent: General Purpose"
 
 
+# Autonomy_Pattern — profile-aware.
+#   AIO (v3.1.0): keyed off the 5-value Environment.
+#   AIBV: SWITCH(Cowork->3, Is_Agent_Activity->2, Licensed->1, else BLANK).
 @functools.lru_cache(maxsize=None)
-def compute_autonomy_pattern(environment: str) -> str:
-    if environment == "Licensed M365 Copilot":
-        return "1 - Copilot"
-    if environment == "Agents":
+def compute_autonomy_pattern(profile: str, environment: str, is_agent_activity_str: str) -> str:
+    if profile == "aio":
+        if environment == "Licensed M365 Copilot":
+            return "1 - Copilot"
+        if environment == "Agents":
+            return "2 - Agent-Assisted"
+        if environment == "Autonomous Agent":
+            return "3 - Autonomous"
+        return ""
+    if environment == "Cowork":
+        return "3 - Cowork"
+    if is_agent_activity_str == "TRUE":
         return "2 - Agent-Assisted"
-    if environment == "Autonomous Agent":
-        return "3 - Autonomous"
+    if environment == "Licensed":
+        return "1 - Copilot"
     return ""
 
 
-# Verbatim port of AIBV BEFORE DAX calc col `Behavior_Source`.
+# Behavior_Source — profile-aware (AIO: "Autonomous Agent" branch; AIBV: "Cowork").
 @functools.lru_cache(maxsize=None)
 def compute_behavior_source(
+    profile: str,
     behavior_category: str,
     environment: str,
     agent_name: str,
@@ -4294,8 +4431,10 @@ def compute_behavior_source(
     agent = (agent_name or "").strip()
     plugin = (plugin_name or "").strip()
     app = (app_host or "").strip()
-    if environment == "Autonomous Agent":
+    if profile == "aio" and environment == "Autonomous Agent":
         source = "Autonomous Agent" + (f": {agent}" if agent else "")
+    elif profile != "aio" and environment == "Cowork":
+        source = "Cowork" + (f": {agent}" if agent else "")
     elif environment == "Agents" and agent:
         source = f"Agent: {agent}"
     elif plugin:
@@ -4307,7 +4446,7 @@ def compute_behavior_source(
     return f"{behavior_category} → {source}"
 
 
-# Verbatim port of AIBV BEFORE DAX calc col `Value_Outcome`.
+# Verbatim port of current AIBV DAX calc col `Value_Outcome`.
 _VO_TIME_EMAIL = frozenset({"Email Summarising", "Email Triage", "Email Thread Summary"})
 _VO_TIME_MEET = frozenset({"Meeting Prep", "Video Summarising"})
 _VO_TIME_DOC = frozenset({"Document Summarising", "Presentation Summarising", "Note Taking"})
@@ -4331,9 +4470,13 @@ _VO_DOMAIN = frozenset({"Domain-Specific Agent", "Cross-Org Agent"})
 
 @functools.lru_cache(maxsize=None)
 def compute_value_outcome(
-    behavior_enriched: str, environment: str, is_sensitive_str: str
+    profile: str, behavior_enriched: str, environment: str, is_sensitive_str: str
 ) -> str:
     b = behavior_enriched or ""
+    # Profile-specific workflow signal (AIO: Workflow Execution / Autonomous Agent;
+    # AIBV: Running a Workflow / Cowork).
+    workflow_behavior = "Workflow Execution" if profile == "aio" else "Running a Workflow"
+    workflow_env = "Autonomous Agent" if profile == "aio" else "Cowork"
     if b in _VO_TIME_EMAIL:
         return "Time Saved (Email)"
     if b in _VO_TIME_MEET:
@@ -4350,14 +4493,14 @@ def compute_value_outcome(
         return "Content Output"
     if b in _VO_TEAMCOLLAB:
         return "Team Collaboration"
-    if b == "Workflow Execution" or environment == "Autonomous Agent":
+    if b == workflow_behavior or environment == workflow_env:
         return "Workflow Automation"
     if b == "Task Management":
         return "Task Coordination"
     if (
         is_sensitive_str == "TRUE"
         and environment != "Agents"
-        and environment != "Autonomous Agent"
+        and environment != workflow_env
     ):
         return "Compliance & Risk"
     if b in _VO_DATA:
@@ -4379,11 +4522,397 @@ def compute_value_outcome(
     return "General AI Productivity"
 
 
+# ---------------------------------------------------------------------------
+# Downstream classification chain (offloaded from AIBV DAX).
+#
+# Per F2 (see offload plan): in the current AIBV model `Environment` never
+# returns "Agents", so `Behavior_Enriched_Full`'s NeedsEnhancement guard
+# (Env = "Agents" && BaseEnriched = "Agent: General Purpose") is always FALSE
+# and the RELATED('Agents 365'...) lookups never execute. Therefore
+# Behavior_Enriched_Full == Behavior_Enriched and the whole chain
+# (Usage_Mode / Expertise_Role / Efficiency_Breakdown) is fully computable
+# here WITHOUT ingesting Agents 365 — and stays pixel-identical to AIBV.
+# ---------------------------------------------------------------------------
+
+
+def compute_behavior_enriched_full(behavior_enriched: str) -> str:
+    # No Agents 365 ingestion (by design) => NeedsEnhancement is always FALSE
+    # => Behavior_Enriched_Full is exactly Behavior_Enriched.
+    return behavior_enriched
+
+
+_UM_PRODUCING = frozenset({
+    "Email Drafting", "Document Drafting", "Presentation Creation", "Image Generation",
+    "Code Writing", "Code Analysis", "Code Analysis (URL)", "Data Querying",
+    "Spreadsheet Analysis", "Excel Assistance", "Agent: Content Generation",
+    "Agent: Ideation & Creative", "Agent: Research & Analysis", "Agent: Data & Reporting",
+    "Agent: Sales & Customer", "Agent: HR & People", "Agent: IT & Service Desk",
+    "Agent: Compliance & Policy", "Agent: Coaching", "Agent: Coaching (URL)",
+    "Domain-Specific Agent", "Cross-Org Agent", "Form / Survey Work",
+    "Real-time Collaboration", "Note Taking", "Teams Messaging", "Meeting Scheduling",
+    "Task Management",
+})
+_UM_CONSUMING = frozenset({
+    "Document Summarising", "Email Summarising", "Email Thread Summary", "Email Triage",
+    "Presentation Summarising", "Video Summarising", "Meeting Prep",
+    "Image / Media Analysis", "Image/Media Analysis", "Sensitive Content Interaction",
+})
+_UM_FINDING = frozenset({
+    "Web Searching", "Enterprise Searching", "PDF Analysis", "SharePoint Access",
+    "File Retrieval", "People Lookup", "Agent: Knowledge Base", "Spreadsheet Review",
+})
+
+
+@functools.lru_cache(maxsize=None)
+def compute_usage_mode(behavior_enriched_full: str, environment: str, app_host: str) -> str:
+    # Verbatim port of AIBV `Usage_Mode` with the Agents-365 term dropped
+    # (agentTypeA365 = IFERROR(RELATED(...),BLANK()) -> BLANK when A365 absent,
+    # so its IN {...} test is always FALSE).
+    behavior = behavior_enriched_full
+    host = (app_host or "").lower()
+    is_delegating = (
+        environment == "Cowork"
+        or host == "autonomous"
+        or behavior == "Running a Workflow"
+    )
+    if is_delegating:
+        return "5 - Delegating"
+    if behavior in _UM_PRODUCING:
+        return "4 - Producing"
+    if behavior in _UM_CONSUMING:
+        return "3 - Consuming"
+    if behavior in _UM_FINDING:
+        return "2 - Finding"
+    return "1 - Asking"
+
+
+# Verbatim port of AIBV `Expertise_Role` (ordered IF cascade on Behavior_Enriched_Full).
+_EXPERTISE_RULES: tuple[tuple[frozenset[str], str], ...] = (
+    (frozenset({"Data Querying", "Agent: Data & Reporting", "Spreadsheet Analysis"}), "Data Analyst"),
+    (frozenset({"Code Writing", "Code Analysis", "Code Analysis (URL)"}), "Software Engineer"),
+    (frozenset({"Agent: Research & Analysis"}), "Business Analyst"),
+    (frozenset({"Agent: Compliance & Policy", "Sensitive Content Interaction"}), "Compliance Specialist"),
+    (frozenset({"Agent: Sales & Customer"}), "Sales Consultant"),
+    (frozenset({"Agent: IT & Service Desk"}), "IT Specialist"),
+    (frozenset({"Agent: HR & People"}), "HR Specialist"),
+    (frozenset({"Agent: Coaching", "Agent: Coaching (URL)"}), "Coach"),
+    (frozenset({"Running a Workflow", "Task Management"}), "Automation Engineer"),
+    (frozenset({"Domain-Specific Agent", "Cross-Org Agent"}), "Domain Expert"),
+    (frozenset({"Email Drafting"}), "Communications Specialist"),
+    (frozenset({"Email Triage", "Meeting Scheduling", "Email Summarising", "Email Thread Summary"}), "Executive Assistant"),
+    (frozenset({"Document Drafting", "Agent: Content Generation", "Note Taking", "Document Summarising"}), "Content Writer"),
+    (frozenset({"Presentation Creation", "Presentation Summarising"}), "Presentation Designer"),
+    (frozenset({"Image Generation", "Image/Media Analysis", "Image / Media Analysis", "Agent: Ideation & Creative"}), "Visual Designer"),
+    (frozenset({"Meeting Prep", "Video Summarising"}), "Meeting Coordinator"),
+    (frozenset({"Web Searching", "PDF Analysis", "Agent: Knowledge Base"}), "Researcher"),
+    (frozenset({"Enterprise Searching", "SharePoint Access", "File Retrieval", "People Lookup"}), "Knowledge Navigator"),
+    (frozenset({"Spreadsheet Review", "Excel Assistance"}), "Spreadsheet Specialist"),
+    (frozenset({"Real-time Collaboration", "Form / Survey Work", "Form/Survey Work", "Teams Messaging"}), "Collaboration Lead"),
+)
+
+
+@functools.lru_cache(maxsize=None)
+def compute_expertise_role(behavior_enriched_full: str) -> str:
+    for members, label in _EXPERTISE_RULES:
+        if behavior_enriched_full in members:
+            return label
+    return ""  # AIBV returns BLANK()
+
+
+# Verbatim port of AIBV `Efficiency_Breakdown` (behavior cascade, then Behavior_Category fallback).
+_EFF_RULES: tuple[tuple[frozenset[str], str], ...] = (
+    (frozenset({"Email Summarising", "Email Triage", "Email Thread Summary", "Email Drafting"}), "Email"),
+    (frozenset({"Document Summarising", "Note Taking", "Document Drafting", "Agent: Content Generation"}), "Document Assistance"),
+    (frozenset({"Presentation Summarising", "Presentation Creation"}), "Presentations"),
+    (frozenset({"Meeting Prep", "Video Summarising", "Meeting Scheduling"}), "Meetings"),
+    (frozenset({"Web Searching", "Enterprise Searching", "PDF Analysis", "SharePoint Access", "File Retrieval", "People Lookup", "Agent: Knowledge Base", "Agent: Research & Analysis"}), "Search & Research"),
+    (frozenset({"Spreadsheet Review", "Excel Assistance", "Spreadsheet Analysis", "Data Querying", "Agent: Data & Reporting"}), "Data & Spreadsheets"),
+    (frozenset({"Image Generation", "Image / Media Analysis", "Image/Media Analysis", "Agent: Ideation & Creative", "Code Writing", "Code Analysis", "Code Analysis (URL)"}), "Creative & Technical"),
+    (frozenset({"Teams Messaging", "Real-time Collaboration", "Form / Survey Work", "Task Management", "Running a Workflow"}), "Collaboration & Workflows"),
+    (frozenset({"Agent: Sales & Customer", "Agent: IT & Service Desk", "Agent: HR & People", "Agent: Compliance & Policy", "Agent: Coaching", "Agent: Coaching (URL)", "Domain-Specific Agent", "Cross-Org Agent"}), "Specialist Agents"),
+)
+
+
+@functools.lru_cache(maxsize=None)
+def compute_efficiency_breakdown(behavior_enriched_full: str, behavior_category: str) -> str:
+    for members, label in _EFF_RULES:
+        if behavior_enriched_full in members:
+            return label
+    if behavior_category == "Teams Q&A":
+        return "Teams Chat"
+    if behavior_category == "M365 Chat Q&A":
+        return "BizChat Q&A"
+    if behavior_category == "Browser Q&A":
+        return "BizChat Q&A"
+    return "General Q&A"
+
+
+# ---------------------------------------------------------------------------
+# Embedded static value map (offloads the ROI baseline join).
+#
+# `Human Time Estimates` is a static lookup (Behavior -> Human Baseline (min)).
+# The AIBV measure `Human Equivalent Hours` does:
+#     SUMX(FILTER(fact, isPrompt="TRUE"), DIVIDE(RELATED(HTE[Human Baseline]),60,0))
+# which traverses fact -> Behavior Value Map (BVM) -> Human Time Estimates (HTE)
+# per row. We pre-join `Human_Baseline_Min` onto every fact row so the PBIT
+# measure collapses to SUM(fact[Human_Baseline_Min])/60 (no SUMX, no RELATED).
+#
+# FIDELITY: HTE is reachable in the model ONLY through the BVM bridge, so a
+# baseline is emitted ONLY when Behavior_Enriched_Full is present in BVM (then
+# looked up in HTE; BVM is a strict subset of HTE, so the lookup always hits).
+# Behaviors not in BVM contribute 0 hours in the current AIBV — we emit "" for
+# them, which SUMs to 0 identically. Both maps are transcribed verbatim from
+# the AIBV `.pbit` static #table literals (see temp/_offload_test/_parse_maps.py).
+# ---------------------------------------------------------------------------
+
+_HUMAN_BASELINE_MIN: dict[str, int] = {
+    "Agent: Coaching": 45,
+    "Agent: Coaching (URL)": 25,
+    "Agent: Compliance & Policy": 25,
+    "Agent: Content Generation": 25,
+    "Agent: Data & Reporting": 35,
+    "Agent: General Purpose": 15,
+    "Agent: HR & People": 35,
+    "Agent: IT & Service Desk": 20,
+    "Agent: Ideation & Creative": 40,
+    "Agent: Knowledge Base": 12,
+    "Agent: Research & Analysis": 45,
+    "Agent: Sales & Customer": 35,
+    "Browser Q&A": 10,
+    "Code Analysis": 30,
+    "Code Analysis (URL)": 15,
+    "Code Writing": 45,
+    "Cross-Org Agent": 30,
+    "Data Querying": 30,
+    "Document Drafting": 60,
+    "Document Summarising": 20,
+    "Domain-Specific Agent": 25,
+    "Email Drafting": 8,
+    "Email Summarising": 4,
+    "Email Thread Summary": 5,
+    "Email Triage": 10,
+    "Enterprise Searching": 18,
+    "Excel Assistance": 30,
+    "File Retrieval": 15,
+    "Form / Survey Work": 25,
+    "Form/Survey Work": 25,
+    "General Chat": 10,
+    "General Q&A": 10,
+    "Image / Media Analysis": 8,
+    "Image Generation": 60,
+    "Image/Media Analysis": 8,
+    "M365 Chat Q&A": 10,
+    "Meeting Prep": 15,
+    "Meeting Scheduling": 12,
+    "Note Taking": 20,
+    "PDF Analysis": 35,
+    "People Lookup": 10,
+    "Presentation Creation": 90,
+    "Presentation Summarising": 12,
+    "Real-time Collaboration": 30,
+    "Running a Workflow": 15,
+    "Sensitive Content Interaction": 20,
+    "SharePoint Access": 12,
+    "Spreadsheet Analysis": 40,
+    "Spreadsheet Review": 25,
+    "Task Management": 20,
+    "Teams Messaging": 8,
+    "Teams Q&A": 10,
+    "Video Summarising": 30,
+    "Web Searching": 22,
+}
+
+# Behaviors present in the Behavior Value Map bridge (gates HTE reachability).
+_BVM_BEHAVIORS: frozenset = frozenset({
+    "Agent: Coaching",
+    "Agent: Compliance & Policy",
+    "Agent: Content Generation",
+    "Agent: Data & Reporting",
+    "Agent: General Purpose",
+    "Agent: HR & People",
+    "Agent: IT & Service Desk",
+    "Agent: Ideation & Creative",
+    "Agent: Knowledge Base",
+    "Agent: Research & Analysis",
+    "Agent: Sales & Customer",
+    "Code Analysis",
+    "Code Writing",
+    "Data Querying",
+    "Document Drafting",
+    "Document Summarising",
+    "Domain-Specific Agent",
+    "Email Drafting",
+    "Email Summarising",
+    "Enterprise Searching",
+    "Excel Assistance",
+    "File Retrieval",
+    "Form / Survey Work",
+    "General Chat",
+    "Image / Media Analysis",
+    "Image Generation",
+    "Meeting Prep",
+    "Meeting Scheduling",
+    "Note Taking",
+    "PDF Analysis",
+    "People Lookup",
+    "Presentation Creation",
+    "Presentation Summarising",
+    "Real-time Collaboration",
+    "Running a Workflow",
+    "SharePoint Access",
+    "Spreadsheet Review",
+    "Task Management",
+    "Teams Messaging",
+    "Video Summarising",
+    "Web Searching",
+})
+
+
+@functools.lru_cache(maxsize=None)
+def compute_human_baseline_min(behavior_enriched_full: str) -> str:
+    # Emit the baseline only when reachable via the BVM bridge (AIBV topology).
+    if behavior_enriched_full in _BVM_BEHAVIORS:
+        return str(_HUMAN_BASELINE_MIN[behavior_enriched_full])
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Remaining row-level calc cols (offloaded from AIBV DAX).
+# ---------------------------------------------------------------------------
+
+# Verbatim port of AIBV `Behavior_Plausible`.
+_UNLICENSED_PLAUSIBLE = frozenset({
+    "General Chat", "Web Searching", "PDF Analysis", "Document Summarising",
+    "Image / Media Analysis", "Image Generation", "Code Analysis", "Translation",
+})
+_BP_WORKAROUND_EMAIL = frozenset({"Email Summarising", "Email Drafting"})
+_BP_WORKAROUND_SHEET = frozenset({"Excel Assistance", "Spreadsheet Review", "Data Querying"})
+_BP_WORKAROUND_MEET = frozenset({"Meeting Prep", "Meeting Scheduling"})
+_BP_WORKAROUND_ENT = frozenset({"Enterprise Searching", "People Lookup"})
+_BP_WORKAROUND_WORKFLOW = frozenset({"Running a Workflow", "Task Management"})
+
+
+@functools.lru_cache(maxsize=None)
+def compute_behavior_plausible(license_status: str, behavior_category: str) -> str:
+    lic = license_status
+    beh = behavior_category
+    if lic == "M365 Copilot Licensed" or beh in _UNLICENSED_PLAUSIBLE:
+        return beh
+    if beh in _BP_WORKAROUND_EMAIL:
+        return "Free Chat Workaround (pasting Email)"
+    if beh in _BP_WORKAROUND_SHEET:
+        return "Free Chat Workaround (pasting Spreadsheet/Data)"
+    if beh in _BP_WORKAROUND_MEET:
+        return "Free Chat Workaround (pasting Meeting info)"
+    if beh == "Teams Messaging":
+        return "Free Chat Workaround (pasting Teams content)"
+    if beh in _BP_WORKAROUND_ENT:
+        return "Free Chat Workaround (pasting Enterprise data)"
+    if beh in _BP_WORKAROUND_WORKFLOW:
+        return "Free Chat Workaround (pasting Workflow)"
+    if beh == "Real-time Collaboration":
+        return "Free Chat Workaround (pasting Loop content)"
+    if beh == "Code Writing":
+        return "Free Chat Workaround (pasting Code)"
+    if beh == "Video Summarising":
+        return "Free Chat Workaround (uploading Video)"
+    return "Free Chat Workaround (Other)"
+
+
+# Verbatim port of AIBV `Workflow_Action`.
+@functools.lru_cache(maxsize=None)
+def compute_workflow_action(behavior_enriched_full: str, res_action: str, app_host: str) -> str:
+    if behavior_enriched_full != "Running a Workflow":
+        return ""
+    ra = (res_action or "").lower()
+    host = (app_host or "").lower()
+    if "send" in ra or "post" in ra or "notify" in ra:
+        return "Sending / Notifying"
+    if "create" in ra or "draft" in ra or "write" in ra or "add" in ra:
+        return "Creating Content"
+    if "invoke" in ra or "execute" in ra or "trigger" in ra or "run" in ra:
+        return "Invoking / Triggering"
+    if "update" in ra or "patch" in ra or "modify" in ra or "set" in ra:
+        return "Updating Records"
+    if "read" in ra or "get" in ra or "list" in ra or "fetch" in ra:
+        return "Reading Data"
+    if "delete" in ra or "remove" in ra:
+        return "Deleting / Removing"
+    if host == "autonomous":
+        return "Autonomous Run (no action logged)"
+    if host == "logic app":
+        return "Logic App Run (no action logged)"
+    return "Workflow (other)"
+
+
+def compute_delegation_event_key(
+    audit_user_id: str,
+    interaction_date_str: str,
+    agent_name: str,
+    workflow_action: str,
+    app_host: str,
+) -> str:
+    # Verbatim port of AIBV `Delegation_Event_Key`:
+    #   Audit_UserId & "|" & FORMAT(InteractionDate,"yyyy-mm-dd") & "|" &
+    #   COALESCE(AgentName, Workflow_Action, AppHost, "unknown-workflow")
+    # NOTE: DAX FORMAT "mm" resolves to MONTH here (not minute) because it does
+    # not follow h/hh — so interaction_date_str ("%Y-%m-%d") matches exactly.
+    # COALESCE: we treat empty/whitespace as blank (skip it). The blank-vs-empty
+    # nuance + rollup-vs-fanout grain interaction are flagged for Phase 4 live
+    # parity (measure: [Delegation Events] = DISTINCTCOUNT, filtered Usage_Mode
+    # = "5 - Delegating").
+    tail = "unknown-workflow"
+    for candidate in (agent_name, workflow_action, app_host):
+        if candidate and candidate.strip():
+            tail = candidate
+            break
+    return f"{audit_user_id}|{interaction_date_str}|{tail}"
+
+
 def compute_user_month_key(audit_user_id: str, month_start_str: str) -> str:
     if not audit_user_id or not month_start_str:
         return ""
     # MonthStart is YYYY-MM-DD; format key as YYYY-MM (mirrors DAX FORMAT(...,"yyyy-MM"))
     return f"{audit_user_id}|{month_start_str[:7]}"
+
+
+# Verbatim port of AIBV calc col `Agent Publish Status`.
+@functools.lru_cache(maxsize=None)
+def compute_agent_publish_status(agent_id: str, agent_name: str) -> str:
+    has_agent_id = bool((agent_id or "").strip())
+    if not has_agent_id:
+        return "Not an Agent Row"
+    if "draft as 1p" in (agent_name or "").lower():
+        return "Unpublished"
+    return "Published"
+
+
+# Verbatim port of AIBV calc col `Is_Agent_Activity` (emitted as TRUE/FALSE text,
+# mirroring the Is_Sensitive / Message_isPrompt convention; the PBIT types it
+# logical in Phase 3). res_type is the per-resource AccessedResource_Type.
+@functools.lru_cache(maxsize=None)
+def compute_is_agent_activity(agent_name: str, agent_id: str, app_host: str, res_type: str) -> str:
+    has_agent = bool((agent_name or "").strip())
+    has_agent_id = bool((agent_id or "").strip())
+    host = (app_host or "").lower()
+    rt = (res_type or "").lower()
+    is_autonomous = host in {"autonomous", "logic app"} or rt in {"flow", "connector"}
+    return "TRUE" if (has_agent or has_agent_id or is_autonomous) else "FALSE"
+
+
+# Verbatim port of AIBV calc col `Web_Grounded_Signal`.
+@functools.lru_cache(maxsize=None)
+def compute_web_grounded_signal(res_type: str, site_url: str) -> str:
+    rt = (res_type or "").lower()
+    su = (site_url or "").lower()
+    is_internal = "sharepoint.com" in su or ".onmicrosoft.com" in su
+    if (
+        rt == "websearchquery"
+        or rt in {"external", "http"}
+        or (rt == "http://schema.skype.com/hyperlink" and not is_internal)
+    ):
+        return "Web Grounded"
+    return "Not Web Grounded"
 
 
 # ---------------------------------------------------------------------------
@@ -4411,15 +4940,60 @@ def detect_upn_column(headers: list[str]) -> str | None:
 
 def detect_department_column(headers: list[str]) -> str | None:
     for h in headers:
-        if _normalize_col_name(h) == DEPARTMENT_VARIANT_NORMALIZED:
+        if _normalize_col_name(h) in {DEPARTMENT_VARIANT_NORMALIZED, "organization", "organisation"}:
             return h
     return None
+
+
+def detect_jobtitle_column(headers: list[str]) -> str | None:
+    for h in headers:
+        if _normalize_col_name(h) == "jobtitle":
+            return h
+    return None
+
+
+def load_licensing_map(licensing_csv: str) -> tuple[dict[str, str], int]:
+    """Read a standalone licensing CSV (UPN + 'Has License' columns) and return
+    (normalized_upn -> raw license value, data_row_count).
+
+    Used by the 3-file input mode to merge license status into a users-only
+    Entra file. UPN + license columns are detected with the same alias lists as
+    the Entra loader. Duplicate UPNs are last-write-wins (mirrors the M-code
+    Table.Distinct behavior on the licensed-users path).
+    """
+    with open(licensing_csv, "r", encoding="utf-8-sig", newline="") as fin:
+        reader = csv.DictReader(fin)
+        headers = reader.fieldnames or []
+        if not headers:
+            raise ValueError(f"Licensing CSV has no header row: {licensing_csv}")
+        upn_col = detect_upn_column(headers)
+        if upn_col is None:
+            raise ValueError(
+                f"Licensing CSV has no recognized UPN column "
+                f"(expected one of {sorted(UPN_VARIANTS_NORMALIZED)}): {licensing_csv}"
+            )
+        lic_col = detect_has_license_column(headers)
+        if lic_col is None:
+            raise ValueError(
+                f"Licensing CSV has no recognized license column "
+                f"(expected one of {list(HAS_LICENSE_VARIANTS)}): {licensing_csv}"
+            )
+        license_map: dict[str, str] = {}
+        row_count = 0
+        for row in reader:
+            row_count += 1
+            upn_norm = (row.get(upn_col) or "").strip().lower()
+            if not upn_norm:
+                continue
+            license_map[upn_norm] = row.get(lic_col) or ""
+    return license_map, row_count
 
 
 def load_entra_and_write_users(
     entra_csv: str,
     users_out_csv: str,
     user_key_map: dict[str, int],
+    licensing_csv: str | None = None,
     quiet: bool = False,
 ) -> dict[str, dict[str, str]]:
     """
@@ -4441,7 +5015,18 @@ def load_entra_and_write_users(
       adds PersonId_Normalized (lower+trim of PersonId)
       adds License Status (precomputed)
       adds TotalEmployees (row count, repeated per row)
+
+    3-file input mode: when `licensing_csv` is provided, `entra_csv` is treated
+    as a users-only file and the per-user license value is merged in from the
+    separate licensing CSV (keyed on normalized UPN). When `licensing_csv` is
+    None the function behaves exactly as before (license read from the combined
+    Entra row), so the legacy 2-file output is byte-identical.
     """
+    license_map: dict[str, str] | None = None
+    licensing_rows = 0
+    if licensing_csv:
+        license_map, licensing_rows = load_licensing_map(licensing_csv)
+
     with open(entra_csv, "r", encoding="utf-8-sig", newline="") as fin:
         # Sniff via a generous quote-aware reader; encoding="utf-8-sig" eats BOM if present.
         reader = csv.DictReader(fin)
@@ -4452,24 +5037,17 @@ def load_entra_and_write_users(
         upn_col = detect_upn_column(original_headers)
         dept_col = detect_department_column(original_headers)
         has_license_col = detect_has_license_column(original_headers)
-        has_jobtitle_raw = JOBTITLE_RAW_NAME in original_headers
+        jobtitle_col = detect_jobtitle_column(original_headers)
 
-        # Build rename map: source_header -> target_header.
-        # Guard each rename against a pre-existing target column. If the source
-        # already contains the target name (e.g. customer fed a previously
-        # rolled-up Users CSV back in as -AppendUserInfo, which already has
-        # PersonId / Organization / JobTitle / "Has license"), skipping the
-        # rename preserves the existing values AND prevents emitting a CSV with
-        # duplicate header columns (which then crashes downstream consumers
-        # such as PowerShell's Import-Csv -> "member already present").
+        # Build rename map: source_header -> target_header
         rename_map: dict[str, str] = {}
-        if upn_col and upn_col != "PersonId" and "PersonId" not in original_headers:
+        if upn_col and upn_col != "PersonId":
             rename_map[upn_col] = "PersonId"
-        if dept_col and dept_col != "Organization" and "Organization" not in original_headers:
+        if dept_col and dept_col != "Organization":
             rename_map[dept_col] = "Organization"
-        if has_jobtitle_raw and "JobTitle" not in original_headers:
-            rename_map[JOBTITLE_RAW_NAME] = "JobTitle"
-        if has_license_col and has_license_col != "Has license" and "Has license" not in original_headers:
+        if jobtitle_col and jobtitle_col != "JobTitle":
+            rename_map[jobtitle_col] = "JobTitle"
+        if has_license_col and has_license_col != "Has license":
             rename_map[has_license_col] = "Has license"
 
         # Final header list for users CSV — preserve original order, apply renames,
@@ -4494,6 +5072,7 @@ def load_entra_and_write_users(
     pax_licensed = 0
     pax_unlicensed = 0
     no_license_col = 0
+    matched_in_licensing = 0
     seen_normalized_keys: set[str] = set()
 
     with open(users_out_csv, "w", encoding="utf-8", newline="") as fout:
@@ -4527,9 +5106,25 @@ def load_entra_and_write_users(
             # We also normalize Has license to canonical TRUE/FALSE so existing
             # measures that filter `[Has license] = "FALSE"` match regardless
             # of source casing.
-            has_license_raw = out_row.get("Has license", "")
+            #
+            # 3-file input mode: when a separate licensing file is supplied, the
+            # per-user license value comes from that file (keyed on normalized
+            # UPN). When it is NOT supplied, the value is read from the
+            # (combined) Entra row exactly as before -> byte-identical 2-file
+            # output.
+            if license_map is not None:
+                has_license_raw = license_map.get(person_id_norm, "")
+            else:
+                has_license_raw = out_row.get("Has license", "")
             normalized_has_license = normalize_has_license(has_license_raw)
-            if has_license_col is None:
+            if license_map is not None:
+                if person_id_norm and person_id_norm in license_map:
+                    matched_in_licensing += 1
+                if (has_license_raw or "").strip().upper() in _LICENSE_TRUTHY:
+                    pax_licensed += 1
+                else:
+                    pax_unlicensed += 1
+            elif has_license_col is None:
                 no_license_col += 1
             elif (has_license_raw or "").strip().upper() in _LICENSE_TRUTHY:
                 pax_licensed += 1
@@ -4555,7 +5150,13 @@ def load_entra_and_write_users(
     if not quiet:
         print(f"  Entra rows:            {total_rows:,}")
         print(f"  Unique users (norm):   {len(seen_normalized_keys):,}")
-        if has_license_col:
+        if license_map is not None:
+            print(f"  Licensing file:        {licensing_csv}")
+            print(f"  Licensing rows:        {licensing_rows:,}")
+            print(f"  Matched to users:      {matched_in_licensing:,}")
+            print(f"  Licensed:              {pax_licensed:,}")
+            print(f"  Unlicensed:            {pax_unlicensed:,}")
+        elif has_license_col:
             print(f"  License col detected:  '{has_license_col}'")
             print(f"  Licensed (PAX):        {pax_licensed:,}")
             print(f"  Unlicensed (PAX):      {pax_unlicensed:,}")
@@ -4576,6 +5177,7 @@ def explode_record(
     user_lookup: dict[str, dict[str, str]],
     user_key_map: dict[str, int],
     thread_key_map: dict[str, int],
+    profile: str,
 ) -> list[dict[str, Any]]:
     creation_time_raw = audit_data.get("CreationTime")
     creation_time_raw_str = to_text(creation_time_raw).strip()
@@ -4636,10 +5238,11 @@ def explode_record(
     user_rec = user_lookup.get(audit_user_id_norm) or {}
     has_license_raw = user_rec.get("Has license", "")
     license_status = user_rec.get("License Status") or compute_license_status(has_license_raw)
-    environment = compute_environment(has_license_raw, agent_name, agent_id, app_host_str)
-    autonomy_pattern = compute_autonomy_pattern(environment)
+    environment = compute_environment(profile, has_license_raw, agent_name, agent_id, app_host_str)
     ai_model = compute_ai_model(model_name_str)
     user_month_key = compute_user_month_key(audit_user_id_raw, month_start_str)
+
+    is_aibv = profile != "aio"
 
     # Per-record constants hoisted out of the (prompt x resource) inner loop.
     # All grain values are pre-stringified via to_text() exactly once so the
@@ -4649,12 +5252,16 @@ def explode_record(
     agent_title_id = derive_agent_title_id(agent_id)
     aisystem_plugin_name_str = to_text(first_plugin.get("Name")) if first_plugin else ""
     in_entra = (audit_user_id_norm in user_lookup) if audit_user_id_norm else True
+    # AIBV-only per-record constants.
+    agent_publish_status = compute_agent_publish_status(agent_id, agent_name) if is_aibv else ""
+    # has_agent gate for the Behavior_Category "logic app" branch (AIBV).
+    has_agent_ctx = bool(agent_name.strip()) or bool(agent_id.strip())
 
     # Stable portion of the nongrain dict (everything that does NOT depend on
-    # the per-resource fields). Built once per record; copied per emitted
-    # row and updated with the resource-varying keys. Values mirror the
-    # prior base_row exactly (same types, same to_text() handling) so the
-    # final flushed CSV bytes are identical.
+    # the per-resource fields). Built once per record; copied per emitted row
+    # and updated with the resource-varying keys. Common keys first; AIBV-only
+    # keys appended only for the aibv profile so the AIO output stays the exact
+    # v3.1.0 column set.
     base_nongrain: dict[str, Any] = {
         "CreationDate": creation_date_str,
         "WeekStart": week_start_str,
@@ -4677,15 +5284,29 @@ def explode_record(
         "Behavior_Source": "",
         "Value_Outcome": "",
         "ActivityDate": interaction_date_str,
-        # ThreadId_Raw is constant per record; Message_Id_Raw injected per-message below.
-        "Message_Id_Raw": "",
-        "ThreadId_Raw": thread_id_raw,
     }
+    if is_aibv:
+        base_nongrain.update({
+            # M1: UPN passthrough (raw mirrors AIBV [Audit_UserId]; normalized for joins).
+            "Audit_UserId": audit_user_id_raw,
+            "Audit_UserId_Normalized": audit_user_id_norm,
+            # Agent Filter injected per-resource; Agent Publish Status constant per record.
+            "Agent Filter": "",
+            "Agent Publish Status": agent_publish_status,
+            # Downstream chain + ROI baseline + remaining calc cols (per-resource).
+            "Behavior_Enriched_Full": "",
+            "Usage_Mode": "",
+            "Expertise_Role": "",
+            "Efficiency_Breakdown": "",
+            "Human_Baseline_Min": "",
+            "Behavior_Plausible": "",
+            "Delegation_Event_Key": "",
+        })
 
     # Output schema: list of tuples
     #   (grain_tuple, message_id_str, nongrain_dict, in_entra, audit_user_id_norm)
-    # consumed directly by run_processor's rollup loop (no per-row dict
-    # rebuild, no transient _audit_user_* keys).
+    # consumed directly by run_processor's rollup loop. The grain arity differs
+    # by profile (AIO 16 keys; AIBV 19 — the 3 promoted sliceable flags).
     rows: list[tuple[tuple[str, ...], str, dict[str, Any], bool, str]] = []
     for message in prompts:
         message_id = to_text(message.get("Id"))
@@ -4695,22 +5316,30 @@ def explode_record(
             res_site_str = to_text(resource.get("SiteUrl"))
             res_sens_label_str = to_text(resource.get("SensitivityLabelId"))
             behavior_category = compute_behavior_category(
-                app_host_str, ctx_type_str, res_type_str, res_action_str, res_site_str, plugin_id_str
+                profile, app_host_str, ctx_type_str, res_type_str, res_action_str,
+                res_site_str, plugin_id_str, has_agent_ctx,
             )
-            behavior_enriched = compute_behavior_enriched(behavior_category, agent_name, environment)
+            behavior_enriched = compute_behavior_enriched(
+                profile, behavior_category, agent_name, environment
+            )
             is_sensitive_str = compute_is_sensitive(sens_label_str, res_sens_label_str)
             behavior_source = compute_behavior_source(
-                behavior_category, environment, agent_name,
+                profile, behavior_category, environment, agent_name,
                 aisystem_plugin_name_str, app_host_str,
             )
             value_outcome = compute_value_outcome(
-                behavior_enriched, environment, is_sensitive_str,
+                profile, behavior_enriched, environment, is_sensitive_str,
             )
 
-            # Grain tuple in EXACT GRAIN_KEYS order (verified at module load
-            # via _assert_grain_order below). All values are already
-            # pre-stringified.
-            grain_tuple = (
+            nongrain = dict(base_nongrain)
+            nongrain["AccessedResource_Type"] = res_type_str
+            nongrain["AccessedResource_Action"] = res_action_str
+            nongrain["AccessedResource_SiteUrl"] = res_site_str
+            nongrain["AccessedResource_SensitivityLabelId"] = res_sens_label_str
+            nongrain["Behavior_Source"] = behavior_source
+            nongrain["Value_Outcome"] = value_outcome
+
+            common_grain = (
                 user_key_text,
                 interaction_date_str,
                 agent_id,
@@ -4723,24 +5352,314 @@ def explode_record(
                 behavior_enriched,
                 ai_model,
                 is_sensitive_str,
-                autonomy_pattern,
-                app_identity_app_id,
-                aisystem_plugin_name_str,
-                thread_key_text,
             )
 
-            nongrain = dict(base_nongrain)
-            nongrain["AccessedResource_Type"] = res_type_str
-            nongrain["AccessedResource_Action"] = res_action_str
-            nongrain["AccessedResource_SiteUrl"] = res_site_str
-            nongrain["AccessedResource_SensitivityLabelId"] = res_sens_label_str
-            nongrain["Behavior_Source"] = behavior_source
-            nongrain["Value_Outcome"] = value_outcome
-            nongrain["Message_Id_Raw"] = message_id
+            if is_aibv:
+                # AIBV-faithful per-resource flags (3 are grain keys).
+                is_agent_activity_str = compute_is_agent_activity(
+                    agent_name, agent_id, app_host_str, res_type_str
+                )
+                web_grounded_str = compute_web_grounded_signal(res_type_str, res_site_str)
+                # Autonomy_Pattern depends on per-resource Is_Agent_Activity (AIBV).
+                autonomy_pattern = compute_autonomy_pattern(
+                    profile, environment, is_agent_activity_str
+                )
+                # Downstream chain (faithful without Agents 365 per F2).
+                behavior_enriched_full = compute_behavior_enriched_full(behavior_enriched)
+                usage_mode = compute_usage_mode(behavior_enriched_full, environment, app_host_str)
+                expertise_role = compute_expertise_role(behavior_enriched_full)
+                efficiency_breakdown = compute_efficiency_breakdown(
+                    behavior_enriched_full, behavior_category
+                )
+                human_baseline_min = compute_human_baseline_min(behavior_enriched_full)
+                behavior_plausible = compute_behavior_plausible(license_status, behavior_category)
+                workflow_action = compute_workflow_action(
+                    behavior_enriched_full, res_action_str, app_host_str
+                )
+                delegation_event_key = compute_delegation_event_key(
+                    audit_user_id_raw, interaction_date_str, agent_name,
+                    workflow_action, app_host_str,
+                )
+                grain_tuple = common_grain + (
+                    autonomy_pattern,
+                    app_identity_app_id,
+                    aisystem_plugin_name_str,
+                    thread_key_text,
+                    is_agent_activity_str,
+                    web_grounded_str,
+                    workflow_action,
+                )
+                nongrain["Agent Filter"] = "Agents" if is_agent_activity_str == "TRUE" else ""
+                nongrain["Behavior_Enriched_Full"] = behavior_enriched_full
+                nongrain["Usage_Mode"] = usage_mode
+                nongrain["Expertise_Role"] = expertise_role
+                nongrain["Efficiency_Breakdown"] = efficiency_breakdown
+                nongrain["Human_Baseline_Min"] = human_baseline_min
+                nongrain["Behavior_Plausible"] = behavior_plausible
+                nongrain["Delegation_Event_Key"] = delegation_event_key
+            else:
+                # AIO (v3.1.0): autonomy keyed purely off Environment; 16-key grain.
+                autonomy_pattern = compute_autonomy_pattern(profile, environment, "")
+                grain_tuple = common_grain + (
+                    autonomy_pattern,
+                    app_identity_app_id,
+                    aisystem_plugin_name_str,
+                    thread_key_text,
+                )
 
             rows.append((grain_tuple, message_id, nongrain, in_entra, audit_user_id_norm))
 
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Pre-aggregated tables (AIBV only) — offload the DAX calculated tables.
+#
+# Each of these replaces a DAX calc table that SUMMARIZEs the ENTIRE fact on
+# every refresh. We compute them ONCE here from the same rollup that produces
+# the fact CSV, so they equal exactly what the existing DAX would compute when
+# evaluated over the rolled-up fact (internally consistent — a reviewer can
+# keep the DAX calc tables over the rollup fact and get the same numbers).
+#
+# Grain-key index map (AIBV profile): see GRAIN_KEYS_AIBV.
+#   [1]=InteractionDate  [3]=AgentName  [6]=License Status
+# The remaining inputs come from the nongrain dict
+#   (MonthStart, WeekStart, Audit_UserId, Behavior_Enriched_Full, Usage_Mode).
+# ---------------------------------------------------------------------------
+
+_VALUEFOCUS_MODES = frozenset({"4 - Producing", "5 - Delegating"})
+
+
+def _percentile_inc(sorted_vals: list[float], p: float) -> float:
+    """PERCENTILE.INC / PERCENTILEX.INC — linear interpolation, p in [0, 1]."""
+    n = len(sorted_vals)
+    if n == 0:
+        return 0.0
+    if n == 1:
+        return sorted_vals[0]
+    rank = p * (n - 1)
+    lo = int(rank)  # floor (rank is non-negative)
+    if lo + 1 >= n:
+        return sorted_vals[lo]
+    frac = rank - lo
+    return sorted_vals[lo] + (sorted_vals[lo + 1] - sorted_vals[lo]) * frac
+
+
+def _usage_rank(avg_ppw: float, p90: float, p75: float, p50: float, p25: float) -> str:
+    if avg_ppw == 0:
+        return "0. No Usage"
+    if avg_ppw >= p90:
+        return "5. Top 10% Users"
+    if avg_ppw >= p75:
+        return "4. 75-90% Users"
+    if avg_ppw >= p50:
+        return "3. 50-75% Users"
+    if avg_ppw >= p25:
+        return "2. 25-50% Users"
+    return "1. Bottom 25% Users"
+
+
+def _user_stage(active_days: int, behavior_count: int, value_focus_share: float, has_agent: bool) -> str:
+    if active_days >= 15 or (active_days >= 10 and value_focus_share >= 0.30 and has_agent):
+        return "4 - Power"
+    if active_days >= 8 and behavior_count >= 5:
+        return "3 - Habitual"
+    if active_days >= 3 and behavior_count >= 3:
+        return "2 - Developing"
+    return "1 - Beginner"
+
+
+def _activity_segment(avg_days: float) -> str:
+    if avg_days == 0:
+        return "0. No Activity"
+    if avg_days <= 5:
+        return "1. 1-5 Chat Days/Month - 'Infrequent'"
+    if avg_days <= 10:
+        return "2. 6-10 Chat Days/Month - 'Moderate'"
+    if avg_days <= 19:
+        return "3. 11-19 Chat Days/Month - 'Frequent'"
+    return "4. 20+ Chat Days/Month - 'Daily'"
+
+
+def _fmt_float(x: float) -> str:
+    """Shortest round-trippable float, integers without trailing '.0'."""
+    if x == int(x):
+        return str(int(x))
+    return repr(x)
+
+
+def compute_and_write_aggregates(
+    rollup: dict[tuple[Any, ...], dict[str, Any]],
+    agg_paths: dict[str, str],
+    quiet: bool = False,
+) -> dict[str, int]:
+    """Build the 5 AIBV pre-aggregated tables from the rollup and write them.
+
+    Returns {table_name: row_count}. `agg_paths` keys:
+      active_days, user_month_metrics, licensed_rankings,
+      unlicensed_rankings, licensed_summary.
+    """
+    # Per (Audit_UserId, MonthStart) accumulators.
+    um: dict[tuple[str, str], dict[str, Any]] = {}
+    # Per Audit_UserId accumulators (for the rankings).
+    ua: dict[str, dict[str, Any]] = {}
+
+    for grain_key, nongrain in rollup.items():
+        gk = grain_key[0]  # rollup key is ((grain_tuple), mid_int)
+        mid = grain_key[1]
+        interaction_date = gk[1]
+        agent_name = gk[3]
+        license_status = gk[6]
+        uid = nongrain["Audit_UserId"]
+        month = nongrain["MonthStart"]
+        week = nongrain["WeekStart"]
+        bef = nongrain["Behavior_Enriched_Full"]
+        usage_mode = nongrain["Usage_Mode"]
+
+        mk = (uid, month)
+        a = um.get(mk)
+        if a is None:
+            a = um[mk] = {
+                "idates": set(), "mids": set(), "behaviors": set(),
+                "has_agent": False, "rows": 0, "valuefocus": 0, "license": license_status,
+            }
+        a["idates"].add(interaction_date)
+        a["mids"].add(mid)
+        a["behaviors"].add(bef)
+        if agent_name.strip():
+            a["has_agent"] = True
+        a["rows"] += 1
+        if usage_mode in _VALUEFOCUS_MODES:
+            a["valuefocus"] += 1
+        if license_status < a["license"]:  # MIN(License Status), lexicographic (matches DAX MIN)
+            a["license"] = license_status
+
+        u = ua.get(uid)
+        if u is None:
+            u = ua[uid] = {"rows": 0, "weeks": set(), "license": license_status}
+        u["rows"] += 1
+        u["weeks"].add(week)
+        if license_status < u["license"]:
+            u["license"] = license_status
+
+    # ---- ActiveDaysSummary (filter ChatActiveDays > 0; always true here) ----
+    ads_rows: list[tuple[str, str, int, int, str]] = []
+    for (uid, month), a in um.items():
+        chat_active_days = len(a["idates"])
+        if chat_active_days <= 0:
+            continue
+        ads_rows.append((uid, month, chat_active_days, len(a["mids"]), a["license"]))
+    ads_rows.sort(key=lambda r: (r[0], r[1]))
+
+    # ---- UserMonthMetrics ----
+    umm_rows: list[tuple] = []
+    for (uid, month), a in um.items():
+        active_days = len(a["idates"])
+        behavior_count = len(a["behaviors"])
+        value_focus_share = (a["valuefocus"] / a["rows"]) if a["rows"] else 0.0
+        has_agent = a["has_agent"]
+        user_month_key = f"{uid}|{month[:7]}" if (uid and month) else ""
+        stage = _user_stage(active_days, behavior_count, value_focus_share, has_agent)
+        umm_rows.append((
+            uid, month, behavior_count, "True" if has_agent else "False",
+            active_days, user_month_key, stage, value_focus_share,
+        ))
+    umm_rows.sort(key=lambda r: (r[0], r[1]))
+
+    # ---- Rankings (per user, partitioned by license) ----
+    def _build_rankings(target_license: str) -> list[tuple]:
+        summary = []  # (uid, total_prompts, total_weeks, avg_ppw)
+        for uid, u in ua.items():
+            if u["license"] != target_license:
+                continue
+            total_prompts = u["rows"]
+            total_weeks = len(u["weeks"])
+            avg_ppw = (total_prompts / total_weeks) if total_weeks else 0.0
+            summary.append((uid, total_prompts, total_weeks, avg_ppw))
+        avgs = sorted(s[3] for s in summary)
+        p90 = _percentile_inc(avgs, 0.90)
+        p75 = _percentile_inc(avgs, 0.75)
+        p50 = _percentile_inc(avgs, 0.50)
+        p25 = _percentile_inc(avgs, 0.25)
+        out = []
+        for uid, tp, tw, avg in summary:
+            out.append((uid, _usage_rank(avg, p90, p75, p50, p25), tp, tw, avg))
+        out.sort(key=lambda r: r[0])
+        return out
+
+    licensed_rank_rows = _build_rankings("M365 Copilot Licensed")
+    unlicensed_rank_rows = _build_rankings("Unlicensed")
+
+    # ---- Licensed Chat User Summary (from ActiveDaysSummary, licensed only) ----
+    lsum: dict[str, dict[str, int]] = {}
+    for uid, month, chat_active_days, prompt_count, lic in ads_rows:
+        if lic != "M365 Copilot Licensed":
+            continue
+        s = lsum.get(uid)
+        if s is None:
+            s = lsum[uid] = {"days": 0, "months": 0, "prompts": 0}
+        s["days"] += chat_active_days
+        s["months"] += 1  # every ADS row already has ChatActiveDays > 0
+        s["prompts"] += prompt_count
+    summary_rows: list[tuple] = []
+    for uid, s in lsum.items():
+        total_days = s["days"]
+        total_months = s["months"]
+        total_prompts = s["prompts"]
+        avg_days = (total_days / total_months) if total_months else 0.0
+        summary_rows.append((
+            uid, _activity_segment(avg_days), total_days, total_months,
+            total_prompts, avg_days,
+        ))
+    summary_rows.sort(key=lambda r: r[0])
+
+    # ---- write all 5 ----
+    def _write(path: str, header: list[str], rows: list[tuple], float_cols: set[int]) -> int:
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            w = csv.writer(f, lineterminator="\n")
+            w.writerow(header)
+            for r in rows:
+                w.writerow([_fmt_float(v) if i in float_cols else v for i, v in enumerate(r)])
+        return len(rows)
+
+    counts = {}
+    counts["active_days"] = _write(
+        agg_paths["active_days"],
+        ["Audit_UserId", "MonthStart", "ChatActiveDays", "PromptCount", "LicenseStatus"],
+        ads_rows, set(),
+    )
+    counts["user_month_metrics"] = _write(
+        agg_paths["user_month_metrics"],
+        ["Audit_UserId", "MonthStart", "BehaviorCount", "HasAgent", "ActiveDays",
+         "UserMonthKey", "UserStage", "ValueFocusShare"],
+        umm_rows, {7},
+    )
+    counts["licensed_rankings"] = _write(
+        agg_paths["licensed_rankings"],
+        ["Audit_UserId", "Usage Rank", "TotalPrompts", "TotalWeeks", "AvgPromptsPerWeek"],
+        licensed_rank_rows, {4},
+    )
+    counts["unlicensed_rankings"] = _write(
+        agg_paths["unlicensed_rankings"],
+        ["Audit_UserId", "Usage Rank", "TotalPrompts", "TotalWeeks", "AvgPromptsPerWeek"],
+        unlicensed_rank_rows, {4},
+    )
+    counts["licensed_summary"] = _write(
+        agg_paths["licensed_summary"],
+        ["Audit_UserId", "Activity Segment", "TotalActiveDays", "TotalMonths",
+         "TotalPrompts", "AvgActiveDaysPerMonth"],
+        summary_rows, {5},
+    )
+
+    if not quiet:
+        print("  Pre-aggregated tables (AIBV):")
+        print(f"    ActiveDaysSummary:        {counts['active_days']:,} rows")
+        print(f"    UserMonthMetrics:         {counts['user_month_metrics']:,} rows")
+        print(f"    Licensed User Rankings:   {counts['licensed_rankings']:,} rows")
+        print(f"    Unlicensed User Rankings: {counts['unlicensed_rankings']:,} rows")
+        print(f"    Licensed User Summary:    {counts['licensed_summary']:,} rows")
+
+    return counts
 
 
 def run_processor(
@@ -4748,7 +5667,10 @@ def run_processor(
     entra_csv: str,
     fact_out_csv: str,
     users_out_csv: str,
+    profile: str = "aibv",
+    agg_paths: dict[str, str] | None = None,
     quiet: bool = False,
+    licensing_csv: str | None = None,
     seed_mid_map_path: str | None = None,
     seed_thread_map_path: str | None = None,
     seed_userkey_map_path: str | None = None,
@@ -4764,9 +5686,12 @@ def run_processor(
 
     if not quiet:
         print(f"Purview CopilotInteraction Processor v{SCRIPT_VERSION}")
+        print(f"  Profile:        {profile}")
         print(f"  JSON engine:    {_JSON_ENGINE}")
         print(f"  Purview input:  {purview_csv}")
         print(f"  Entra input:    {entra_csv}")
+        if licensing_csv:
+            print(f"  Licensing:      {licensing_csv}")
         print(f"  Purview output: {fact_out_csv}")
         print(f"  Entra output:   {users_out_csv}")
         print()
@@ -4775,22 +5700,17 @@ def run_processor(
     # Shared INT-surrogate maps. UserKey is populated first by the Entra
     # loader (so Entra-known users get the lowest INTs / lowest dictionary
     # offsets in VertiPaq); the fact path then reuses + extends the map.
+    # mid_to_int is declared here (alongside the other two) so all three can be
+    # pre-seeded from the PAX append-target maps before the Entra load + fact loop.
     user_key_map: dict[str, int] = {}
     thread_key_map: dict[str, int] = {}
     mid_to_int: dict[str, int] = {}
-    # Rollup-loop dedup policy. Cross-run dedup against the target Fact CSV is
-    # performed exclusively in the PowerShell-side Merge-FactCsv (which keys on
-    # Message_Id_Raw and computes Retained / New / Departed = current∩target /
-    # current\target / target\current). The rollup loop ALWAYS emits the row,
-    # so when current and target overlap Merge-FactCsv sees real current rows
-    # and classifies them correctly (skipping seeded Message_Ids here would
-    # leave Merge-FactCsv with zero current rows and misclassify every
-    # retained record as Departed with In_Latest_Append=FALSE).
-    # Surrogate-INT continuity across appends is preserved by pre-loading
-    # mid_to_int below: retained Message_Ids get their target-side INT on
-    # lookup; new ones extend the map. Merge-FactCsv ALSO carries Message_Id
-    # forward from the target on retained rows as belt-and-suspenders.
 
+    # PAX append support (not in the standalone v4.0.0 reference): pre-seed the
+    # three INT-surrogate maps from JSON snapshots of the append-target's existing
+    # surrogates so retained rows keep stable Message_Id / ThreadKey / UserKey
+    # values across runs. No-op when the seed paths are None (the standalone
+    # 2/3-file runs and any non-append PAX run).
     def _load_int_seed(path: str, target: dict[str, int]) -> None:
         with open(path, "r", encoding="utf-8") as f:
             data = json_loads(f.read())
@@ -4810,7 +5730,7 @@ def run_processor(
         _load_int_seed(seed_mid_map_path, mid_to_int)
 
     user_lookup = load_entra_and_write_users(
-        entra_csv, users_out_csv, user_key_map, quiet=quiet
+        entra_csv, users_out_csv, user_key_map, licensing_csv=licensing_csv, quiet=quiet
     )
 
     if not quiet:
@@ -4855,15 +5775,12 @@ def run_processor(
                 continue
 
             try:
-                rows = explode_record(audit_data, user_lookup, user_key_map, thread_key_map)
+                rows = explode_record(audit_data, user_lookup, user_key_map, thread_key_map, profile)
             except Exception:
                 stats["errors"] += 1
                 continue
 
             for grain_key, message_id_str, nongrain, in_entra, audit_user_norm in rows:
-                # Always emit the row — cross-run dedup belongs to Merge-FactCsv,
-                # not here. The rollup loop must surface every interaction so the
-                # downstream merge can compute Retained / New / Departed correctly.
                 stats["output_rows"] += 1
                 if not in_entra and audit_user_norm:
                     unmatched.add(audit_user_norm)
@@ -4881,17 +5798,19 @@ def run_processor(
         print()
         print("Writing rolled-up fact CSV...")
 
+    # Profile-specific output schema (AIO = v3.1.0 36-col; AIBV = 50-col superset).
+    grain_keys, nongrain_attrs_sel, fact_header = schema_for(profile)
     with open(fact_out_csv, "w", encoding="utf-8", newline="") as fout:
         writer = csv.writer(fout, lineterminator="\n")
-        writer.writerow(FACT_HEADER)
+        writer.writerow(fact_header)
         # Pre-compute the index of Message_Id within FACT_HEADER so we can
         # splice the INT surrogate into a list-of-attrs in one shot. The
         # list-based csv.writer.writerow path is materially faster than
         # DictWriter (skips dict-to-list translation + per-row genexpr).
-        nongrain_attrs = _NONGRAIN_ATTRS  # local rebind
-        grain_len = len(GRAIN_KEYS)
+        nongrain_attrs = nongrain_attrs_sel  # local rebind
+        grain_len = len(grain_keys)
         for (grain_key, mid_int), attrs in rollup.items():
-            # FACT_HEADER = GRAIN_KEYS + ("Message_Id",) + _NONGRAIN_ATTRS
+            # fact_header = grain_keys + ("Message_Id",) + nongrain_attrs
             row_out = list(grain_key)
             row_out.append(mid_int)
             row_out.extend(attrs[k] for k in nongrain_attrs)
@@ -4902,6 +5821,15 @@ def run_processor(
     stats["distinct_thread_ids"] = len(thread_key_map)
     stats["distinct_user_keys"] = len(user_key_map)
     stats["unmatched_users"] = len(unmatched)
+
+    # Pre-aggregated tables (AIBV profile only). These offload the DAX
+    # calculated tables (ActiveDaysSummary / UserMonthMetrics / rankings /
+    # summary), each of which otherwise SUMMARIZEs the whole fact on refresh.
+    if profile != "aio" and agg_paths:
+        if not quiet:
+            print()
+            print("Writing pre-aggregated tables...")
+        compute_and_write_aggregates(rollup, agg_paths, quiet=quiet)
     elapsed = time.perf_counter() - start_time
     if not quiet:
         reduction_pct = (1 - len(rollup) / stats["output_rows"]) * 100 if stats["output_rows"] else 0
@@ -4924,7 +5852,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             f"Purview CopilotInteraction Processor v{SCRIPT_VERSION} - "
-            "Two-input/two-output preprocessor that produces a rolled-up "
+            "Two/three-input, two-output preprocessor that produces a rolled-up "
             "Interactions fact CSV (~85% row reduction via PromptCount grain) "
             "and a Users dim CSV for the AI Business Value Dashboard PBIP."
         )
@@ -4937,13 +5865,53 @@ def main() -> None:
     parser.add_argument(
         "--entra",
         required=True,
-        help="Path to the Entra users CSV (must contain UPN + license columns).",
+        help=(
+            "Path to the Entra users CSV (UPN + org columns). The license column "
+            "is optional: supply it separately via --licensing (recommended for "
+            "standalone use), or omit --licensing to use a single combined "
+            "users+licensing file (license column auto-detected)."
+        ),
+    )
+    parser.add_argument(
+        "--licensing",
+        default=None,
+        help=(
+            "Path to a separate licensing CSV (UPN + 'Has License' columns), e.g. "
+            "the Microsoft Admin Center Copilot user export. When provided, "
+            "--entra is treated as a users-only file and license status is merged "
+            "in from this file (the 3-file workflow). Omit to use a single "
+            "combined Entra file (license column auto-detected). Applies to both "
+            "--profile aibv and --profile aio."
+        ),
+    )
+    parser.add_argument(
+        "--combined-entra",
+        action="store_true",
+        default=False,
+        help=(
+            "Legacy 2-file mode: assert that --entra is a single combined "
+            "users+licensing file (as produced by the PAX script). Mutually "
+            "exclusive with --licensing. Optional - even without this flag a "
+            "combined file still works (the license column is auto-detected)."
+        ),
     )
     parser.add_argument(
         "--out-dir",
         "-o",
         default=None,
         help="Directory for output files. Default: same directory as the Purview file.",
+    )
+    parser.add_argument(
+        "--profile",
+        "-p",
+        choices=("aibv", "aio"),
+        default="aibv",
+        help=(
+            "Output profile. 'aibv' (default) = AI Business Value Dashboard "
+            "superset (50-col fact, 3-value Environment). 'aio' = AI-in-One "
+            "Dashboard (36-col fact, 5-value Environment) — reproduces the "
+            "v3.1.0 AIO output exactly."
+        ),
     )
     parser.add_argument(
         "--quiet",
@@ -4953,6 +5921,26 @@ def main() -> None:
         help="Suppress progress output.",
     )
     parser.add_argument(
+        "--with-aggregates",
+        action="store_true",
+        default=False,
+        help=(
+            "Also write the AIBV pre-aggregated tables (ActiveDaysSummary, "
+            "UserMonthMetrics, Licensed/Unlicensed user rankings, Licensed user "
+            "summary). OFF by default — the AIBV template only needs the two core "
+            "rollup files (Interactions + Users). No effect for --profile aio."
+        ),
+    )
+    parser.add_argument(
+        # Deprecated no-op: aggregates are now OFF by default, so this flag does
+        # nothing. Kept so older command lines don't error.
+        "--no-aggregates",
+        action="store_true",
+        default=False,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        # PAX append support (not in the standalone v4.0.0 reference).
         "--seed-mid-map",
         default=None,
         help=(
@@ -4987,6 +5975,15 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    if args.licensing and args.combined_entra:
+        print(
+            "ERROR: --licensing and --combined-entra are mutually exclusive. Use "
+            "--licensing for the 3-file (separate licensing) workflow, or "
+            "--combined-entra (or neither) for a single combined Entra file.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     purview_path = os.path.abspath(args.purview)
     entra_path = os.path.abspath(args.entra)
     for label, p in (("Purview", purview_path), ("Entra", entra_path)):
@@ -4994,23 +5991,48 @@ def main() -> None:
             print(f"ERROR: {label} input file not found: {p}", file=sys.stderr)
             sys.exit(1)
 
+    licensing_path = os.path.abspath(args.licensing) if args.licensing else None
+    if licensing_path and not os.path.isfile(licensing_path):
+        print(f"ERROR: Licensing input file not found: {licensing_path}", file=sys.stderr)
+        sys.exit(1)
+
     out_dir = Path(os.path.abspath(args.out_dir)) if args.out_dir else Path(purview_path).parent
     out_dir.mkdir(parents=True, exist_ok=True)
 
     purview_stem = Path(purview_path).stem
     entra_stem = Path(entra_path).stem
-    # Output stems intentionally inherit the timestamp already baked into the input
-    # filenames (e.g. Purview_Audit_*_<ts>.csv, EntraUsers_MAClicensing_<ts>.csv) so the
-    # rollup outputs share the same run timestamp without duplicating it.
+    run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # PAX embed (differs from the standalone v4.0.0, which timestamps these two):
+    # the core rollup outputs use NON-timestamped names so PAX's post-run
+    # Merge-FactCsv / Merge-UsersCsv resolve them by exact name. The run timestamp
+    # is already baked into the input filenames (Purview_Audit_*_<ts>.csv,
+    # EntraUsers_MAClicensing_<ts>.csv), so it is not duplicated on the output.
     fact_out = str(out_dir / f"{purview_stem}_Interactions.csv")
     users_out = str(out_dir / f"{entra_stem}_Users.csv")
+
+    # Pre-aggregated table paths (AIBV only, opt-in via --with-aggregates).
+    # Default: not written — the AIBV template consumes only the Interactions
+    # + Users rollups. The aggregates remain available for the future
+    # calc-table offload (point the 5 DAX calc tables at these CSVs).
+    agg_paths: dict[str, str] | None = None
+    if args.profile != "aio" and args.with_aggregates:
+        agg_paths = {
+            "active_days": str(out_dir / f"{purview_stem}_ActiveDaysSummary_{run_ts}.csv"),
+            "user_month_metrics": str(out_dir / f"{purview_stem}_UserMonthMetrics_{run_ts}.csv"),
+            "licensed_rankings": str(out_dir / f"{purview_stem}_LicensedUserRankings_{run_ts}.csv"),
+            "unlicensed_rankings": str(out_dir / f"{purview_stem}_UnlicensedUserRankings_{run_ts}.csv"),
+            "licensed_summary": str(out_dir / f"{purview_stem}_LicensedUserSummary_{run_ts}.csv"),
+        }
 
     stats = run_processor(
         purview_csv=purview_path,
         entra_csv=entra_path,
         fact_out_csv=fact_out,
         users_out_csv=users_out,
+        profile=args.profile,
+        agg_paths=agg_paths,
         quiet=args.quiet,
+        licensing_csv=licensing_path,
         seed_mid_map_path=args.seed_mid_map,
         seed_thread_map_path=args.seed_thread_map,
         seed_userkey_map_path=args.seed_userkey_map,
@@ -12390,6 +13412,10 @@ function Initialize-CheckpointForNewRun {
 			# value wins (last-write-wins) and these fields are overwritten on the next save.
 			rollupMode = if ([bool]$AllParameters.Rollup) { 'Rollup' } elseif ([bool]$AllParameters.RollupPlusRaw) { 'RollupPlusRaw' } else { 'None' }
 			processorMode = if ($script:RollupProcessorMode) { $script:RollupProcessorMode } else { 'None' }
+			# Resolved rollup dashboard (None|AIO|AIBV|M365). Persisted so a resumed
+			# CopilotInteraction run restores the correct --profile (AIO vs AIBV cannot
+			# be re-derived from -IncludeM365Usage alone). Last-write-wins on resume.
+			rollupDashboard = if ($script:RollupDashboard) { $script:RollupDashboard } else { 'None' }
 			
 			# Auth (method only - no secrets)
 			auth = if ($AllParameters.Auth) { $AllParameters.Auth } else { 'WebLogin' }
@@ -14405,14 +15431,57 @@ function Get-EntraUsersData {
 
 		$baseUri = "https://graph.microsoft.com/v1.0/users?`$select=$entraUserSelect&`$expand=manager&`$top=999"
 		$nextLink = $baseUri
-		$rawUsers = @()
+		# Generic List accumulator (was $rawUsers = @() with +=). On a mega-tenant
+		# (~400K+ users) the array-append pattern is O(n^2) — every += reallocates and
+		# copies the whole backing array — which is both slow and memory-heavy. A
+		# List[object] with AddRange appends amortized O(1).
+		$rawUsers = [System.Collections.Generic.List[object]]::new()
 		$loops = 0
-		while ($nextLink) {
-			$loops++
-			$resp = Invoke-GraphRequest -Uri $nextLink -Method GET -ErrorAction Stop
-			if ($resp.value) { $rawUsers += $resp.value }
-			$nextLink = $resp.'@odata.nextLink'
-			if ($loops -gt 2000) { throw "Safety abort: excessive paging (>2000)" }
+		# Scale-aware paging ceiling. With $expand=manager, Graph caps each page far
+		# below the requested $top=999 (often ~100 rows/page), so a mega-tenant needs
+		# thousands of pages: at the ~100/page floor, 8000 pages covers ~800K users.
+		# The old fixed >2000 guard tripped mid-fetch on a ~412K-user tenant. This
+		# ceiling still catches a true runaway (e.g. a non-advancing @odata.nextLink).
+		$maxPages = 8000
+		# Inner try/catch around paging ONLY: on a throttling/network error or the
+		# safety-abort throw, keep whatever pages were already collected and fall
+		# through to flatten/enrich so a PARTIAL directory is still emitted. The
+		# shortfall is flagged so the end-of-run summary and exit code report it
+		# instead of masking it behind "Enterprise Export Complete".
+		try {
+			while ($nextLink) {
+				$loops++
+				$resp = Invoke-GraphRequest -Uri $nextLink -Method GET -ErrorAction Stop
+				if ($resp.value) { $rawUsers.AddRange([object[]]$resp.value) }
+				$nextLink = $resp.'@odata.nextLink'
+				# Progress heartbeat: large tenants page for several minutes; emit a count
+				# every 25 pages so the run is not mistaken for a hang.
+				if (-not $Quiet -and ($loops % 25 -eq 0)) {
+					Write-LogHost "  ... $($rawUsers.Count) users retrieved so far ($loops pages)" -ForegroundColor DarkGray
+				}
+				if ($loops -gt $maxPages) { throw "Safety abort: excessive paging (>$maxPages pages)" }
+			}
+		}
+		catch {
+			$script:EntraUsersFetchFailed = $true
+			$script:EntraUsersFetchError = $_.Exception.Message
+			Write-LogHost "WARNING: Entra user directory paging did not complete: $($_.Exception.Message)" -ForegroundColor Yellow
+		}
+
+		# If paging collected nothing there is no directory to emit: flag (if not
+		# already) and return empty so the writers skip and the summary/exit report it.
+		if ($rawUsers.Count -eq 0) {
+			if (-not $script:EntraUsersFetchFailed) {
+				$script:EntraUsersFetchFailed = $true
+				$script:EntraUsersFetchError = 'Graph returned no users for the directory query.'
+			}
+			return $entraUsers
+		}
+		# Partial directory: some pages succeeded before a paging failure. Emit what we
+		# have (schema-complete via the flatten/enrich below) but mark it partial.
+		if ($script:EntraUsersFetchFailed) {
+			$script:EntraUsersPartial = $true
+			if (-not $Quiet) { Write-LogHost "         Emitting PARTIAL directory: $($rawUsers.Count) users collected before the failure." -ForegroundColor Yellow }
 		}
 
 		if (-not $Quiet) { Write-LogHost "  Retrieved $($rawUsers.Count) raw user objects" -ForegroundColor Gray }
@@ -14446,6 +15515,11 @@ function Get-EntraUsersData {
 		try { Test-EntraUsersSchema -Users $entraUsers -Quiet:$Quiet } catch { }
 	}
 	catch {
+		# Flatten/enrich (or any non-paging) failure. Flag it so the summary + exit
+		# code report the shortfall; preserve an inner paging-error reason if one was
+		# already captured.
+		$script:EntraUsersFetchFailed = $true
+		if (-not $script:EntraUsersFetchError) { $script:EntraUsersFetchError = $_.Exception.Message }
 		Write-LogHost "WARNING: Failed to collect Entra user directory: $($_.Exception.Message)" -ForegroundColor Yellow
 	}
 	return $entraUsers
@@ -17682,6 +18756,7 @@ elseif ($script:CheckpointEnabled) {
 		# and deletes the raw EntraUsers CSV that -RollupPlusRaw is supposed to preserve).
 		Rollup = $Rollup.IsPresent
 		RollupPlusRaw = $RollupPlusRaw.IsPresent
+		Dashboard = $Dashboard
 		# Auth (no secrets)
 		Auth = $Auth
 		TenantId = $TenantId
@@ -18272,12 +19347,15 @@ if ($Rollup -or $RollupPlusRaw) {
 		}
 	}
 	$processorLabel = switch ($script:RollupProcessorMode) {
-		'CopilotInteraction' { "Purview_CopilotInteraction_Processor v$($Script:EMBEDDED_PROCESSOR_COPILOT_VERSION) (inputs: Purview CSV + Entra users CSV)" }
+		'CopilotInteraction' { "Purview_CopilotInteraction_Processor v$($Script:EMBEDDED_PROCESSOR_COPILOT_VERSION) (--profile $($script:RollupDashboardProfile); inputs: Purview CSV + Entra users CSV)" }
 		'M365Bundle'         { "Purview_M365_Usage_Bundle_Explosion_Processor v$($Script:EMBEDDED_PROCESSOR_M365_VERSION) (input: Purview CSV)" }
 		default              { 'unresolved' }
 	}
 	$rollupTargetDashboard = switch ($script:RollupProcessorMode) {
-		'CopilotInteraction' { 'AI-in-One + AI Business Value (Analytics-Hub)' }
+		'CopilotInteraction' {
+			if ($script:RollupDashboard -eq 'AIBV') { 'AI Business Value (Analytics-Hub)' }
+			else { 'AI-in-One (Analytics-Hub)' }
+		}
 		'M365Bundle'         { 'M365 Usage Analytics (Analytics-Hub)' }
 		default              { 'unresolved' }
 	}
@@ -19100,6 +20178,7 @@ else {
 	$paramSnapshot['SkipDiagnostics'] = $SkipDiagnostics.IsPresent
 	$paramSnapshot['Rollup'] = $Rollup.IsPresent
 	$paramSnapshot['RollupPlusRaw'] = $RollupPlusRaw.IsPresent
+	$paramSnapshot['Dashboard'] = $Dashboard
 	$paramSnapshot['EmitMetricsJson'] = $EmitMetricsJson.IsPresent
 	$paramSnapshot['MetricsPath'] = $(if ($MetricsPath) { $MetricsPath } else { '' })
 	$paramSnapshot['StreamingSchemaSample'] = $StreamingSchemaSample
@@ -20959,6 +22038,16 @@ try {
 			Write-LogHost "  Rollup mode overridden on resume: checkpoint='$($cp.rollupMode)' -> resume='$nowSwitch' (last-write-wins)." -ForegroundColor Yellow
 		}
 
+		# Dashboard restore (independent last-write-wins): an explicit -Dashboard on the
+		# resume CLI wins; otherwise restore the original run's dashboard so a resumed
+		# CopilotInteraction run keeps its AIO/AIBV profile instead of defaulting to AIO.
+		# Guarded to valid values so the [ValidateSet] on $Dashboard never throws on assign.
+		$resumeUserPassedDashboard = $PSBoundParameters.ContainsKey('Dashboard')
+		if (-not $resumeUserPassedDashboard -and $cp.rollupDashboard -and ([string]$cp.rollupDashboard -in @('AIO', 'AIBV', 'M365'))) {
+			$Dashboard = [string]$cp.rollupDashboard
+			Write-LogHost "  Restored rollup dashboard from checkpoint: $Dashboard" -ForegroundColor DarkGray
+		}
+
 		# Re-derive $script:RollupProcessorMode AFTER all resume-restore lines above have
 		# merged checkpoint state (especially IncludeM365Usage). This guarantees the wire-up
 		# at end-of-run picks the right embedded processor even when the resume CLI omitted
@@ -20970,9 +22059,17 @@ try {
 		if ($Rollup -or $RollupPlusRaw) {
 			if ($IncludeM365Usage) {
 				$script:RollupProcessorMode = 'M365Bundle'
+				$script:RollupDashboard = 'M365'
+				$script:RollupDashboardProfile = $null
 			}
 			else {
 				$script:RollupProcessorMode = 'CopilotInteraction'
+				# Honor the restored / resume-CLI dashboard so a resumed AIBV run is not
+				# silently downgraded to the AIO default. Only AIO/AIBV reach here
+				# (M365 implies -IncludeM365Usage -> the M365Bundle branch above).
+				$script:RollupDashboard = if ($Dashboard) { $Dashboard.ToUpperInvariant() } else { 'AIO' }
+				if ($script:RollupDashboard -notin @('AIO', 'AIBV')) { $script:RollupDashboard = 'AIO' }
+				$script:RollupDashboardProfile = $script:RollupDashboard.ToLowerInvariant()
 				if (-not $IncludeUserInfo) {
 					$IncludeUserInfo = [System.Management.Automation.SwitchParameter]::new($true)
 					Write-LogHost "  Resume: auto-enabled -IncludeUserInfo for CopilotInteraction-mode rollup." -ForegroundColor Cyan
@@ -21394,6 +22491,12 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		# Fetch user directory and license data if requested (Graph API mode only)
 		$script:LicenseData = $null
 		$script:EntraUsersData = $null
+		# Option C (v1.11.5): Entra user directory fetch outcome flags. Surfaced in the
+		# end-of-run summary and exit code so a failed/partial directory fetch can never
+		# be silently masked behind "Enterprise Export Complete".
+		$script:EntraUsersFetchFailed = $false
+		$script:EntraUsersFetchError = $null
+		$script:EntraUsersPartial = $false
 		if ($IncludeUserInfo -and -not $UseEOM) {
 			Write-LogHost "Fetching Entra user directory and license data..." -ForegroundColor Cyan
 			$script:LicenseData = Get-UserLicenseData
@@ -21657,6 +22760,7 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		if ($paramSnapshot.Contains('ExportWorkbook'))      { $paramSnapshot['ExportWorkbook']      = $ExportWorkbook.IsPresent }
 		if ($paramSnapshot.Contains('Rollup'))              { $paramSnapshot['Rollup']              = $Rollup.IsPresent }
 		if ($paramSnapshot.Contains('RollupPlusRaw'))       { $paramSnapshot['RollupPlusRaw']       = $RollupPlusRaw.IsPresent }
+		if ($paramSnapshot.Contains('Dashboard'))           { $paramSnapshot['Dashboard']           = $Dashboard }
 		if ($paramSnapshot.Contains('IncludeCopilotInteraction')) {
 			$paramSnapshot['IncludeCopilotInteraction'] = $IncludeCopilotInteraction.IsPresent -or ($ActivityTypes -contains $copilotBaseActivityType)
 		}
@@ -28933,12 +30037,24 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 		# User-only export mode summary
 		if ($script:EntraUsersData) {
 			Write-LogHost "Entra users exported: $($script:EntraUsersData.Count)" -ForegroundColor White
+			if ($script:EntraUsersPartial) {
+				Write-LogHost "WARNING: Entra user directory is PARTIAL (paging did not complete): $script:EntraUsersFetchError" -ForegroundColor Yellow
+			}
+		}
+		elseif ($script:EntraUsersFetchFailed) {
+			Write-LogHost "ERROR: Entra user directory FAILED - file not generated: $script:EntraUsersFetchError" -ForegroundColor Red
 		}
 	} else {
 		# Standard audit log export summary
 		Write-LogHost "Records exported: $($script:metrics.TotalStructuredRows)" -ForegroundColor White
 		if ($IncludeUserInfo -and -not $UseEOM -and $script:EntraUsersData) {
 			Write-LogHost "Entra users exported: $($script:EntraUsersData.Count)" -ForegroundColor White
+			if ($script:EntraUsersPartial) {
+				Write-LogHost "WARNING: Entra user directory is PARTIAL (paging did not complete): $script:EntraUsersFetchError" -ForegroundColor Yellow
+			}
+		}
+		elseif ($IncludeUserInfo -and -not $UseEOM -and $script:EntraUsersFetchFailed) {
+			Write-LogHost "ERROR: Entra user directory FAILED - file not generated: $script:EntraUsersFetchError" -ForegroundColor Red
 		}
 	}
 	
@@ -29270,6 +30386,10 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 			$entraSize = [math]::Round((Get-Item $entraFile).Length / 1KB, 2)
 			Write-LogHost "EntraUsers file: $_entraFileDisplay" -ForegroundColor White
 			Write-LogHost "File size: $entraSize KB" -ForegroundColor White
+		} elseif ($script:EntraUsersFetchFailed) {
+			# Option C: a genuine directory fetch failure must be loud, not a soft note.
+			Write-LogHost "EntraUsers file: $_entraFileDisplay (NOT GENERATED)" -ForegroundColor Red
+			Write-LogHost "ERROR: Entra user directory fetch failed: $script:EntraUsersFetchError" -ForegroundColor Red
 		} else {
 			Write-LogHost "EntraUsers file: $_entraFileDisplay (not found)" -ForegroundColor Yellow
 		}
@@ -29398,7 +30518,13 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				if ($rollupEntraInfo.Length -le 0) {
 					throw "Rollup: Entra users CSV at '$rollupEntraCsv' is empty (0 bytes)."
 				}
-				$rollupArgs = @('--purview', $rollupPurviewCsv, '--entra', $rollupEntraCsv, '--out-dir', $rollupOutputDir)
+				# Dashboard profile (aio|aibv) selects the embedded v4.0.0 output schema;
+				# resolved in the rollup-mode decision (default aio). --combined-entra is
+				# passed explicitly because PAX always emits a single combined
+				# users+licensing Entra CSV (the processor's 2-input path); the separate
+				# -licensing 3-file path is never used from PAX.
+				$rollupProfile = if ($script:RollupDashboardProfile) { $script:RollupDashboardProfile } else { 'aio' }
+				$rollupArgs = @('--purview', $rollupPurviewCsv, '--entra', $rollupEntraCsv, '--out-dir', $rollupOutputDir, '--profile', $rollupProfile, '--combined-entra')
 				$rollupRawCsvList.Add($rollupPurviewCsv)
 				# EntraUsers CSV is an internal join input to the CopilotInteraction processor.
 				# Under -Rollup it is deleted alongside the raw Purview CSV. Under -RollupPlusRaw
@@ -30478,7 +31604,7 @@ finally {
 		try { Remove-FabricResumeMirror -RunTimestamp $global:ScriptRunTimestamp } catch {}
 	}
 
-	$exitCode = 0; if ($script:circuitBreakerOpen) { $exitCode = 20 } elseif (($script:Hit10KLimit -or $script:Hit1MLimit) -and -not $AutoCompleteness) { $exitCode = 10 }
+	$exitCode = 0; if ($script:circuitBreakerOpen) { $exitCode = 20 } elseif (($script:Hit10KLimit -or $script:Hit1MLimit) -and -not $AutoCompleteness) { $exitCode = 10 } elseif ($script:EntraUsersFetchFailed) { $exitCode = 30 }
 	Write-LogHost "Exit code: $exitCode" -ForegroundColor DarkGray
 	exit $exitCode
 }
