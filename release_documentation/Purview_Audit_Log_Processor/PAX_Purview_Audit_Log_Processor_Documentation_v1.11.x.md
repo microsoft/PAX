@@ -1,8 +1,8 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.4.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.4/PAX_Purview_Audit_Log_Processor_v1.11.4.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.5.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.5/PAX_Purview_Audit_Log_Processor_v1.11.5.ps1)
 >
-> **📅 Script v1.11.4 Release Date:** 2026-06-04
+> **📅 Script v1.11.5 Release Date:** 2026-06-12
 >
 > **📋 Release Notes:** See what's new → [v1.11.x Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
@@ -10,7 +10,7 @@
 >
 > **📚 Documentation Archive:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
-**Documentation Version:** v1.11.x (Current Script Version: v1.11.4)
+**Documentation Version:** v1.11.x (Current Script Version: v1.11.5)
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 7+ (required for default Graph API mode); PowerShell 5.1 supported only with `-UseEOM`  
 **License:** MIT
@@ -90,6 +90,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - Retrieves audit events from Microsoft 365 Unified Audit Log via **Graph API (default)** or **EOM mode** (`-UseEOM`)
 - **Graph API filter passthrough:** Optional `-RecordTypes` / `-ServiceTypes` switches target documented Purview workloads (SharePoint, OneDrive, and future additions) so non-Copilot office app activity returns alongside Copilot operations
 - **Microsoft 365 usage data (`-IncludeM365Usage`):** Curated cross-workload activity bundle spanning Outlook, Teams, SharePoint, OneDrive, Word, Excel, PowerPoint, OneNote, Forms, Stream, Planner, and PowerApps — captured in the same Graph audit run alongside Copilot telemetry for ROI and behavior-change analysis
+- **Multi-dashboard Power BI rollup (`-Rollup` / `-RollupPlusRaw` + `-Dashboard`):** Produce ready-to-load input for the Copilot Analytics Lab Power BI dashboards — **AI-in-One (AIO)**, the new **AI Business Value (AIBV)**, or **M365 Usage Analytics** — directly from a single PAX run via an embedded post-processor. The `-Dashboard` selector (default `AIO`) chooses the target dashboard; AIO and AIBV are produced from the same CopilotInteraction + Entra/MAC licensing data
 - Exports to structured CSV
 - Includes enriched usage & ROI fields (tokens, models, latency, acceptance metrics)
 - Implements adaptive time slicing to navigate service limits intelligently
@@ -102,8 +103,6 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - **Unattended Azure-hosted runs:** Sign in with a managed identity (`-Auth ManagedIdentity`) for scheduled/event-driven jobs on Azure Container Apps Jobs, Azure VMs, or similar Azure compute — no secrets to manage
 - **Graph API mode (default):** Supports Entra ID user enrichment + Microsoft 365 Copilot license detection via `-IncludeUserInfo` and `-OnlyUserInfo`; group expansion via `-GroupNames` uses `Get-MgGroup` + `Get-MgGroupMember` (requires `GroupMember.Read.All`)
 - **EOM mode (`-UseEOM`):** Supports group expansion via `-GroupNames` (uses `Get-DistributionGroupMember`) and 10K-per-query limit detection
-
-</details>
 
 </details>
 
@@ -446,6 +445,9 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -
 - [Microsoft 365 Usage Parameters](#microsoft-365-usage-parameters)
 - [Dual-Mode & Enrichment Parameters](#dual-mode--enrichment-parameters)
 
+*Power BI rollup output:*
+- [Rollup & Power BI Dashboard Parameters](#rollup--power-bi-dashboard-parameters)
+
 *Performance & reliability:*
 - [Parallel Execution Parameters](#parallel-execution-parameters)
 - [Advanced Tuning Parameters](#advanced-tuning-parameters)
@@ -460,14 +462,14 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -
 
 | A | B-C | D-E | F-I | L-O | P-R | S-Z |
 |---|-----|-----|-----|-----|-----|-----|
-| `-ActivityTypes` | `-BlockHours` | `-EmitMetricsJson` | `-Force` | `-LowLatencyMs` | `-PacingMs` | `-ServiceTypes` |
-| `-AdaptiveConcurrencyCeiling` | `-ClientCertificatePassword` | `-EndDate` | `-GroupNames` | `-MaxConcurrency` | `-ParallelMode` | `-StartDate` |
-| `-AgentId` | `-ClientCertificatePath` | `-ExcludeAgents` | `-Help` | `-MaxMemoryMB` | `-PromptFilter` | `-StatusIntervalSeconds` |
-| `-AgentsOnly` | `-ClientCertificateStoreLocation` | `-ExcludeCopilotInteraction` | `-IncludeCopilotInteraction` | `-MaxParallelGroups` | `-RecordTypes` | `-StreamingChunkSize` |
-| `-AppendFile` | `-ClientCertificateThumbprint` | `-ExportProgressInterval` | `-IncludeM365Usage` | `-MetricsPath` | `-Resume` | `-StreamingSchemaSample` |
-| `-Auth` | `-ClientId` |   | `-IncludeTelemetry` | `-OnlyUserInfo` | `-ResultSize` | `-TenantId` |
-| `-AutoCompleteness` | `-ClientSecret` |   | `-IncludeUserInfo` | `-OutputPath` |   | `-ThroughputDropPct` |
-|   | `-CombineOutput` |   |   |   |   | `-UseEOM` |
+| `-ActivityTypes` | `-BlockHours` | `-Dashboard` | `-Force` | `-LowLatencyMs` | `-PacingMs` | `-ServiceTypes` |
+| `-AdaptiveConcurrencyCeiling` | `-ClientCertificatePassword` | `-EmitMetricsJson` | `-GroupNames` | `-MaxConcurrency` | `-ParallelMode` | `-StartDate` |
+| `-AgentId` | `-ClientCertificatePath` | `-EndDate` | `-Help` | `-MaxMemoryMB` | `-PromptFilter` | `-StatusIntervalSeconds` |
+| `-AgentsOnly` | `-ClientCertificateStoreLocation` | `-ExcludeAgents` | `-IncludeCopilotInteraction` | `-MaxParallelGroups` | `-RecordTypes` | `-StreamingChunkSize` |
+| `-AppendFile` | `-ClientCertificateThumbprint` | `-ExcludeCopilotInteraction` | `-IncludeM365Usage` | `-MetricsPath` | `-Resume` | `-StreamingSchemaSample` |
+| `-Auth` | `-ClientId` | `-ExportProgressInterval` | `-IncludeTelemetry` | `-OnlyUserInfo` | `-ResultSize` | `-TenantId` |
+| `-AutoCompleteness` | `-ClientSecret` |   | `-IncludeUserInfo` | `-OutputPath` | `-Rollup` | `-ThroughputDropPct` |
+|   | `-CombineOutput` |   |   |   | `-RollupPlusRaw` | `-UseEOM` |
 |   |   |   |   |   |   | `-UserIds` |
 
 </details>
@@ -1150,6 +1152,71 @@ All audit-related parameters are incompatible and will trigger validation errors
 
 # Device code auth for automation/headless scenarios
 ./PAX_Purview_Audit_Log_Processor.ps1 -OnlyUserInfo -Auth DeviceCode
+```
+
+---
+
+### Rollup & Power BI Dashboard Parameters
+
+> These switches drive the embedded Python post-processor that produces input for the Copilot Analytics Lab Power BI dashboards. For the complete walkthrough — processor selection, runtime requirements, banner, checkpoint behavior, and examples — see the [Rollup Post-Processor (Power BI)](#rollup-post-processor-power-bi) section.
+
+#### `-Rollup` (switch)
+
+**Purpose:** Run the embedded Python post-processor after a successful export and **delete the raw CSV(s)** on success, leaving only the rolled-up Power BI dashboard input  
+**Default:** Off  
+**Mutually exclusive with:** `-RollupPlusRaw`  
+**Use When:**
+
+- Producing input for a Copilot Analytics Lab Power BI dashboard (AI-in-One, AI Business Value, or M365 Usage Analytics)
+- You only need the rolled-up output, not the raw audit CSV
+
+**Notes:**
+
+- Requires PowerShell 7+ and Python 3.10+ (auto-installed if missing; unavailable under `-UseEOM`).
+- The target dashboard is chosen by `-Dashboard` (default `AIO`).
+
+---
+
+#### `-RollupPlusRaw` (switch)
+
+**Purpose:** Same as `-Rollup`, but **keeps the raw CSV(s)** alongside the rolled-up output  
+**Default:** Off  
+**Mutually exclusive with:** `-Rollup`  
+**Use When:**
+
+- First-time validation — keep the raw CSV to spot-check the rollup output against the source data
+- You need both the raw audit export and the dashboard input from a single run
+
+---
+
+#### `-Dashboard` (string)
+
+**Purpose:** Selects which Copilot Analytics Lab dashboard a rollup run produces input for  
+**Valid values:** `AIO` (AI-in-One), `AIBV` (AI Business Value), `M365` (M365 Usage Analytics) — case-insensitive  
+**Default:** `AIO`  
+**Use When:**
+
+- Producing **AI Business Value** input (`-Dashboard AIBV`) instead of the default AI-in-One
+- Producing **M365 Usage Analytics** input (`-Dashboard M365`)
+
+**Behavior:**
+
+- **Default `AIO`:** A CopilotInteraction-only rollup produces AI-in-One output — byte-for-byte identical to prior script versions.
+- **`AIBV`:** Same CopilotInteraction data + Entra/MAC licensing, emitted in the AI Business Value output profile.
+- **`M365`:** Auto-enables `-IncludeM365Usage` and runs the M365 Usage Bundle processor.
+- **Auto-rollup:** Supplying `-Dashboard` without `-Rollup` / `-RollupPlusRaw` auto-enables `-Rollup`.
+- **Omitting `-Dashboard`** reproduces prior behavior exactly (AIO for CopilotInteraction, M365 when `-IncludeM365Usage` is present).
+- **Persisted to the checkpoint** (`rollupDashboard`) and restored on `-Resume` (last-write-wins).
+
+**Incompatibilities:**
+
+- `-Dashboard AIO` / `AIBV` cannot be combined with `-IncludeM365Usage` (different source data and processor) — PAX exits with an explicit error.
+
+**Example:**
+
+```powershell
+# AI Business Value dashboard input (auto-enables -Rollup)
+.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2026-04-01 -EndDate 2026-04-30 -Dashboard AIBV
 ```
 
 ---
@@ -3111,16 +3178,39 @@ ExchangeAdmin,ExchangeItem,ExchangeMailbox,SharePointFileOperation,SharePointSha
 <details>
 <summary>📊 View Rollup Post-Processor Guide (Click to Expand)</summary>
 
-> **Purpose & scope.** The `-Rollup` and `-RollupPlusRaw` switches (added in **v1.11.1**) exist **solely to produce input files for the Microsoft Copilot Growth ROI Advisory Team's Power BI templates** published at <https://github.com/microsoft/Analytics-Hub>. The rolled-up CSVs are shaped specifically for those templates — schema, column names, aggregation grain, and join keys are all dictated by the Power BI data models. **The rollup outputs are not intended for any other downstream use.** If you need a generic analytics export, run PAX without `-Rollup` / `-RollupPlusRaw` and consume the raw CSV directly.
+> **Purpose & scope.** The `-Rollup` and `-RollupPlusRaw` switches (added in **v1.11.1**) exist **solely to produce input files for the Microsoft Copilot Growth ROI Advisory Team's Power BI templates** published at <https://microsoft.github.io/CopilotAnalyticsLabs/>. The rolled-up CSVs are shaped specifically for those templates — schema, column names, aggregation grain, and join keys are all dictated by the Power BI data models. **The rollup outputs are not intended for any other downstream use.** If you need a generic analytics export, run PAX without `-Rollup` / `-RollupPlusRaw` and consume the raw CSV directly.
 
 ### Overview
 
-When `-Rollup` or `-RollupPlusRaw` is specified, PAX runs an **embedded Python post-processor** against the audit run's final CSV immediately after a successful export. The processor — and therefore the target Power BI template — is auto-selected based on the activity-type shape of the run:
+When `-Rollup` or `-RollupPlusRaw` is specified, PAX runs an **embedded Python post-processor** against the audit run's final CSV immediately after a successful export. Which processor runs — and therefore which Power BI dashboard the output feeds — is determined by the run's activity-type shape together with the `-Dashboard` selector:
 
-| Run shape | Embedded processor | Inputs consumed | Target Analytics-Hub dashboard(s) |
-| --- | --- | --- | --- |
-| **CopilotInteraction-only** (default activity type, or `-ActivityTypes 'CopilotInteraction'`) | `Purview_CopilotInteraction_Processor` | Purview CSV **+** Entra users CSV (`EntraUsers_MAClicensing_<timestamp>.csv`) | **AI-in-One** and **AI Business Value** |
-| **`-IncludeM365Usage`** | `Purview_M365_Usage_Bundle_Explosion_Processor` | Combined Purview CSV (single file) | **M365 Usage Analytics** |
+| Run shape | `-Dashboard` | Embedded processor | Inputs consumed | Target Copilot Analytics Lab dashboard |
+| --- | --- | --- | --- | --- |
+| **CopilotInteraction-only** (default activity type, or `-ActivityTypes 'CopilotInteraction'`) | `AIO` *(default)* | `Purview_CopilotInteraction_Processor` | Purview CSV **+** Entra users CSV (`EntraUsers_MAClicensing_<timestamp>.csv`) | **AI-in-One (AIO)** |
+| **CopilotInteraction-only** | `AIBV` | `Purview_CopilotInteraction_Processor` | Purview CSV **+** Entra users CSV (`EntraUsers_MAClicensing_<timestamp>.csv`) | **AI Business Value (AIBV)** |
+| **`-IncludeM365Usage`** (or `-Dashboard M365`) | `M365` | `Purview_M365_Usage_Bundle_Explosion_Processor` | Combined Purview CSV (single file) | **M365 Usage Analytics** |
+
+> The CopilotInteraction processor produces **AIO** output by default. Pass `-Dashboard AIBV` to produce the **AI Business Value** output instead from the same audit + Entra/MAC licensing data — the data PAX collects is identical; only the shape of the rolled-up output differs. See [Dashboard Selection](#dashboard-selection) below.
+
+### Dashboard Selection
+
+The `-Dashboard` parameter chooses which Copilot Analytics Lab dashboard a rollup run produces input for. It accepts one of three values and **defaults to `AIO`**, so existing rollup commands are unchanged.
+
+| Want this dashboard | Use | What runs |
+| --- | --- | --- |
+| **AI-in-One (AIO)** — the default | `-Rollup` *(or `-Rollup -Dashboard AIO`)* | CopilotInteraction processor, AIO output profile |
+| **AI Business Value (AIBV)** | `-Rollup -Dashboard AIBV` | CopilotInteraction processor, AIBV output profile |
+| **M365 Usage Analytics** | `-Rollup -IncludeM365Usage` *(or `-Rollup -Dashboard M365`)* | M365 Usage Bundle processor |
+
+**Defaults and conveniences:**
+
+- **Omitting `-Dashboard`** reproduces prior behavior exactly: `AIO` for a CopilotInteraction rollup, or `M365` when `-IncludeM365Usage` is present.
+- **`-Dashboard M365`** automatically enables `-IncludeM365Usage` (the M365 dashboard consumes the M365 usage bundle).
+- **`-Dashboard` supplied without `-Rollup` / `-RollupPlusRaw`** automatically enables `-Rollup` (never `-RollupPlusRaw`).
+- **AIO output is unchanged** from prior script versions — the default produces byte-for-byte the same files it did before `-Dashboard` existed.
+- The selected dashboard is persisted to the checkpoint and restored on `-Resume`, so a resumed AIBV run stays AIBV.
+
+> **`-Dashboard AIO` / `AIBV` cannot be combined with `-IncludeM365Usage`.** The Copilot dashboards (AIO/AIBV) and the M365 Usage Analytics dashboard read different source data **and** run different processors, so PAX rejects the combination with an explicit error — choose `-Dashboard M365` (or drop `-IncludeM365Usage`) instead.
 
 ### Switches
 
@@ -3137,6 +3227,8 @@ Depending on the run shape, the rollup feature auto-enables companion switches s
 
 - **CopilotInteraction-only run:** `-IncludeUserInfo` is auto-enabled so the Entra users CSV is produced (the processor consumes both files). See [User and Group Filtering](#user-and-group-filtering) and [Output Files & Schema](#output-files--schema).
 - **`-IncludeM365Usage` run:** `-CombineOutput` is auto-enabled by `-IncludeM365Usage` so a single combined Purview CSV is fed to the processor. See [Microsoft 365 Usage Bundle](#microsoft-365-usage-bundle).
+- **`-Dashboard M365`:** `-IncludeM365Usage` is auto-enabled (which in turn auto-enables `-CombineOutput`).
+- **`-Dashboard` without a rollup switch:** `-Rollup` is auto-enabled so the dashboard output is actually produced.
 
 ### Runtime Requirements
 
@@ -3148,11 +3240,11 @@ Depending on the run shape, the rollup feature auto-enables companion switches s
 
 ### Banner
 
-When the rollup feature is active, PAX prints a cyan banner near the start of the run identifying the selected processor, target Analytics-Hub dashboard(s), retention behavior, and runtime requirements — so the operator can confirm the correct Power BI template is being targeted before the audit query begins.
+When the rollup feature is active, PAX prints a cyan banner near the start of the run identifying the selected processor, target Copilot Analytics Lab dashboard, retention behavior, and runtime requirements — so the operator can confirm the correct Power BI template is being targeted before the audit query begins.
 
 ### Checkpoint Persistence
 
-Rollup configuration is persisted in the checkpoint JSON (`rollupMode` ∈ `None | Rollup | RollupPlusRaw`, plus `processorMode`). On resume, the saved values take precedence (last-write-wins) and the script re-derives the runtime processor selection so a resumed run produces the same Power BI input file as the original.
+Rollup configuration is persisted in the checkpoint JSON (`rollupMode` ∈ `None | Rollup | RollupPlusRaw`, `processorMode`, and `rollupDashboard` ∈ `AIO | AIBV | M365`). On resume, the saved values take precedence (last-write-wins) and the script re-derives the runtime processor selection so a resumed run produces the same Power BI input file as the original — a resumed AIBV run stays AIBV rather than reverting to the AIO default. An explicit `-Dashboard` on the resume command line overrides the saved value.
 
 ### Blocked Combinations
 
@@ -3161,19 +3253,23 @@ The rollup feature is intentionally narrow in scope. The script exits with an ex
 - `-UseEOM` (PowerShell 5.1 path)
 - `-OnlyUserInfo`
 - `-ExcludeCopilotInteraction` **without** `-IncludeM365Usage`
+- `-Dashboard AIO` or `-Dashboard AIBV` together with `-IncludeM365Usage` (the Copilot dashboards and the M365 dashboard use different source data and processors — pick one)
 
 ### Output Files
 
-Rolled-up CSVs are written to the same directory as the raw Purview CSV (default: `./output/`). File names follow the embedded processor's own naming conventions and are the exact files expected by the Analytics-Hub Power BI templates — **do not rename them**. See [Output Files & Schema](#output-files--schema) for the surrounding directory layout.
+Rolled-up CSVs are written to the same directory as the raw Purview CSV (default: `./output/`). File names follow the embedded processor's own naming conventions and are the exact files expected by the Copilot Analytics Lab Power BI templates — **do not rename them**. See [Output Files & Schema](#output-files--schema) for the surrounding directory layout.
 
 ### Examples
 
 ```powershell
-# CopilotInteraction-only rollup → AI-in-One + AI Business Value dashboards.
+# AI-in-One (AIO) dashboard — the default. CopilotInteraction-only rollup.
 # Raw CSV(s) deleted on success; only the rollup output remains.
 .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -Rollup
 
-# Same as above but keep the raw Purview + Entra users CSVs alongside the rollup output.
+# AI Business Value (AIBV) dashboard — same data, AIBV output profile.
+.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -Rollup -Dashboard AIBV
+
+# Same as the AIO example but keep the raw Purview + Entra users CSVs alongside the rollup output.
 .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -RollupPlusRaw
 
 # M365 Usage Analytics dashboard input. -IncludeM365Usage auto-enables -CombineOutput;
@@ -3183,10 +3279,10 @@ Rolled-up CSVs are written to the same directory as the raw Purview CSV (default
 
 ### Best Practices
 
-1. **Match the switch to the dashboard.** Use a CopilotInteraction-only run for **AI-in-One** / **AI Business Value**; use `-IncludeM365Usage` for **M365 Usage Analytics**. Mixing the two in a single run is not supported by the Power BI templates.
+1. **Pick your dashboard with `-Dashboard`.** A CopilotInteraction-only run defaults to **AI-in-One (AIO)**; add `-Dashboard AIBV` for **AI Business Value**; use `-IncludeM365Usage` (or `-Dashboard M365`) for **M365 Usage Analytics**. The Copilot dashboards (AIO/AIBV) and the M365 dashboard cannot be produced in the same run.
 2. **Prefer `-RollupPlusRaw` for first-time validation.** Keeping the raw CSV lets you spot-check the rollup output against the source data before deleting raws on subsequent runs.
-3. **Don't rename output files.** The Analytics-Hub templates load files by name pattern. Renaming will break the data refresh.
-4. **Don't repurpose rollup outputs.** The schemas are tuned for the named Power BI templates. For ad-hoc analytics, BI ingestion outside Analytics-Hub, or custom data warehouses, use the raw Purview CSV instead.
+3. **Don't rename output files.** The Copilot Analytics Lab templates load files by name pattern. Renaming will break the data refresh.
+4. **Don't repurpose rollup outputs.** The schemas are tuned for the named Power BI templates. For ad-hoc analytics, BI ingestion outside the Copilot Analytics Lab, or custom data warehouses, use the raw Purview CSV instead.
 5. **Review the rollup banner.** Confirm the displayed target dashboard matches your intended Power BI template before letting a long audit run continue.
 
 </details>
@@ -4742,11 +4838,11 @@ These are **suggestions**, not requirements, and are common to any read-only Pow
 - [AuditLog resource type](https://learn.microsoft.com/en-us/graph/api/resources/auditlog) — Graph API audit log documentation
 - [Exchange Online PowerShell](https://learn.microsoft.com/en-us/powershell/exchange/exchange-online-powershell) — Exchange Online module documentation (EOM mode)
 
-### Companion Analytics Hub
+### Copilot Analytics Lab
 
-The Microsoft Copilot Analytics Hub is the central landing page for PAX-compatible Power BI templates, dashboards, and companion analytics tooling — including the AI-in-One Dashboard, Copilot Chat & Agent Intelligence Dashboards, and the broader ROI / adoption / governance visualization library.
+The Copilot Analytics Lab is the central landing page for PAX-compatible Power BI templates, dashboards, and companion analytics tooling — including the AI-in-One (AIO) Dashboard, the AI Business Value (AIBV) Dashboard, the Copilot Chat & Agent Intelligence Dashboards, and the broader ROI / adoption / governance visualization library.
 
-- **[Microsoft Copilot Analytics Hub](https://github.com/microsoft/Copilot-Analytics-Hub)** — Single entry point for downstream visualization and analysis assets that consume PAX output
+- **[Copilot Analytics Lab](https://microsoft.github.io/CopilotAnalyticsLabs/)** — Single entry point for downstream visualization and analysis assets that consume PAX output
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
 

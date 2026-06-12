@@ -26,6 +26,15 @@ tests/**
 # Workspace file
 PAX.code-workspace
 
+# Dev-Trio files
+memory/
+AGENTS.md
+.github/agents/
+.github/instructions/
+.github/prompts/
+.github/copilot-instructions.md
+.dev-trio/
+
 # OS generated files
 .DS_Store
 .DS_Store?
@@ -56,3 +65,4 @@ Thumbs.db
 
 
 
+.dev-trio/wizard-progress.json
