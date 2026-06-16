@@ -1,5 +1,5 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.11.5
+# Version: v1.11.6
 # Requirements: PowerShell 7+ for default Graph API mode; PowerShell 5.1 supported ONLY with -UseEOM (serial Exchange Online Management mode, no parallel query/explosion).
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI activity types (specified via -ActivityTypes): AIInteraction, ConnectedAIAppInteraction, AIAppInteraction
@@ -505,8 +505,11 @@
 			   pane, ABFS URL → switch the scheme to https and the host to the DFS endpoint:
 			      -OutputPath "https://onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Lakehouse"
 			   Regional aliases of the form "https://<region>-onelake.dfs.fabric.microsoft.com/..."
-			   are also accepted. Tables land under <Lakehouse>/Tables; operational artifacts under
-			   <Lakehouse>/Files (the run log location is controllable via -OutputPathLog).
+			   are also accepted. The item may be given either by name (<item>.Lakehouse) or by its
+			   GUID with no suffix (the form the Fabric portal shows in the item URL,
+			   e.g. .../<workspaceId>/<itemId>); both are accepted. Tables land under
+			   <Lakehouse>/Tables; operational artifacts under <Lakehouse>/Files (the run log
+			   location is controllable via -OutputPathLog).
 			6. Schemas-mode Lakehouses: Microsoft Fabric's default new-Lakehouse template
 			   organizes tables as <Lakehouse>/Tables/<schema>/<table> (the default schema
 			   is 'dbo'). To land Delta tables under a specific schema on a Schemas-mode
@@ -1548,7 +1551,7 @@ param(
 	[Parameter(Mandatory = $false)]
 	[switch]$RollupPlusRaw,
 
-	# Rollup target dashboard selector (v1.11.5+). Chooses which embedded Python
+	# Rollup target dashboard selector. Chooses which embedded Python
 	# post-processor + output profile a rollup run produces:
 	#   AIO   (default) - AI-in-One dashboard          -> CopilotInteraction processor, --profile aio
 	#   AIBV            - AI Business Value dashboard   -> CopilotInteraction processor, --profile aibv
@@ -2087,7 +2090,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.11.5'
+$ScriptVersion = '1.11.6'
 
 # --- Initialize/Clear persistent script variables to prevent cross-run contamination ---
 # Note: Script-scoped variables persist across multiple script invocations in the same PowerShell session
@@ -2371,8 +2374,13 @@ $spUrlPattern     = '^https?://[^/]+\.sharepoint(?:-df|-mil)?\.[a-z]{2,3}(?:/.+)
 # (alpha/underscore start, then alphanumeric/underscore) to match the Schemas-mode
 # Lakehouse rules and the downstream Delta-write detection regex (search for
 # $fabricDeltaMode). Files/ subpaths remain permissive.
-$fabricRootPattern = '^https://([a-z0-9-]+-)?onelake\.dfs\.fabric\.microsoft\.com/[^/]+/[^/]+\.Lakehouse(/Tables(/[A-Za-z_][A-Za-z0-9_]*)?|/Files(/.+)?)?/?$'
-$fabricFilesPattern = '^https://([a-z0-9-]+-)?onelake\.dfs\.fabric\.microsoft\.com/[^/]+/[^/]+\.Lakehouse/Files(/.+)?/?$'
+# Item segment is EITHER the name form (<name>.Lakehouse, suffix required) OR the
+# GUID form (<itemGUID>, no suffix) - both are first-class OneLake DFS addressing
+# modes (learn.microsoft.com/fabric/onelake/onelake-access-api). The workspace
+# segment ([^/]+) already accepts a name or GUID.
+$fabricItemSeg     = '(?:[^/]+\.Lakehouse|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})'
+$fabricRootPattern = "^https://([a-z0-9-]+-)?onelake\.dfs\.fabric\.microsoft\.com/[^/]+/$fabricItemSeg(/Tables(/[A-Za-z_][A-Za-z0-9_]*)?|/Files(/.+)?)?/?`$"
+$fabricFilesPattern = "^https://([a-z0-9-]+-)?onelake\.dfs\.fabric\.microsoft\.com/[^/]+/$fabricItemSeg/Files(/.+)?/?`$"
 
 function script:Get-PathTier {
 	param([string]$Value, [string]$SwitchName, [switch]$AllowFabricFilesOnly)
@@ -2398,6 +2406,7 @@ function script:Get-PathTier {
 		Write-Host "         https://<tenant>.sharepoint.com/sites/<site>/<library>[/<sub>]" -ForegroundColor DarkGray
 		Write-Host "         https://onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Lakehouse" -ForegroundColor DarkGray
 		Write-Host "         https://onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Lakehouse/Tables" -ForegroundColor DarkGray
+		Write-Host "         https://onelake.dfs.fabric.microsoft.com/<workspaceGUID>/<itemGUID>   (GUID form, no .Lakehouse suffix)" -ForegroundColor DarkGray
 		exit 1
 	}
 	# Local: require drive-rooted absolute path.
@@ -3524,7 +3533,6 @@ $script:RollupProcessorMode = 'None'
 $script:RollupDashboard = 'None'
 $script:RollupDashboardProfile = $null
 
-# --- v1.11.5 Dashboard selector resolution (runs BEFORE the rollup gate) ---
 # Resolves -Dashboard <AIO|AIBV|M365> into auto-enabled switches so the existing
 # rollup gate + mode decision below operate on a consistent state. Acts only when
 # the user explicitly passed -Dashboard; the default 'AIO' is inert so a bare
@@ -10544,12 +10552,25 @@ function Resolve-FabricTarget {
 		throw "Fabric URL must include workspace and item: '$Url'"
 	}
 	$workspace = $segments[0]
-	$itemFull  = $segments[1]   # e.g. MyLakehouse.Lakehouse
-	if ($itemFull -notmatch '\.(Lakehouse|Warehouse)$') {
-		throw "Fabric item must end with .Lakehouse or .Warehouse: '$itemFull'"
+	$itemFull  = $segments[1]   # e.g. MyLakehouse.Lakehouse  OR  an item GUID
+	$itemGuidPattern = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+	if ($itemFull -match '\.(Lakehouse|Warehouse)$') {
+		$itemType  = $Matches[1]
+		$itemName  = $itemFull.Substring(0, $itemFull.Length - ($itemType.Length + 1))
 	}
-	$itemType  = $Matches[1]
-	$itemName  = $itemFull.Substring(0, $itemFull.Length - ($itemType.Length + 1))
+	elseif ($itemFull -match $itemGuidPattern) {
+		# GUID-addressed item: OneLake references the item by its GUID with no type
+		# suffix (https://onelake.dfs.fabric.microsoft.com/<wsGuid>/<itemGuid>/...).
+		# The DFS path is type-agnostic; PAX only emits Lakehouse-shaped output, so
+		# record the type as Lakehouse for display/diagnostics. ItemFull stays the
+		# GUID verbatim so every downstream path ("$FilesystemBase/$ItemFull/...")
+		# builds the correct GUID-form DFS URL.
+		$itemType  = 'Lakehouse'
+		$itemName  = $itemFull
+	}
+	else {
+		throw "Fabric item must end with .Lakehouse/.Warehouse, or be an item GUID: '$itemFull'"
+	}
 
 	$filesPath  = ''
 	$tablesPath = ''
@@ -10958,6 +10979,41 @@ function Test-RemoteDestination {
 	}
 }
 
+function Get-GraphErrorDetail {
+	# Best-effort extraction of the Microsoft Graph error body from a caught error.
+	# PowerShell attaches the raw HTTP response body to $_.ErrorDetails.Message for both
+	# Invoke-MgGraphRequest and Invoke-WebRequest; fall back to the response stream, then
+	# to the plain exception message. Returns a short single-line string for logging.
+	[CmdletBinding()]
+	param([Parameter(Mandatory)] $ErrorRecord)
+	$raw = $null
+	if ($ErrorRecord.ErrorDetails -and $ErrorRecord.ErrorDetails.Message) {
+		$raw = $ErrorRecord.ErrorDetails.Message
+	}
+	elseif ($ErrorRecord.Exception -and $ErrorRecord.Exception.Response) {
+		try {
+			$stream = $ErrorRecord.Exception.Response.GetResponseStream()
+			if ($stream) {
+				$reader = New-Object System.IO.StreamReader($stream)
+				$raw = $reader.ReadToEnd()
+				$reader.Dispose()
+			}
+		} catch { }
+	}
+	if (-not $raw) { return $ErrorRecord.Exception.Message }
+	# Try to pull error.code / error.message out of the JSON body.
+	try {
+		$j = $raw | ConvertFrom-Json -ErrorAction Stop
+		if ($j.error) {
+			$code = $j.error.code
+			$msg  = $j.error.message
+			return ("{0}: {1}" -f $code, $msg).Trim(': ')
+		}
+	} catch { }
+	# Non-JSON body - return a trimmed single line.
+	return ($raw -replace '\s+', ' ').Trim()
+}
+
 function Send-FileToSharePoint {
 	[CmdletBinding()]
 	param(
@@ -10987,16 +11043,33 @@ function Send-FileToSharePoint {
 	$fileInfo = Get-Item -LiteralPath $LocalPath
 	$sizeMb = $fileInfo.Length / 1MB
 
-	if ($fileInfo.Length -le 4MB) {
+	# Graph simple upload (PUT .../content) supports up to 250 MB; use it for everything
+	# under a conservative cap so moderate files avoid the resumable-upload-session API
+	# (which some locked-down libraries / egress proxies reject even when a simple PUT is
+	# allowed). Files above the cap still use createUploadSession + chunked PUT.
+	$simpleUploadMax = 100MB
+	if ($fileInfo.Length -le $simpleUploadMax) {
 		$putUri = "https://graph.microsoft.com/v1.0/drives/$($resolved.DriveId)/root:/${relPath}:/content"
 		$bytes  = [System.IO.File]::ReadAllBytes($LocalPath)
-		Invoke-MgGraphRequest -Method PUT -Uri $putUri -Body $bytes -ContentType 'application/octet-stream' -ErrorAction Stop | Out-Null
+		try {
+			Invoke-MgGraphRequest -Method PUT -Uri $putUri -Body $bytes -ContentType 'application/octet-stream' -ErrorAction Stop | Out-Null
+		}
+		catch {
+			$detail = Get-GraphErrorDetail -ErrorRecord $_
+			throw "SharePoint simple upload (PUT) failed for '$relPath': $detail"
+		}
 	}
 	else {
 		# Create upload session
 		$sessUri = "https://graph.microsoft.com/v1.0/drives/$($resolved.DriveId)/root:/${relPath}:/createUploadSession"
 		$sessBody = @{ item = @{ '@microsoft.graph.conflictBehavior' = 'replace'; name = $fileName } } | ConvertTo-Json -Depth 4
-		$session = Invoke-MgGraphRequest -Method POST -Uri $sessUri -Body $sessBody -ContentType 'application/json' -ErrorAction Stop
+		try {
+			$session = Invoke-MgGraphRequest -Method POST -Uri $sessUri -Body $sessBody -ContentType 'application/json' -ErrorAction Stop
+		}
+		catch {
+			$detail = Get-GraphErrorDetail -ErrorRecord $_
+			throw "createUploadSession failed for '$relPath': $detail"
+		}
 		$uploadUrl = $session.uploadUrl
 		if (-not $uploadUrl) { throw "SharePoint createUploadSession returned no uploadUrl for '$relPath'." }
 
@@ -12648,24 +12721,60 @@ function Connect-PurviewAudit {
 						Clear-Variable -Name credential -Force -ErrorAction SilentlyContinue
 					}
 					elseif (-not [string]::IsNullOrWhiteSpace($certThumbprint)) {
+						# Normalize: strip spaces and any non-hex paste artifacts (the Windows cert
+						# dialog can prepend a hidden left-to-right mark), then upper-case.
+						$certThumbprint = ($certThumbprint -replace '[^0-9A-Fa-f]', '').ToUpperInvariant()
 						Write-LogHost "  -> Authenticating with certificate thumbprint $certThumbprint" -ForegroundColor Gray
-						$storeLocation = [System.Security.Cryptography.X509Certificates.StoreLocation]::$script:ClientCertificateStoreLocation
-						$store = New-Object System.Security.Cryptography.X509Certificates.X509Store("My", $storeLocation)
-						$store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
-						try {
-							$certificate = $store.Certificates | Where-Object { $_.Thumbprint -eq $certThumbprint }
-							if (-not $certificate) {
-								Write-LogHost "ERROR: Certificate with thumbprint '$certThumbprint' not found in $script:ClientCertificateStoreLocation store." -ForegroundColor Red
-								throw "Certificate not found"
+						# Search the requested store first, then the OTHER store. App-registration
+						# certs on servers are commonly in LocalMachine\My even when the run defaults
+						# to CurrentUser; this finds the cert in either location.
+						$requestedLoc = $script:ClientCertificateStoreLocation
+						$otherLoc     = if ($requestedLoc -eq 'LocalMachine') { 'CurrentUser' } else { 'LocalMachine' }
+						$certificate  = $null
+						$resolvedLoc  = $null
+						foreach ($loc in @($requestedLoc, $otherLoc)) {
+							$storeLocation = [System.Security.Cryptography.X509Certificates.StoreLocation]::$loc
+							$store = New-Object System.Security.Cryptography.X509Certificates.X509Store("My", $storeLocation)
+							try {
+								$store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
+								$match = @($store.Certificates | Where-Object { $_.Thumbprint -eq $certThumbprint })
+								if ($match.Count -gt 0) {
+									# Prefer a copy that carries the private key.
+									$withKey = @($match | Where-Object { $_.HasPrivateKey } | Select-Object -First 1)
+									$certificate = if ($withKey.Count -gt 0) { $withKey[0] } else { $match[0] }
+									$resolvedLoc = $loc
+									break
+								}
 							}
-							# Store cert thumbprint for re-authentication
-							$script:AuthConfig.CertThumbprint = $certThumbprint
-							$script:AuthConfig.CanReauthenticate = $true
-							Connect-MgGraph -TenantId $appTenantId -ClientId $appClientId -CertificateThumbprint $certThumbprint -NoWelcome -ErrorAction Stop
+							catch {
+								# This store could not be opened/read (e.g. access denied to
+								# LocalMachine\My); skip it and try the other store.
+							}
+							finally {
+								$store.Close()
+							}
 						}
-						finally {
-							$store.Close()
+						if (-not $certificate) {
+							Write-LogHost "ERROR: Certificate with thumbprint '$certThumbprint' not found in CurrentUser\My or LocalMachine\My." -ForegroundColor Red
+							throw "Certificate not found"
 						}
+						if (-not $certificate.HasPrivateKey) {
+							Write-LogHost "ERROR: Certificate '$certThumbprint' was found in $resolvedLoc\My but has no accessible private key (only the public .cer appears to be installed, or the running account cannot read the key)." -ForegroundColor Red
+							throw "Certificate has no usable private key"
+						}
+						if ($resolvedLoc -ne $requestedLoc) {
+							Write-LogHost "  -> Certificate located in $resolvedLoc\My (requested store was $requestedLoc\My)." -ForegroundColor Gray
+						}
+						# Pin the resolved cert object for the whole run + token refreshes. Passing
+						# -Certificate (not -CertificateThumbprint) makes the lookup deterministic and
+						# independent of which stores the SDK searches; pinning prevents the
+						# SafeCertContext handle from being GC-invalidated on later token requests
+						# (same rationale as the -ClientCertificatePath branch).
+						$script:AuthConfig.CertThumbprint   = $certThumbprint
+						$script:AuthConfig.CertStoreLocation = $resolvedLoc
+						$script:AuthConfig.CertObject        = $certificate
+						$script:AuthConfig.CanReauthenticate = $true
+						Connect-MgGraph -TenantId $appTenantId -ClientId $appClientId -Certificate $certificate -NoWelcome -ErrorAction Stop
 					}
 					elseif (-not [string]::IsNullOrWhiteSpace($certPath)) {
 						Write-LogHost "  -> Authenticating with certificate file $certPath" -ForegroundColor Gray
@@ -13045,10 +13154,20 @@ function Invoke-TokenRefresh {
 		# Try certificate thumbprint
 		elseif ($script:AuthConfig.CertThumbprint) {
 			Write-LogHost "  [TOKEN-REFRESH] Reconnecting with certificate thumbprint..." -ForegroundColor Gray
-			Connect-MgGraph -TenantId $script:AuthConfig.TenantId `
-				-ClientId $script:AuthConfig.ClientId `
-				-CertificateThumbprint $script:AuthConfig.CertThumbprint `
-				-NoWelcome -ErrorAction Stop
+			if ($script:AuthConfig.CertObject) {
+				# Reuse the cert object resolved + pinned at initial login (carries the
+				# CurrentUser/LocalMachine resolution; avoids re-searching the stores).
+				Connect-MgGraph -TenantId $script:AuthConfig.TenantId `
+					-ClientId $script:AuthConfig.ClientId `
+					-Certificate $script:AuthConfig.CertObject `
+					-NoWelcome -ErrorAction Stop
+			}
+			else {
+				Connect-MgGraph -TenantId $script:AuthConfig.TenantId `
+					-ClientId $script:AuthConfig.ClientId `
+					-CertificateThumbprint $script:AuthConfig.CertThumbprint `
+					-NoWelcome -ErrorAction Stop
+			}
 			$reconnected = $true
 		}
 		# Try certificate file
@@ -22491,7 +22610,7 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		# Fetch user directory and license data if requested (Graph API mode only)
 		$script:LicenseData = $null
 		$script:EntraUsersData = $null
-		# Option C (v1.11.5): Entra user directory fetch outcome flags. Surfaced in the
+		# Entra user directory fetch outcome flags. Surfaced in the
 		# end-of-run summary and exit code so a failed/partial directory fetch can never
 		# be silently masked behind "Enterprise Export Complete".
 		$script:EntraUsersFetchFailed = $false
@@ -31163,7 +31282,23 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				# by appending the table name to whatever was supplied. Schema names are
 				# constrained to identifier-style strings (alpha/underscore start, then
 				# alphanumeric/underscore) to match Fabric Lakehouse schema-name rules.
-				$fabricDeltaMode = ($script:RemoteOutputMode -eq 'Fabric' -and $script:RemoteOutputUrl -match '/Tables(/[A-Za-z_][A-Za-z0-9_]*)?/?$')
+				# Delta-write applies to (a) an explicit /Tables[/<schema>] URL, OR (b) a
+				# bare lakehouse ROOT URL (name- or GUID-addressed). RootMode comes from the
+				# URL decomposition (true ONLY when the URL is exactly <workspace>/<item>
+				# with no /Files or /Tables tail), so a /Files/<anything> URL (even one whose
+				# leaf looks like a GUID) is correctly NOT treated as a root. An explicit
+				# /Files URL stays a file (operational) upload.
+				$fabricDeltaMode = $false
+				if ($script:RemoteOutputMode -eq 'Fabric') {
+					$isTablesUrl = ($script:RemoteOutputUrl -match '/Tables(/[A-Za-z_][A-Za-z0-9_]*)?/?$')
+					try {
+						$fabricModeResolved = Resolve-FabricTarget -Url $script:RemoteOutputUrl
+						$fabricDeltaMode = [bool]($fabricModeResolved.RootMode -or $isTablesUrl)
+					}
+					catch {
+						$fabricDeltaMode = [bool]$isTablesUrl
+					}
+				}
 				$deltaPyResolved = $null
 				$deltaTokenForWrite = $null
 				$deltaReady = $false
@@ -31222,7 +31357,17 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 						$tableName = [System.IO.Path]::GetFileNameWithoutExtension($uploadFile.Name)
 						$tableName = ($tableName -replace '_\d{8}_\d{6}$', '')
 						# Per-data-type Tables/ base when the file's data-type has its own URL.
-						$deltaBase = if ($dtParentUrl) { $dtParentUrl.TrimEnd('/') } else { $script:RemoteOutputUrl.TrimEnd('/') }
+						# Root URLs auto-route under Tables/; an explicit /Tables[/<schema>]
+						# base is used as-is; an explicit /Files[/...] base is left alone (the
+						# file still lands where the user pointed it - checked FIRST so a /Files
+						# leaf that looks like a GUID is never rewritten to /Tables).
+						$deltaBaseRaw = if ($dtParentUrl) { $dtParentUrl.TrimEnd('/') } else { $script:RemoteOutputUrl.TrimEnd('/') }
+						if ($deltaBaseRaw -match '/Tables(/[A-Za-z_][A-Za-z0-9_]*)?$' -or $deltaBaseRaw -match '/Files(/.+)?$') {
+							$deltaBase = $deltaBaseRaw
+						}
+						else {
+							$deltaBase = "$deltaBaseRaw/Tables"   # lakehouse root (name or GUID) -> Tables/
+						}
 						$deltaTargetUri = "$deltaBase/$tableName"
 						try {
 							$writeOk = Convert-CsvToDelta -InputCsv $uploadFile.FullName -TargetUri $deltaTargetUri -Mode 'overwrite' -BearerToken $deltaTokenForWrite -PythonExe $deltaPyResolved.Path -LauncherArgs $deltaPyResolved.Args
@@ -31232,14 +31377,14 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 							else {
 								Write-LogHost ("WARNING: Delta write failed for '{0}'; falling back to Files/ upload." -f $uploadFile.Name) -ForegroundColor Yellow
 								try { Invoke-OutputUpload -LocalPath $uploadFile.FullName -ParentOverride $dtParentUrl } catch {
-									Write-LogHost ("WARNING: Files/ upload also failed for '{0}': {1}" -f $uploadFile.Name, $_.Exception.Message) -ForegroundColor Yellow
+									Write-LogHost ("WARNING: Files/ upload also failed for '{0}': {1}" -f $uploadFile.Name, (Get-GraphErrorDetail -ErrorRecord $_)) -ForegroundColor Yellow
 								}
 							}
 						}
 						catch {
 							Write-LogHost ("WARNING: Delta write threw for '{0}': {1}. Falling back to Files/ upload." -f $uploadFile.Name, $_.Exception.Message) -ForegroundColor Yellow
 							try { Invoke-OutputUpload -LocalPath $uploadFile.FullName -ParentOverride $dtParentUrl } catch {
-								Write-LogHost ("WARNING: Files/ upload also failed for '{0}': {1}" -f $uploadFile.Name, $_.Exception.Message) -ForegroundColor Yellow
+								Write-LogHost ("WARNING: Files/ upload also failed for '{0}': {1}" -f $uploadFile.Name, (Get-GraphErrorDetail -ErrorRecord $_)) -ForegroundColor Yellow
 							}
 						}
 					}
@@ -31247,7 +31392,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 						try {
 							Invoke-OutputUpload -LocalPath $uploadFile.FullName -ParentOverride $dtParentUrl
 						} catch {
-							Write-LogHost ("WARNING: Upload failed for '{0}': {1}" -f $uploadFile.Name, $_.Exception.Message) -ForegroundColor Yellow
+							Write-LogHost ("WARNING: Upload failed for '{0}': {1}" -f $uploadFile.Name, (Get-GraphErrorDetail -ErrorRecord $_)) -ForegroundColor Yellow
 						}
 					}
 				}
