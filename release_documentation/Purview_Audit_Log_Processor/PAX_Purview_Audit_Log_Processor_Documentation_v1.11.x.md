@@ -1,8 +1,8 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.5.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.5/PAX_Purview_Audit_Log_Processor_v1.11.5.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.6.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.6/PAX_Purview_Audit_Log_Processor_v1.11.6.ps1)
 >
-> **📅 Script v1.11.5 Release Date:** 2026-06-12
+> **📅 Script v1.11.6 Release Date:** 2026-06-16
 >
 > **📋 Release Notes:** See what's new → [v1.11.x Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
@@ -10,7 +10,7 @@
 >
 > **📚 Documentation Archive:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
-**Documentation Version:** v1.11.x (Current Script Version: v1.11.5)
+**Documentation Version:** v1.11.x (Current Script Version: v1.11.6)
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 7+ (required for default Graph API mode); PowerShell 5.1 supported only with `-UseEOM`  
 **License:** MIT
@@ -648,7 +648,7 @@ Automating scripts, using headless terminals, or SSO scenarios
 
 #### `-ClientCertificateStoreLocation` (string)
 
-**Purpose:** Store location used with `-ClientCertificateThumbprint`  
+**Purpose:** Preferred certificate store to search first with `-ClientCertificateThumbprint`; if the certificate is not found there, PAX automatically checks the other store  
 **Valid Values:** `CurrentUser` (default), `LocalMachine`
 
 ---
@@ -2051,6 +2051,13 @@ https://onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Lakehouse[/Tables[/<
 https://onelake.dfs.fabric.microsoft.com/<workspace>/<item>.Lakehouse[/Files[/<folder>]]
 ```
 
+The workspace and item may be addressed either by **name** or by their **GUIDs**. The GUID form omits the `.Lakehouse` suffix and uses the workspace ID and item ID exactly as they appear in the lakehouse's Fabric portal page URL:
+
+```
+https://onelake.dfs.fabric.microsoft.com/<workspaceId>/<itemId>[/Tables[/<schema>]]
+https://onelake.dfs.fabric.microsoft.com/<workspaceId>/<itemId>[/Files[/<folder>]]
+```
+
 **Recommended:** point `-OutputPath` at the lakehouse root — PAX automatically routes Delta tables to `Tables/` and operational artifacts to `Files/`:
 
 ```
@@ -2069,7 +2076,7 @@ Warehouse items (`.Warehouse` suffix) are also accepted by the URL parser, but D
 
 1. In the Fabric portal, open the destination workspace.
 2. Note the **workspace name** (the URL segment after `/groups/<id>/` in the browser, *or* the display name shown in the workspace settings). The workspace name in the URL is case-sensitive.
-3. Open the destination **lakehouse**. Note its name — that is the `<item>` value. The suffix must be `.Lakehouse` exactly.
+3. Open the destination **lakehouse**. Note its name — that is the `<item>` value; when you address the item by name, the `.Lakehouse` suffix is required. Alternatively, use the workspace ID and item ID shown in the lakehouse's Fabric portal page URL (`.../groups/<workspaceId>/lakehouses/<itemId>`) as the `<workspaceId>/<itemId>` form, which needs no suffix.
 4. (Optional) For finer control, append `/Tables` (or `/Tables/<schema>` on a Schemas-mode Lakehouse) to direct Delta tables, or `/Files/<folder>` to direct operational artifacts. Otherwise, just use the lakehouse root and PAX handles routing automatically.
 5. Assemble the URL in the shape shown above.
 
@@ -2079,7 +2086,7 @@ Warehouse items (`.Warehouse` suffix) are also accepted by the URL parser, but D
 |---|---|
 | Anything from a **Power BI report**, **dataset**, or **semantic model** link | Those are different surfaces; PAX writes to OneLake `Tables/` and `Files/`, not to a model or report. |
 | The lakehouse **portal URL** from your browser (e.g. `https://app.fabric.microsoft.com/groups/<guid>/lakehouses/<guid>`) | That is a UI page. PAX needs the OneLake DFS URL, which begins with `https://onelake.dfs.fabric.microsoft.com/`. |
-| A URL with no item-type suffix (missing `.Lakehouse` or `.Warehouse`) | OneLake routes requests by item type; the suffix is required. |
+| An item **name** with no item-type suffix (for example `.../Analytics/PAX` instead of `.../Analytics/PAX.Lakehouse`) | When the item is addressed by name, OneLake routes by item type, so the `.Lakehouse` (or `.Warehouse`) suffix is required. The all-GUID form (`.../<workspaceId>/<itemId>`) is the exception and needs no suffix. |
 | `http://...` (no `s`) | PAX requires HTTPS. |
 
 ### Required permissions (all three layers — partial setup will fail)
@@ -2146,7 +2153,7 @@ pip install deltalake
 
 | What you see | Most likely cause | What to do |
 |---|---|---|
-| `OneLake URL is not in the expected shape` at the very start | Missing `.Lakehouse` / `.Warehouse` suffix, wrong host, or malformed path | Rebuild the URL using the shape in *How to get the right URL* above. |
+| `OneLake URL is not in the expected shape` at the very start | Item name missing its `.Lakehouse` / `.Warehouse` suffix (not needed for the all-GUID form), wrong host, or malformed path | Rebuild the URL using the shape in *How to get the right URL* above. |
 | `Access denied to OneLake Tables/...` or `Files/...` during pre-flight | Identity is missing one of: Azure role, Fabric workspace role, or tenant setting | Verify all three layers in the permissions table above. If two are in place, suspect the tenant setting — only a Fabric admin can change it. |
 | `Module 'Az.Accounts' could not be installed` or `Az.Accounts not found` | Locked-down host that blocks PowerShell Gallery, or the module was never installed | Pre-install with `Install-Module Az.Accounts -Scope CurrentUser` (or AllUsers) from an environment that can reach PowerShell Gallery. |
 | `deltalake` Python package errors during table write | Python or `deltalake` not present on the host | Install Python 3.9+ and `pip install deltalake`. |
@@ -4662,7 +4669,7 @@ If adaptive scaling appears too assertive in your environment, lower `-AdaptiveC
 **Problem:** Run fails at the very start with "OneLake URL is not in the expected shape."
 
 **Solutions:**
-- The URL must start with `https://onelake.dfs.fabric.microsoft.com/` and address a Lakehouse (`.Lakehouse`) or Warehouse (`.Warehouse`) item under a workspace. The lakehouse-root form is recommended — PAX writes Delta tables under `Tables/` and operational artifacts (logs, JSONL incrementals, metrics) under `Files/` automatically.
+- The URL must start with `https://onelake.dfs.fabric.microsoft.com/` and address a Lakehouse or Warehouse item under a workspace — either by name (with the `.Lakehouse` / `.Warehouse` suffix) or by the workspace ID and item ID (no suffix). The lakehouse-root form is recommended — PAX writes Delta tables under `Tables/` and operational artifacts (logs, JSONL incrementals, metrics) under `Files/` automatically.
 - Do **not** paste the Fabric portal URL (`https://app.fabric.microsoft.com/...`); that is a UI page, not the OneLake DFS endpoint.
 - For schema-enabled lakehouses you may also point at `Tables/<schema>` (e.g., `.Lakehouse/Tables/dbo`).
 - See [Sending Output to Microsoft Fabric (OneLake)](#sending-output-to-microsoft-fabric-onelake) for the URL guide.
@@ -4709,7 +4716,7 @@ If adaptive scaling appears too assertive in your environment, lower `-AdaptiveC
 | Group filtering             | Supported in both modes — EOM filters server-side via `Search-UnifiedAuditLog -UserIds` after expanding via `Get-DistributionGroupMember`; Graph API mode expands via `Get-MgGroupMember` and applies the user filter client-side after retrieval | In Graph API mode, combine `-GroupNames` with tight date ranges / `-RecordTypes` to keep the retrieval window small |
 | Microsoft 365 Usage bundle  | Requires per-workload Graph scopes: `AuditLogsQuery-Exchange.Read.All`, `AuditLogsQuery-OneDrive.Read.All`, `AuditLogsQuery-SharePoint.Read.All` in addition to base `AuditLogsQuery.Read.All` | Consent the per-workload scopes at first run. Without them, the bundle silently returns no data for the missing workloads. |
 | SharePoint output URL       | `-OutputPath` accepts SharePoint folder URLs only in canonical form (`https://<tenant>.sharepoint.com/sites/<site>/<library>/...`). Sharing links (`/:f:/s/...`), `_layouts/` pages, `Forms/AllItems.aspx` view URLs, query-string URLs, OneDrive personal sites, and HTTP URLs are all rejected. | Copy the URL from the browser address bar while *viewing the destination folder*; strip everything from `?` onward. See [Sending Output to SharePoint](#sending-output-to-sharepoint). |
-| Fabric output URL           | `-OutputPath` accepts Fabric output only as OneLake DFS URLs that address a Lakehouse (`.Lakehouse`) or Warehouse (`.Warehouse`) item under a workspace (lakehouse-root form recommended; `.Lakehouse/Tables/<schema>` also accepted for schema-enabled lakehouses). Fabric portal URLs and Power BI report/dataset URLs are rejected. PAX writes Delta tables under `Tables/` and operational artifacts (logs, JSONL incrementals, metrics) under `Files/` automatically. | Build the URL using the workspace and lakehouse/warehouse names. See [Sending Output to Microsoft Fabric (OneLake)](#sending-output-to-microsoft-fabric-onelake). |
+| Fabric output URL           | `-OutputPath` accepts Fabric output only as OneLake DFS URLs that address a Lakehouse or Warehouse item under a workspace — by name (`.Lakehouse` / `.Warehouse` suffix) or by workspace ID and item ID (no suffix); lakehouse-root form recommended, `.Lakehouse/Tables/<schema>` also accepted for schema-enabled lakehouses. Fabric portal URLs and Power BI report/dataset URLs are rejected. PAX writes Delta tables under `Tables/` and operational artifacts (logs, JSONL incrementals, metrics) under `Files/` automatically. | Build the URL using the workspace and lakehouse/warehouse names (or their IDs). See [Sending Output to Microsoft Fabric (OneLake)](#sending-output-to-microsoft-fabric-onelake). |
 | Fabric permissions          | Fabric output requires **three** layers: Azure role `Storage Blob Data Contributor`, Fabric workspace **Contributor** role, and Fabric tenant setting *Service principals can use Fabric APIs* enabled (for `AppRegistration` / `ManagedIdentity`). Partial setup will fail at the pre-flight check. | Coordinate the three roles with the workspace owner, Azure subscription admin, and Fabric tenant admin before scheduling unattended runs. |
 
 ### Additional Notes

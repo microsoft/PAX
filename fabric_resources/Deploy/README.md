@@ -112,7 +112,7 @@ The container image itself is **auth-agnostic** — it just bakes in PowerShell 
 
 ## Per-data-type destinations and append targets
 
-The two examples above route every output to the same location (Purview audit, EntraUsers, Agent 365 catalog, and run log all land at `-OutputPath`'s folder or the run log's `Files/logs/` sibling). PAX lets each stream go to its own location through a symmetric `-OutputPath*` / `-Append*` switch pair. **Storage tier is inferred from each path's form** — drive-rooted = Local, `https://…sharepoint.com/…` = SharePoint, `https://…onelake.dfs.fabric.microsoft.com/…Lakehouse/…` = Fabric.
+The two examples above route every output to the same location (Purview audit, EntraUsers, Agent 365 catalog, and run log all land at `-OutputPath`'s folder or the run log's `Files/logs/` sibling). PAX lets each stream go to its own location through a symmetric `-OutputPath*` / `-Append*` switch pair. **Storage tier is inferred from each path's form** — drive-rooted = Local, `https://…sharepoint.com/…` = SharePoint, `https://…onelake.dfs.fabric.microsoft.com/…` = Fabric.
 
 | Stream | Destination switch | Append switch |
 |---|---|---|
@@ -178,7 +178,7 @@ For `-Auth AppRegistration`:
 | `-ClientId <guid>` | App registration client ID | `GRAPH_CLIENT_ID` |
 | `-ClientSecret <string>` | Client secret value | `GRAPH_CLIENT_SECRET` |
 | `-ClientCertificateThumbprint <hex>` | Cert thumbprint in `My` store | `GRAPH_CLIENT_CERT_THUMBPRINT` |
-| `-ClientCertificateStoreLocation <CurrentUser\|LocalMachine>` | Store location for thumbprint lookup (default `CurrentUser`) | — |
+| `-ClientCertificateStoreLocation <CurrentUser\|LocalMachine>` | Preferred store to search first for the thumbprint (default `CurrentUser`); PAX checks the other store automatically if not found | — |
 | `-ClientCertificatePath <path>` | Path to a PFX file on disk | `GRAPH_CLIENT_CERT_PATH` |
 | `-ClientCertificatePassword <SecureString>` | PFX password | `GRAPH_CLIENT_CERT_PASSWORD` |
 
@@ -329,6 +329,7 @@ Or open the file share in Azure Storage Explorer / Azure portal. The failed cont
   - `https://<tenant>.onelake.dfs.fabric.microsoft.com/<Workspace>/<Lakehouse>.Lakehouse` — main Delta tables go under the Lakehouse's default `Tables/` area.
   - `…/<Lakehouse>.Lakehouse/Tables` — explicit non-Schemas form.
   - `…/<Lakehouse>.Lakehouse/Tables/<schema>` — Schemas-enabled Lakehouse (current Fabric default; typical value is `dbo`).
+  - The workspace and item may be addressed by their **GUIDs** with no `.Lakehouse` suffix instead of by name (e.g. `…/<workspace-guid>/<lakehouse-guid>/Tables/dbo`) — the GUIDs shown in the Lakehouse's Fabric portal page URL.
   Pass `-OutputPathLog "…/<Lakehouse>.Lakehouse/Files/<subpath>"` for the run log (`Files/` namespace).
 - **Delta table names come from the local CSV filename**, not from the trailing segment of your `-OutputPath*` URL. PAX strips the `_YYYYMMDD_HHMMSS` run-timestamp suffix and uses what remains (e.g. `PAX_Purview_Audit_Log`, `EntraUsers`, `Agent365`). Successive runs against the same URL therefore overwrite the same Delta table.
 - **Replica timeout:** Default is 21600 s (6h). Override with `-ReplicaTimeoutSeconds`. Long Purview pulls can exceed this — bump as needed.

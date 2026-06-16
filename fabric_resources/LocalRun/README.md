@@ -80,11 +80,15 @@ This is the fastest possible Fabric-from-laptop on-ramp. It uses `-Auth WebLogin
    ```
    abfss://<workspace-guid>@onelake.dfs.fabric.microsoft.com/<lakehouse-guid>/Tables
    ```
-   PAX does **not** accept the `abfss://` form directly — convert it to the equivalent HTTPS DFS form, substituting the workspace and Lakehouse display names (not the GUIDs) shown in the Fabric portal:
+   PAX does **not** accept the `abfss://` form directly — convert it to the equivalent HTTPS DFS form. The quickest conversion keeps the GUIDs and only changes the scheme and host (move the workspace ID in front of the host, drop the `@`):
+   ```
+   https://onelake.dfs.fabric.microsoft.com/<workspace-guid>/<lakehouse-guid>/Tables
+   ```
+   You can equivalently use the workspace and Lakehouse display names shown in the Fabric portal, in which case the item takes the `.Lakehouse` suffix:
    ```
    https://onelake.dfs.fabric.microsoft.com/<Workspace>/<Lakehouse>.Lakehouse/Tables
    ```
-   For Schemas-mode Lakehouses (the current Fabric default), append the schema name — typically `dbo`:
+   For Schemas-mode Lakehouses (the current Fabric default), append the schema name — typically `dbo` (either form):
    ```
    https://onelake.dfs.fabric.microsoft.com/<Workspace>/<Lakehouse>.Lakehouse/Tables/dbo
    ```
@@ -114,7 +118,7 @@ If the laptop is replaced by a server (or just any always-on Windows host) and y
 1. **Create an Entra ID app registration** in the portal. Note its tenant ID and application (client) ID.
 2. **Add the Microsoft Graph application permissions** from section 4 to the app registration. Click **Grant admin consent** at the API permissions blade.
 3. **Add the app registration as Contributor on the Fabric workspace** — section 3 (use the app registration's display name, not your user account).
-4. **Upload a certificate** to the app registration (Certificates & secrets blade). Install the matching PFX on the host machine into `CurrentUser\My` (or `LocalMachine\My`). Note the thumbprint.
+4. **Upload a certificate** to the app registration (Certificates & secrets blade). Install the matching PFX on the host machine into `CurrentUser\My` (or `LocalMachine\My` — PAX searches both stores automatically). Note the thumbprint.
 5. **Set environment variables** for the scheduled task (so secrets never appear on the command line):
    ```powershell
    [Environment]::SetEnvironmentVariable('GRAPH_TENANT_ID',                '<tenant-guid>',     'User')
@@ -176,7 +180,7 @@ This is functionally identical to the container path but skips the ACR + ACA lay
 
 ## Per-data-type destinations and append targets
 
-Each output stream has an independent `-OutputPath*` / `-Append*` switch pair. **Storage tier is inferred from each path's form** (drive-rooted = Local, `https://…sharepoint.com/…` = SharePoint, `https://…onelake.dfs.fabric.microsoft.com/…Lakehouse/…` = Fabric). UNC paths (`\\server\share\…`) are rejected on every destination switch.
+Each output stream has an independent `-OutputPath*` / `-Append*` switch pair. **Storage tier is inferred from each path's form** (drive-rooted = Local, `https://…sharepoint.com/…` = SharePoint, `https://…onelake.dfs.fabric.microsoft.com/…` = Fabric). UNC paths (`\\server\share\…`) are rejected on every destination switch.
 
 | Stream | Destination | Append target |
 |---|---|---|
@@ -275,6 +279,8 @@ The end-of-run summary reports the raw path and the merged target on separate li
 | Explicit `Tables/` | `-OutputPath` | `…/PAX.Lakehouse/Tables` |
 | Schemas-mode `Tables/<schema>` | `-OutputPath` (recommended for current Fabric) | `…/PAX.Lakehouse/Tables/dbo` |
 | `Files/<subpath>` | `-OutputPathLog`, other non-tabular outputs | `…/PAX.Lakehouse/Files/pax_logs` |
+
+In every shape above, the workspace and item may be addressed either by **name** (the item taking the `.Lakehouse` suffix, as shown) or by their **GUIDs** with no suffix — for example `https://onelake.dfs.fabric.microsoft.com/<workspace-guid>/<lakehouse-guid>/Tables/dbo`. The GUIDs are the values shown in the Lakehouse's Fabric portal page URL.
 
 Delta table names come from the local CSV basename (with the `_YYYYMMDD_HHMMSS` run-timestamp suffix stripped), not from the trailing segment of your URL. Successive runs against the same URL therefore overwrite the same Delta table.
 

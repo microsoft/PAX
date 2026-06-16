@@ -72,7 +72,7 @@ Tier inference per path form:
 |---|---|
 | Drive-rooted absolute path (`C:\Data\…`, `/mnt/data/…`) | Local |
 | `https://…sharepoint.com/…` URL | SharePoint |
-| `https://…onelake.dfs.fabric.microsoft.com/…Lakehouse/…` URL | Fabric |
+| `https://…onelake.dfs.fabric.microsoft.com/…` URL | Fabric |
 | UNC (`\\server\share\…`) | **rejected** on all destination switches |
 
 Validation rules enforced at parameter time:

@@ -2,8 +2,8 @@
 
 ## Release Information
 
-- **Latest Version:** 1.11.5
-- **Latest Release Date:** 2026-06-12
+- **Latest Version:** 1.11.6
+- **Latest Release Date:** 2026-06-16
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,12 +12,32 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.11.5:** [PAX_Purview_Audit_Log_Processor_v1.11.5.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.5/PAX_Purview_Audit_Log_Processor_v1.11.5.ps1)
+- **PAX Purview Audit Log Processor Script v1.11.6:** [PAX_Purview_Audit_Log_Processor_v1.11.6.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.6/PAX_Purview_Audit_Log_Processor_v1.11.6.ps1)
 - **Documentation v1.11.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md)
 
 ---
 
 ## Overview
+
+### v1.11.6
+
+Version 1.11.6 is a targeted reliability release that resolves four independent customer-reported issues in the remote-output and authentication paths. It adds no parameters, changes no switch semantics, and makes no output-schema changes — each fix is scoped to the Microsoft Fabric / OneLake destination handling, certificate logon, or SharePoint upload plumbing. Two fixes make Fabric destinations more forgiving (accepting the portal's GUID URL form, and writing Delta tables when `-OutputPath` points at a Lakehouse root), one makes certificate logon find a machine-installed certificate, and one makes larger SharePoint uploads reliable while reporting the real cause when an upload is rejected.
+
+#### Microsoft Fabric OneLake GUID URL Support
+
+PAX now accepts a Fabric destination addressed by **GUID** — `https://onelake.dfs.fabric.microsoft.com/<workspaceId>/<itemId>` with no `.Lakehouse` suffix, the form the Fabric portal exposes in the item URL — in addition to the existing name form (`<workspace>/<item>.Lakehouse`). Previously a pasted GUID URL was rejected at the command-line destination gate with `-OutputPath URL is not a recognized SharePoint or Fabric Lakehouse destination`. Both forms now work end-to-end across upload, Delta-write, download, and resume, and regional OneLake aliases are accepted for both. See [Bug Fixes → v1.11.6](#v1116-2) for details.
+
+#### Delta Tables From a Lakehouse Root Destination
+
+Pointing `-OutputPath` (or a per-data-type `-OutputPath*`) at a **Lakehouse root** URL — name- or GUID-addressed — now writes the customer-visible tables as Delta tables under `Tables/`, with operational artifacts (run log, metrics, checkpoint) under `Files/`, matching the documented behavior. Previously a bare root URL uploaded the CSVs as plain files under `Files/`; only an explicit `/Tables[/<schema>]` URL triggered the Delta-write path. Explicit `/Tables` and `/Files` destinations are unaffected, and the automatic fallback to a `Files/` upload on a Delta-write failure is retained. See [Bug Fixes → v1.11.6](#v1116-2) for details.
+
+#### Certificate Logon Searches Both Certificate Stores
+
+App-registration certificate logon (`-Auth AppRegistration` with `-ClientCertificateThumbprint`) now searches **both** the `CurrentUser\My` and `LocalMachine\My` certificate stores, so a certificate installed machine-wide on a server is found even on a run that defaults to `CurrentUser`. The supplied thumbprint is normalized (stray spaces and hidden paste characters stripped), the resolved certificate is pinned for the run and reused on token refresh, and a clearer error is emitted when only the public certificate — without an accessible private key — is installed. See [Bug Fixes → v1.11.6](#v1116-2) for details.
+
+#### Reliable SharePoint Upload of Larger Files
+
+Larger output files now upload more reliably to SharePoint, and any upload failure now reports the underlying Microsoft Graph error reason instead of an opaque `BadRequest`. Files up to a conservative size cap use Graph's single-request *simple upload* (the same path that already works for small artifacts), so moderate rollup CSVs no longer depend on the resumable upload-session API that some locked-down libraries or egress proxies reject; genuinely large files continue to use the chunked upload-session path. See [Bug Fixes → v1.11.6](#v1116-2) for details.
 
 ### v1.11.5
 
@@ -140,6 +160,48 @@ New sixth value on the `-Auth` ValidateSet for Azure-hosted headless execution (
 ---
 
 ## What's New
+
+### v1.11.6
+
+#### Microsoft Fabric OneLake GUID URL Support (v1.11.6)
+
+| Area | Details |
+| --- | --- |
+| **What's new** | A Fabric / OneLake destination may now be addressed by GUID — `https://onelake.dfs.fabric.microsoft.com/<workspaceId>/<itemId>` with no `.Lakehouse` suffix — in addition to the existing name form (`<workspace>/<item>.Lakehouse`). The GUID form is the one the Fabric portal exposes in the item URL, so it can be pasted directly without converting to the name form. |
+| **Where it applies** | Accepted by the command-line destination gate and the OneLake target resolver, so both forms work end-to-end across upload, Delta-write, download, and resume. Regional OneLake aliases (`https://<region>-onelake.dfs.fabric.microsoft.com/...`) are accepted for both forms. |
+| **Guidance** | The in-script Fabric setup help notes that either form is accepted, and the destination-rejection message shown for a genuinely malformed URL now lists the GUID form among the valid examples. |
+| **Compatibility** | Additive — the name form is unchanged; no parameter, dependency, or output-schema change. |
+
+#### Delta Tables From a Lakehouse Root Destination (v1.11.6)
+
+| Area | Details |
+| --- | --- |
+| **What's new** | Pointing `-OutputPath` (or a per-data-type `-OutputPath*`) at a Lakehouse **root** URL — name- or GUID-addressed — now writes the customer-visible tables as Delta tables under `Tables/`, with operational artifacts (run log, metrics, checkpoint) under `Files/`, matching the documented "point `-OutputPath` at the lakehouse root" behavior. |
+| **Previously** | A bare root URL fell through to a plain `Files/` CSV upload; only an explicit `/Tables[/<schema>]` URL triggered the Delta-write path. |
+| **Precise routing** | Detection uses the resolved URL shape, so an explicit `/Files/...` destination — even one whose trailing segment looks like a GUID — is treated as a file upload and never rewritten to `/Tables`. |
+| **Safety net** | If a Delta write fails for any reason, PAX falls back to a `Files/` upload of the same CSV with a warning (unchanged). |
+| **Compatibility** | Runs that already targeted an explicit `/Tables[/<schema>]` URL produce identical output; runs targeting an explicit `/Files/...` path are unaffected. |
+
+#### Certificate Logon — Dual Certificate-Store Search (v1.11.6)
+
+| Area | Details |
+| --- | --- |
+| **What's new** | `-Auth AppRegistration` certificate logon (`-ClientCertificateThumbprint`) now searches both the `CurrentUser\My` and `LocalMachine\My` certificate stores. The store named by `-ClientCertificateStoreLocation` is searched first; the other store is the fallback, so a machine-installed certificate is found on a run that defaults to `CurrentUser`. |
+| **Thumbprint normalization** | The supplied thumbprint is normalized before lookup — non-hex characters (stray spaces, or a hidden left-to-right mark the Windows certificate dialog can prepend on copy) are stripped, then upper-cased. |
+| **Clearer errors** | A certificate that is present but installed without an accessible private key (public `.cer` only) now produces an explicit "found … but has no accessible private key" error instead of a later, less obvious token failure. |
+| **Handle stability** | The resolved certificate object is pinned for the run and reused on token refresh, so the credential handle stays valid on long runs. |
+| **Compatibility** | `-ClientCertificateStoreLocation` still works and now selects the preferred (first-searched) store; the second-store search only fires when the certificate is not found in the requested store. |
+
+#### SharePoint Upload Reliability for Larger Files (v1.11.6)
+
+| Area | Details |
+| --- | --- |
+| **What's new** | Output files up to a conservative size cap now use Microsoft Graph's single-request *simple upload* (`PUT .../content`) rather than crossing to the resumable upload-session API at the legacy 4 MB boundary. Moderate rollup CSVs take the same one-request path that already works for small artifacts in the destination library. |
+| **Large files** | Files above the cap continue to use the chunked upload-session path (unchanged, including the existing chunk-encoding fix). |
+| **Better diagnostics** | Every SharePoint / OneLake upload failure now surfaces the underlying Microsoft Graph error reason (`error.code` / `error.message`) in the run log instead of an opaque status string, so a rejected upload is self-diagnosing. |
+| **Compatibility** | Behavior changes only for files between the old 4 MB cutover and the new cap (now a single request); small and genuinely large files are unchanged. No schema or switch change. |
+
+---
 
 ### v1.11.5
 
@@ -434,6 +496,16 @@ Excel filenames, Excel tab names, and the `EntraUsers_*` / `Agent365_*` filename
 
 ## Bug Fixes
 
+### v1.11.6
+
+- **(v1.11.6) Fabric / OneLake destinations addressed by GUID are no longer rejected.** A OneLake URL whose item segment was a GUID with no `.Lakehouse` suffix — the form copied directly from the Fabric portal — was rejected at the command-line destination gate with `-OutputPath URL is not a recognized SharePoint or Fabric Lakehouse destination`, even though it is a valid OneLake DFS address. The destination gate and the OneLake target resolver now accept the GUID form in addition to the name form, so the pasted portal URL works without manual conversion. Both forms flow unchanged through the upload, Delta-write, download, and resume paths; regional OneLake aliases are accepted for both.
+
+- **(v1.11.6) A Fabric Lakehouse root `-OutputPath` now writes Delta tables instead of CSV files.** Pointing `-OutputPath` at a Lakehouse root URL silently uploaded the customer-visible tables as plain CSV files under `Files/` rather than writing Delta tables under `Tables/`, contradicting the documented "point `-OutputPath` at the lakehouse root" guidance. Root URLs (name- or GUID-addressed) now auto-route Delta tables to `Tables/` with operational artifacts under `Files/`. Detection uses the resolved URL shape so an explicit `/Files/...` destination — even one whose trailing segment looks like a GUID — is correctly left as a file upload, and the automatic `Files/`-upload fallback on a Delta-write failure is retained. Runs that already targeted an explicit `/Tables[/<schema>]` or `/Files/...` URL are unaffected.
+
+- **(v1.11.6) `Certificate not found` when the app-registration certificate is installed in `LocalMachine\My`.** On a server where the app-registration certificate was installed in the machine store, `-Auth AppRegistration` with `-ClientCertificateThumbprint` failed at startup with `Certificate with thumbprint '…' not found in CurrentUser store` and `Graph API authentication failed: Certificate not found`, because only the requested store (default `CurrentUser`) was searched. The certificate logon now searches both `CurrentUser\My` and `LocalMachine\My` (requested store first), normalizes the supplied thumbprint (stripping stray spaces and hidden paste characters), and emits an explicit "found … but has no accessible private key" error when only the public `.cer` is installed. The resolved certificate is pinned and reused on token refresh.
+
+- **(v1.11.6) Large rollup CSVs no longer fail their SharePoint upload with an opaque `BadRequest`.** On some tenants the small run log uploaded to SharePoint successfully while the larger rollup CSVs failed with `Response status code does not indicate success: BadRequest (Bad Request)` and no indication of the cause — the failure occurred when the larger files crossed into the resumable upload-session path. Moderate files now use the same single-request simple-upload path that already succeeds for small artifacts (avoiding the upload-session call below a conservative size cap), and when any upload does fail the run log now reports the underlying Microsoft Graph `error.code` / `error.message` so the cause (for example a library policy, size restriction, or egress proxy) is identifiable. Genuinely large files (above the cap) still use the chunked upload-session path.
+
 ### v1.11.5
 
 - **(v1.11.5) Entra user directory export no longer fails silently on very large tenants.** On tenants with very large directories (hundreds of thousands of users), the EntraUsers / MAC licensing fetch hit an internal paging-safety stop partway through, the error was caught and downgraded to a warning, and — because the downstream writers are gated on a populated result — the EntraUsers file was never written, yet the run still printed `=== Enterprise Export Complete ===`, making total data loss look like a clean success. The fetch is now scale-aware (it pages through large directories instead of aborting), reports a failed or partial fetch loudly in the end-of-run summary, and returns a new non-zero exit code (`30`) so automation can detect it; when a fetch stops after collecting some pages, the partial directory is still written (schema-complete) and flagged as partial rather than discarded. The Microsoft Graph `$expand=manager` enrichment is retained, so manager / org-hierarchy columns are unaffected. The fix is scoped to the Entra directory collection path and its end-of-run reporting; the audit-log query/export paths and all storage-tier upload paths are unchanged.
@@ -515,6 +587,16 @@ The following authentication and certificate-handling fixes apply to `-Auth AppR
 ---
 
 ## Known Considerations
+
+### v1.11.6
+
+- **(v1.11.6) Fabric / OneLake destinations accept the GUID URL form:** A OneLake URL may address the item by GUID with no suffix (`https://onelake.dfs.fabric.microsoft.com/<workspaceId>/<itemId>`, the form the Fabric portal shows in the item URL) in addition to the name form (`<workspace>/<item>.Lakehouse`). The change is additive — the name form is unchanged — and both forms work end-to-end across upload, Delta-write, download, and resume. Regional OneLake aliases are accepted for both.
+
+- **(v1.11.6) A Lakehouse root `-OutputPath` now writes Delta tables under `Tables/`:** A bare root URL (name- or GUID-addressed) now routes the customer-visible CSVs to Delta tables under `Tables/`, with operational artifacts under `Files/`, instead of uploading the CSVs as plain files under `Files/`. Runs that already targeted an explicit `/Tables[/<schema>]` URL produce identical output; runs targeting an explicit `/Files/...` path are unaffected (still a file upload). The automatic fallback to a `Files/` upload on a Delta-write failure is retained.
+
+- **(v1.11.6) Certificate logon searches both certificate stores:** `-Auth AppRegistration` with `-ClientCertificateThumbprint` now searches both `CurrentUser\My` and `LocalMachine\My`. `-ClientCertificateStoreLocation` still works and now selects the preferred (first-searched) store rather than the only one; the second-store search fires only when the certificate is not found in the requested store. The supplied thumbprint is normalized (stray spaces and hidden characters stripped), and a certificate installed without an accessible private key now produces an explicit error rather than a later token failure.
+
+- **(v1.11.6) SharePoint simple-upload threshold raised:** Output files up to a conservative size cap now upload to SharePoint in a single Microsoft Graph request (the path that already works for small artifacts), avoiding the resumable upload-session API that some locked-down libraries or egress proxies reject; genuinely large files still use the chunked upload-session path. Upload failures now log the underlying Graph `error.code` / `error.message` in addition to the existing warning.
 
 ### v1.11.5
 

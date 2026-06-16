@@ -65,7 +65,7 @@ PAX routes each data type to its own destination through a symmetric `-OutputPat
 
 - Drive-rooted absolute path (`C:\Data\…`) → Local tier.
 - `https://…sharepoint.com/…` URL → SharePoint tier.
-- `https://…onelake.dfs.fabric.microsoft.com/…Lakehouse/…` URL → Fabric tier.
+- `https://…onelake.dfs.fabric.microsoft.com/…` URL → Fabric tier.
 - UNC paths (`\\server\share\…`) are rejected on every destination switch.
 
 The seven switches and their pairings:
