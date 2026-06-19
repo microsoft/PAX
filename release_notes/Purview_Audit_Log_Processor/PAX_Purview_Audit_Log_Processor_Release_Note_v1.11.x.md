@@ -2,8 +2,8 @@
 
 ## Release Information
 
-- **Latest Version:** 1.11.6
-- **Latest Release Date:** 2026-06-16
+- **Latest Version:** 1.11.7
+- **Latest Release Date:** TBD
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,12 +12,20 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.11.6:** [PAX_Purview_Audit_Log_Processor_v1.11.6.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.6/PAX_Purview_Audit_Log_Processor_v1.11.6.ps1)
+- **PAX Purview Audit Log Processor Script v1.11.7:** [PAX_Purview_Audit_Log_Processor_v1.11.7.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.7/PAX_Purview_Audit_Log_Processor_v1.11.7.ps1)
 - **Documentation v1.11.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md)
 
 ---
 
 ## Overview
+
+### v1.11.7
+
+Version 1.11.7 is a single-change follow-up to the v1.11.6 SharePoint upload work. It raises the simple-upload size cap from 100 MB to 250 MB — Microsoft Graph's documented maximum for a single-request upload — so larger rollup CSVs take the same one-request path that already works in locked-down libraries instead of crossing over to the resumable upload-session API at 100 MB. It adds no parameters, changes no switch semantics, and makes no output-schema changes; behavior changes only for files between 100 MB and 250 MB.
+
+#### Larger SharePoint Uploads Use Graph's Simple-Upload Ceiling
+
+The SharePoint simple-upload size cap is raised from 100 MB to 250 MB, the documented maximum for a single-request `PUT .../content`. Files at or below 250 MB now use the single-request path that already works for small and moderate artifacts in locked-down destination libraries, rather than crossing to the resumable upload-session API at 100 MB. Files above 250 MB are unchanged and continue to use the chunked upload-session path, which the destination library and network must permit. See [Bug Fixes → v1.11.7](#v1117-1) for details.
 
 ### v1.11.6
 
@@ -496,6 +504,10 @@ Excel filenames, Excel tab names, and the `EntraUsers_*` / `Agent365_*` filename
 
 ## Bug Fixes
 
+### v1.11.7
+
+- **(v1.11.7) Output files between 100 MB and 250 MB now upload to SharePoint in a single request.** v1.11.6 routed files up to a conservative 100 MB cap through Microsoft Graph's single-request simple upload (the path that already works in locked-down libraries) and larger files through the resumable upload-session API. On tenants whose document library or egress proxy rejects the upload-session API, a rollup CSV between 100 MB and 250 MB (most often the `..._Interactions.csv`) crossed into that path and failed with `createUploadSession failed … 400 (Bad Request) invalidRequest`, while smaller artifacts in the same run uploaded successfully. The simple-upload cap is raised from 100 MB to 250 MB — Microsoft Graph's documented maximum for a single-request `PUT .../content` — so those files now take the same single-request path that already succeeds in the affected environments. Files larger than 250 MB still require the chunked upload-session path (there is no single-request option above that size), which the destination library and network must permit. No parameter, switch, or output-schema change.
+
 ### v1.11.6
 
 - **(v1.11.6) Fabric / OneLake destinations addressed by GUID are no longer rejected.** A OneLake URL whose item segment was a GUID with no `.Lakehouse` suffix — the form copied directly from the Fabric portal — was rejected at the command-line destination gate with `-OutputPath URL is not a recognized SharePoint or Fabric Lakehouse destination`, even though it is a valid OneLake DFS address. The destination gate and the OneLake target resolver now accept the GUID form in addition to the name form, so the pasted portal URL works without manual conversion. Both forms flow unchanged through the upload, Delta-write, download, and resume paths; regional OneLake aliases are accepted for both.
@@ -587,6 +599,10 @@ The following authentication and certificate-handling fixes apply to `-Auth AppR
 ---
 
 ## Known Considerations
+
+### v1.11.7
+
+- **(v1.11.7) SharePoint simple-upload cap raised to 250 MB:** Output files up to 250 MB (raised from 100 MB in v1.11.6) now upload to SharePoint in a single Microsoft Graph request — the documented maximum for a simple `PUT .../content` — avoiding the resumable upload-session API that some locked-down libraries or egress proxies reject. Files larger than 250 MB are unchanged: Microsoft Graph offers no single-request upload above that size, so they continue to use the chunked upload-session path, which the destination library and outbound network/proxy must permit (for example, by exempting `graph.microsoft.com` and `*.sharepoint.com` from TLS break-and-inspect). Behavior changes only for files between 100 MB and 250 MB; smaller files and files above 250 MB are unaffected. No parameter or schema change.
 
 ### v1.11.6
 

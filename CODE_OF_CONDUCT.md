@@ -11,8 +11,3 @@ This project has adopted the [Microsoft Open Source Code of Conduct](https://ope
 ---
 
 For security or vulnerability reports, please follow the guidance in `SECURITY.md`.
-
-
-
-
-<!-- PAX-v1.0.4 -->
