@@ -63,6 +63,4 @@ Thumbs.db
 # Logs
 *.log
 
-
-
 .dev-trio/wizard-progress.json

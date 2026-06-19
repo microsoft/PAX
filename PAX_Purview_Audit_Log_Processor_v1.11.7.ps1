@@ -1,5 +1,5 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.11.6
+# Version: v1.11.7
 # Requirements: PowerShell 7+ for default Graph API mode; PowerShell 5.1 supported ONLY with -UseEOM (serial Exchange Online Management mode, no parallel query/explosion).
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI activity types (specified via -ActivityTypes): AIInteraction, ConnectedAIAppInteraction, AIAppInteraction
@@ -2090,7 +2090,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.11.6'
+$ScriptVersion = '1.11.7'
 
 # --- Initialize/Clear persistent script variables to prevent cross-run contamination ---
 # Note: Script-scoped variables persist across multiple script invocations in the same PowerShell session
@@ -10294,8 +10294,8 @@ function Write-DeltaAppend {
 # SharePoint path:
 #   - Reuses the existing Connect-MgGraph token (Graph audience).
 #   - Resolves the SP URL to siteId/driveId/folder via Graph site lookup.
-#   - Small files (<= 4 MB): PUT /drives/{driveId}/root:/path:/content
-#   - Large files: createUploadSession + 5 MB chunked PUT (must be 320 KB-aligned).
+#   - Files <= 250 MB: PUT /drives/{driveId}/root:/path:/content (Graph simple-upload max)
+#   - Larger files: createUploadSession + 5 MB chunked PUT (must be 320 KB-aligned).
 #
 # Fabric/OneLake path:
 #   - Uses a SEPARATE token with audience https://storage.azure.com/ (Az.Accounts).
@@ -11044,10 +11044,10 @@ function Send-FileToSharePoint {
 	$sizeMb = $fileInfo.Length / 1MB
 
 	# Graph simple upload (PUT .../content) supports up to 250 MB; use it for everything
-	# under a conservative cap so moderate files avoid the resumable-upload-session API
-	# (which some locked-down libraries / egress proxies reject even when a simple PUT is
-	# allowed). Files above the cap still use createUploadSession + chunked PUT.
-	$simpleUploadMax = 100MB
+	# up to that ceiling so as many files as possible avoid the resumable-upload-session
+	# API (which some locked-down libraries / egress proxies reject even when a simple PUT
+	# is allowed). Files above 250 MB still use createUploadSession + chunked PUT.
+	$simpleUploadMax = 250MB
 	if ($fileInfo.Length -le $simpleUploadMax) {
 		$putUri = "https://graph.microsoft.com/v1.0/drives/$($resolved.DriveId)/root:/${relPath}:/content"
 		$bytes  = [System.IO.File]::ReadAllBytes($LocalPath)

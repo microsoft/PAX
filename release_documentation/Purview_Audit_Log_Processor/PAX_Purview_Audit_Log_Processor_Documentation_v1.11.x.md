@@ -1,8 +1,8 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.6.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.6/PAX_Purview_Audit_Log_Processor_v1.11.6.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.7.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.7/PAX_Purview_Audit_Log_Processor_v1.11.7.ps1)
 >
-> **📅 Script v1.11.6 Release Date:** 2026-06-16
+> **📅 Script v1.11.7 Release Date:** 2026-06-19
 >
 > **📋 Release Notes:** See what's new → [v1.11.x Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
@@ -10,7 +10,7 @@
 >
 > **📚 Documentation Archive:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
-**Documentation Version:** v1.11.x (Current Script Version: v1.11.6)
+**Documentation Version:** v1.11.x (Current Script Version: v1.11.7)
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 7+ (required for default Graph API mode); PowerShell 5.1 supported only with `-UseEOM`  
 **License:** MIT
@@ -389,7 +389,7 @@ The **Purview Audit Reader** role is only required for EOM mode (`-UseEOM`) and 
 
 ### Download the Script
 
-- **Script:** [PAX_Purview_Audit_Log_Processor_v1.11.3.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.3/PAX_Purview_Audit_Log_Processor_v1.11.3.ps1)
+- **Script:** [PAX_Purview_Audit_Log_Processor_v1.11.7.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.7/PAX_Purview_Audit_Log_Processor_v1.11.7.ps1)
 - **Release Notes:** [v1.11.x](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md)
 
 Save the downloaded script to a working directory (e.g., `C:\Scripts\PAX\`).
@@ -3185,7 +3185,7 @@ ExchangeAdmin,ExchangeItem,ExchangeMailbox,SharePointFileOperation,SharePointSha
 <details>
 <summary>📊 View Rollup Post-Processor Guide (Click to Expand)</summary>
 
-> **Purpose & scope.** The `-Rollup` and `-RollupPlusRaw` switches (added in **v1.11.1**) exist **solely to produce input files for the Microsoft Copilot Growth ROI Advisory Team's Power BI templates** published at <https://microsoft.github.io/CopilotAnalyticsLabs/>. The rolled-up CSVs are shaped specifically for those templates — schema, column names, aggregation grain, and join keys are all dictated by the Power BI data models. **The rollup outputs are not intended for any other downstream use.** If you need a generic analytics export, run PAX without `-Rollup` / `-RollupPlusRaw` and consume the raw CSV directly.
+> **Purpose & scope.** The `-Rollup` and `-RollupPlusRaw` switches exist **solely to produce input files for the Microsoft Copilot Growth ROI Advisory Team's Power BI templates** published at <https://microsoft.github.io/CopilotAnalyticsLabs/>. The rolled-up CSVs are shaped specifically for those templates — schema, column names, aggregation grain, and join keys are all dictated by the Power BI data models. **The rollup outputs are not intended for any other downstream use.** If you need a generic analytics export, run PAX without `-Rollup` / `-RollupPlusRaw` and consume the raw CSV directly.
 
 ### Overview
 
@@ -4324,7 +4324,7 @@ The script can emit a metrics JSON capturing execution telemetry and final state
 **JSON Includes (illustrative):**
 ```json
 {
-	"ScriptVersion": "1.11.2",
+	"ScriptVersion": "1.11.7",
 	"StartTimestampUtc": "2025-10-26T14:05:23Z",
 	"EndTimestampUtc": "2025-10-26T14:07:11Z",
 	"TotalWindows": 42,
