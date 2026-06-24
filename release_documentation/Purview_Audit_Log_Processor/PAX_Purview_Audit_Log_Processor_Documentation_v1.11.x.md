@@ -1,8 +1,8 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.7.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.7/PAX_Purview_Audit_Log_Processor_v1.11.7.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.8.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.8/PAX_Purview_Audit_Log_Processor_v1.11.8.ps1)
 >
-> **📅 Script v1.11.7 Release Date:** 2026-06-19
+> **📅 Script v1.11.8 Release Date:** June 23, 2026
 >
 > **📋 Release Notes:** See what's new → [v1.11.x Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
@@ -10,7 +10,7 @@
 >
 > **📚 Documentation Archive:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
-**Documentation Version:** v1.11.x (Current Script Version: v1.11.7)
+**Documentation Version:** v1.11.x (Current Script Version: v1.11.8)
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 7+ (required for default Graph API mode); PowerShell 5.1 supported only with `-UseEOM`  
 **License:** MIT
@@ -34,7 +34,7 @@
 
 **The audit data exported by this script is highly sensitive.** Output may contain user identifiers (UPN, email, GUID), file/site/resource paths, conversation and message IDs, agent identifiers, prompt/response metadata (timestamps, lengths, classifications), and other personally identifiable information drawn directly from your tenant's Unified Audit Log.
 
-- **Data is NOT hashed, masked, redacted, anonymized, or de-identified** in any way. Records are exported in their raw, attributable form exactly as Microsoft Purview returns them.
+- **By default, data is NOT hashed, masked, redacted, anonymized, or de-identified** in any way. Records are exported in their raw, attributable form exactly as Microsoft Purview returns them. *(An optional `-Deidentify` switch can anonymize the output — replacing identities with irreversible tokens — when you intend to share anonymized data. It is OFF by default, so the warning here applies to every standard run. See [Deidentification (Anonymized Output)](#deidentification-anonymized-output).)*
 - Outputs (CSV/JSON metrics, checkpoint files, logs) may contain confidential business content, regulated data (PII, PHI, financial, IP), and end-user communications.
 - **The customer (you / your organization) is solely responsible** for the secure handling, storage, transmission, retention, disclosure, access control, and deletion of all data produced by this script, and for ensuring its use complies with all applicable laws, regulations, contractual obligations, and internal policies — including but not limited to GDPR, HIPAA, CCPA, employee monitoring laws, works-council agreements, and data-residency requirements.
 - **Microsoft has no visibility into, control over, or responsibility for** the data customers extract using this tool or how that data is subsequently used, shared, or stored. Microsoft disclaims any and all liability arising from or related to customer use of this script and its output.
@@ -68,13 +68,14 @@
 17. [Incremental Data Collection](#incremental-data-collection)
 18. [Checkpoint & Resume](#checkpoint--resume)
 19. [Output Files & Schema](#output-files--schema)
-20. [Activity Types Reference](#activity-types-reference)
-21. [Record & Service Filters](#record--service-filters)
-22. [Advanced Features](#advanced-features)
-23. [Performance Tuning](#performance-tuning)
-24. [Troubleshooting](#troubleshooting)
-25. [Known Limitations](#known-limitations)
-26. [Security & Compliance](#security--compliance)
+20. [Deidentification (Anonymized Output)](#deidentification-anonymized-output)
+21. [Activity Types Reference](#activity-types-reference)
+22. [Record & Service Filters](#record--service-filters)
+23. [Advanced Features](#advanced-features)
+24. [Performance Tuning](#performance-tuning)
+25. [Troubleshooting](#troubleshooting)
+26. [Known Limitations](#known-limitations)
+27. [Security & Compliance](#security--compliance)
 
 ---
 
@@ -103,6 +104,8 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - **Unattended Azure-hosted runs:** Sign in with a managed identity (`-Auth ManagedIdentity`) for scheduled/event-driven jobs on Azure Container Apps Jobs, Azure VMs, or similar Azure compute — no secrets to manage
 - **Graph API mode (default):** Supports Entra ID user enrichment + Microsoft 365 Copilot license detection via `-IncludeUserInfo` and `-OnlyUserInfo`; group expansion via `-GroupNames` uses `Get-MgGroup` + `Get-MgGroupMember` (requires `GroupMember.Read.All`)
 - **EOM mode (`-UseEOM`):** Supports group expansion via `-GroupNames` (uses `Get-DistributionGroupMember`) and 10K-per-query limit detection
+- **Optional anonymized output (`-Deidentify`):** A single switch replaces every identity in the output with irreversible, format-preserving tokens, so anonymized data can be shared for reporting without exposing who did what — while keeping the analytical fields and the relationships between records intact. OFF by default (output is unchanged when it is not used); see [Deidentification (Anonymized Output)](#deidentification-anonymized-output)
+- **Built-in org / manager hierarchy (Power BI rollup):** When producing input for the AI-in-One or AI Business Value dashboards, the rolled-up Users output automatically includes each person's place in the org chart — their level, manager, full management chain, and team-size counts — derived from the Entra manager data PAX already collects, ready for org-based Power BI views; see [Rollup Post-Processor (Power BI)](#rollup-post-processor-power-bi)
 
 </details>
 
@@ -134,6 +137,8 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - **Group Filtering:** Group expansion via `-GroupNames` — uses `Get-DistributionGroupMember` (Exchange Online RBAC) in `-UseEOM` mode and `Get-MgGroup` + `Get-MgGroupMember` (requires `GroupMember.Read.All`) in Graph API mode
 - **Entra ID Enrichment + M365 Copilot Licensing (Graph API Mode Only):** Enrich audit data with Entra user attributes and M365 Copilot (MAC) license information via `-IncludeUserInfo` (default mode, not compatible with `-UseEOM`)
 - **User-Only Export (Graph API Mode Only):** Export only Entra ID user data and M365 Copilot licensing without audit records via `-OnlyUserInfo` (requires `-IncludeUserInfo`, not compatible with `-UseEOM`)
+- **Org / Manager Hierarchy (Power BI Rollup):** The AI-in-One and AI Business Value rollups add org/manager-hierarchy columns to the Users output — each person's level, manager, full management chain, and direct/total report counts — derived from the Entra manager data PAX already collects; ready for parent-child hierarchies, leaderboards, and team rollups in Power BI. See [Rollup Post-Processor (Power BI)](#rollup-post-processor-power-bi)
+- **Deidentification (`-Deidentify`):** Optionally anonymize every identifying value in the output with irreversible, format-preserving tokens for anonymous-style reporting, while preserving relationships and analytical fields. OFF by default. See [Deidentification (Anonymized Output)](#deidentification-anonymized-output)
 - **Streaming Export:** Memory-efficient chunked data writing for large datasets
 - **UTF-8 Encoding:** Consistent UTF-8 (no BOM) output for CSV files
 - **Header Stability:** Always writes file headers even when zero records match (ensures schema consistency)
@@ -200,6 +205,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - Identify power users and underutilized licenses
 - Calculate ROI metrics based on time saved and acceptance rates
 - Analyze Word, Excel, PowerPoint, and OneNote document activity by pairing `-ActivityTypes` (e.g., `FileAccessed`, `FilePreviewed`) with `-RecordTypes`/`-ServiceTypes` to capture SharePoint and OneDrive workloads alongside Copilot usage
+- Roll Copilot adoption up by team, department, or management chain — and build leader leaderboards and drill-down org views — using the org/manager-hierarchy columns the AI-in-One / AI Business Value rollup adds to its Users output (see [Rollup Post-Processor (Power BI)](#rollup-post-processor-power-bi))
 
 </details>
 
@@ -223,6 +229,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - Generate audit trails for security reviews
 - Filter and analyze specific Copilot Studio declarative agent activity
 - Expand investigations to include Microsoft 365 productivity workloads — SharePoint and OneDrive (including Teams files, which are tracked under `SharePointFileOperation`) — by applying `-RecordTypes` / `-ServiceTypes` filters alongside document-operation activity types such as `FileModified` or `FileDownloaded`
+- Share adoption or audit data with a broader audience using `-Deidentify`, which replaces identities with irreversible tokens while preserving the relationships and counts needed for reporting (see [Deidentification (Anonymized Output)](#deidentification-anonymized-output))
 
 </details>
 
@@ -389,7 +396,7 @@ The **Purview Audit Reader** role is only required for EOM mode (`-UseEOM`) and 
 
 ### Download the Script
 
-- **Script:** [PAX_Purview_Audit_Log_Processor_v1.11.7.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.7/PAX_Purview_Audit_Log_Processor_v1.11.7.ps1)
+- **Script:** [PAX_Purview_Audit_Log_Processor_v1.11.8.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.8/PAX_Purview_Audit_Log_Processor_v1.11.8.ps1)
 - **Release Notes:** [v1.11.x](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md)
 
 Save the downloaded script to a working directory (e.g., `C:\Scripts\PAX\`).
@@ -462,15 +469,15 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -
 
 | A | B-C | D-E | F-I | L-O | P-R | S-Z |
 |---|-----|-----|-----|-----|-----|-----|
-| `-ActivityTypes` | `-BlockHours` | `-Dashboard` | `-Force` | `-LowLatencyMs` | `-PacingMs` | `-ServiceTypes` |
-| `-AdaptiveConcurrencyCeiling` | `-ClientCertificatePassword` | `-EmitMetricsJson` | `-GroupNames` | `-MaxConcurrency` | `-ParallelMode` | `-StartDate` |
-| `-AgentId` | `-ClientCertificatePath` | `-EndDate` | `-Help` | `-MaxMemoryMB` | `-PromptFilter` | `-StatusIntervalSeconds` |
-| `-AgentsOnly` | `-ClientCertificateStoreLocation` | `-ExcludeAgents` | `-IncludeCopilotInteraction` | `-MaxParallelGroups` | `-RecordTypes` | `-StreamingChunkSize` |
-| `-AppendFile` | `-ClientCertificateThumbprint` | `-ExcludeCopilotInteraction` | `-IncludeM365Usage` | `-MetricsPath` | `-Resume` | `-StreamingSchemaSample` |
-| `-Auth` | `-ClientId` | `-ExportProgressInterval` | `-IncludeTelemetry` | `-OnlyUserInfo` | `-ResultSize` | `-TenantId` |
-| `-AutoCompleteness` | `-ClientSecret` |   | `-IncludeUserInfo` | `-OutputPath` | `-Rollup` | `-ThroughputDropPct` |
-|   | `-CombineOutput` |   |   |   | `-RollupPlusRaw` | `-UseEOM` |
-|   |   |   |   |   |   | `-UserIds` |
+| `-ActivityTypes` | `-BlockHours` | `-Dashboard` | `-FillerLabel` | `-LowLatencyMs` | `-PacingMs` | `-ServiceTypes` |
+| `-AdaptiveConcurrencyCeiling` | `-ClientCertificatePassword` | `-Deidentify` | `-FillerLabelText` | `-MaxConcurrency` | `-ParallelMode` | `-StartDate` |
+| `-AgentId` | `-ClientCertificatePath` | `-EmitMetricsJson` | `-Force` | `-MaxMemoryMB` | `-PromptFilter` | `-StatusIntervalSeconds` |
+| `-AgentsOnly` | `-ClientCertificateStoreLocation` | `-EndDate` | `-GroupNames` | `-MaxParallelGroups` | `-RecordTypes` | `-StreamingChunkSize` |
+| `-AppendFile` | `-ClientCertificateThumbprint` | `-ExcludeAgents` | `-Help` | `-MetricsPath` | `-Resume` | `-StreamingSchemaSample` |
+| `-Auth` | `-ClientId` | `-ExcludeCopilotInteraction` | `-IncludeCopilotInteraction` | `-OnlyUserInfo` | `-ResultSize` | `-TenantId` |
+| `-AutoCompleteness` | `-ClientSecret` | `-ExportProgressInterval` | `-IncludeM365Usage` | `-OutputPath` | `-Rollup` | `-ThroughputDropPct` |
+|   | `-CombineOutput` |   | `-IncludeTelemetry` |   | `-RollupPlusRaw` | `-UseEOM` |
+|   |   |   | `-IncludeUserInfo` |   |   | `-UserIds` |
 
 </details>
 
@@ -575,6 +582,28 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -
 - EntraUsers data always exported separately (not merged with activity data)
 - Can be combined with `-AppendFile` for incremental single-file builds
 - Separate files (default) enable parallel processing and activity-specific analysis
+
+---
+
+#### `-Deidentify` (switch)
+
+**Purpose:** Anonymize the output by replacing every identifying value with an irreversible, format-preserving token  
+**Default:** Off (output contains real identities, exactly as collected)  
+**Use When:** You need to share or publish audit/adoption data without exposing who did what — while keeping the analytical fields and the relationships between records intact  
+**Applies to:** All CSV outputs, the raw `AuditData` payload, and the Power BI rollup output (when `-Rollup` is also used)  
+**Example:** `-Deidentify`
+
+**Behavior:**
+
+- Each identifying value (user principal names, display names, email addresses, IDs, IP addresses, and the identity fields embedded inside the raw `AuditData` JSON) is replaced with a fixed-length token. The same input always produces the same token within and across files, so joins, counts, and per-user rollups still work — but the original value cannot be recovered from the token.
+- Non-identifying analytical fields (timestamps, activity types, token counts, model names, etc.) are left unchanged.
+- The transformation happens on the host before any output is written or uploaded, so anonymized data is what lands in your local folder, SharePoint library, or Fabric lakehouse.
+
+**Notes:**
+
+- Off by default — when `-Deidentify` is not supplied, output is unchanged.
+- The org / manager hierarchy columns in the rollup Users output are built on a stable internal key, so the **structure** of the org chart (levels, chains, report counts) is preserved exactly under `-Deidentify`; only the name columns are tokenized.
+- See [Deidentification (Anonymized Output)](#deidentification-anonymized-output) for the full field-by-field breakdown and examples.
 
 ---
 
@@ -1221,6 +1250,49 @@ All audit-related parameters are incompatible and will trigger validation errors
 
 ---
 
+#### `-FillerLabel` (string)
+
+**Purpose:** Controls how empty parent slots are labelled in the org / manager hierarchy columns of the AI-in-One / AI Business Value rollup Users output  
+**Valid values:** `Self`, `RepeatManager`, `Fixed` (omit the switch for the default blank behavior) — case-insensitive  
+**Default:** Unset — empty hierarchy level slots above a person are left blank  
+**Applies to:** The `Level0_Name` … `Level14_Name` columns in the rollup Users output (the structural columns are never affected)
+
+**Behavior:**
+
+- **Unset (default):** Hierarchy level slots that sit above the top of a person's chain are left empty.
+- **`Self`:** An empty slot repeats the person's own name, so every level column is populated down to the individual.
+- **`RepeatManager`:** An empty slot repeats the nearest real manager name above it, carrying the last known leader down the empty levels.
+- **`Fixed`:** An empty slot is filled with the literal text you supply in `-FillerLabelText`.
+
+This is purely a display aid for Power BI parent-child hierarchies, where blank level columns can make a flattened org tree harder to read; it never changes who reports to whom.
+
+**Example:**
+
+```powershell
+# Fill empty org-level columns with a fixed label
+.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2026-04-01 -EndDate 2026-04-30 -Rollup -FillerLabel Fixed -FillerLabelText "(no further manager)"
+```
+
+---
+
+#### `-FillerLabelText` (string)
+
+**Purpose:** The literal text used to fill empty hierarchy level slots when `-FillerLabel Fixed` is selected  
+**Default:** Unset  
+**Use When:** You chose `-FillerLabel Fixed` and want to control the exact label shown in empty org-level columns  
+**Notes:**
+
+- Only used when `-FillerLabel Fixed` is set; ignored otherwise.
+- Supplied as a separate parameter so the label text may contain spaces (e.g., `"Assistive Directs"`).
+
+**Example:**
+
+```powershell
+.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2026-04-01 -EndDate 2026-04-30 -Rollup -FillerLabel Fixed -FillerLabelText "Assistive Directs"
+```
+
+---
+
 ### Parallel Execution Parameters
 
 #### `-ParallelMode` (string)
@@ -1548,7 +1620,8 @@ Any other parameter (dates, activities, M365 bundles, etc.). These are all resto
 | Prompt Filtering | PromptFilter |
 | M365/User Info | IncludeM365Usage, IncludeUserInfo |
 | Partitioning | BlockHours, PartitionHours, MaxPartitions |
-| Output | OutputPath, CombineOutput |
+| Output | OutputPath, CombineOutput, Deidentify |
+| Rollup | Rollup, RollupPlusRaw, Dashboard, FillerLabel, FillerLabelText |
 | Other | ResultSize, MaxConcurrency, AutoCompleteness, IncludeTelemetry, StatusIntervalSeconds |
 
 **Notes:**
@@ -2330,6 +2403,50 @@ elseif ($LASTEXITCODE -eq 20) { Write-Host 'Circuit breaker tripped – investig
 	-MaxNetworkOutageMinutes 60 `
 	-OutputPath "C:\Exports\\"
 ```
+
+</details>
+
+### Deidentification & Org Hierarchy
+
+<details>
+<summary>💻 Show Deidentification & Org Hierarchy Examples</summary>
+
+```powershell
+# Anonymized export — identities replaced with irreversible tokens, analytics preserved
+./PAX_Purview_Audit_Log_Processor.ps1 `
+	-StartDate 2025-10-01 `
+	-EndDate 2025-10-02 `
+	-Deidentify `
+	-OutputPath "C:\Exports\\"
+
+# AI Business Value rollup — Users output includes org/manager-hierarchy columns
+./PAX_Purview_Audit_Log_Processor.ps1 `
+	-StartDate 2025-10-01 `
+	-EndDate 2025-10-31 `
+	-Rollup `
+	-Dashboard AIBV `
+	-OutputPath "C:\Exports\\"
+
+# Rollup with empty org-level columns filled with a fixed label
+./PAX_Purview_Audit_Log_Processor.ps1 `
+	-StartDate 2025-10-01 `
+	-EndDate 2025-10-31 `
+	-Rollup `
+	-FillerLabel Fixed `
+	-FillerLabelText "Assistive Directs" `
+	-OutputPath "C:\Exports\\"
+
+# Anonymized rollup — org-hierarchy structure preserved exactly, names tokenized
+./PAX_Purview_Audit_Log_Processor.ps1 `
+	-StartDate 2025-10-01 `
+	-EndDate 2025-10-31 `
+	-Rollup `
+	-Dashboard AIBV `
+	-Deidentify `
+	-OutputPath "C:\Exports\\"
+```
+
+See [Deidentification (Anonymized Output)](#deidentification-anonymized-output) and [Org / Manager Hierarchy](#org--manager-hierarchy-ai-in-one--ai-business-value) for full details.
 
 </details>
 
@@ -3266,6 +3383,52 @@ The rollup feature is intentionally narrow in scope. The script exits with an ex
 
 Rolled-up CSVs are written to the same directory as the raw Purview CSV (default: `./output/`). File names follow the embedded processor's own naming conventions and are the exact files expected by the Copilot Analytics Lab Power BI templates — **do not rename them**. See [Output Files & Schema](#output-files--schema) for the surrounding directory layout.
 
+### Org / Manager Hierarchy (AI-in-One / AI Business Value)
+
+When a CopilotInteraction rollup runs (the **AI-in-One** and **AI Business Value** dashboards), PAX automatically enriches the rolled-up **Users** output with each person's place in the organization chart. This requires no extra switch — it is part of every AIO / AIBV rollup.
+
+**How it tracks the hierarchy.** PAX already collects each user's manager when it enriches Entra data (the `-IncludeUserInfo` step that the rollup auto-enables). From those manager links, the processor reconstructs the full reporting tree: it walks from each person up through their managers to the top of their chain, works out how deep in the org each person sits, and counts how many people report to them — both directly and across their whole sub-organization. The result is a set of ready-to-use hierarchy columns on the Users output, so you can build org-based views in Power BI without modelling the tree yourself.
+
+**Hierarchy columns added to the Users output:**
+
+*Position & counts*
+
+| Column | Meaning |
+|---|---|
+| `OrgLevel` | How deep the person sits in their chain — `0` is the top of the chain, `1` is their direct reports, and so on. |
+| `Manager_UserKey` | The person's direct manager (blank for someone at the top of a chain). |
+| `TopOfChain_UserKey` | The person at the very top of this person's management chain. |
+| `IsManager` | `TRUE` if anyone reports to this person, otherwise `FALSE`. |
+| `DirectReports` | Number of people who report **directly** to this person. |
+| `TotalReports` | Total number of people anywhere beneath this person (their whole sub-organization). |
+
+*Management chain*
+
+| Column | Meaning |
+|---|---|
+| `HierarchyPath` | The full chain from the top of the org down to the person, so you can group or filter by any part of the chain. |
+
+*Org-level columns (top-down)*
+
+| Columns | Meaning |
+|---|---|
+| `Level0_Name` … `Level14_Name` | The name at each level of the chain, from the top of the org (`Level0`) down toward the individual. These feed Power BI parent-child hierarchies for expand/collapse org drill-down. |
+| `Level0_UserKey` … `Level14_UserKey` | The matching stable key at each level (used for reliable grouping that is unaffected by name changes or anonymization). |
+
+Up to **15 levels** are tracked. For organizations deeper than that, the level columns stop at the deepest tracked level, but `OrgLevel` and `HierarchyPath` always remain exact, so no one is mislabelled.
+
+**Using it in Power BI.** The `Level0_Name` … `Level14_Name` columns are designed to be turned into a parent-child hierarchy for expand/collapse org drill-down; `OrgLevel`, `DirectReports`, and `TotalReports` make it easy to build leader leaderboards and team rollups; and `HierarchyPath` lets you slice metrics by any branch of the org.
+
+**Controlling empty level columns.** Because people sit at different depths, some level columns will be empty for shallower chains. By default those slots are left blank. If blank columns make a flattened org tree harder to read in Power BI, use `-FillerLabel` (with `-FillerLabelText` for a custom label) to fill them — see [`-FillerLabel`](#-fillerlabel-string) and [`-FillerLabelText`](#-fillerlabeltext-string).
+
+**Anonymized runs.** The hierarchy is built on a stable internal key rather than on names, so under `-Deidentify` the **structure** of the org chart — `OrgLevel`, `Manager_UserKey`, `TopOfChain_UserKey`, `HierarchyPath`, `DirectReports`, `TotalReports`, and the `*_UserKey` level columns — is byte-for-byte identical to a normal run. Only the `*_Name` columns are replaced with tokens. See [Deidentification (Anonymized Output)](#deidentification-anonymized-output).
+
+**Incremental runs.** The hierarchy columns are part of the Users output schema, so they append cleanly across `-AppendFile` runs as long as the run shape is consistent.
+
+### Anonymizing rollup output (`-Deidentify`)
+
+Adding `-Deidentify` to a rollup run anonymizes the rolled-up output as well — identity values in the Users and activity outputs are replaced with irreversible tokens, while per-user counts, joins, and the org-hierarchy structure are preserved exactly. See [Deidentification (Anonymized Output)](#deidentification-anonymized-output).
+
 ### Examples
 
 ```powershell
@@ -3282,6 +3445,12 @@ Rolled-up CSVs are written to the same directory as the raw Purview CSV (default
 # M365 Usage Analytics dashboard input. -IncludeM365Usage auto-enables -CombineOutput;
 # -Rollup deletes the raw combined CSV after the rollup output is produced.
 .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -IncludeM365Usage -Rollup
+
+# AIBV rollup with org-level columns filled with a fixed label where chains are shallow.
+.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -Rollup -Dashboard AIBV -FillerLabel Fixed -FillerLabelText "Assistive Directs"
+
+# Anonymized AIO rollup — org-hierarchy structure preserved, names tokenized.
+.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -Rollup -Deidentify
 ```
 
 ### Best Practices
@@ -3369,6 +3538,9 @@ The **`-AppendFile` parameter** enables incremental dataset building across mult
 - **Live query mode:** Append new date ranges to existing files
 - **`-IncludeUserInfo`:** Compatible — `-AppendFile` only touches the Purview audit CSV; the EntraUsers CSV is a separate file (manage it with `-AppendUserInfo` or `-OutputPathUserInfo`)
 - **All filtering options:** Agent, user, group, prompt filtering fully compatible
+
+**Keep `-Deidentify` consistent across appends:**
+- Use the **same** `-Deidentify` choice on every run that appends to a given file. Headers match either way, but mixing an anonymized run into a file of real identities (or the reverse) means the same person can appear under two different values in one file. PAX cannot detect this — keeping a file's runs all-anonymized or all-real is up to you.
 
 ---
 
@@ -3754,7 +3926,8 @@ The checkpoint file preserves ALL processing parameters:
 | Agent Filtering | AgentId, AgentsOnly, ExcludeAgents |
 | M365/User Info | IncludeM365Usage, IncludeUserInfo |
 | Partitioning | BlockHours, PartitionHours, MaxPartitions |
-| Output | OutputPath, CombineOutput |
+| Output | OutputPath, CombineOutput, Deidentify |
+| Rollup | Rollup, RollupPlusRaw, Dashboard, FillerLabel, FillerLabelText |
 | Auth (method only) | Auth, TenantId, ClientId (no secrets) |
 | Tuning | ResultSize, MaxConcurrency, AutoCompleteness, IncludeTelemetry, StatusIntervalSeconds |
 | Partition State | Completed partitions, query IDs, record counts |
@@ -3858,6 +4031,82 @@ Every execution produces two files:
 
 **Use When:** Need raw data for custom processing or minimal transformation
 
+> **Under `-Deidentify`:** the `UserId` column and the identity fields **inside** the `AuditData` JSON are replaced with irreversible tokens (matching tokens across both), while the JSON structure and all non-identifying fields are preserved. See [Deidentification (Anonymized Output)](#deidentification-anonymized-output).
+
+</details>
+
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
+
+---
+
+## Deidentification (Anonymized Output)
+
+<details>
+<summary>🔒 View Deidentification Guide (Click to Expand)</summary>
+
+By default PAX writes real identities exactly as they were collected — see the **Sensitive Data Warning** at the top of this document. When you need to **share or publish** audit and adoption data without revealing who did what, add the `-Deidentify` switch. PAX then replaces every identifying value with an irreversible token, while leaving all of the analytical fields (timestamps, activity types, token counts, model names, and so on) untouched — so the data is still fully usable for reporting and dashboards, just anonymous.
+
+`-Deidentify` is **off by default**. When you do not supply it, the output is unchanged.
+
+### What anonymization looks like
+
+Each identifying value is replaced with a fixed-length token. The token is **deterministic** (the same input always becomes the same token), **irreversible** (the original value cannot be recovered from the token), and **format-aware** (an email-shaped value is replaced with an email-shaped token, so downstream tooling that expects an address still works).
+
+| Original value | Becomes (illustrative) |
+|---|---|
+| `jordan.lee@contoso.com` | `u-3f9c1e8b2d84@anon.invalid` |
+| `Jordan Lee` | `User 3f9c1e8b` |
+| A user / object GUID | A stable token of the same shape |
+| `203.0.113.47` (IP address) | A stable placeholder IP |
+
+> The tokens above are **illustrative only** — they show the *shape* of the output, not the actual values you will get.
+
+### What is anonymized vs. what is kept
+
+| Anonymized (identifying) | Kept as-is (analytical) |
+|---|---|
+| User principal names / sign-in names | Timestamps and date ranges |
+| Display names | Activity / operation types |
+| Email addresses | Record and service types |
+| User and object IDs (GUIDs) | Token counts, model names, app hosts |
+| IP addresses | Acceptance / latency / ROI metrics |
+| The identity fields embedded **inside** the raw `AuditData` JSON | All other non-identifying `AuditData` fields |
+
+### The raw `AuditData` payload is scrubbed too
+
+In Standard Mode the full audit record is preserved as a JSON string in the `AuditData` column. Under `-Deidentify`, PAX walks that JSON and replaces the identity fields **in place** — using the same tokens as the flat columns — so a user's token in `UserId` matches their token inside `AuditData`. The structure and all non-identifying fields of the JSON are preserved.
+
+### Relationships are preserved
+
+Because anonymization is deterministic, everything that depends on matching identities still works after the data is anonymized:
+
+- **Joins** between files (for example, activity records to the Entra Users file) still line up, because a given person carries the same token everywhere.
+- **Per-user counts and rollups** are unchanged — the number of distinct users, interactions per user, and adoption rollups are identical to a non-anonymized run.
+- **The org / manager hierarchy is preserved.** In the Power BI rollup, the hierarchy columns are built on a stable internal key rather than on names, so the **structure** of the org chart — levels, management chains, and report counts — is byte-for-byte identical with or without `-Deidentify`; only the name columns are tokenized. See [Org / Manager Hierarchy](#org--manager-hierarchy-ai-in-one--ai-business-value) for details.
+
+### Where it applies
+
+`-Deidentify` covers all of the output produced by a run:
+
+- All CSV activity files (and the combined file when `-CombineOutput` is used)
+- The Entra Users file (`EntraUsers_MAClicensing_*`)
+- The raw `AuditData` JSON payload (as described above)
+- The Power BI rollup output, when `-Rollup` / `-RollupPlusRaw` is also used
+
+The transformation happens **on the host before anything is written or uploaded**, so anonymized data is what lands in your local folder, SharePoint library, or Fabric lakehouse — the originals never leave the machine in those destinations.
+
+### Examples
+
+```powershell
+# Anonymized export for the previous full day
+.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2026-04-01 -EndDate 2026-04-30 -Deidentify -OutputPath C:\Temp\
+```
+
+```powershell
+# Anonymized Power BI rollup input (AI Business Value)
+.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2026-04-01 -EndDate 2026-04-30 -Dashboard AIBV -Deidentify -OutputPath C:\Temp\
+```
+
 </details>
 
 [⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
@@ -3940,6 +4189,8 @@ Comprehensive user profile data per user, automatically deduplicated by UserPrin
 | `BusinessAreaCode` | Business area code (HR systems) | (null) |
 | `OrgLevel_3Label` | Org level 3 (HR systems) | (null) |
 | ... (additional extended attributes) | ... | ... |
+
+> **In a Power BI rollup (AI-in-One / AI Business Value), the Users output gains additional org / manager-hierarchy columns** — each person's `OrgLevel`, `Manager_UserKey`, `TopOfChain_UserKey`, `HierarchyPath`, `IsManager`, `DirectReports`, `TotalReports`, and `Level0`…`Level14` columns — derived from the manager data shown above. These appear only in the rolled-up Users output; see [Org / Manager Hierarchy](#org--manager-hierarchy-ai-in-one--ai-business-value).
 
 **License Detection Logic:**
 
@@ -4324,7 +4575,7 @@ The script can emit a metrics JSON capturing execution telemetry and final state
 **JSON Includes (illustrative):**
 ```json
 {
-	"ScriptVersion": "1.11.7",
+	"ScriptVersion": "1.11.8",
 	"StartTimestampUtc": "2025-10-26T14:05:23Z",
 	"EndTimestampUtc": "2025-10-26T14:07:11Z",
 	"TotalWindows": 42,
@@ -4771,6 +5022,7 @@ If adaptive scaling appears too assertive in your environment, lower `-AdaptiveC
 - **No third-party telemetry, no callbacks.** PAX does not transmit audit data, prompts, responses, user identities, or any tenant content to any non-Microsoft service. All processing happens on the local execution machine.
 - **In-memory credential handling.** Tokens, client secrets, and certificate passwords are passed as in-memory strings or `SecureString` and are not written to disk by PAX. Token cache files written by `Microsoft.Graph` / `MSAL` modules are governed by those modules, not PAX.
 - **Output to operator-supplied destination only.** PAX writes its CSV / JSON metrics output to the path you supply (`-OutputPath`) — a local folder, a SharePoint folder URL, or a Microsoft Fabric OneLake URL. It does not transmit data to any other destination.
+- **Optional on-host anonymization (`-Deidentify`).** When you supply `-Deidentify`, PAX replaces identifying values (including the identity fields inside the raw `AuditData` JSON) with irreversible, deterministic tokens **on the local machine before any output is written or uploaded** — so anonymized data is what reaches your local folder, SharePoint, or Fabric destination. It is off by default; output is otherwise written exactly as collected. See [Deidentification (Anonymized Output)](#deidentification-anonymized-output).
 - **Logged operations.** Each run produces a timestamped log file alongside the export, capturing parameter values (with secrets redacted) and per-phase timings for traceability.
 
 ### Graph Scopes PAX Requests (Least-Privilege Reference)

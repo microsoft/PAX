@@ -65,6 +65,8 @@ The container image itself is **auth-agnostic** — it just bakes in PowerShell 
 
 > **Dashboard selection.** In `-ScriptArgs`, `-Rollup` targets the **AI-in-One (AIO)** dashboard by default. Add `'-Dashboard','AIBV'` for the **AI Business Value** dashboard, or `'-Dashboard','M365'` (equivalently `'-IncludeM365Usage'`) for **M365 Usage Analytics**. AIO and AIBV are produced from the same CopilotInteraction + Entra/MAC licensing data — no other args change.
 
+> **Anonymization & hierarchy.** Add `'-Deidentify'` to `-ScriptArgs` to write anonymized output to the destination — every identity is replaced with an irreversible token on the host before upload (off by default; works under managed identity and app registration alike; no extra Graph permission). AIO / AIBV rollups automatically include org/manager-hierarchy columns in the Users output; `'-FillerLabel','Fixed','-FillerLabelText','<text>'` only controls how empty deeper org levels are labelled (the M365 dashboard has no hierarchy).
+
 ### SharePoint destination, daily 06:00 UTC
 
 ```powershell
@@ -153,6 +155,8 @@ Rules enforced at parameter validation: every supplied URL must resolve to the s
 ### Provenance columns on appended files
 
 Every appended file (rollup Fact CSV under `-AppendFile`, raw audit CSV under non-rollup `-AppendFile`, EntraUsers CSV under `-AppendUserInfo`) gains three trailing columns at merge time: `Date_Added`, `Latest_Append_Date`, `In_Latest_Append`. Rows that departed from the current run's audit window are retained in the union with `In_Latest_Append = FALSE` so historical fact-table joins continue to resolve. The CopilotInteraction rollup Fact CSV additionally carries two stable identity columns (`Message_Id_Raw`, `ThreadId_Raw`) so per-run integer surrogates remain stable across appends. Under `-AppendUserInfo`, the raw Entra membership snapshot the audit phase writes is kept **pristine** — the union lands at the `-AppendUserInfo` target, the raw file keeps its natural timestamped name (or gets a `_raw` suffix on the rare path-and-leaf collision).
+
+**Under `-Deidentify`:** `PersonId_Normalized` is tokenized but deterministic (still a stable join key), while `Message_Id_Raw` / `ThreadId_Raw` keep their real GUID values; appending a deidentified run into a non-deidentified target (or vice-versa) is hard-rejected. **Org / manager-hierarchy columns** are added to the rollup Users output on AIO / AIBV runs — the Fabric Users append adds new columns but rejects appends that are *missing* existing columns, so keep a given Users Delta table on one PAX version line (or recreate it) to avoid mixed-schema appends.
 
 ## Alternative: app registration instead of managed identity
 

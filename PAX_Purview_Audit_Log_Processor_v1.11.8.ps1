@@ -1,5 +1,5 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.11.7
+# Version: v1.11.8
 # Requirements: PowerShell 7+ for default Graph API mode; PowerShell 5.1 supported ONLY with -UseEOM (serial Exchange Online Management mode, no parallel query/explosion).
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI activity types (specified via -ActivityTypes): AIInteraction, ConnectedAIAppInteraction, AIAppInteraction
@@ -220,6 +220,12 @@
 .EXAMPLE
 	# Rollup + Raw: CopilotInteraction-only run, keeps raw CSVs alongside rollup output
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-11-01 -EndDate 2025-11-02 -RollupPlusRaw -OutputPath C:\Temp\
+.EXAMPLE
+	# Rollup with a fixed label in the unused deeper org-hierarchy levels (AI-in-One / AI Business Value)
+	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-11-01 -EndDate 2025-11-02 -Rollup -FillerLabel Fixed -FillerLabelText "Assistive Directs" -OutputPath C:\Temp\
+.EXAMPLE
+	# Deidentify: anonymize all identities in the output so it can be shared safely (CSV only)
+	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-11-01 -EndDate 2025-11-02 -IncludeM365Usage -RollupPlusRaw -Deidentify -OutputPath C:\Temp\
 .EXAMPLE
 	# Rollup: M365 usage bundle run, deletes raw CSV after rolling up
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-11-01 -EndDate 2025-11-02 -IncludeM365Usage -Rollup -OutputPath C:\Temp\
@@ -899,6 +905,39 @@
 	Advisory Team's Power BI templates at https://github.com/microsoft/Analytics-Hub) but
 	KEEPS the raw CSV(s) on disk alongside the rolled-up output. Mutually exclusive with -Rollup.
 
+.PARAMETER Deidentify
+	Anonymize every identifying value in the output using a one-way, deterministic hash, so the
+	results can be shared without exposing who did what. User principal names / email addresses,
+	display names, mailbox GUIDs and SIDs, device names, and site / file / resource paths are
+	replaced with stable tokens — the same identity always maps to the same token, so user counts,
+	joins, and distinct-resource counts are preserved. Non-identifying fields (job title, company,
+	department, license, activity counts) are kept as-is. The transformation is irreversible: no
+	mapping back to the original values is produced or stored.
+
+	Applies to both the raw output and the rolled-up output. CSV output only (cannot be combined
+	with -ExportWorkbook). When resuming an interrupted run, deidentification is taken from the
+	original run's checkpoint and cannot be added or removed on the resume command line.
+
+.PARAMETER FillerLabel
+	(Power BI rollup only — AI-in-One / AI Business Value dashboards.) Chooses how the
+	manager-hierarchy "level" columns are filled in below a person's own position in the org chart.
+	The hierarchy columns themselves — each person's chain of managers up to the top of the
+	organization, their level number, their manager, and their direct-report and total-report
+	counts — are always included in the rolled-up Users file for these two dashboards. This setting
+	only changes what appears in the deeper, unused level columns for people who sit near the top:
+
+	  null (default)   Leave the deeper levels blank.
+	  Self             Repeat the person in their deeper levels.
+	  RepeatManager    Repeat the person's manager in their deeper levels.
+	  Fixed            Show a fixed label of your choice (supply it with -FillerLabelText).
+
+	Requires -Rollup or -RollupPlusRaw. It is not available for the M365 Usage dashboard
+	(-IncludeM365Usage / -Dashboard M365), which does not include an org hierarchy.
+
+.PARAMETER FillerLabelText
+	The label to show in the deeper hierarchy levels when -FillerLabel Fixed is chosen, for
+	example: -FillerLabel Fixed -FillerLabelText "Assistive Directs". Only used with -FillerLabel Fixed.
+
 .PARAMETER ExcludeCopilotInteraction
 	Exclude Microsoft 365 Copilot activity type (CopilotInteraction).
 	Overrides custom list and default behavior. Use with -ActivityTypes to query only the specified activity types.
@@ -1249,8 +1288,11 @@
 	  -ClientSecret              Provide client secret (for AppRegistration)
 	
 	NOT ALLOWED WITH -Resume:
-	  Any other parameter (dates, activities, explosion settings, etc.)
-	  These are all restored from the checkpoint to ensure data consistency.
+	  Any other parameter (dates, activities, explosion settings, -Deidentify, etc.)
+	  These are all restored from the checkpoint to ensure data consistency. In particular,
+	  -Deidentify is taken from the checkpoint — a run started with -Deidentify stays
+	  deidentified when resumed, and deidentification cannot be added or removed on the resume
+	  command line.
 	
 	CHECKPOINT LOCATION:
 	  Files are created in OutputPath with pattern: .pax_checkpoint_<timestamp>.json
@@ -1561,6 +1603,33 @@ param(
 	[Parameter(Mandatory = $false)]
 	[ValidateSet('AIO', 'AIBV', 'M365')]
 	[string]$Dashboard = 'AIO',
+
+	# Deidentify (anonymize) all identifying values in RAW output files using a
+	# one-way, salted, deterministic, format-preserving hash. Applies to the raw
+	# audit CSV(s) and the EntraUsers CSV. Rollup outputs are deidentified by the
+	# embedded Python processor (same salt + algorithm), so -Rollup / -RollupPlusRaw
+	# rollups are covered there; this switch additionally scrubs any RETAINED raw
+	# files. No-op for plain -Rollup (raw deleted). Irreversible: no decode map is
+	# produced or stored.
+	[Parameter(Mandatory = $false)]
+	[switch]$Deidentify,
+
+	# Org / manager-hierarchy level-filler for the rolled-up AI-in-One / AI Business
+	# Value Users output. The hierarchy columns are ALWAYS produced for those two
+	# dashboards; this only controls what appears in level slots deeper than a user's
+	# own level:
+	#   null (default)  -> leave blank
+	#   Self            -> repeat the user
+	#   RepeatManager   -> repeat the user's manager
+	#   Fixed           -> a literal label supplied via -FillerLabelText "<text>"
+	# Requires -Rollup or -RollupPlusRaw; not valid with -IncludeM365Usage / -Dashboard M365.
+	[Parameter(Mandatory = $false)]
+	[string]$FillerLabel,
+
+	# The literal label text used with -FillerLabel Fixed (e.g. "Assistive Directs").
+	# Only valid together with -FillerLabel Fixed.
+	[Parameter(Mandatory = $false)]
+	[string]$FillerLabelText,
 
 	# Resume from checkpoint file - HANDLED VIA $args (not param block) to support:
 	#   -Resume                    (auto-discover checkpoint in OutputPath)
@@ -2090,7 +2159,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.11.7'
+$ScriptVersion = '1.11.8'
 
 # --- Initialize/Clear persistent script variables to prevent cross-run contamination ---
 # Note: Script-scoped variables persist across multiple script invocations in the same PowerShell session
@@ -2239,6 +2308,486 @@ function Get-MaskedUsername {
 	$masked = "$first******$last@$domain"
 	
 	return $masked
+}
+
+# ============================================================
+# DEIDENTIFICATION (-Deidentify): one-way, salted, deterministic, format-preserving.
+# PowerShell deidentifies RAW output files only (the embedded Python processors
+# deidentify rollup outputs). The salt, HMAC-SHA256 algorithm, normalization
+# (Trim + lower-invariant), lowercase hex, and output formats below are BYTE-FOR-BYTE
+# identical to the deid_* helpers in the CopilotInteraction and M365 Python
+# processors (PAX deidentify spec) so the same identity hashes to the same token
+# across all engines. OFF (default) = no-op: every helper returns its input unchanged.
+# Irreversible: no decode map is produced or stored. DO NOT CHANGE THE SALT.
+# ============================================================
+$script:PaxDeidEnabled  = [bool]$Deidentify
+$script:PaxDeidSaltBytes = [System.Text.Encoding]::UTF8.GetBytes('PAX-Deidentify-Salt-v1-DO-NOT-CHANGE-7f3c1e9b2d846050a1c4e8b3')
+$script:PaxDeidDomain   = 'deidentified.domain'
+$script:PaxDeidCache    = @{}
+$script:PaxDeidMarkerSuffix = '@deidentified.domain'  # tail of every deidentified UPN/email token
+
+# -Deidentify is CSV-only: the deprecated Excel workbook path is never scrubbed, so a
+# deidentified workbook would silently leak identifiable data. Block the combination.
+if ($script:PaxDeidEnabled -and $ExportWorkbook) {
+	Write-Host "" -ForegroundColor Red
+	Write-Host "ERROR: -Deidentify cannot be combined with -ExportWorkbook (Excel)." -ForegroundColor Red
+	Write-Host "Deidentification scrubs CSV output only; the workbook path is not anonymized and would" -ForegroundColor Yellow
+	Write-Host "leak identifiable data. Re-run with CSV output (omit -ExportWorkbook) to deidentify." -ForegroundColor Yellow
+	exit 1
+}
+
+function Get-PaxDeidHex {
+	param([string]$Value, [int]$Length)
+	$norm = $Value.Trim().ToLowerInvariant()
+	$hmac = [System.Security.Cryptography.HMACSHA256]::new($script:PaxDeidSaltBytes)
+	try {
+		$bytes = $hmac.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($norm))
+	} finally {
+		$hmac.Dispose()
+	}
+	$sb = [System.Text.StringBuilder]::new(64)
+	foreach ($b in $bytes) { [void]$sb.Append($b.ToString('x2')) }
+	return $sb.ToString().Substring(0, $Length)
+}
+
+function Get-PaxDeidUpn {
+	# UPN / email -> <12hex>@deidentified.domain
+	param([string]$Value)
+	if (-not $script:PaxDeidEnabled -or [string]::IsNullOrEmpty($Value)) { return $Value }
+	$k = "upn`0$Value"
+	if ($script:PaxDeidCache.ContainsKey($k)) { return $script:PaxDeidCache[$k] }
+	$v = (Get-PaxDeidHex -Value $Value -Length 12) + '@' + $script:PaxDeidDomain
+	$script:PaxDeidCache[$k] = $v
+	return $v
+}
+
+function Get-PaxDeidName {
+	# Person / device display name -> <12hex>
+	param([string]$Value)
+	if (-not $script:PaxDeidEnabled -or [string]::IsNullOrEmpty($Value)) { return $Value }
+	$k = "name`0$Value"
+	if ($script:PaxDeidCache.ContainsKey($k)) { return $script:PaxDeidCache[$k] }
+	$v = Get-PaxDeidHex -Value $Value -Length 12
+	$script:PaxDeidCache[$k] = $v
+	return $v
+}
+
+function Get-PaxDeidGuid {
+	# GUID -> deterministic GUID shape xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+	param([string]$Value)
+	if (-not $script:PaxDeidEnabled -or [string]::IsNullOrEmpty($Value)) { return $Value }
+	$k = "guid`0$Value"
+	if ($script:PaxDeidCache.ContainsKey($k)) { return $script:PaxDeidCache[$k] }
+	$h = Get-PaxDeidHex -Value $Value -Length 32
+	$v = '{0}-{1}-{2}-{3}-{4}' -f $h.Substring(0,8), $h.Substring(8,4), $h.Substring(12,4), $h.Substring(16,4), $h.Substring(20,12)
+	$script:PaxDeidCache[$k] = $v
+	return $v
+}
+
+function Get-PaxDeidSid {
+	# SID -> deterministic S-1-5-21-<d1>-<d2>-<d3>-<d4> shape
+	param([string]$Value)
+	if (-not $script:PaxDeidEnabled -or [string]::IsNullOrEmpty($Value)) { return $Value }
+	$k = "sid`0$Value"
+	if ($script:PaxDeidCache.ContainsKey($k)) { return $script:PaxDeidCache[$k] }
+	$h = Get-PaxDeidHex -Value $Value -Length 32
+	$d1 = [Convert]::ToUInt32($h.Substring(0,8), 16)
+	$d2 = [Convert]::ToUInt32($h.Substring(8,8), 16)
+	$d3 = [Convert]::ToUInt32($h.Substring(16,8), 16)
+	$d4 = [Convert]::ToUInt32($h.Substring(24,8), 16)
+	$v = "S-1-5-21-$d1-$d2-$d3-$d4"
+	$script:PaxDeidCache[$k] = $v
+	return $v
+}
+
+function Get-PaxDeidToken {
+	# Opaque id (employeeId, immutableId) -> <12hex>
+	param([string]$Value)
+	if (-not $script:PaxDeidEnabled -or [string]::IsNullOrEmpty($Value)) { return $Value }
+	$k = "tok`0$Value"
+	if ($script:PaxDeidCache.ContainsKey($k)) { return $script:PaxDeidCache[$k] }
+	$v = Get-PaxDeidHex -Value $Value -Length 12
+	$script:PaxDeidCache[$k] = $v
+	return $v
+}
+
+function Get-PaxDeidResource {
+	# Resource URL -> site_<12hex> (whole-string hash; preserves distinct-count)
+	param([string]$Value)
+	if (-not $script:PaxDeidEnabled -or [string]::IsNullOrEmpty($Value)) { return $Value }
+	$k = "res`0$Value"
+	if ($script:PaxDeidCache.ContainsKey($k)) { return $script:PaxDeidCache[$k] }
+	$v = 'site_' + (Get-PaxDeidHex -Value $Value -Length 12)
+	$script:PaxDeidCache[$k] = $v
+	return $v
+}
+
+function Get-PaxDeidFile {
+	# File / document name -> file_<12hex>
+	param([string]$Value)
+	if (-not $script:PaxDeidEnabled -or [string]::IsNullOrEmpty($Value)) { return $Value }
+	$k = "file`0$Value"
+	if ($script:PaxDeidCache.ContainsKey($k)) { return $script:PaxDeidCache[$k] }
+	$v = 'file_' + (Get-PaxDeidHex -Value $Value -Length 12)
+	$script:PaxDeidCache[$k] = $v
+	return $v
+}
+
+function Get-PaxDeidProxy {
+	# proxyAddresses entry(ies) -> keep smtp:/SMTP: prefix + deidentified email.
+	# Handles ';'-delimited multi-value fields.
+	param([string]$Value)
+	if (-not $script:PaxDeidEnabled -or [string]::IsNullOrEmpty($Value)) { return $Value }
+	$parts = $Value -split ';'
+	$out = foreach ($entry in $parts) {
+		if ([string]::IsNullOrEmpty($entry)) {
+			$entry
+		} elseif ($entry.Contains(':')) {
+			$idx = $entry.IndexOf(':')
+			$entry.Substring(0, $idx) + ':' + (Get-PaxDeidUpn -Value $entry.Substring($idx + 1))
+		} else {
+			Get-PaxDeidUpn -Value $entry
+		}
+	}
+	return ($out -join ';')
+}
+
+function Get-PaxDeidIp {
+	# IP address -> deterministic, format-preserving token. IPv4 -> a.b.c.d (4 octets from the
+	# first 4 HMAC bytes); IPv6 -> 8 hextets from the 16-byte HMAC. Stays a valid-looking IP so
+	# downstream schema/parsers are unaffected. No-op when off or empty.
+	param([string]$Value)
+	if (-not $script:PaxDeidEnabled -or [string]::IsNullOrEmpty($Value)) { return $Value }
+	$k = "ip`0$Value"
+	if ($script:PaxDeidCache.ContainsKey($k)) { return $script:PaxDeidCache[$k] }
+	$h = Get-PaxDeidHex -Value $Value -Length 32
+	if ($Value.Contains(':')) {
+		$groups = for ($i = 0; $i -lt 8; $i++) { $h.Substring($i * 4, 4) }
+		$v = $groups -join ':'
+	} else {
+		$octets = for ($i = 0; $i -lt 4; $i++) { [Convert]::ToInt32($h.Substring($i * 2, 2), 16) }
+		$v = $octets -join '.'
+	}
+	$script:PaxDeidCache[$k] = $v
+	return $v
+}
+
+function Get-PaxDeidByType {
+	# Dispatch a single value to the type-appropriate Get-PaxDeid* helper. Used by the JSON
+	# scrubber so the same helper set (and tokens) applies to nested AuditData leaves.
+	param([string]$Value, [string]$Type)
+	switch ($Type) {
+		'Upn'      { Get-PaxDeidUpn      -Value $Value }
+		'Name'     { Get-PaxDeidName     -Value $Value }
+		'Guid'     { Get-PaxDeidGuid     -Value $Value }
+		'Sid'      { Get-PaxDeidSid      -Value $Value }
+		'Token'    { Get-PaxDeidToken    -Value $Value }
+		'Resource' { Get-PaxDeidResource -Value $Value }
+		'File'     { Get-PaxDeidFile     -Value $Value }
+		'Proxy'    { Get-PaxDeidProxy    -Value $Value }
+		'Ip'       { Get-PaxDeidIp       -Value $Value }
+		default    { $Value }
+	}
+}
+
+function Get-PaxDeidJsonMap {
+	# PATH-AWARE map of AuditData JSON leaf -> deid type. Path uses '.' for nested objects and
+	# '[]' for array elements (e.g. Folders[].FolderItems[].Subject). Path-awareness is required
+	# because the same leaf name means different things by location: root 'Id' is the audit
+	# RecordId (KEEP) while Item.Id / FolderItems[].Id are item identifiers (scrub). Only the keys
+	# below are altered; every other field is preserved verbatim (app/tenant/org identities,
+	# operations, types, timestamps, etc. are intentionally absent and therefore kept).
+	@{
+		# Identity (UPN / SID / GUID)
+		'UserId'                                         = 'Upn'
+		'MailboxOwnerUPN'                                = 'Upn'
+		'LogonUserSid'                                   = 'Sid'
+		'MailboxOwnerSid'                                = 'Sid'
+		'MailboxGuid'                                    = 'Guid'
+		'UserKey'                                        = 'Guid'
+		'TokenObjectId'                                  = 'Guid'
+		'SessionId'                                      = 'Guid'
+		'AppAccessContext.AADSessionId'                  = 'Guid'
+		'AppAccessContext.UniqueTokenId'                 = 'Token'
+		# IP addresses
+		'ClientIP'                                       = 'Ip'
+		'ClientIPAddress'                                = 'Ip'
+		'ActorIpAddress'                                 = 'Ip'
+		# Resources / files (rollup-aligned)
+		'SiteUrl'                                        = 'Resource'
+		'SourceRelativeUrl'                              = 'Resource'
+		'SourceFileName'                                 = 'File'
+		'CopilotEventData.ThreadId'                      = 'Token'
+		'CopilotEventData.AccessedResources[].SiteUrl'   = 'Resource'
+		'CopilotEventData.AccessedResources[].Name'      = 'File'
+		# Mail item identifiers + content
+		'Folders[].FolderItems[].InternetMessageId'      = 'Token'
+		'Folders[].FolderItems[].Id'                     = 'Token'
+		'Folders[].FolderItems[].ImmutableId'            = 'Token'
+		'Folders[].FolderItems[].Subject'                = 'Token'
+		'Folders[].Id'                                   = 'Token'
+		'Item.InternetMessageId'                         = 'Token'
+		'Item.Id'                                        = 'Token'
+		'Item.ImmutableId'                               = 'Token'
+		'Item.Subject'                                   = 'Token'
+		'Item.Attachments'                               = 'Token'
+		'Item.ParentFolder.Id'                           = 'Token'
+	}
+}
+
+function Invoke-PaxDeidJsonNode {
+	# Recursively scrub a System.Text.Json JsonNode in place: any STRING leaf whose path is in
+	# $Map is replaced with its deid token; every other leaf/structure is left untouched. Keeps
+	# strings as strings (no ConvertFrom-Json date auto-conversion), preserving full fidelity.
+	param(
+		[System.Text.Json.Nodes.JsonNode]$Node,
+		[string]$Path,
+		[hashtable]$Map
+	)
+	if ($null -eq $Node) { return }
+	if ($Node -is [System.Text.Json.Nodes.JsonObject]) {
+		$keys = @($Node.GetEnumerator() | ForEach-Object { $_.Key })
+		foreach ($key in $keys) {
+			$child = $Node[$key]
+			$childPath = if ($Path) { "$Path.$key" } else { $key }
+			if ($child -is [System.Text.Json.Nodes.JsonValue]) {
+				if ($child.GetValueKind() -eq [System.Text.Json.JsonValueKind]::String -and $Map.ContainsKey($childPath)) {
+					$orig = $child.GetValue[string]()
+					$new = Get-PaxDeidByType -Value $orig -Type $Map[$childPath]
+					if ($new -ne $orig) { $Node[$key] = [System.Text.Json.Nodes.JsonValue]::Create($new) }
+				}
+			} else {
+				Invoke-PaxDeidJsonNode -Node $child -Path $childPath -Map $Map
+			}
+		}
+	}
+	elseif ($Node -is [System.Text.Json.Nodes.JsonArray]) {
+		$arrPath = "$Path[]"
+		for ($i = 0; $i -lt $Node.Count; $i++) {
+			$child = $Node[$i]
+			if ($child -is [System.Text.Json.Nodes.JsonValue]) {
+				if ($child.GetValueKind() -eq [System.Text.Json.JsonValueKind]::String -and $Map.ContainsKey($arrPath)) {
+					$orig = $child.GetValue[string]()
+					$new = Get-PaxDeidByType -Value $orig -Type $Map[$arrPath]
+					if ($new -ne $orig) { $Node[$i] = [System.Text.Json.Nodes.JsonValue]::Create($new) }
+				}
+			} else {
+				Invoke-PaxDeidJsonNode -Node $child -Path $arrPath -Map $Map
+			}
+		}
+	}
+}
+
+function Get-PaxDeidJson {
+	# Deidentify a JSON blob (e.g. the AuditData column) IN FULL: parse, recursively scrub only the
+	# mapped PII leaves, re-serialize. Returns the value unchanged when off/empty. Returns the
+	# redaction marker ONLY when the value cannot be parsed as JSON (safety net so a malformed blob
+	# can never leak). Re-serializes with relaxed escaping to stay close to the source formatting.
+	param([string]$Value)
+	if (-not $script:PaxDeidEnabled -or [string]::IsNullOrEmpty($Value)) { return $Value }
+	$node = $null
+	try { $node = [System.Text.Json.Nodes.JsonNode]::Parse($Value) } catch { return '[REDACTED-DEIDENTIFY]' }
+	if ($null -eq $node) { return $Value }
+	if ($null -eq $script:PaxDeidJsonMapCached) { $script:PaxDeidJsonMapCached = Get-PaxDeidJsonMap }
+	if ($null -eq $script:PaxDeidJsonOpts) {
+		$script:PaxDeidJsonOpts = [System.Text.Json.JsonSerializerOptions]::new()
+		$script:PaxDeidJsonOpts.Encoder = [System.Text.Encodings.Web.JavaScriptEncoder]::UnsafeRelaxedJsonEscaping
+	}
+	Invoke-PaxDeidJsonNode -Node $node -Path '' -Map $script:PaxDeidJsonMapCached
+	return $node.ToJsonString($script:PaxDeidJsonOpts)
+}
+
+function Invoke-PaxRawDeidentify {
+	<#
+	.SYNOPSIS
+		Post-write pass: deidentify a finished RAW output CSV in place.
+	.DESCRIPTION
+		Operates on whichever target columns are present in the file's header, so the SAME
+		function handles both the EntraUsers CSV (47-col) and the Purview audit CSV (153-col
+		exploded). Each present identity/resource column is hashed with the type-appropriate
+		Get-PaxDeid* helper; tokens match the Python-deidentified rollup because the salt and
+		algorithm are shared. Any raw AuditData / CopilotEventData JSON blob column is
+		deidentified IN PLACE via Get-PaxDeidJson — a recursive, path-aware System.Text.Json
+		scrub that tokenizes only the PII leaves and leaves every other field (timestamps,
+		workload, app/tenant ids, schema urls, flags) byte-for-byte identical, so the blob stays
+		full-fidelity Purview data with only PII altered. (A blob that fails to parse is redacted
+		to [REDACTED-DEIDENTIFY] as a safety net so PII can never leak.)
+		No-op when -Deidentify is off. Rewrites atomically via a temp file + Move-Item, preserving
+		column order. PowerShell only ever scrubs RAW files; rollup outputs are owned by Python.
+	#>
+	param([Parameter(Mandatory = $true)][string]$Path)
+	if (-not $script:PaxDeidEnabled) { return }
+	if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return }
+
+	# Column name -> deid helper kind. Union of audit (153-col) + EntraUsers (47-col) fields.
+	# Column names are disjoint across the two schemas, so one map serves both.
+	$map = @{
+		# Purview audit exploded identity + resource fields
+		'UserId'                   = 'Upn'
+		'MailboxOwnerUPN'          = 'Upn'
+		'MailboxGuid'              = 'Guid'
+		'LogonUserSid'             = 'Sid'
+		'MailboxOwnerSid'          = 'Sid'
+		'DeviceDisplayName'        = 'Name'
+		'SiteUrl'                  = 'Resource'
+		'SourceRelativeUrl'        = 'Resource'
+		'SourceFileName'           = 'File'
+		'AccessedResource_SiteUrl' = 'Resource'
+		'AccessedResource_Name'    = 'File'
+		# Purview audit exploded — additional identity / network / resource fields
+		# (flat top-level columns produced by the 153-col explosion; nested JSON PII is
+		#  handled separately by Get-PaxDeidJson on the AuditData blob).
+		'ClientIP'                 = 'Ip'
+		'ClientIPAddress'          = 'Ip'
+		'ActorIpAddress'           = 'Ip'
+		'UserKey'                  = 'Guid'
+		'TokenObjectId'            = 'Guid'
+		'SessionId'                = 'Guid'
+		'ThreadId'                 = 'Token'
+		'ChatId'                   = 'Token'
+		'ConversationId'           = 'Token'
+		'Site'                     = 'Resource'
+		'MeetingURL'               = 'Resource'
+		'TeamName'                 = 'Name'
+		'ChannelName'              = 'Name'
+		'VideoName'                = 'File'
+		'FormName'                 = 'File'
+		# EntraUsers identity fields
+		'userPrincipalName'        = 'Upn'
+		'displayName'              = 'Name'
+		'mail'                     = 'Upn'
+		'givenName'                = 'Name'
+		'surname'                  = 'Name'
+		'UserName'                 = 'Upn'
+		'employeeId'               = 'Token'
+		'onPremisesImmutableId'    = 'Token'
+		'proxyAddresses_Primary'   = 'Proxy'
+		'proxyAddresses_All'       = 'Proxy'
+		'id'                       = 'Guid'
+		'manager_id'               = 'Guid'
+		'manager_userPrincipalName' = 'Upn'
+		'manager_displayName'      = 'Name'
+		'manager_mail'             = 'Upn'
+		'ManagerID'                = 'Guid'
+	}
+	# JSON blob columns: deidentified in place by recursive path-aware scrub (Get-PaxDeidJson),
+	# NOT flat-hashed — their PII lives in nested keys the column map cannot reach.
+	$jsonCols = @('AuditData', 'CopilotEventData')
+
+	$rows = @(Import-Csv -LiteralPath $Path)
+	if ($rows.Count -eq 0) { return }
+	$columns = $rows[0].PSObject.Properties.Name
+	$active = @{}
+	foreach ($c in $columns) { if ($map.ContainsKey($c)) { $active[$c] = $map[$c] } }
+	$activeJson = @($jsonCols | Where-Object { $columns -contains $_ })
+	if ($active.Count -eq 0 -and $activeJson.Count -eq 0) { return }
+
+	foreach ($row in $rows) {
+		foreach ($col in @($active.Keys)) {
+			$val = $row.$col
+			if ([string]::IsNullOrEmpty($val)) { continue }
+			$row.$col = switch ($active[$col]) {
+				'Upn'      { Get-PaxDeidUpn -Value $val }
+				'Name'     { Get-PaxDeidName -Value $val }
+				'Guid'     { Get-PaxDeidGuid -Value $val }
+				'Sid'      { Get-PaxDeidSid -Value $val }
+				'Token'    { Get-PaxDeidToken -Value $val }
+				'Resource' { Get-PaxDeidResource -Value $val }
+				'File'     { Get-PaxDeidFile -Value $val }
+				'Proxy'    { Get-PaxDeidProxy -Value $val }
+				'Ip'       { Get-PaxDeidIp -Value $val }
+			}
+		}
+		foreach ($jc in $activeJson) {
+			if (-not [string]::IsNullOrEmpty($row.$jc)) { $row.$jc = Get-PaxDeidJson -Value $row.$jc }
+		}
+	}
+
+	# Atomic in-place rewrite (temp + replace), preserving original column order.
+	$tmp = "$Path.deid.tmp"
+	Open-CsvWriter -Path $tmp -Columns $columns
+	Write-CsvRows -Rows $rows -Columns $columns
+	Close-CsvWriter
+	Move-Item -LiteralPath $tmp -Destination $Path -Force
+}
+
+function Test-PaxFileDeidentified {
+	<#
+	.SYNOPSIS
+		Classify a CSV append target as 'deid' | 'raw' | 'unknown' by sampling its identity column.
+	.DESCRIPTION
+		'deid'   = at least one non-empty identity value carries the deidentify marker
+		           (<hex>@deidentified.domain).
+		'raw'    = identity values present, none carry the marker.
+		'unknown'= file missing/unreadable, no recognised identity column, or no non-empty
+		           identity values to judge by (caller skips the guard in that case).
+		Streams at most ~200 rows (pipeline short-circuits) so it is cheap on large files.
+	#>
+	param([Parameter(Mandatory = $true)][string]$Path)
+	if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return 'unknown' }
+	try {
+		$sample = @(Import-Csv -LiteralPath $Path | Select-Object -First 200)
+	} catch {
+		return 'unknown'
+	}
+	if ($sample.Count -eq 0) { return 'unknown' }
+	$cols = $sample[0].PSObject.Properties.Name
+	# Identity columns across every deidentified output family (audit raw, CopilotInteraction
+	# fact (aibv), M365 rollup, Users dim). The aio fact has no UPN column -> 'unknown' there,
+	# but the paired -AppendUserInfo Users dim (PersonId) carries the signal.
+	$idCol = @('Audit_UserId', 'UserId', 'PersonId', 'userPrincipalName', 'MailboxOwnerUPN') |
+		Where-Object { $cols -contains $_ } | Select-Object -First 1
+	if (-not $idCol) { return 'unknown' }
+	$sawValue = $false
+	foreach ($r in $sample) {
+		$v = [string]$r.$idCol
+		if ([string]::IsNullOrEmpty($v)) { continue }
+		$sawValue = $true
+		if ($v.TrimEnd().ToLowerInvariant().EndsWith($script:PaxDeidMarkerSuffix)) { return 'deid' }
+	}
+	if ($sawValue) { return 'raw' }
+	return 'unknown'
+}
+
+function Assert-PaxDeidAppendConsistency {
+	<#
+	.SYNOPSIS
+		Hard-stop guard preventing deidentified/raw data from being mixed in an append target.
+	.DESCRIPTION
+		Data-accuracy gate for -AppendFile / -AppendUserInfo:
+		  * BLOCK when the target's deidentify state disagrees with this run's -Deidentify state
+		    (mixing hashed + raw identities corrupts user joins and distinct counts).
+		  * BLOCK appending into an already-deidentified target in NON-rollup mode (the whole-file
+		    post-pass would re-hash existing rows -> double-hashing). Rollup append into a
+		    deidentified target is allowed because it MERGES two same-salt outputs.
+		Throws on violation; the caller renders the message and exits non-zero.
+	#>
+	param(
+		[Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Targets,
+		[Parameter(Mandatory = $true)][bool]$IsRollup
+	)
+	$runDeid = [bool]$script:PaxDeidEnabled
+	foreach ($t in $Targets) {
+		$path = [string]$t.Path
+		$label = [string]$t.Label
+		if ([string]::IsNullOrWhiteSpace($path)) { continue }
+		$state = Test-PaxFileDeidentified -Path $path
+		if ($state -eq 'unknown') { continue }
+		$tgtDeid = ($state -eq 'deid')
+		if ($tgtDeid -ne $runDeid) {
+			$desc = if ($tgtDeid) { 'is already DEIDENTIFIED but this run is NOT -Deidentify' }
+				else { 'is NOT deidentified but this run IS -Deidentify' }
+			throw ("-Deidentify/append mismatch: the $label target $desc. Mixing deidentified and raw " +
+				"identities in one file corrupts user joins and distinct counts. Use a separate target " +
+				"for deidentified output, or re-run with a matching -Deidentify state.`nTarget: $path")
+		}
+		if ($tgtDeid -and $runDeid -and -not $IsRollup) {
+			throw ("-Deidentify cannot append to an already-deidentified file in non-rollup mode: the " +
+				"$label target is deidentified and a non-rollup append would re-hash its existing rows " +
+				"(double-hashing). Append on a RAW master and deidentify a fresh copy, or use " +
+				"-Rollup / -RollupPlusRaw (which merge matching-salt outputs).`nTarget: $path")
+		}
+	}
 }
 
 # --- Helper Function: Detect if PAYG billing is configured in tenant ---
@@ -3646,6 +4195,57 @@ if ($Rollup -or $RollupPlusRaw) {
 	}
 }
 
+# ---------------------------------------------------------------------------
+# -FillerLabel: org/manager-hierarchy level-filler for the rolled-up AIO/AIBV
+# Users output. The hierarchy itself is always built for AIO/AIBV; this only sets
+# what goes in level slots deeper than a user. Rollup-only; never the M365 path.
+# Resolved here (after the rollup/dashboard state is finalized above) into the two
+# script vars threaded to the embedded CopilotInteraction processor.
+# ---------------------------------------------------------------------------
+$script:HierarchyFillMode  = 'none'
+$script:HierarchyFillLabel = ''
+$fillerLabelBound = $PSBoundParameters.ContainsKey('FillerLabel')
+$fillerTextBound  = $PSBoundParameters.ContainsKey('FillerLabelText')
+if ($fillerTextBound -and -not $fillerLabelBound) {
+	Write-Host "ERROR: -FillerLabelText is only valid together with -FillerLabel Fixed." -ForegroundColor Red
+	exit 1
+}
+if ($fillerLabelBound) {
+	if (-not ($Rollup -or $RollupPlusRaw)) {
+		Write-Host "ERROR: -FillerLabel requires -Rollup or -RollupPlusRaw." -ForegroundColor Red
+		Write-Host "  -FillerLabel only affects the rolled-up AI-in-One / AI Business Value Users output." -ForegroundColor Yellow
+		exit 1
+	}
+	if ($script:RollupProcessorMode -eq 'M365Bundle') {
+		Write-Host "ERROR: -FillerLabel is not valid with the M365 dashboard (-IncludeM365Usage / -Dashboard M365)." -ForegroundColor Red
+		Write-Host "  The org / manager hierarchy is produced only for the AI-in-One and AI Business Value dashboards." -ForegroundColor Yellow
+		exit 1
+	}
+	$fillMode = ([string]$FillerLabel).Trim()
+	switch ($fillMode.ToLowerInvariant()) {
+		'null'          { $script:HierarchyFillMode = 'none' }
+		'self'          { $script:HierarchyFillMode = 'self' }
+		'repeatmanager' { $script:HierarchyFillMode = 'manager' }
+		'fixed'         { $script:HierarchyFillMode = 'fixed' }
+		default {
+			Write-Host "ERROR: -FillerLabel value '$fillMode' is not recognized." -ForegroundColor Red
+			Write-Host "  Use one of: null, Self, RepeatManager, or Fixed (with -FillerLabelText `"<text>`")." -ForegroundColor Yellow
+			exit 1
+		}
+	}
+	if ($script:HierarchyFillMode -eq 'fixed') {
+		if (-not $fillerTextBound -or [string]::IsNullOrWhiteSpace($FillerLabelText)) {
+			Write-Host "ERROR: -FillerLabel Fixed requires -FillerLabelText `"<text>`" (e.g. -FillerLabel Fixed -FillerLabelText `"Assistive Directs`")." -ForegroundColor Red
+			exit 1
+		}
+		$script:HierarchyFillLabel = [string]$FillerLabelText
+	}
+	elseif ($fillerTextBound) {
+		Write-Host "ERROR: -FillerLabelText is only valid with -FillerLabel Fixed (not with '$fillMode')." -ForegroundColor Red
+		exit 1
+	}
+}
+
 # ============================================================================
 # EMBEDDED PYTHON POST-PROCESSORS
 # ============================================================================
@@ -3656,14 +4256,14 @@ if ($Rollup -or $RollupPlusRaw) {
 # resolved Python interpreter, and deleted in finally. Single-quoted here-
 # strings prevent any PowerShell variable expansion of the Python source.
 # ============================================================================
-$Script:EMBEDDED_PROCESSOR_COPILOT_VERSION = '4.0.0'
+$Script:EMBEDDED_PROCESSOR_COPILOT_VERSION = '4.1.0'
 $Script:EMBEDDED_PROCESSOR_M365_VERSION    = '2.6.1'
 
 # >>> BEGIN-EMBEDDED-COPILOT-PROCESSOR
 $Script:EMBEDDED_PROCESSOR_COPILOT = @'
 #!/usr/bin/env python3
 """
-Purview CopilotInteraction Processor v4.0.0
+Purview CopilotInteraction Processor v4.1.0
 -------------------------------------------
 Two-input / two-output preprocessor for the AI Business Value Dashboard
 and AI-in-One Rollup PBIPs.
@@ -3739,6 +4339,8 @@ from __future__ import annotations
 import argparse
 import csv
 import functools
+import hashlib
+import hmac
 import os
 import re
 import sys
@@ -3767,7 +4369,7 @@ except ImportError:
     _JSON_ENGINE = "json (stdlib)"
 
 
-SCRIPT_VERSION = "4.0.0"
+SCRIPT_VERSION = "4.1.0"
 
 # ---------------------------------------------------------------------------
 # Output schemas — TWO PROFILES
@@ -3930,6 +4532,132 @@ def to_text(value: Any) -> str:
 
 def normalize_user_id(value: Any) -> str:
     return to_text(value).strip().lower()
+
+
+# ---------------------------------------------------------------------------
+# Deidentification (--deidentify): one-way, salted, format-preserving.
+# OFF by default; enabled by main() setting the module flag from --deidentify.
+# Every PII value becomes a deterministic token so relationships (manager links,
+# UserKey/Users joins, distinct-resource counts) are preserved while identities
+# are removed. Irreversible (no decode map). The SAME salt + algorithm + formats
+# MUST exist verbatim in the PowerShell raw-path deidentifier and the M365
+# processor (PAX deidentify spec) so tokens match across engines.
+# ---------------------------------------------------------------------------
+_DEIDENTIFY: bool = False
+_DEID_SALT = b"PAX-Deidentify-Salt-v1-DO-NOT-CHANGE-7f3c1e9b2d846050a1c4e8b3"
+_DEID_DOMAIN = "deidentified.domain"
+_deid_cache: dict[str, str] = {}
+
+
+def _deid_hex(value: str, length: int) -> str:
+    return hmac.new(
+        _DEID_SALT, value.strip().lower().encode("utf-8"), hashlib.sha256
+    ).hexdigest()[:length]
+
+
+def deid_upn(value: str) -> str:
+    """UPN / email -> <12hex>@deidentified.domain. No-op when off or value empty."""
+    if not _DEIDENTIFY or not value:
+        return value
+    k = "upn\x00" + value
+    v = _deid_cache.get(k)
+    if v is None:
+        v = _deid_hex(value, 12) + "@" + _DEID_DOMAIN
+        _deid_cache[k] = v
+    return v
+
+
+def deid_name(value: str) -> str:
+    """Person/device display name -> <12hex>."""
+    if not _DEIDENTIFY or not value:
+        return value
+    k = "name\x00" + value
+    v = _deid_cache.get(k)
+    if v is None:
+        v = _deid_hex(value, 12)
+        _deid_cache[k] = v
+    return v
+
+
+def deid_guid(value: str) -> str:
+    """GUID -> deterministic GUID shape xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx."""
+    if not _DEIDENTIFY or not value:
+        return value
+    k = "guid\x00" + value
+    v = _deid_cache.get(k)
+    if v is None:
+        h = _deid_hex(value, 32)
+        v = f"{h[0:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
+        _deid_cache[k] = v
+    return v
+
+
+def deid_sid(value: str) -> str:
+    """SID -> deterministic S-1-5-21-<d1>-<d2>-<d3>-<d4> shape."""
+    if not _DEIDENTIFY or not value:
+        return value
+    k = "sid\x00" + value
+    v = _deid_cache.get(k)
+    if v is None:
+        h = _deid_hex(value, 32)
+        v = "S-1-5-21-{0}-{1}-{2}-{3}".format(
+            int(h[0:8], 16), int(h[8:16], 16), int(h[16:24], 16), int(h[24:32], 16)
+        )
+        _deid_cache[k] = v
+    return v
+
+
+def deid_token(value: str) -> str:
+    """Opaque id (employeeId, immutableId) -> <12hex>."""
+    if not _DEIDENTIFY or not value:
+        return value
+    k = "tok\x00" + value
+    v = _deid_cache.get(k)
+    if v is None:
+        v = _deid_hex(value, 12)
+        _deid_cache[k] = v
+    return v
+
+
+def deid_resource(value: str) -> str:
+    """Resource URL -> site_<12hex> (whole-string hash; preserves distinct-count)."""
+    if not _DEIDENTIFY or not value:
+        return value
+    k = "res\x00" + value
+    v = _deid_cache.get(k)
+    if v is None:
+        v = "site_" + _deid_hex(value, 12)
+        _deid_cache[k] = v
+    return v
+
+
+def deid_file(value: str) -> str:
+    """File / document name -> file_<12hex>."""
+    if not _DEIDENTIFY or not value:
+        return value
+    k = "file\x00" + value
+    v = _deid_cache.get(k)
+    if v is None:
+        v = "file_" + _deid_hex(value, 12)
+        _deid_cache[k] = v
+    return v
+
+
+def deid_proxy(value: str) -> str:
+    """proxyAddresses entry(ies) -> keep smtp:/SMTP: prefix + deidentified email.
+    Handles ';'-delimited multi-value fields."""
+    if not _DEIDENTIFY or not value:
+        return value
+    out = []
+    for entry in value.split(";"):
+        if not entry:
+            out.append(entry)
+        elif ":" in entry:
+            prefix, addr = entry.split(":", 1)
+            out.append(prefix + ":" + deid_upn(addr))
+        else:
+            out.append(deid_upn(entry))
+    return ";".join(out)
 
 
 # Non-human/system identities found in Purview audit logs (Teams Sync, SharePoint app,
@@ -4997,6 +5725,118 @@ def load_licensing_map(licensing_csv: str) -> tuple[dict[str, str], int]:
     return license_map, row_count
 
 
+# ---------------------------------------------------------------------------
+# Org / manager hierarchy (Users dim enrichment; AIO + AIBV; always on).
+# Built from the Entra manager links (id <-> manager_id, UPN fallback) that PAX
+# already pulls. Structure is keyed on the INT UserKey surrogate, so every
+# *_UserKey / OrgLevel / HierarchyPath column is identical with or without
+# --deidentify; the *_Name columns use the display name as written (hashed when
+# --deidentify is on). Filler for level slots deeper than a user is controlled
+# by --hierarchy-fill (none|self|manager|fixed); 'fixed' uses --hierarchy-fill-label.
+# ---------------------------------------------------------------------------
+_HIER_LEVELS = 15           # Level0..Level14 denormalized top-down columns
+_HIER_WALK_CAP = 1000       # safety backstop for manager-chain walks (cycle guard also applies)
+_HIER_FILL_MODE = "none"    # none | self | manager | fixed (set in main() from --hierarchy-fill)
+_HIER_FILL_LABEL = ""       # literal label for 'fixed' (set in main() from --hierarchy-fill-label)
+
+
+def _hier_columns() -> list[str]:
+    cols = [
+        "Manager_UserKey", "OrgLevel", "HierarchyPath", "TopOfChain_UserKey",
+        "IsManager", "DirectReports", "TotalReports",
+    ]
+    for i in range(_HIER_LEVELS):
+        cols.append(f"Level{i}_UserKey")
+        cols.append(f"Level{i}_Name")
+    return cols
+
+
+_HIER_COLUMNS: list[str] = _hier_columns()
+
+
+def _hier_filler(uk: int, mgr, name_by_uk: dict, mode: str, label: str) -> tuple[str, str]:
+    """(UserKey, Name) to place in a level slot DEEPER than the user's own level."""
+    if mode == "self":
+        return str(uk), name_by_uk.get(uk, "")
+    if mode == "manager":
+        ref = mgr if mgr is not None else uk
+        return str(ref), name_by_uk.get(ref, "")
+    if mode == "fixed":
+        return "", label
+    return "", ""  # none
+
+
+def _build_org_hierarchy(uk_by_id, uk_by_upn, mgr_ptr, name_by_uk) -> dict:
+    """Return {UserKey -> {hier_col: value}}.
+
+    uk_by_id  : normalized Entra id   -> UserKey
+    uk_by_upn : normalized UPN        -> UserKey
+    mgr_ptr   : UserKey -> (manager_id_norm, manager_upn_norm)
+    name_by_uk: UserKey -> display name (as written; deid'd when applicable)
+    """
+    # Immediate manager UserKey for each user (id link first, UPN fallback).
+    direct_mgr: dict = {}
+    for uk, (mid, mupn) in mgr_ptr.items():
+        m = uk_by_id.get(mid) if mid else None
+        if m is None and mupn:
+            m = uk_by_upn.get(mupn)
+        if m == uk:
+            m = None  # ignore self-management
+        direct_mgr[uk] = m
+
+    direct_reports: dict = {}
+    for uk, m in direct_mgr.items():
+        if m is not None:
+            direct_reports[m] = direct_reports.get(m, 0) + 1
+
+    all_uks = set(uk_by_upn.values()) | set(name_by_uk.keys()) | set(direct_mgr.keys())
+    total_reports: dict = {}
+    result: dict = {}
+    mode = _HIER_FILL_MODE
+    label = _HIER_FILL_LABEL
+
+    for uk in all_uks:
+        chain = []
+        seen = set()
+        cur = uk
+        while cur is not None and cur not in seen and len(chain) < _HIER_WALK_CAP:
+            seen.add(cur)
+            chain.append(cur)
+            cur = direct_mgr.get(cur)
+        # every ancestor of uk gains one report (cycle-safe via `seen`)
+        for anc in chain[1:]:
+            total_reports[anc] = total_reports.get(anc, 0) + 1
+        chain.reverse()  # top .. user
+        depth = len(chain) - 1
+        top = chain[0]
+        mgr = direct_mgr.get(uk)
+        rec = {
+            "Manager_UserKey": str(mgr) if mgr is not None else "",
+            "OrgLevel": str(depth),
+            "HierarchyPath": "/".join(str(x) for x in chain),
+            "TopOfChain_UserKey": str(top),
+        }
+        n = len(chain)
+        for i in range(_HIER_LEVELS):
+            if i < n:
+                node = chain[i]
+                rec[f"Level{i}_UserKey"] = str(node)
+                rec[f"Level{i}_Name"] = name_by_uk.get(node, "")
+            else:
+                fk, fn = _hier_filler(uk, mgr, name_by_uk, mode, label)
+                rec[f"Level{i}_UserKey"] = fk
+                rec[f"Level{i}_Name"] = fn
+        result[uk] = rec
+
+    for uk in all_uks:
+        dr = direct_reports.get(uk, 0)
+        result[uk]["DirectReports"] = str(dr)
+        result[uk]["IsManager"] = "TRUE" if dr > 0 else "FALSE"
+        result[uk]["TotalReports"] = str(total_reports.get(uk, 0))
+
+    return result
+
+
 def load_entra_and_write_users(
     entra_csv: str,
     users_out_csv: str,
@@ -5068,11 +5908,59 @@ def load_entra_and_write_users(
         for inj in injected:
             if inj not in renamed_headers:
                 renamed_headers.append(inj)
+        # Org/manager hierarchy columns (always appended; AIO/AIBV Users dim).
+        for hc in _HIER_COLUMNS:
+            if hc not in renamed_headers:
+                renamed_headers.append(hc)
 
         rows = list(reader)
 
     total_rows = len(rows)
     user_lookup: dict[str, dict[str, str]] = {}
+
+    # --- Org/manager hierarchy pre-pass: assign UserKeys in Entra-file order and
+    # build the link maps from the SAME rename + deid the write loop applies, then
+    # resolve the hierarchy. Always on for the AIO/AIBV Users dim. UserKeys assigned
+    # here are reused by the write loop (identical to the prior lazy assignment). ---
+    uk_by_id: dict[str, int] = {}
+    uk_by_upn: dict[str, int] = {}
+    mgr_ptr: dict[int, tuple[str, str]] = {}
+    name_by_uk: dict[int, str] = {}
+    for src_row in rows:
+        pid = src_row.get(upn_col, "") if (upn_col and upn_col != "PersonId") else src_row.get("PersonId", "")
+        pid = "" if pid is None else str(pid)
+        if _DEIDENTIFY:
+            pid = deid_upn(pid)
+        pid_norm = pid.strip().lower()
+        if not pid_norm:
+            continue
+        uk = user_key_map.get(pid_norm)
+        if uk is None:
+            uk = len(user_key_map) + 1
+            user_key_map[pid_norm] = uk
+        uk_by_upn[pid_norm] = uk
+        rid = src_row.get("id", "")
+        rid = "" if rid is None else str(rid)
+        if _DEIDENTIFY:
+            rid = deid_guid(rid)
+        rid_norm = rid.strip().lower()
+        if rid_norm:
+            uk_by_id[rid_norm] = uk
+        mid = src_row.get("manager_id", "")
+        mid = "" if mid is None else str(mid)
+        if _DEIDENTIFY:
+            mid = deid_guid(mid)
+        mupn = src_row.get("manager_userPrincipalName", "")
+        mupn = "" if mupn is None else str(mupn)
+        if _DEIDENTIFY:
+            mupn = deid_upn(mupn)
+        mgr_ptr[uk] = (mid.strip().lower(), mupn.strip().lower())
+        dn = src_row.get("displayName", "")
+        dn = "" if dn is None else str(dn)
+        if _DEIDENTIFY:
+            dn = deid_name(dn)
+        name_by_uk[uk] = dn
+    hier_by_uk = _build_org_hierarchy(uk_by_id, uk_by_upn, mgr_ptr, name_by_uk)
 
     out_dir = Path(users_out_csv).parent
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -5094,6 +5982,43 @@ def load_entra_and_write_users(
                 tgt_h = rename_map.get(src_h, src_h)
                 if tgt_h in out_row:
                     out_row[tgt_h] = "" if value is None else str(value)
+
+            # Deidentification (no-op unless --deidentify): transform identity columns
+            # IN PLACE before PersonId_Normalized / UserKey derive from PersonId, so the
+            # fact<->Users join and manager links stay consistent across the hash.
+            if _DEIDENTIFY:
+                if "PersonId" in out_row:
+                    out_row["PersonId"] = deid_upn(out_row["PersonId"])
+                if "displayName" in out_row:
+                    out_row["displayName"] = deid_name(out_row["displayName"])
+                if "mail" in out_row:
+                    out_row["mail"] = deid_upn(out_row["mail"])
+                if "givenName" in out_row:
+                    out_row["givenName"] = deid_name(out_row["givenName"])
+                if "surname" in out_row:
+                    out_row["surname"] = deid_name(out_row["surname"])
+                if "UserName" in out_row:
+                    out_row["UserName"] = deid_upn(out_row["UserName"])
+                if "employeeId" in out_row:
+                    out_row["employeeId"] = deid_token(out_row["employeeId"])
+                if "onPremisesImmutableId" in out_row:
+                    out_row["onPremisesImmutableId"] = deid_token(out_row["onPremisesImmutableId"])
+                if "proxyAddresses_Primary" in out_row:
+                    out_row["proxyAddresses_Primary"] = deid_proxy(out_row["proxyAddresses_Primary"])
+                if "proxyAddresses_All" in out_row:
+                    out_row["proxyAddresses_All"] = deid_proxy(out_row["proxyAddresses_All"])
+                if "id" in out_row:
+                    out_row["id"] = deid_guid(out_row["id"])
+                if "manager_id" in out_row:
+                    out_row["manager_id"] = deid_guid(out_row["manager_id"])
+                if "manager_userPrincipalName" in out_row:
+                    out_row["manager_userPrincipalName"] = deid_upn(out_row["manager_userPrincipalName"])
+                if "manager_displayName" in out_row:
+                    out_row["manager_displayName"] = deid_name(out_row["manager_displayName"])
+                if "manager_mail" in out_row:
+                    out_row["manager_mail"] = deid_upn(out_row["manager_mail"])
+                if "ManagerID" in out_row:
+                    out_row["ManagerID"] = deid_guid(out_row["ManagerID"])
 
             # PersonId_Normalized
             person_id = out_row.get("PersonId", "")
@@ -5143,6 +6068,14 @@ def load_entra_and_write_users(
 
             # TotalEmployees (matches M-code: row count repeated per row)
             out_row["TotalEmployees"] = str(total_rows)
+
+            # Org/manager hierarchy columns (always emitted; blank if no UserKey).
+            uk_str = out_row.get("UserKey", "")
+            if uk_str:
+                hrec = hier_by_uk.get(int(uk_str))
+                if hrec:
+                    for hc in _HIER_COLUMNS:
+                        out_row[hc] = hrec.get(hc, "")
 
             writer.writerow(out_row)
 
@@ -5216,6 +6149,10 @@ def explode_record(
     audit_user_id_raw = to_text(audit_data.get("UserId"))
     if not _is_human_upn(audit_user_id_raw):
         return []
+    # Deidentify (no-op unless --deidentify) AFTER the human-UPN filter so the filter
+    # sees the original; every downstream UserKey/Audit_UserId/join derives from the
+    # hashed value, keeping it consistent with the (also-hashed) Users dim.
+    audit_user_id_raw = deid_upn(audit_user_id_raw)
     audit_user_id_norm = normalize_user_id(audit_user_id_raw)
     # UserKey INT surrogate. If this audit user wasn't in Entra, mint a new
     # INT and stash so subsequent rows for the same user reuse it. The
@@ -5342,7 +6279,7 @@ def explode_record(
             nongrain = dict(base_nongrain)
             nongrain["AccessedResource_Type"] = res_type_str
             nongrain["AccessedResource_Action"] = res_action_str
-            nongrain["AccessedResource_SiteUrl"] = res_site_str
+            nongrain["AccessedResource_SiteUrl"] = deid_resource(res_site_str)
             nongrain["AccessedResource_SensitivityLabelId"] = res_sens_label_str
             nongrain["Behavior_Source"] = behavior_source
             nongrain["Value_Outcome"] = value_outcome
@@ -5948,6 +6885,17 @@ def main() -> None:
         help=argparse.SUPPRESS,
     )
     parser.add_argument(
+        "--deidentify",
+        action="store_true",
+        default=False,
+        help=(
+            "One-way hash all identifying values (UPNs, names, manager fields, "
+            "Entra/mailbox GUIDs and SIDs, resource URLs) for anonymous reporting. "
+            "Deterministic and format-preserving, so manager links and "
+            "UserKey/Users joins are kept; irreversible (no decode map)."
+        ),
+    )
+    parser.add_argument(
         # PAX append support (not in the standalone v4.0.0 reference).
         "--seed-mid-map",
         default=None,
@@ -5976,12 +6924,47 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--hierarchy-fill",
+        choices=("none", "self", "manager", "fixed"),
+        default="none",
+        help=(
+            "Filler for org-hierarchy level slots deeper than a user's own level "
+            "(Users dim, AIO/AIBV). 'none' (default) leaves them blank; 'self' "
+            "repeats the user; 'manager' repeats the user's manager; 'fixed' uses "
+            "--hierarchy-fill-label. The hierarchy columns are always emitted."
+        ),
+    )
+    parser.add_argument(
+        "--hierarchy-fill-label",
+        default="",
+        help="Literal label used when '--hierarchy-fill fixed' is selected.",
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"%(prog)s {SCRIPT_VERSION}",
     )
 
     args = parser.parse_args()
+
+    global _DEIDENTIFY
+    _DEIDENTIFY = bool(args.deidentify)
+
+    global _HIER_FILL_MODE, _HIER_FILL_LABEL
+    _HIER_FILL_MODE = args.hierarchy_fill
+    _HIER_FILL_LABEL = args.hierarchy_fill_label or ""
+    if _HIER_FILL_MODE == "fixed" and not _HIER_FILL_LABEL:
+        print(
+            'ERROR: --hierarchy-fill fixed requires --hierarchy-fill-label "<text>".',
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if _HIER_FILL_MODE != "fixed" and _HIER_FILL_LABEL:
+        print(
+            "ERROR: --hierarchy-fill-label is only valid with --hierarchy-fill fixed.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     if args.licensing and args.combined_entra:
         print(
@@ -6185,6 +7168,8 @@ from __future__ import annotations
 import argparse
 import bisect
 import csv
+import hashlib
+import hmac
 import os
 import random
 import re
@@ -6830,6 +7815,139 @@ def _is_human_upn(uid: str) -> bool:
     return True
 
 
+# ---------------------------------------------------------------------------
+# Deidentification (--deidentify): one-way, salted, format-preserving.
+# OFF by default; enabled by main() setting the module flag from --deidentify
+# (and propagated to explosion worker processes via _deid_init_worker). Every
+# PII value becomes a deterministic token so relationships (user joins,
+# distinct-resource counts) are preserved while identities are removed.
+# Irreversible (no decode map). The SAME salt + algorithm + formats MUST exist
+# verbatim in the PowerShell raw-path deidentifier and the CopilotInteraction
+# processor (PAX deidentify spec) so tokens match across engines.
+# ---------------------------------------------------------------------------
+_DEIDENTIFY: bool = False
+_DEID_SALT = b"PAX-Deidentify-Salt-v1-DO-NOT-CHANGE-7f3c1e9b2d846050a1c4e8b3"
+_DEID_DOMAIN = "deidentified.domain"
+_deid_cache: dict[str, str] = {}
+
+
+def _deid_init_worker(flag: bool) -> None:
+    """ProcessPoolExecutor initializer: propagate the deidentify flag to workers."""
+    global _DEIDENTIFY
+    _DEIDENTIFY = flag
+
+
+def _deid_hex(value: str, length: int) -> str:
+    return hmac.new(
+        _DEID_SALT, value.strip().lower().encode("utf-8"), hashlib.sha256
+    ).hexdigest()[:length]
+
+
+def deid_upn(value: str) -> str:
+    """UPN / email -> <12hex>@deidentified.domain. No-op when off or value empty."""
+    if not _DEIDENTIFY or not value:
+        return value
+    k = "upn\x00" + value
+    v = _deid_cache.get(k)
+    if v is None:
+        v = _deid_hex(value, 12) + "@" + _DEID_DOMAIN
+        _deid_cache[k] = v
+    return v
+
+
+def deid_name(value: str) -> str:
+    """Person/device display name -> <12hex>."""
+    if not _DEIDENTIFY or not value:
+        return value
+    k = "name\x00" + value
+    v = _deid_cache.get(k)
+    if v is None:
+        v = _deid_hex(value, 12)
+        _deid_cache[k] = v
+    return v
+
+
+def deid_guid(value: str) -> str:
+    """GUID -> deterministic GUID shape xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx."""
+    if not _DEIDENTIFY or not value:
+        return value
+    k = "guid\x00" + value
+    v = _deid_cache.get(k)
+    if v is None:
+        h = _deid_hex(value, 32)
+        v = f"{h[0:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
+        _deid_cache[k] = v
+    return v
+
+
+def deid_sid(value: str) -> str:
+    """SID -> deterministic S-1-5-21-<d1>-<d2>-<d3>-<d4> shape."""
+    if not _DEIDENTIFY or not value:
+        return value
+    k = "sid\x00" + value
+    v = _deid_cache.get(k)
+    if v is None:
+        h = _deid_hex(value, 32)
+        v = "S-1-5-21-{0}-{1}-{2}-{3}".format(
+            int(h[0:8], 16), int(h[8:16], 16), int(h[16:24], 16), int(h[24:32], 16)
+        )
+        _deid_cache[k] = v
+    return v
+
+
+def deid_token(value: str) -> str:
+    """Opaque id (employeeId, immutableId) -> <12hex>."""
+    if not _DEIDENTIFY or not value:
+        return value
+    k = "tok\x00" + value
+    v = _deid_cache.get(k)
+    if v is None:
+        v = _deid_hex(value, 12)
+        _deid_cache[k] = v
+    return v
+
+
+def deid_resource(value: str) -> str:
+    """Resource URL -> site_<12hex> (whole-string hash; preserves distinct-count)."""
+    if not _DEIDENTIFY or not value:
+        return value
+    k = "res\x00" + value
+    v = _deid_cache.get(k)
+    if v is None:
+        v = "site_" + _deid_hex(value, 12)
+        _deid_cache[k] = v
+    return v
+
+
+def deid_file(value: str) -> str:
+    """File / document name -> file_<12hex>."""
+    if not _DEIDENTIFY or not value:
+        return value
+    k = "file\x00" + value
+    v = _deid_cache.get(k)
+    if v is None:
+        v = "file_" + _deid_hex(value, 12)
+        _deid_cache[k] = v
+    return v
+
+
+def deid_proxy(value: str) -> str:
+    """proxyAddresses entry(ies) -> keep smtp:/SMTP: prefix + deidentified email.
+    Handles ';'-delimited multi-value fields."""
+    if not _DEIDENTIFY or not value:
+        return value
+    out = []
+    for entry in value.split(";"):
+        if not entry:
+            out.append(entry)
+        elif ":" in entry:
+            prefix, addr = entry.split(":", 1)
+            out.append(prefix + ":" + deid_upn(addr))
+        else:
+            out.append(deid_upn(entry))
+    return ";".join(out)
+
+
 def _extract_rollup_keys(
     record: dict,
     audit_data: dict,
@@ -7159,6 +8277,18 @@ def _build_unified_row(record: dict, audit_data: dict) -> dict:
         "AccessedResource_ResourceType": "",
         "Context_Item": "",
     }
+    if _DEIDENTIFY:
+        # Exploded (153-col) identity + resource fields. AccessedResource_SiteUrl/Name on
+        # Copilot rows are hashed in explode_copilot_record (set there after this returns).
+        row["UserId"] = deid_upn(row["UserId"])
+        row["MailboxOwnerUPN"] = deid_upn(row["MailboxOwnerUPN"])
+        row["MailboxGuid"] = deid_guid(row["MailboxGuid"])
+        row["LogonUserSid"] = deid_sid(row["LogonUserSid"])
+        row["MailboxOwnerSid"] = deid_sid(row["MailboxOwnerSid"])
+        row["DeviceDisplayName"] = deid_name(row["DeviceDisplayName"])
+        row["SiteUrl"] = deid_resource(row["SiteUrl"])
+        row["SourceRelativeUrl"] = deid_resource(row["SourceRelativeUrl"])
+        row["SourceFileName"] = deid_file(row["SourceFileName"])
     return row
 
 
@@ -7380,8 +8510,8 @@ def explode_copilot_record(
             res = resources[i]
             row["AccessedResource_Action"] = safe_get(res, "Action") or ""
             row["AccessedResource_PolicyDetails"] = to_json_if_object(safe_get(res, "PolicyDetails"))
-            row["AccessedResource_SiteUrl"] = safe_get(res, "SiteUrl") or ""
-            row["AccessedResource_Name"] = safe_get(res, "Name") or ""
+            row["AccessedResource_SiteUrl"] = deid_resource(safe_get(res, "SiteUrl") or "")
+            row["AccessedResource_Name"] = deid_file(safe_get(res, "Name") or "")
             row["AccessedResource_SensitivityLabel"] = safe_get(res, "SensitivityLabel") or ""
             row["AccessedResource_ResourceType"] = safe_get(res, "ResourceType") or ""
         else:
@@ -7570,7 +8700,7 @@ def run_explosion(
 
     if use_parallel:
         chunk_args = [(chunk, prompt_filter) for chunk in chunks]
-        with ProcessPoolExecutor(max_workers=workers) as executor:
+        with ProcessPoolExecutor(max_workers=workers, initializer=_deid_init_worker, initargs=(_DEIDENTIFY,)) as executor:
             futures = {executor.submit(_process_chunk, arg): idx for idx, arg in enumerate(chunk_args)}
             for future in as_completed(futures):
                 try:
@@ -7809,7 +8939,7 @@ def run_rollup(
         writer.writerow(ROLLUP_HEADER)
         for (uid_lower, cdate, op, wl, sfe, ah, agent_id, agent_name, ctx_type), acc in rollup.items():
             writer.writerow([
-                acc.original_user_id,  # output original casing, NOT lowered key
+                deid_upn(acc.original_user_id),  # output original casing, NOT lowered key
                 cdate,
                 op,
                 wl,
@@ -7836,7 +8966,7 @@ def run_rollup(
                 if session_count == 0 and sacc.prompt_count == 0:
                     continue  # no signal — skip
                 writer.writerow([
-                    sacc.original_user_id,
+                    deid_upn(sacc.original_user_id),
                     cdate,
                     ah,
                     session_count,
@@ -8683,6 +9813,16 @@ ADVANCED
         help=argparse.SUPPRESS,
     )
     advanced.add_argument(
+        "--deidentify",
+        action="store_true",
+        default=False,
+        help=(
+            "One-way hash all identifying values (UserId, mailbox UPN/GUID/SIDs, "
+            "device name, resource URLs/file names) for anonymous reporting. "
+            "Deterministic and format-preserving; irreversible (no decode map)."
+        ),
+    )
+    advanced.add_argument(
         "--rebuild-sidecars-from-rollup",
         metavar="ROLLUP_CSV",
         default=None,
@@ -8710,6 +9850,9 @@ ADVANCED
     )
 
     args = parser.parse_args()
+
+    global _DEIDENTIFY
+    _DEIDENTIFY = bool(args.deidentify)
 
     # ── Standalone sidecar regeneration mode ─────────────────────────────
     # When --rebuild-sidecars-from-rollup is supplied, ignore every other
@@ -13508,6 +14651,17 @@ function Initialize-CheckpointForNewRun {
 			outputPath = if ($script:DestRaw -and $script:DestRaw['Purview']) { [string]$script:DestRaw['Purview'] } else { $OutputPath }
 			exportWorkbook = [bool]$AllParameters.ExportWorkbook
 			combineOutput = [bool]$AllParameters.CombineOutput
+			# Deidentify: persisted so a resumed run keeps the original run's anonymization.
+			# -Deidentify cannot be passed on the resume command line (resume allow-list rejects
+			# it), so the checkpoint is the sole source of truth for it on resume.
+			deidentify = [bool]$AllParameters.Deidentify
+
+			# FillerLabel: persisted (resolved hierarchy-filler mode + literal) so a resumed
+			# AIO/AIBV rollup keeps the original run's level-filler choice. -FillerLabel /
+			# -FillerLabelText cannot be passed on resume (allow-list), so the checkpoint is the
+			# sole source of truth for them on resume.
+			fillerLabelMode = [string]$AllParameters.FillerLabel
+			fillerLabelText = [string]$AllParameters.FillerLabelText
 
 			# Append-mode targets. Persisted so a resumed run continues to merge
 			# against the same target file/dim, even if the resume command line omits the
@@ -18780,6 +19934,39 @@ elseif ($ExportWorkbook) {
 	$OutputFile = Join-Path $OutputPath "${filePrefix}_$global:ScriptRunTimestamp.$fileExtension"
 }
 
+# -Deidentify data-consistency guard. Refuse to mix deidentified and raw data in an append
+# target (corrupts user joins / distinct counts), and refuse a NON-rollup append into an
+# already-deidentified file (the whole-file post-pass would re-hash existing rows). Runs for
+# any -AppendFile / -AppendUserInfo, in both deid and non-deid runs. Local targets only;
+# remote (SharePoint/Fabric) append URLs are validated downstream after scratch download.
+if ($AppendFile -or $AppendUserInfo) {
+	$_deidResolve = {
+		param([string]$p)
+		if ([string]::IsNullOrWhiteSpace($p) -or $p -match '^https?://') { return $null }
+		if ([System.IO.Path]::IsPathRooted($p)) { return $p }
+		return (Join-Path $OutputPath $p)
+	}
+	$_deidGuardTargets = @()
+	if ($AppendFile) {
+		# Rollup appends target the user's rollup file ($AppendFile); non-rollup targets $OutputFile.
+		$_afTarget = if ($Rollup -or $RollupPlusRaw) { & $_deidResolve $AppendFile } else { $OutputFile }
+		if ($_afTarget) { $_deidGuardTargets += @{ Path = $_afTarget; Label = '-AppendFile' } }
+	}
+	if ($AppendUserInfo) {
+		$_auiTarget = & $_deidResolve $AppendUserInfo
+		if ($_auiTarget) { $_deidGuardTargets += @{ Path = $_auiTarget; Label = '-AppendUserInfo' } }
+	}
+	if ($_deidGuardTargets.Count -gt 0) {
+		try {
+			Assert-PaxDeidAppendConsistency -Targets $_deidGuardTargets -IsRollup ([bool]($Rollup -or $RollupPlusRaw))
+		} catch {
+			Write-Host "" -ForegroundColor Red
+			Write-Host ("ERROR: {0}" -f $_.Exception.Message) -ForegroundColor Red
+			exit 1
+		}
+	}
+}
+
 # Ensure output directory exists after possible OutputPath override
 if (-not (Test-Path $OutputPath)) { New-Item -Path $OutputPath -ItemType Directory -Force | Out-Null }
 
@@ -18861,7 +20048,10 @@ elseif ($script:CheckpointEnabled) {
 		# Output
 		ExportWorkbook = $ExportWorkbook.IsPresent
 		CombineOutput = $CombineOutput.IsPresent
-		# Per-stream destinations and append targets (required for resume to re-route
+		Deidentify = $Deidentify.IsPresent
+		# FillerLabel: resolved hierarchy-filler mode (none|self|manager|fixed) + literal label.
+		FillerLabel = $script:HierarchyFillMode
+		FillerLabelText = $script:HierarchyFillLabel
 		# uploads to the original destinations — without these, Initialize-CheckpointForNewRun
 		# persists empty strings and the resume restore has nothing to rehydrate).
 		OutputPathUserInfo = $OutputPathUserInfo
@@ -20130,6 +21320,9 @@ if ($RAWInputCSV) {
 	$paramSnapshot['StatusIntervalSeconds']     = $StatusIntervalSeconds
 	$paramSnapshot['ExportWorkbook']            = $ExportWorkbook.IsPresent
 	$paramSnapshot['CombineOutput']             = $CombineOutput.IsPresent
+	$paramSnapshot['Deidentify']                = $Deidentify.IsPresent
+	$paramSnapshot['FillerLabel']               = $script:HierarchyFillMode
+	$paramSnapshot['FillerLabelText']           = $script:HierarchyFillLabel
 	$paramSnapshot['Force']                     = $Force.IsPresent
 	$paramSnapshot['SkipDiagnostics']           = $SkipDiagnostics.IsPresent
 	$paramSnapshot['EmitMetricsJson']           = $EmitMetricsJson.IsPresent
@@ -20289,6 +21482,9 @@ else {
 	$paramSnapshot['UseEOM'] = $UseEOM.IsPresent
 	$paramSnapshot['ExportWorkbook'] = $ExportWorkbook.IsPresent
 	$paramSnapshot['CombineOutput'] = $CombineOutput.IsPresent
+	$paramSnapshot['Deidentify'] = $Deidentify.IsPresent
+	$paramSnapshot['FillerLabel'] = $script:HierarchyFillMode
+	$paramSnapshot['FillerLabelText'] = $script:HierarchyFillLabel
 	# AppendFile / AppendUserInfo / AppendAgent365Info live in the output-destinations
 	# cluster at the top of the snapshot, kept next to their corresponding -OutputPath*
 	# and resolved artifact paths so operators see the full file-routing picture in one
@@ -22002,6 +23198,14 @@ try {
 		if ($cp.outputPath) { $OutputPath = $cp.outputPath }
 		if ($cp.exportWorkbook) { $ExportWorkbook = [switch]$true }
 		if ($cp.combineOutput) { $CombineOutput = [switch]$true }
+		# Deidentify is checkpoint-driven on resume (the resume allow-list blocks it on the
+		# command line), so restore it here as the sole source of truth for a resumed run.
+		if ($cp.PSObject.Properties.Name -contains 'deidentify' -and $cp.deidentify) { $Deidentify = [switch]$true; $script:PaxDeidEnabled = $true }
+
+		# FillerLabel is checkpoint-driven on resume (the allow-list blocks it on the command
+		# line); restore the resolved hierarchy-filler mode + literal as the sole source of truth.
+		if ($cp.PSObject.Properties.Name -contains 'fillerLabelMode' -and $cp.fillerLabelMode) { $script:HierarchyFillMode = [string]$cp.fillerLabelMode }
+		if ($cp.PSObject.Properties.Name -contains 'fillerLabelText') { $script:HierarchyFillLabel = [string]$cp.fillerLabelText }
 
 		# Per-stream destinations and append targets. Persisted by New-Checkpoint;
 		# restored here so a -Resume run does not require the user to re-supply any
@@ -30543,6 +31747,43 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 	$script:ScriptCompleted = $true
 
 	# ============================================================
+	# DEIDENTIFY — non-rollup RAW outputs
+	# Plain non-rollup run: the raw CSV(s) ARE the final output, so scrub them here
+	# (before upload, which happens after the rollup block). Rollup paths are handled
+	# inside the rollup block (rollup output via --deidentify; retained raw post-success).
+	# ============================================================
+	if ($script:PaxDeidEnabled -and -not ($Rollup -or $RollupPlusRaw) -and -not $ExportWorkbook) {
+		try {
+			$deidDir = Split-Path $OutputFile -Parent
+			$deidTargets = New-Object System.Collections.Generic.List[string]
+			if ($script:CsvSplitFiles -and $script:CsvSplitFiles.Count -gt 0) {
+				foreach ($f in $script:CsvSplitFiles) { if (Test-Path -LiteralPath $f) { [void]$deidTargets.Add($f) } }
+			}
+			elseif (Test-Path -LiteralPath $OutputFile) {
+				[void]$deidTargets.Add($OutputFile)
+			}
+			elseif ($deidDir -and (Test-Path -LiteralPath $deidDir)) {
+				# $OutputFile may have been renamed by the single-activity downgrade.
+				Get-ChildItem -LiteralPath $deidDir -Filter "Purview_Audit_*_${global:ScriptRunTimestamp}.csv" -File -ErrorAction SilentlyContinue |
+					Where-Object { $_.Name -notlike 'EntraUsers_*' -and $_.Name -notlike 'Agent365_*' } |
+					ForEach-Object { [void]$deidTargets.Add($_.FullName) }
+			}
+			if (($IncludeUserInfo -or $OnlyUserInfo) -and $deidDir) {
+				$deidEntra = Join-Path $deidDir (& $script:GetEffectiveEntraBasename)
+				if (Test-Path -LiteralPath $deidEntra) { [void]$deidTargets.Add($deidEntra) }
+			}
+			if ($deidTargets.Count -gt 0) {
+				Write-LogHost ("DEIDENTIFY: scrubbing {0} raw output file(s)..." -f $deidTargets.Count) -ForegroundColor Cyan
+				foreach ($t in $deidTargets) { Invoke-PaxRawDeidentify -Path $t }
+				Write-LogHost "DEIDENTIFY: raw output deidentification complete." -ForegroundColor Green
+			}
+		}
+		catch {
+			Write-LogHost ("WARNING: -Deidentify raw scrub error (non-fatal): {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+		}
+	}
+
+	# ============================================================
 	# ROLLUP POST-PROCESSOR WIRE-UP
 	# ------------------------------------------------------------
 	# Runs only when:
@@ -30644,6 +31885,12 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				# -licensing 3-file path is never used from PAX.
 				$rollupProfile = if ($script:RollupDashboardProfile) { $script:RollupDashboardProfile } else { 'aio' }
 				$rollupArgs = @('--purview', $rollupPurviewCsv, '--entra', $rollupEntraCsv, '--out-dir', $rollupOutputDir, '--profile', $rollupProfile, '--combined-entra')
+				# -FillerLabel: org-hierarchy level-filler for the AIO/AIBV Users dim (default
+				# 'none' = blanks). Only the CopilotInteraction processor builds the hierarchy.
+				$rollupArgs += @('--hierarchy-fill', $script:HierarchyFillMode)
+				if ($script:HierarchyFillMode -eq 'fixed') {
+					$rollupArgs += @('--hierarchy-fill-label', $script:HierarchyFillLabel)
+				}
 				$rollupRawCsvList.Add($rollupPurviewCsv)
 				# EntraUsers CSV is an internal join input to the CopilotInteraction processor.
 				# Under -Rollup it is deleted alongside the raw Purview CSV. Under -RollupPlusRaw
@@ -30729,6 +31976,13 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				}
 			}
 
+			# -Deidentify: thread one-way hashing into the embedded processor so the rollup
+			# output (the dashboard-ready artifact) is anonymized by Python. PowerShell scrubs
+			# any retained RAW files separately (post-success Hook C below; non-rollup block above).
+			# NOTE: only the FIRST invocation gets --deidentify. The M365 sidecar-rebuild pass
+			# (further below) reads the already-hashed merged rollup, so it must NOT re-hash.
+			if ($script:PaxDeidEnabled) { $rollupArgs += '--deidentify' }
+
 			# 4. Invoke embedded processor (writes temp .py into .pax_incremental, deletes on exit).
 			$rollupExit = Invoke-EmbeddedProcessor `
 				-ProcessorMode  $script:RollupProcessorMode `
@@ -30740,6 +31994,18 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 			if ($rollupExit -eq 0) {
 				$rollupSuccess = $true
 				Write-LogHost "Rollup: post-processor completed successfully (exit 0)." -ForegroundColor Green
+
+				# -RollupPlusRaw + -Deidentify: the embedded processor has consumed the
+				# IDENTIFIED raw (and produced a deidentified rollup via --deidentify); now
+				# scrub the RETAINED raw file(s) in place so the kept raw is anonymized too.
+				# Tokens match the rollup (shared salt). Not run for plain -Rollup (raw deleted).
+				if ($RollupPlusRaw -and $script:PaxDeidEnabled) {
+					Write-LogHost "DEIDENTIFY: scrubbing retained raw file(s)..." -ForegroundColor Cyan
+					Invoke-PaxRawDeidentify -Path $rollupPurviewCsv
+					if ($script:RollupProcessorMode -eq 'CopilotInteraction' -and $rollupEntraCsv) { Invoke-PaxRawDeidentify -Path $rollupEntraCsv }
+					if ($script:RollupProcessorMode -eq 'M365Bundle' -and $rollupEntraCsvM365) { Invoke-PaxRawDeidentify -Path $rollupEntraCsvM365 }
+					Write-LogHost "DEIDENTIFY: retained raw deidentification complete." -ForegroundColor Green
+				}
 
 				# -AppendUserInfo: union-merge the target Users CSV with the just-produced
 				# Users output. CopilotInteraction emits '<entra_stem>_Users.csv' beside the

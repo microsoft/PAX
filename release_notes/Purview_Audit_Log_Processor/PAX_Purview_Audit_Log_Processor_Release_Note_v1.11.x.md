@@ -2,8 +2,8 @@
 
 ## Release Information
 
-- **Latest Version:** 1.11.7
-- **Latest Release Date:** TBD
+- **Latest Version:** 1.11.8
+- **Latest Release Date:** June 26, 2026
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,12 +12,38 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.11.7:** [PAX_Purview_Audit_Log_Processor_v1.11.7.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.7/PAX_Purview_Audit_Log_Processor_v1.11.7.ps1)
+- **PAX Purview Audit Log Processor Script v1.11.8:** [PAX_Purview_Audit_Log_Processor_v1.11.8.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.8/PAX_Purview_Audit_Log_Processor_v1.11.8.ps1)
 - **Documentation v1.11.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md)
 
 ---
 
 ## Overview
+
+### v1.11.8
+
+Version 1.11.8 is a major capability release built around a new **`-Deidentify`** switch — an opt-in, one-way anonymization mode that replaces every personally- and company-identifying value across PAX's outputs with deterministic, format-preserving tokens, so anonymized data can be shared for reporting without exposing identities. Anonymization is applied by whichever engine produces each output: the Python rollup processors anonymize the rolled-up dashboard inputs, and PowerShell anonymizes the raw audit and EntraUsers files. Because both engines share one salt and algorithm, the same person always resolves to the same token across every raw and rolled-up file. Crucially, anonymization **preserves all relationships** — the manager / org hierarchy, the user-to-activity joins, and distinct-resource counts — so anonymized data still drives the same dashboards and produces the same aggregate numbers as the identified data. `-Deidentify` is OFF by default; when it is not supplied, every output is byte-identical to v1.11.7.
+
+Version 1.11.8 also brings a second capability to the **AI-in-One (AIO)** and **AI Business Value (AIBV)** rollups: a built-in **org / manager hierarchy**. The embedded rollup processor now derives each person's full management chain — their level in the organization, their manager, and the size of the team beneath them — from the Entra data PAX already collects, and emits it as ready-to-model columns on the Users output. It is on by default for those two dashboards, adds only new columns (everything that existed before is unchanged), and is accompanied by a new optional **`-FillerLabel`** switch that controls how the hierarchy's deeper, unused levels are displayed.
+
+#### Anonymous-Style Reporting with the New `-Deidentify` Switch
+
+The new `-Deidentify` switch turns on a one-way anonymization mode: identifying values — UPNs and email addresses, display names, Entra and mailbox GUIDs, SIDs, resource URLs, file and document names, proxy addresses, IP addresses, and session / token identifiers — are replaced with deterministic salted hashes (HMAC-SHA256) rendered as format-preserving tokens, so a UPN stays UPN-shaped (`<hash>@deidentified.domain`), a GUID stays GUID-shaped, and a SID stays SID-shaped. The mapping is irreversible — no decode map is ever written, and the salt is an internal constant that is never customer-supplied — and it is applied *after* the existing human-identity filter, so non-human / service rows are still dropped on their original values. Organizational and analytical attributes (job title, department, division, cost centre, country, company, license status, agent and application names) are intentionally kept so anonymized data remains analytically useful. See [What's New → v1.11.8](#v1118-1) for details.
+
+#### Relationships and Manager Hierarchy Preserved Under Deidentification
+
+Because the hash is deterministic and normalization-stable (insensitive to case and surrounding whitespace), the same identity always maps to the same token everywhere it appears. The Python rollup processors hash each user's own identity columns *and* their manager-link columns (`manager_id` / `ManagerID`, manager UPN / display name / mail) with that same mapping, so the manager-to-employee org hierarchy stays fully intact after anonymization — every reporting line still resolves, just to tokens. The same property keeps the fact-to-Users `UserKey` join, cross-run append history, and distinct-resource counts correct, so an anonymized dataset yields the same dashboard structure and the same aggregate totals as the identified one. See [What's New → v1.11.8](#v1118-1) for details.
+
+#### Full-Fidelity Raw Audit Data Under Deidentification
+
+On the raw audit output, the nested `AuditData` (and `CopilotEventData`) JSON column is anonymized **in place** rather than redacted: PAX parses the JSON, replaces only the personal leaves with the same tokens used everywhere else, and re-serializes — so the anonymized raw record is the full Purview export with only the personal fields altered. Which leaves are personal is decided by each field's JSON key path (not by guessing from the value), which both avoids over-scrubbing non-personal look-alikes (version strings, schema URLs, application IDs) and avoids missing genuine PII, and lets path context keep the audit record's own `Id` while still anonymizing nested item and message IDs. Timestamps are preserved exactly, IP addresses are tokenized to valid-shaped addresses, and any blob that cannot be parsed is fully redacted as a safety net so personal data can never leak. See [What's New → v1.11.8](#v1118-1) for details.
+
+#### Safe-by-Default Integration with Resume, Append, and Existing Switches
+
+Deidentification is wired through PAX's operational surface so a run cannot be partly anonymized by accident. The setting is shown in the run's parameter snapshot (terminal, log, and checkpoint), persisted in the checkpoint and restored on `-Resume` so an interrupted anonymized run stays anonymized, and a guard hard-stops any append (`-AppendFile` / `-AppendUserInfo`) that would mix anonymized and identified data into one file or re-hash already-anonymized rows. `-Deidentify` combined with the deprecated Excel workbook export is rejected up front (only CSV output is anonymized), and the script's built-in help documents the new switch, a usage example, and the resume rules. See [What's New → v1.11.8](#v1118-1) for details.
+
+#### Built-In Org / Manager Hierarchy for the AI-in-One and AI Business Value Rollups
+
+The **AI-in-One (AIO)** and **AI Business Value (AIBV)** rollups now include a full **org / manager hierarchy** on their Users output, derived automatically from the Entra manager data PAX already collects. Each person gains their place in the organization — a level number and the top-to-them management chain — along with their manager and team-size measures (direct reports and the total number of people beneath them), which is exactly what a Power BI model needs to roll metrics up by team, department, or management chain and to build leader and drill-down views. It is produced on **every** AIO/AIBV rollup with no extra switch and adds only new columns, so all existing rollup, fact, raw audit, and EntraUsers columns are unchanged; the M365 Usage dashboard is unaffected. The hierarchy is also fully compatible with `-Deidentify` (the structure is built on a stable surrogate key, so it stays intact while names become tokens) and with incremental `-AppendUserInfo` runs. A new optional **`-FillerLabel`** switch controls how the hierarchy's unused deeper levels are displayed (left blank by default). See [What's New → v1.11.8](#v1118-1) for details.
 
 ### v1.11.7
 
@@ -168,6 +194,80 @@ New sixth value on the `-Auth` ValidateSet for Azure-hosted headless execution (
 ---
 
 ## What's New
+
+### v1.11.8
+
+#### Anonymous-Style Reporting with the New `-Deidentify` Switch (v1.11.8)
+
+| Area | Details |
+| --- | --- |
+| **What's new** | A new `-Deidentify` switch (OFF by default) enables a one-way anonymization mode across all of PAX's outputs. Identifying values are replaced with deterministic salted hashes (HMAC-SHA256, internal fixed salt) rendered as format-preserving tokens. |
+| **Token shapes** | UPN / email / mailbox UPN → `<12hex>@deidentified.domain`; person / device display name → `<12hex>`; Entra / mailbox GUID → GUID shape; SID → `S-1-5-21-…` shape; resource URL → `site_<12hex>` (whole-string hash, so distinct-resource counts are preserved); file / document name → `file_<12hex>`; proxy address → `smtp:` / `SMTP:` prefix kept + anonymized email; IP address → valid-shaped IPv4 / IPv6. |
+| **Two engines, one mapping** | The Python rollup processors (CopilotInteraction for the AIO / AIBV dashboards; M365 Usage Bundle for the M365 dashboard) anonymize the rolled-up outputs via `--deidentify`; PowerShell anonymizes the raw audit and EntraUsers files. Both share one salt + algorithm, so the same identity resolves to the same token across every raw and rolled-up file. |
+| **Applied after the human filter** | Anonymization runs *after* the existing non-human / service-identity filter, so application identities, service-principal GUIDs, and bot signatures are still dropped on their original values rather than anonymized and retained. |
+| **Kept attributes** | Organizational / analytical fields are intentionally preserved: job title, department / organization, division, cost centre, country, company, license status, environment, behaviour / model categories, agent name, application display name. |
+| **Irreversibility** | No decode map is ever written; the generated GUIDs / SIDs are synthetic and never resolve to real objects; the salt is an internal constant that cannot be supplied or changed by the customer. |
+| **Compatibility** | Additive switch, OFF by default — output is byte-identical to v1.11.7 when it is not supplied. No output-schema change (only the *values* in identifying columns differ), and no new dependencies (standard .NET / Python libraries). |
+
+#### Relationships and Manager Hierarchy Preserved Under Deidentification (v1.11.8)
+
+| Area | Details |
+| --- | --- |
+| **Purpose** | Keep anonymized data analytically equivalent to identified data by preserving every relationship the dashboards depend on. |
+| **Deterministic mapping** | Each value is normalized (case / whitespace insensitive) before hashing, so one identity always maps to one token — across every file and every run. |
+| **Manager / org hierarchy** | The Python processors hash each user's manager-link columns (`manager_id`, `ManagerID`, `manager_userPrincipalName`, `manager_displayName`, `manager_mail`) with the same mapping as the user's own identity, so the manager-to-employee hierarchy resolves identically after anonymization. |
+| **Joins & surrogate keys** | The fact's audit `UserId` is anonymized *before* the `UserKey` / `Audit_UserId` surrogate keys and joins are derived, so the fact-to-Users join stays intact. |
+| **Distinct-resource counts** | Resource URLs are hashed whole-string, so distinct-resource and distinct-site counts are unchanged under anonymization. |
+| **Cross-run append** | Because tokens are stable across runs, `-AppendFile` / `-AppendUserInfo` merges line anonymized rows up correctly from one run to the next. |
+| **Verification** | The aggregate outputs (Rollup, UserStats, SessionStats, SessionCohort) were confirmed identical between an identified and an anonymized run of the same data — only the identity columns differ. |
+
+#### Full-Fidelity Raw Audit Data Under Deidentification (v1.11.8)
+
+| Area | Details |
+| --- | --- |
+| **What's new** | The raw `AuditData` (and any `CopilotEventData`) JSON blob is anonymized **in place**: PAX parses it, replaces only the personal leaves with the same tokens used elsewhere, and re-serializes — so every non-personal field stays byte-for-byte identical and the anonymized raw is the full Purview export with only personal fields altered. |
+| **Path-aware, not value-guessing** | Which leaves are personal is decided by each field's JSON key *path*, so non-personal look-alikes are not over-scrubbed (version strings like `1.0.0.0`, schema URLs, application IDs) and genuine PII is not missed. Path context keeps the record's own `Id` while still anonymizing nested item / message IDs. |
+| **Scrubbed leaves** | User / mailbox UPNs, logon / mailbox SIDs, mailbox / user / token / session GUIDs, unique-token & thread IDs, client / actor IPs (format-preserving), site & relative URLs, file / attachment names, internet message IDs, and mail subjects. |
+| **Kept leaves** | Timestamps (preserved exactly — never reparsed or reformatted), operation / workload, organization (tenant) ID & name, application / app ID, originating server, result / flags, and schema versions. |
+| **Safety net** | A blob that cannot be parsed as JSON is fully redacted to a single `[REDACTED-DEIDENTIFY]` marker, so personal data can never leak through unparsed content. |
+| **Engine** | PowerShell-only, using the in-box JSON parser — no new dependency — and the blob's identity fields route through the same anonymization helpers as the rollup, so blob tokens match the rolled-up tokens. |
+
+#### Safe-by-Default Integration: Resume, Append, and Guardrails (v1.11.8)
+
+| Area | Details |
+| --- | --- |
+| **Parameter snapshot** | The `Deidentify` setting is shown in the run's parameter snapshot (terminal + log) and captured in the checkpoint, so operators can confirm at a glance whether a run is anonymized. |
+| **Resume / checkpoint** | `Deidentify` is persisted in the checkpoint and restored on `-Resume`, so an interrupted anonymized run stays anonymized. It cannot be passed on the resume command line — resume restores every setting from the checkpoint, and the resume allow-list rejects it. |
+| **Append-consistency guard** | With `-AppendFile` / `-AppendUserInfo`, PAX hard-stops before doing any work if the append would corrupt the target — it refuses to mix anonymized and identified identities in one file (either direction), and refuses a non-rollup append into an already-anonymized file (which would re-hash existing rows). A rollup append into a matching-salt anonymized target is allowed. Target state is detected by sampling its identity column for the anonymization marker. |
+| **Workbook guard** | `-Deidentify` with the deprecated `-ExportWorkbook` path is rejected up front, since only CSV output is anonymized and the workbook would otherwise emit identifiable data. |
+| **Embedded ⇄ standalone parity** | The CopilotInteraction and M365 processors embedded in the PAX script carry the identical `--deidentify` logic as their standalone counterparts under `scripts\PythonProcessors\`, so rollup outputs are anonymized with the same tokens regardless of which processor runs. |
+| **Help & docs** | The script's built-in help documents the `-Deidentify` parameter, a usage example, and the resume-not-allowed note. |
+| **Compatibility** | Additive and OFF by default; no switch removed; no output-schema change. |
+
+#### Built-In Org / Manager Hierarchy for the AI-in-One and AI Business Value Rollups (v1.11.8)
+
+| Area | Details |
+| --- | --- |
+| **What's new** | The AIO and AIBV rollups add a full org / manager hierarchy to their Users output, derived from the Entra manager links PAX already collects (`manager_id` / manager UPN). It is produced on **every** AIO/AIBV rollup — there is no extra switch to enable it. |
+| **New columns** | Per person: `OrgLevel` (0 = top of the organization), `Manager_UserKey`, `HierarchyPath` (the full top-to-person chain), `TopOfChain_UserKey`, `IsManager`, `DirectReports`, and `TotalReports` (everyone beneath them). Plus top-down level columns `Level0 … Level14` (UserKey + name) for fixed-depth drill-downs — **15** levels. |
+| **What it powers** | Roll metrics up by team, department, or management chain; build leader leaderboards and "circle of impact" / drill-down org views in Power BI. |
+| **Deep organizations** | Organizations deeper than 15 levels keep the top 15 in the level columns while `OrgLevel` and `HierarchyPath` remain exact, so no depth information is lost. |
+| **Robust derivation** | The chain is resolved on the Entra object id (UPN as fallback) with loop protection; people whose manager isn't in the export — and top-of-org leaders — terminate cleanly; managers who aren't active Copilot users are still kept as nodes so the tree is complete. Team-size counts are computed from the links (no extra directory call). |
+| **Deidentify** | Fully compatible. The structure is built on the stable integer surrogate key, so the hierarchy's structural columns are identical with or without `-Deidentify`; the names in the level columns become tokens just like everywhere else. |
+| **Append** | Compatible with `-AppendUserInfo`: the new columns union-merge into the target, and the existing surrogate-key seeding keeps each person's hierarchy stable across runs. |
+| **Compatibility** | Additive — every existing rollup, fact, raw audit, and EntraUsers column is unchanged. The M365 Usage dashboard (no Entra input) and the raw outputs are unaffected. The embedded CopilotInteraction processor and its standalone reference move from v4.0.0 to v4.1.0. |
+
+#### Filler Control for the Hierarchy's Deeper Levels — `-FillerLabel` (v1.11.8)
+
+| Area | Details |
+| --- | --- |
+| **What's new** | `-FillerLabel` chooses how the hierarchy's level columns are filled in *below* a person's own position (the unused deeper levels). The hierarchy is always produced; this setting only changes the presentation of those deeper slots. |
+| **Choices** | `null` (default) leaves them blank; `Self` repeats the person; `RepeatManager` repeats their manager; `Fixed` shows a fixed label you supply with `-FillerLabelText "<text>"` (e.g. "Assistive Directs"). |
+| **Where it applies** | Requires `-Rollup` or `-RollupPlusRaw`; not available for the M365 Usage dashboard (`-IncludeM365Usage` / `-Dashboard M365`), which has no org hierarchy. |
+| **Resume / snapshot** | The choice is shown in the run's parameter snapshot, persisted in the checkpoint, and restored on `-Resume`; like `-Deidentify`, it cannot be passed on the resume command line. |
+| **Compatibility** | Additive; the default (blank deeper levels) requires no action. Documented in the script's built-in help with an example. |
+
+---
 
 ### v1.11.6
 
