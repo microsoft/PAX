@@ -105,6 +105,10 @@ This is the fastest possible Fabric-from-laptop on-ramp. It uses `-Auth WebLogin
 
    > **Dashboard selection.** `-Rollup` targets the **AI-in-One (AIO)** dashboard by default. Add `-Dashboard AIBV` for the **AI Business Value** dashboard, or `-Dashboard M365` (equivalently `-IncludeM365Usage`) for **M365 Usage Analytics**. AIO and AIBV are produced from the same CopilotInteraction + Entra/MAC licensing data — no other switches change.
 
+   > **Anonymized output (`-Deidentify`).** Add `-Deidentify` to replace every identity (including the identity fields inside the raw `AuditData` JSON) with an irreversible, deterministic token **before** anything is written to the lakehouse — useful when the Fabric data will be shared more broadly. Off by default, works under any auth mode, and needs no extra Graph scope. See the main PAX documentation for the full field list.
+
+   > **Org / manager hierarchy.** AIO / AIBV rollups automatically add org/manager-hierarchy columns to the Users output (level, manager, full management chain, direct/total report counts) from the Entra manager data PAX already collects — ready for parent-child org views in Power BI. `-FillerLabel` (`Self` / `RepeatManager` / `Fixed`, with `-FillerLabelText "<text>"` for the literal) only controls how empty deeper level columns are labelled. The M365 dashboard has no hierarchy.
+
 That is the full minimum path. The rest of this README covers the variants you are likely to want next.
 
 ---
@@ -223,6 +227,10 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v<x.y.z>.ps1 `
 ```
 
 `-AppendFile` is supported under `-Rollup` and `-RollupPlusRaw` on all three tiers. The same example works against SharePoint or local paths by changing the URL / path form — no other switches change.
+
+> **Two append cautions when writing to Fabric Delta tables.**
+> - **Hierarchy / schema drift.** AIO / AIBV rollups add org/manager-hierarchy columns to the Users output. The Fabric Users append tolerates *added* columns but rejects *missing* ones — so appending current output into an older Users Delta table just adds the columns, but appending older (pre-hierarchy) output into a table that already has them fails the schema check. Keep a Users table on one PAX version line or recreate it.
+> - **Deidentify consistency.** Appending a `-Deidentify` run into a non-deidentified table (or the reverse) is hard-rejected at pre-flight — use the same `-Deidentify` choice for every run that targets a given file/table.
 
 ### M365 rollup append anchoring (`-IncludeM365Usage` + `-Rollup` / `-RollupPlusRaw`)
 
