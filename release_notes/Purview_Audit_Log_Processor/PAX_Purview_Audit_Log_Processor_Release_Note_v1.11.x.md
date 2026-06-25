@@ -2,8 +2,8 @@
 
 ## Release Information
 
-- **Latest Version:** 1.11.8
-- **Latest Release Date:** June 26, 2026
+- **Latest Version:** 1.11.9
+- **Latest Release Date:** June 25, 2026
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,12 +12,24 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.11.8:** [PAX_Purview_Audit_Log_Processor_v1.11.8.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.8/PAX_Purview_Audit_Log_Processor_v1.11.8.ps1)
+- **PAX Purview Audit Log Processor Script v1.11.9:** [PAX_Purview_Audit_Log_Processor_v1.11.9.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.9/PAX_Purview_Audit_Log_Processor_v1.11.9.ps1)
 - **Documentation v1.11.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md)
 
 ---
 
 ## Overview
+
+### v1.11.9
+
+Version 1.11.9 is a resume-only reliability release that fixes a regression in which several run settings were **silently not restored** when an interrupted run was continued with `-Resume`. The affected settings were read back from the checkpoint with a presence check that does not work against the checkpoint's in-memory form, so on resume they reverted to their defaults. Most visibly, a `-Resume`d **`-AppendFile`** run stopped appending and wrote **separate new output files** instead of merging into the existing target; the same root cause also dropped **`-Deidentify`** (a resumed anonymized run could write **raw, identifiable** data), **`-FillerLabel` / `-FillerLabelText`**, and the per-stream **`-AppendUserInfo` / `-AppendAgent365Info`** and **`-OutputPathUserInfo` / `-OutputPathAgent365Info` / `-OutputPathLog`** destinations. It also corrects two resume-time reporting issues. It adds no parameters, changes no switch semantics, and makes no output-schema changes; any run that does not use `-Resume` — and any run that uses none of the affected switches — is byte-identical to v1.11.8.
+
+#### Resumed Runs Restore Append, Deidentify, Filler, and Per-Stream Destinations
+
+A resumed run (`-Resume`) again reproduces the original run's settings instead of silently reverting them to defaults. A regression in v1.11.8's checkpoint-restore logic — a presence check that did not work against the checkpoint's in-memory form — caused several newer settings to be dropped on resume: most visibly a resumed `-AppendFile` run stopped appending and wrote a separate new file, and the same cause dropped `-Deidentify` (so a resumed anonymized run could write raw, identifiable data), `-FillerLabel` / `-FillerLabelText`, and the per-stream `-AppendUserInfo` / `-AppendAgent365Info` and `-OutputPathUserInfo` / `-OutputPathAgent365Info` / `-OutputPathLog` destinations. All are now restored exactly as the original run had them, on every storage tier (Local, SharePoint, Fabric), and the small-dataset (non-streaming) export path is also redirected to the restored append target so a small resumed append union-merges into the target rather than leaving a separate file. See [Bug Fixes → v1.11.9](#v1119-1) for details.
+
+#### Accurate Resume Reporting
+
+Two resume-time reporting issues are corrected. The post-interruption parameter snapshot now reports the restored `-Deidentify` / `-FillerLabel` / `-FillerLabelText` state (it previously printed the pre-restore defaults even though anonymization and the level-filler were applied to the output), and the graceful-exit "To resume later" hint now shows the credential the original run used — a certificate thumbprint or PFX path rather than always `-ClientSecret`, and nothing beyond `-Resume` for interactive and managed-identity runs. Both are display-only corrections and change no output data. See [Bug Fixes → v1.11.9](#v1119-1) for details.
 
 ### v1.11.8
 
@@ -603,6 +615,12 @@ Excel filenames, Excel tab names, and the `EntraUsers_*` / `Agent365_*` filename
 ---
 
 ## Bug Fixes
+
+### v1.11.9
+
+- **(v1.11.9) `-Resume` now restores append, deidentify, filler-label, and per-stream destination settings.** On `-Resume`, PAX loads the checkpoint as an in-memory hashtable, but the v1.11.8 restore logic tested for each of the newer settings with a presence check (`… .PSObject.Properties.Name -contains '<key>'`) that, against that hashtable form, enumerates the type's own members (`Keys`, `Values`, `Count`, …) instead of the stored keys — so the check was always false and the value was never restored, silently reverting to its default. The most visible effect was that a resumed non-rollup `-AppendFile` run stopped appending and wrote a new, separate output file alongside the untouched target; the same root cause also dropped `-Deidentify` (so a resumed anonymized run could emit **raw, identifiable** data — a privacy-affecting regression), `-FillerLabel` / `-FillerLabelText`, the per-stream append targets `-AppendUserInfo` / `-AppendAgent365Info`, and the per-stream destinations `-OutputPathUserInfo` / `-OutputPathAgent365Info` / `-OutputPathLog`. Each affected check now uses the dictionary-correct key test, so a resumed run reproduces the original run's settings exactly: it union-merges into the existing append target on all tiers (Local, SharePoint, Fabric), re-applies anonymization and the hierarchy level-filler, and routes each stream to its original destination. The standard (non-streaming) export path used for small datasets is additionally redirected to the restored `-AppendFile` seed so a small resumed append merges into the target rather than leaving a separate file in the checkpoint folder. The change is resume-only — fresh (non-resume) runs are byte-for-byte unchanged — and the equivalent presence checks elsewhere in the script (against Microsoft Graph response objects) were already correct and are untouched; checkpoints written by older versions that do not contain these keys resume exactly as before (the setting is simply not applied).
+
+- **(v1.11.9) Resume console/log reporting now matches what the resumed run actually does.** The post-interruption "Parameter Snapshot" is assembled before the checkpoint restore re-arms these settings, and the resume-time refresh that corrects the other restored fields (auth, rollup, dashboard, dates, destinations) did not also patch the anonymization and filler fields — so a resumed run's banner printed `Deidentify = False` / `FillerLabel = none` even though both were correctly applied to the output. The refresh now also re-reads `-Deidentify` / `-FillerLabel` / `-FillerLabelText`, so the banner matches the run. Separately, the graceful-exit "To resume later" hint shown when a run is interrupted now reflects the credential kind the original App Registration run used — `-ClientCertificateThumbprint` or `-ClientCertificatePath` instead of always printing `-ClientSecret` — while interactive (`WebLogin` / `DeviceCode` / `Credential` / `Silent`) and `ManagedIdentity` runs show just `-Resume "<checkpoint>"` (the auth identity, tenant, and client ID are restored from the checkpoint, so no credential need be re-supplied for those). Both are display/hint-only corrections — no data, switch semantics, or resume behavior changes.
 
 ### v1.11.7
 

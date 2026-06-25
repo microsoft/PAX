@@ -1,5 +1,5 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.11.8
+# Version: v1.11.9
 # Requirements: PowerShell 7+ for default Graph API mode; PowerShell 5.1 supported ONLY with -UseEOM (serial Exchange Online Management mode, no parallel query/explosion).
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI activity types (specified via -ActivityTypes): AIInteraction, ConnectedAIAppInteraction, AIAppInteraction
@@ -2159,7 +2159,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.11.8'
+$ScriptVersion = '1.11.9'
 
 # --- Initialize/Clear persistent script variables to prevent cross-run contamination ---
 # Note: Script-scoped variables persist across multiple script invocations in the same PowerShell session
@@ -16293,13 +16293,21 @@ function Show-CheckpointExitMessage {
 	Write-Host $partitionLine -ForegroundColor White
 	Write-Host ""
 	Write-Host "  To resume later:" -ForegroundColor Cyan
-	# AppRegistration runs require -ClientSecret on every invocation (the secret
-	# is never persisted to the checkpoint). Append a placeholder hint so the
-	# operator copy/pastes a complete command. Interactive auth modes
-	# (WebLogin, DeviceCode) don't need a secret, so the line is unchanged in
-	# those cases.
+	# Resume credential hint. -Auth / -TenantId / -ClientId are restored from the
+	# checkpoint on -Resume (see the resume restore block), so they are NOT
+	# re-supplied on the resume command line. Only AppRegistration needs credential
+	# material on every invocation, because the secret / certificate is never
+	# persisted to the checkpoint by design — and the hint must reflect the SAME
+	# credential kind the operator originally used (client secret vs. certificate
+	# thumbprint vs. PFX path), detected from the promoted $script:Client* values.
+	# Interactive modes (WebLogin / DeviceCode / Credential / Silent) and
+	# ManagedIdentity need nothing beyond -Resume.
 	if ($Auth -eq 'AppRegistration') {
-		Write-Host "    -Resume `"$($script:CheckpointPath)`" -ClientSecret '<your client secret>'" -ForegroundColor White
+		$_resumeCred =
+			if    (-not [string]::IsNullOrWhiteSpace([string]$script:ClientCertificateThumbprint)) { "-ClientCertificateThumbprint '<your certificate thumbprint>'" }
+			elseif (-not [string]::IsNullOrWhiteSpace([string]$script:ClientCertificatePath))       { "-ClientCertificatePath '<path to your .pfx>' [-ClientCertificatePassword '<pwd-if-required>']" }
+			else                                                                                     { "-ClientSecret '<your client secret>'" }
+		Write-Host "    -Resume `"$($script:CheckpointPath)`" $_resumeCred" -ForegroundColor White
 	} else {
 		Write-Host "    -Resume `"$($script:CheckpointPath)`"" -ForegroundColor White
 	}
@@ -23180,7 +23188,7 @@ try {
 		# M365/User info bundles
 		if ($cp.includeM365Usage) { $IncludeM365Usage = [switch]$true }
 		if ($cp.includeUserInfo) { $IncludeUserInfo = [switch]$true }
-		if ($cp.PSObject.Properties.Name -contains 'includeDSPMForAI' -and $cp.includeDSPMForAI) {
+		if ($cp.Contains('includeDSPMForAI') -and $cp.includeDSPMForAI) {
 			Write-LogHost "Resume checkpoint references legacy -IncludeDSPMForAI switch; ignoring (no longer supported)." -ForegroundColor Yellow
 		}
 		if ($cp.includeCopilotInteraction) { $IncludeCopilotInteraction = [switch]$true }
@@ -23200,23 +23208,23 @@ try {
 		if ($cp.combineOutput) { $CombineOutput = [switch]$true }
 		# Deidentify is checkpoint-driven on resume (the resume allow-list blocks it on the
 		# command line), so restore it here as the sole source of truth for a resumed run.
-		if ($cp.PSObject.Properties.Name -contains 'deidentify' -and $cp.deidentify) { $Deidentify = [switch]$true; $script:PaxDeidEnabled = $true }
+		if ($cp.Contains('deidentify') -and $cp.deidentify) { $Deidentify = [switch]$true; $script:PaxDeidEnabled = $true }
 
 		# FillerLabel is checkpoint-driven on resume (the allow-list blocks it on the command
 		# line); restore the resolved hierarchy-filler mode + literal as the sole source of truth.
-		if ($cp.PSObject.Properties.Name -contains 'fillerLabelMode' -and $cp.fillerLabelMode) { $script:HierarchyFillMode = [string]$cp.fillerLabelMode }
-		if ($cp.PSObject.Properties.Name -contains 'fillerLabelText') { $script:HierarchyFillLabel = [string]$cp.fillerLabelText }
+		if ($cp.Contains('fillerLabelMode') -and $cp.fillerLabelMode) { $script:HierarchyFillMode = [string]$cp.fillerLabelMode }
+		if ($cp.Contains('fillerLabelText')) { $script:HierarchyFillLabel = [string]$cp.fillerLabelText }
 
 		# Per-stream destinations and append targets. Persisted by New-Checkpoint;
 		# restored here so a -Resume run does not require the user to re-supply any
 		# destination switch. Resume-allowed-list already blocks the user from passing
 		# these on the resume command line, so checkpoint is the sole source of truth.
-		if ($cp.PSObject.Properties.Name -contains 'outputPathUserInfo'     -and $cp.outputPathUserInfo)     { $OutputPathUserInfo     = [string]$cp.outputPathUserInfo }
-		if ($cp.PSObject.Properties.Name -contains 'outputPathAgent365Info' -and $cp.outputPathAgent365Info) { $OutputPathAgent365Info = [string]$cp.outputPathAgent365Info }
-		if ($cp.PSObject.Properties.Name -contains 'outputPathLog'          -and $cp.outputPathLog)          { $OutputPathLog          = [string]$cp.outputPathLog }
-		if ($cp.PSObject.Properties.Name -contains 'appendFile'             -and $cp.appendFile)             { $AppendFile             = [string]$cp.appendFile }
-		if ($cp.PSObject.Properties.Name -contains 'appendUserInfo'         -and $cp.appendUserInfo)         { $AppendUserInfo         = [string]$cp.appendUserInfo }
-		if ($cp.PSObject.Properties.Name -contains 'appendAgent365Info'     -and $cp.appendAgent365Info)     { $AppendAgent365Info     = [string]$cp.appendAgent365Info }
+		if ($cp.Contains('outputPathUserInfo')     -and $cp.outputPathUserInfo)     { $OutputPathUserInfo     = [string]$cp.outputPathUserInfo }
+		if ($cp.Contains('outputPathAgent365Info') -and $cp.outputPathAgent365Info) { $OutputPathAgent365Info = [string]$cp.outputPathAgent365Info }
+		if ($cp.Contains('outputPathLog')          -and $cp.outputPathLog)          { $OutputPathLog          = [string]$cp.outputPathLog }
+		if ($cp.Contains('appendFile')             -and $cp.appendFile)             { $AppendFile             = [string]$cp.appendFile }
+		if ($cp.Contains('appendUserInfo')         -and $cp.appendUserInfo)         { $AppendUserInfo         = [string]$cp.appendUserInfo }
+		if ($cp.Contains('appendAgent365Info')     -and $cp.appendAgent365Info)     { $AppendAgent365Info     = [string]$cp.appendAgent365Info }
 
 		# ============================================================
 		# RESUME: Re-resolve destination state from RESTORED variable values.
@@ -24084,6 +24092,14 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		if ($paramSnapshot.Contains('Rollup'))              { $paramSnapshot['Rollup']              = $Rollup.IsPresent }
 		if ($paramSnapshot.Contains('RollupPlusRaw'))       { $paramSnapshot['RollupPlusRaw']       = $RollupPlusRaw.IsPresent }
 		if ($paramSnapshot.Contains('Dashboard'))           { $paramSnapshot['Dashboard']           = $Dashboard }
+		# Deidentify / FillerLabel / FillerLabelText are checkpoint-driven on resume (the
+		# resume allow-list blocks them on the CLI and the restore block re-arms $Deidentify /
+		# $script:HierarchyFillMode / $script:HierarchyFillLabel). The parse-time snapshot
+		# captured the pre-restore defaults (False / none / empty), so without these patches a
+		# resumed run's banner misreports privacy + filler state even though both are applied.
+		if ($paramSnapshot.Contains('Deidentify'))          { $paramSnapshot['Deidentify']          = $Deidentify.IsPresent }
+		if ($paramSnapshot.Contains('FillerLabel'))         { $paramSnapshot['FillerLabel']         = $script:HierarchyFillMode }
+		if ($paramSnapshot.Contains('FillerLabelText'))     { $paramSnapshot['FillerLabelText']     = $script:HierarchyFillLabel }
 		if ($paramSnapshot.Contains('IncludeCopilotInteraction')) {
 			$paramSnapshot['IncludeCopilotInteraction'] = $IncludeCopilotInteraction.IsPresent -or ($ActivityTypes -contains $copilotBaseActivityType)
 		}
@@ -30600,8 +30616,21 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 	# Handle AppendFile mode vs normal mode (skip if fast-path already handled export)
 	if (-not $skipToPostProcessing) {
 	if ($AppendFile) {
-		# AppendFile mode: Always create temporary CSV with new data first
-		$tempCsvPath = Join-Path $OutputPath "Temp_NewData_$global:ScriptRunTimestamp.csv"
+		# AppendFile mode: Always create temporary CSV with new data first.
+		# Resume safety: on a -Resume run $OutputPath is the checkpoint scratch dir and, in
+		# the -AppendFile-with-omitted--OutputPath case, can resolve to the target FILE itself
+		# (a Join-Path against which would corrupt the path) — $OutputPath is not reliable for
+		# appends on resume. So on resume anchor this transient new-data temp on the directory
+		# of $OutputFile (the _PARTIAL scratch dir), exactly as the streaming-merge gate does;
+		# use [IO.Path]::GetDirectoryName (Split-Path's -LiteralPath set lacks -Parent in this
+		# PowerShell), with a defensive fallback to $OutputPath. On a FRESH (non-resume) run
+		# the proven $OutputPath location is kept byte-identical.
+		$_afTempDir = $OutputPath
+		if ($script:IsResumeMode) {
+			$_afTd = [System.IO.Path]::GetDirectoryName($OutputFile)
+			if (-not [string]::IsNullOrWhiteSpace($_afTd)) { $_afTempDir = $_afTd }
+		}
+		$tempCsvPath = Join-Path $_afTempDir "Temp_NewData_$global:ScriptRunTimestamp.csv"
 		$tx0 = Get-Date; Move-Item -Force -Path $exportTemp -Destination $tempCsvPath; $tx1 = Get-Date
 		try { $script:metrics.ExportMs += [int]($tx1 - $tx0).TotalMilliseconds } catch {}
 		
@@ -30636,15 +30665,44 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				}
 			}
 			else {
-			Write-LogHost "Appending new data to existing CSV: $(Get-DisplayPath -LocalPath $OutputFile)" -ForegroundColor Cyan
+			# Resume safety (defensive, resume-only): on a -Resume run, $OutputFile is the
+			# reconstructed _PARTIAL scratch under the checkpoint dir, NOT the user's append
+			# seed — so merging into $OutputFile here would leave the seed untouched and (via
+			# Complete-CheckpointRun's collision-avoidance rename) drop a stray *_<timestamp>.csv.
+			# Mirror the streaming-merge gate: on resume, redirect the merge to the restored
+			# -AppendFile target used AS-IS (do NOT Join-Path against $OutputPath — under
+			# -AppendFile with -OutputPath omitted, $OutputPath can resolve to the target FILE
+			# itself, so a join would corrupt the path; -OutputPath is not used in append
+			# resolution). Checkpoint-param fallback for safety; local/non-URL only. On a FRESH
+			# (non-resume) run $_afTarget stays exactly $OutputFile, so the proven non-resume
+			# append path is byte-identical.
+			$_afTarget = $OutputFile
+			if ($script:IsResumeMode) {
+				$_afCand = if ($AppendFile) { [string]$AppendFile }
+				           elseif ([bool]$script:CheckpointData -and [bool]$script:CheckpointData.parameters -and [bool]$script:CheckpointData.parameters.appendFile) { [string]$script:CheckpointData.parameters.appendFile }
+				           else { '' }
+				if ($_afCand -and $_afCand -notmatch '^https?://') {
+					$_afTarget = $_afCand
+				}
+			}
+			Write-LogHost "Appending new data to existing CSV: $(Get-DisplayPath -LocalPath $_afTarget)" -ForegroundColor Cyan
 			try {
-				$afMergeStats = Merge-FactCsv -TargetFactCsv $OutputFile -CurrentFactCsv $tempCsvPath -KeyColumn 'RecordId' -OutputPath $OutputFile
+				$afMergeStats = Merge-FactCsv -TargetFactCsv $_afTarget -CurrentFactCsv $tempCsvPath -KeyColumn 'RecordId' -OutputPath $_afTarget
 				Write-LogHost ("  -AppendFile merge: Retained={0:N0}  New={1:N0}  Departed={2:N0}  Union={3:N0}" -f $afMergeStats.Retained, $afMergeStats.New, $afMergeStats.Departed, $afMergeStats.Union) -ForegroundColor Green
-				$_afDisplay = if ($script:AppendRaw.ContainsKey('Purview') -and $script:AppendRaw['Purview']) { $script:AppendRaw['Purview'] } else { Get-DisplayPath -LocalPath $OutputFile }
+				$_afDisplay = if ($script:AppendRaw.ContainsKey('Purview') -and $script:AppendRaw['Purview']) { $script:AppendRaw['Purview'] } else { Get-DisplayPath -LocalPath $_afTarget }
 				Write-LogHost ("Appended to: {0}" -f $_afDisplay) -ForegroundColor White
 
 				# Clean up temporary file
 				Remove-Item -Path $tempCsvPath -Force -ErrorAction SilentlyContinue
+
+				# Resume safety: when we redirected to the restored seed above, re-target
+				# $OutputFile to it and clear $script:PartialOutputPath so Complete-CheckpointRun
+				# does not rename a _PARTIAL scratch into a stray *_<timestamp>.csv beside the
+				# seed (mirrors the streaming-merge gate). No-op on a fresh run.
+				if ($script:IsResumeMode -and $_afTarget -ne $OutputFile) {
+					$OutputFile = $_afTarget
+					$script:PartialOutputPath = $null
+				}
 			}
 			catch {
 				Write-Host "ERROR: Failed to append CSV data: $($_.Exception.Message)" -ForegroundColor Red
