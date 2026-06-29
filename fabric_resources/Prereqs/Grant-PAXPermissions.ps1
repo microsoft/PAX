@@ -4,12 +4,6 @@
     Azure Container Apps Jobs writing to SharePoint or Fabric/OneLake.
 
 .DESCRIPTION
-    IMPORTANT: Microsoft Agent 365 enrichment is temporarily disabled pending further
-    testing. The switches -IncludeAgent365Info, -OnlyAgent365Info,
-    -OutputPathAgent365Info, and -AppendAgent365Info are gated at PAX startup and
-    will cause the script to exit immediately with a notice. References to Agent 365
-    elsewhere in this help text are preserved for when the feature is re-enabled.
-
     One-time bootstrap script. Performs (idempotently):
 
       1. Creates (or reuses) a user-assigned managed identity.

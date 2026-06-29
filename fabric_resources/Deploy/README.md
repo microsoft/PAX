@@ -1,11 +1,8 @@
 # PAX Purview Audit Log Processor — ACA Job Deployment (Container path)
 
 > [!IMPORTANT]
-> **Microsoft Agent 365 enrichment is temporarily disabled pending further testing.**
-> The switches `-IncludeAgent365Info`, `-OnlyAgent365Info`, `-OutputPathAgent365Info`,
-> and `-AppendAgent365Info` are gated at script startup and will cause PAX to exit
-> immediately with a notice. References to Agent 365 elsewhere in this document are
-> preserved for when the feature is re-enabled.
+> **Microsoft Agent 365 enrichment is fully supported.**
+> The `-IncludeAgent365Info`, `-OnlyAgent365Info`, `-OutputPathAgent365Info`, and `-AppendAgent365Info` switches require interactive (delegated) sign-in by an AI Administrator or Global Administrator; ManagedIdentity is not supported for this stream.
 
 > **Two ways to use PAX with Fabric.** This README covers the **container path** — a scheduled, unattended run hosted on Azure Container Apps Jobs using a managed identity. If you want to run PAX directly from a laptop, on-prem server, or Azure VM and still write to Fabric/OneLake, see [`../LocalRun/README.md`](../LocalRun/README.md) (no container build, no ACR, no ACA — just PowerShell + an Entra identity that has Fabric workspace access). The top-level [`../README.md`](../README.md) compares the two paths side-by-side.
 

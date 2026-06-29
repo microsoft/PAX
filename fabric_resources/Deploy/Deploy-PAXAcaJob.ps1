@@ -4,12 +4,6 @@
     Processor against a SharePoint or Fabric/OneLake destination.
 
 .DESCRIPTION
-    IMPORTANT: Microsoft Agent 365 enrichment is temporarily disabled pending further
-    testing. The switches -IncludeAgent365Info, -OnlyAgent365Info,
-    -OutputPathAgent365Info, and -AppendAgent365Info are gated at PAX startup and
-    will cause the script to exit immediately with a notice. References to Agent 365
-    elsewhere in this help text are preserved for when the feature is re-enabled.
-
     Provisions (or idempotently updates) an ACA Job using the pre-built container image
     from your Azure Container Registry. The job runs on a manual or scheduled trigger,
     authenticates via a user-assigned managed identity, and writes outputs to either

@@ -2,8 +2,8 @@
 
 ## Release Information
 
-- **Latest Version:** 1.11.9
-- **Latest Release Date:** June 25, 2026
+- **Latest Version:** 1.11.10
+- **Latest Release Date:** June 29, 2026
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,12 +12,20 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.11.9:** [PAX_Purview_Audit_Log_Processor_v1.11.9.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.9/PAX_Purview_Audit_Log_Processor_v1.11.9.ps1)
+- **PAX Purview Audit Log Processor Script v1.11.10:** [PAX_Purview_Audit_Log_Processor_v1.11.10.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.10/PAX_Purview_Audit_Log_Processor_v1.11.10.ps1)
 - **Documentation v1.11.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md)
 
 ---
 
 ## Overview
+
+### v1.11.10
+
+Version 1.11.10 **re-enables the Microsoft Agent 365 export capability**, which was temporarily disabled in v1.11.2 while a Microsoft admin center issue was outstanding. That issue is resolved, so the `-IncludeAgent365Info` and `-OnlyAgent365Info` switches — and their per-stream `-OutputPathAgent365Info` / `-AppendAgent365Info` destinations — work again, producing a Microsoft Agent 365 catalog export (`Agent365_<timestamp>.csv`) on a normal audit run or on their own. This release also adds a brief, optional startup version check against the PAX repo (`-SkipVersionCheck` to disable) and clearer messaging when the Agent 365 catalog can't be retrieved. No other behavior changes; runs that do not use an Agent 365 switch are identical to v1.11.9.
+
+#### Microsoft Agent 365 Export Re-Enabled
+
+The Agent 365 catalog export is available again across all the same paths it supported before it was paused: alongside a normal audit run (`-IncludeAgent365Info`) or stand-alone (`-OnlyAgent365Info`), to Local, SharePoint, or Fabric destinations, with rollup, anonymization (`-Deidentify`), append/merge, and resume. It requires an interactive sign-in (AI Administrator or Global Administrator) and a Microsoft Agent 365–enrolled tenant. See [What's New → v1.11.10](#v11110-1) for details.
 
 ### v1.11.9
 
@@ -206,6 +214,12 @@ New sixth value on the `-Auth` ValidateSet for Azure-hosted headless execution (
 ---
 
 ## What's New
+
+### v1.11.10
+
+- **Microsoft Agent 365 export re-enabled.** The `-IncludeAgent365Info`, `-OnlyAgent365Info`, `-OutputPathAgent365Info`, and `-AppendAgent365Info` switches — temporarily disabled in v1.11.2 — are active again. Use `-IncludeAgent365Info` to add a Microsoft Agent 365 catalog file (`Agent365_<timestamp>.csv`) alongside a normal audit export, or `-OnlyAgent365Info` to produce just the catalog. The capability works on Local, SharePoint, and Fabric destinations, with rollup, `-Deidentify`, append/merge, and resume. It requires an interactive sign-in by an AI Administrator or Global Administrator and a tenant licensed/enrolled for Microsoft Agent 365 (App Registration runs add a one-time interactive sign-in for the Agent 365 step; managed-identity is not supported for this data). No other behavior changes — runs without an Agent 365 switch are unchanged from v1.11.9.
+- **Up-front Agent 365 availability message.** If the Microsoft Agent 365 catalog can't be retrieved, PAX now clearly explains the likely reasons — the tenant isn't enrolled/licensed for Microsoft Agent 365, or the signed-in account lacks the AI Administrator / Global Administrator role — and skips just the catalog step; the rest of the run is unaffected.
+- **Startup "newer version available" notice (`-SkipVersionCheck`).** On launch PAX briefly checks the PAX GitHub repo and prints whether a newer version exists (with its release date), you're already current, or the repo couldn't be reached — including the https://github.com/microsoft/PAX link. It's information only (no prompts, no auto-update) and gives up after ~5 seconds if blocked. Add `-SkipVersionCheck` to turn it off on offline or locked-down machines.
 
 ### v1.11.8
 
@@ -615,6 +629,10 @@ Excel filenames, Excel tab names, and the `EntraUsers_*` / `Agent365_*` filename
 ---
 
 ## Bug Fixes
+
+### v1.11.10
+
+- **(v1.11.10) Append no longer risks replacing the target file with only the current run's rows.** A rolled-up append matched existing rows on a column the published file doesn't contain, so the merge could drop the entire existing file and keep only the new run — shrinking it — even when the seed file was valid and untouched. The rollup append now matches on the correct column, so existing rows are preserved. As a safety net, every append/merge also refuses to overwrite a non-empty target that reads as empty, and the audit merge refuses to write a result smaller than the existing file; in those cases the original is kept and the new output is saved beside it for manual merge — no data is lost. Applies to `-AppendFile`, `-AppendUserInfo`, and the rollup append paths on Local, SharePoint, and Fabric.
 
 ### v1.11.9
 

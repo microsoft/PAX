@@ -1,11 +1,8 @@
 # PAX Purview Audit Log Processor — Prerequisites (Container path)
 
 > [!IMPORTANT]
-> **Microsoft Agent 365 enrichment is temporarily disabled pending further testing.**
-> The switches `-IncludeAgent365Info`, `-OnlyAgent365Info`, `-OutputPathAgent365Info`,
-> and `-AppendAgent365Info` are gated at script startup and will cause PAX to exit
-> immediately with a notice. References to Agent 365 elsewhere in this document are
-> preserved for when the feature is re-enabled.
+> **Microsoft Agent 365 enrichment is fully supported.**
+> The `-IncludeAgent365Info`, `-OnlyAgent365Info`, `-OutputPathAgent365Info`, and `-AppendAgent365Info` switches require interactive (delegated) sign-in by an AI Administrator or Global Administrator; ManagedIdentity is not supported for this stream.
 
 One-time setup before deploying the ACA Job. **Only required when you intend to run PAX as a containerized scheduled job on Azure Container Apps.** If you are running PAX directly from a host (laptop, on-prem server, Azure VM) and writing to Fabric/OneLake, see [`../LocalRun/README.md`](../LocalRun/README.md) instead — the prerequisites there are smaller and `Grant-PAXPermissions.ps1` is not required.
 

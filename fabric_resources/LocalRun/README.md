@@ -1,12 +1,5 @@
 # PAX + Fabric — Local / Direct run (Path A)
 
-> [!IMPORTANT]
-> **Microsoft Agent 365 enrichment is temporarily disabled pending further testing.**
-> The switches `-IncludeAgent365Info`, `-OnlyAgent365Info`, `-OutputPathAgent365Info`,
-> and `-AppendAgent365Info` are gated at script startup and will cause PAX to exit
-> immediately with a notice. References to Agent 365 elsewhere in this document are
-> preserved for when the feature is re-enabled.
-
 Run PAX directly from a Windows laptop, on-prem server, or Azure VM and write outputs to a Fabric Lakehouse. **No container build, no ACR, no ACA, and no `Grant-PAXPermissions.ps1` are required.** This is the lower-setup path; pick it when you do not need a fully unattended Azure-hosted scheduled run, or when you need Microsoft Agent 365 enrichment (which is unsupported under managed identity — see the container path README).
 
 For the side-by-side comparison of this path vs. the container path, see [`../README.md`](../README.md).
