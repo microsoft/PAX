@@ -65,17 +65,18 @@
 14. [Combining Filters](#combining-filters)
 15. [Microsoft 365 Usage Bundle](#microsoft-365-usage-bundle)
 16. [Rollup Post-Processor (Power BI)](#rollup-post-processor-power-bi)
-17. [Incremental Data Collection](#incremental-data-collection)
-18. [Checkpoint & Resume](#checkpoint--resume)
-19. [Output Files & Schema](#output-files--schema)
-20. [Deidentification (Anonymized Output)](#deidentification-anonymized-output)
-21. [Activity Types Reference](#activity-types-reference)
-22. [Record & Service Filters](#record--service-filters)
-23. [Advanced Features](#advanced-features)
-24. [Performance Tuning](#performance-tuning)
-25. [Troubleshooting](#troubleshooting)
-26. [Known Limitations](#known-limitations)
-27. [Security & Compliance](#security--compliance)
+17. [Microsoft Agent 365 Catalog](#microsoft-agent-365-catalog)
+18. [Incremental Data Collection](#incremental-data-collection)
+19. [Checkpoint & Resume](#checkpoint--resume)
+20. [Output Files & Schema](#output-files--schema)
+21. [Deidentification (Anonymized Output)](#deidentification-anonymized-output)
+22. [Activity Types Reference](#activity-types-reference)
+23. [Record & Service Filters](#record--service-filters)
+24. [Advanced Features](#advanced-features)
+25. [Performance Tuning](#performance-tuning)
+26. [Troubleshooting](#troubleshooting)
+27. [Known Limitations](#known-limitations)
+28. [Security & Compliance](#security--compliance)
 
 ---
 
@@ -3539,6 +3540,82 @@ Adding `-Deidentify` to a rollup run anonymizes the rolled-up output as well —
 3. **Don't rename output files.** The Copilot Analytics Lab templates load files by name pattern. Renaming will break the data refresh.
 4. **Don't repurpose rollup outputs.** The schemas are tuned for the named Power BI templates. For ad-hoc analytics, BI ingestion outside the Copilot Analytics Lab, or custom data warehouses, use the raw Purview CSV instead.
 5. **Review the rollup banner.** Confirm the displayed target dashboard matches your intended Power BI template before letting a long audit run continue.
+
+</details>
+
+[⬆ Back to Top](#portable-audit-exporter-pax---purview-audit-log-processor)
+
+---
+
+## Microsoft Agent 365 Catalog
+
+<details>
+<summary>🤖 View Microsoft Agent 365 Catalog Guide (Click to Expand)</summary>
+
+### Overview
+
+Microsoft Agent 365 is the catalog of AI agents (Microsoft 365 Copilot agents, declarative agents, and partner‑published packages) registered across the tenant. PAX exports this catalog through two switches:
+
+- **`-IncludeAgent365Info`** — appends an Agent 365 catalog snapshot to a normal audit run.
+- **`-OnlyAgent365Info`** — runs **only** the Agent 365 catalog snapshot, with no audit query.
+
+The output matches the Microsoft Admin Center "Agent 365" export (agent name, package id, publisher, developer, install counts, and last‑modified metadata).
+
+**Reference:** [Microsoft Agent 365 Graph API](https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api)
+
+### When to Use Each Switch
+
+| Goal | Use |
+|------|-----|
+| Combine an audit export with a same‑run agent inventory (e.g. monthly reporting) | `-IncludeAgent365Info` |
+| Pull just an agent catalog snapshot for governance / change tracking / BI feeds | `-OnlyAgent365Info` |
+
+### Requirements
+
+1. **A Microsoft Agent 365 license** on the tenant. If absent (or the tenant isn't enrolled), the agent step is skipped with a clear notice and the rest of the run continues.
+2. **AI Administrator or Global Administrator** on the signed‑in account (enforced by the API, separate from Graph scopes).
+3. Graph delegated scopes `CopilotPackages.Read.All` and `Application.Read.All`.
+4. An interactive (delegated) sign‑in — the catalog API does not accept app‑only tokens.
+
+### Authentication Flows
+
+| Scenario | Audit phase | Agent 365 phase |
+|----------|------------|-----------------|
+| `-Auth WebLogin` / `DeviceCode` / `Credential` / `Silent` + `-IncludeAgent365Info` | Interactive | Same interactive sign‑in |
+| `-Auth AppRegistration` + `-IncludeAgent365Info` | App‑only (unattended) | One‑time interactive sign‑in up front |
+| Interactive + `-OnlyAgent365Info` | (skipped) | Interactive |
+| `-Auth AppRegistration` + `-OnlyAgent365Info` | (skipped) | Not supported (use WebLogin / DeviceCode) |
+| `-Auth ManagedIdentity` | — | Not supported |
+
+### Output
+
+A separate `Agent365_<timestamp>.csv`. It is always retained — `-Rollup` never deletes it — and is compatible with `-OutputPathAgent365Info` / `-AppendAgent365Info`, rollup, `-Deidentify`, and resume.
+
+### Point‑in‑Time Catalog (Important)
+
+The Agent 365 CSV is a **snapshot of the tenant catalog at the moment of the run** — not date‑ranged, not historical. `-StartDate` / `-EndDate` apply only to the audit phase. Items appear regardless of age; removed agents are not retrievable. For change tracking, run on a schedule and keep each CSV. The **Date created / Created by** columns are filled best‑effort from the audit log (bounded by tenant audit retention and the run's date window, defaulting to ~30 days), and left blank when not found.
+
+### Examples
+
+```powershell
+# Audit run with the Agent 365 catalog appended
+./PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2026-06-01 -EndDate 2026-06-02 -IncludeAgent365Info -OutputPath C:\Temp\ -OutputPathAgent365Info C:\Temp\
+
+# Standalone catalog snapshot (skips audit; -Force auto-confirms the preflight)
+./PAX_Purview_Audit_Log_Processor.ps1 -OnlyAgent365Info -Force -OutputPathAgent365Info C:\Temp\
+
+# Standalone snapshot on a headless host
+./PAX_Purview_Audit_Log_Processor.ps1 -OnlyAgent365Info -Auth DeviceCode -OutputPathAgent365Info C:\Temp\
+```
+
+### Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| "catalog unavailable" notice | Tenant not licensed/enrolled, or caller lacks AI/Global Admin | Confirm a Microsoft Agent 365 license + admin role, then re-run |
+| 403 from the catalog API | Caller missing AI Administrator / Global Administrator | Assign the role and sign in again to refresh the token |
+| `-OnlyAgent365Info` exits with AppRegistration | App-only auth unsupported for this data | Use `-Auth WebLogin`/`DeviceCode`, or `-IncludeAgent365Info` with AppRegistration |
+| Empty catalog | No agents installed, or transient state | Re-run; verify in Admin Center → Agent 365 |
 
 </details>
 
