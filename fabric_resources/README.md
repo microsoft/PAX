@@ -1,12 +1,5 @@
 # PAX + Microsoft Fabric — the two supported paths
 
-> [!IMPORTANT]
-> **Microsoft Agent 365 enrichment is temporarily disabled pending further testing.**
-> The switches `-IncludeAgent365Info`, `-OnlyAgent365Info`, `-OutputPathAgent365Info`,
-> and `-AppendAgent365Info` are gated at script startup and will cause PAX to exit
-> immediately with a notice. References to Agent 365 elsewhere in this document are
-> preserved for when the feature is re-enabled.
-
 PAX writes Delta tables and files to a Microsoft Fabric Lakehouse whenever an `-OutputPath*` parameter points at a OneLake URL. **There are two officially supported hosting patterns** for that, and they have very different setup costs. Pick the one that matches how you actually want to run.
 
 | | **Path A — Local / direct run** | **Path B — Container (ACA Job)** |

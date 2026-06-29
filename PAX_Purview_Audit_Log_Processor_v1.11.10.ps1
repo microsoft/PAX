@@ -1,5 +1,5 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.11.9
+# Version: v1.11.10
 # Requirements: PowerShell 7+ for default Graph API mode; PowerShell 5.1 supported ONLY with -UseEOM (serial Exchange Online Management mode, no parallel query/explosion).
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI activity types (specified via -ActivityTypes): AIInteraction, ConnectedAIAppInteraction, AIAppInteraction
@@ -232,6 +232,12 @@
 .EXAMPLE
 	# Export with execution telemetry for performance analysis
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-11-01 -EndDate 2025-11-02 -IncludeTelemetry -OutputPath C:\Temp\
+.EXAMPLE
+	# Include Microsoft Agent 365 catalog alongside the audit run (separate Agent365_<timestamp>.csv)
+	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-11-01 -EndDate 2025-11-02 -IncludeAgent365Info -OutputPath C:\Temp\ -OutputPathAgent365Info C:\Temp\
+.EXAMPLE
+	# Export ONLY the Microsoft Agent 365 catalog (skips audit pull; -Force auto-confirms the preflight)
+	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -OnlyAgent365Info -Force -OutputPathAgent365Info C:\Temp\
 .EXAMPLE
 	# Combine individual users and groups
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -UserIds "ceo@contoso.com" -GroupNames "Board of Directors" -OutputPath C:\Temp\
@@ -558,7 +564,11 @@
 	When omitted, the Users CSV lands beside -OutputPath. Paired with -AppendUserInfo.
 
 .PARAMETER OutputPathAgent365Info
-	[Temporarily disabled] This switch is disabled and will be enabled at a later time pending further testing.
+	Destination override for the Microsoft Agent 365 catalog CSV. Same tier-inference and form
+	rules as -OutputPath. Independent of -OutputPath so the Agent 365 CSV can land in a different
+	folder, SharePoint library, or Fabric lakehouse from the Purview audit output (subject to
+	the tier-consistency rule: all -OutputPath* values must resolve to the same storage tier).
+	When omitted, the Agent 365 CSV lands beside -OutputPath. Paired with -AppendAgent365Info.
 
 .PARAMETER OutputPathLog
 	Destination override for the run log. Accepts Local, SharePoint, or Fabric Files/ targets
@@ -960,6 +970,8 @@
 	  • File extension must be .csv
 	  • Cannot be used with -OnlyUserInfo (no audit data in scope to append)
 	  • Requires single-file output mode (see Single-File Output Requirements below)
+	  • Data-loss safe: if the existing target cannot be read fully (very large file or key/schema mismatch),
+	    the append aborts and leaves the target untouched rather than overwriting it with only this run's rows.
 	
 	**Single-File Output Requirements:**
 	  Must use ONE of these modes to ensure single output file:
@@ -1094,7 +1106,10 @@
 	    not both, for the same destination.
 
 .PARAMETER AppendAgent365Info
-	[Temporarily disabled] This switch is disabled and will be enabled at a later time pending further testing.
+	Append the Microsoft Agent 365 catalog export into an existing file. Filename rules match
+	-AppendFile. Auto-enables -IncludeAgent365Info. Incompatible with -OnlyAgent365Info. May be
+	used standalone or together with -AppendFile. Use either -AppendAgent365Info (merge) or
+	-OutputPathAgent365Info (overwrite/redirect), not both, for the same destination.
 
 .PARAMETER CombineOutput
 	Combines all activity types into a single output file or tab.
@@ -1120,6 +1135,11 @@
 
 .PARAMETER SkipDiagnostics
 	Skip pre-query capability diagnostics (advanced).
+
+.PARAMETER SkipVersionCheck
+	Skip the brief startup check that compares this script's version with the latest published on the
+	PAX GitHub repo. The check is informational only (never prompts, never auto-updates) and times out
+	in ~5 seconds if GitHub is unreachable; use this switch to suppress it on offline or locked-down hosts.
 
 .PARAMETER UseEOM
 	Use Exchange Online Management mode with Search-UnifiedAuditLog cmdlet.
@@ -1254,10 +1274,24 @@
 	NOT AVAILABLE IN EOM MODE: Requires Microsoft Graph API (user directory/licenses not in EOM).
 
 .PARAMETER IncludeAgent365Info
-	[Temporarily disabled] This switch is disabled and will be enabled at a later time pending further testing.
+	Adds a Microsoft Agent 365 enrichment phase to the run, producing Agent365_<timestamp>.csv
+	(columns matching the Microsoft Admin Center "Agent 365" agent catalog export). Runs after the
+	main audit + EntraUsers phases and sources data from the Microsoft Graph Agent Package
+	Management API, with one narrow audit lookup per agent for creation date / created-by.
+
+	REQUIREMENTS:
+	  • Tenant enrolled in the Microsoft Agent 365 program
+	  • Signed-in caller holds AI Administrator or Global Administrator (the API is user-bound; no app-only support)
+	  • -Auth AppRegistration: a one-time interactive sign-in is launched up front for the agent phase (the audit phase still runs app-only)
+	  • Requires a destination — supply -OutputPathAgent365Info or -AppendAgent365Info
+	INCOMPATIBLE: -UseEOM, -RAWInputCSV; not supported with -Auth ManagedIdentity. Compatible with -Resume (the agent phase runs at end of run).
+	If the tenant is not enrolled, the agent phase is skipped with an explanatory banner and the rest of the run completes normally.
 
 .PARAMETER OnlyAgent365Info
-	[Temporarily disabled] This switch is disabled and will be enabled at a later time pending further testing.
+	Export ONLY the Microsoft Agent 365 catalog (skips all audit log retrieval and EntraUsers
+	enrichment), producing only Agent365_<timestamp>.csv. Same requirements as -IncludeAgent365Info;
+	additionally requires an interactive auth mode and is incompatible with -Auth AppRegistration
+	and -Resume. A Y/N preflight confirms before any Graph call; pass -Force to auto-confirm.
 
 .PARAMETER MaxNetworkOutageMinutes
 	Maximum continuous network outage the script will tolerate during audit log operations (query creation, polling, record retrieval).
@@ -1545,6 +1579,10 @@ param(
 	[Parameter(Mandatory = $false)]
 	[switch]$SkipDiagnostics,
 
+	# Skip the startup GitHub version check (offline / locked-down environments)
+	[Parameter(Mandatory = $false)]
+	[switch]$SkipVersionCheck,
+
 	# Use Exchange Online Management mode (Search-UnifiedAuditLog cmdlet, serial-only)
 	[Parameter(Mandatory = $false)]
 	[switch]$UseEOM,
@@ -1739,22 +1777,13 @@ if ($script:DeprecatedSwitchesHit.Count -gt 0) {
 }
 
 # ============================================================
-# TEMPORARILY DISABLED SWITCH GATE
-# Any explicit use of these switches on the command line causes an
-# immediate graceful exit. These switches are disabled pending further
-# testing and will be re-enabled in a future release.
+# AGENT 365 SWITCHES RE-ENABLED (v1.11.10)
+# The -IncludeAgent365Info / -OnlyAgent365Info / -OutputPathAgent365Info /
+# -AppendAgent365Info switches were temporarily gated in v1.11.2 pending
+# Microsoft admin center (Agent Package Management API) stabilization. That
+# issue is resolved; the gate is removed and the full Agent 365 pipeline is
+# active again. No other Agent 365 code was stubbed while disabled.
 # ============================================================
-$script:TemporarilyDisabledSwitchesHit = @()
-if ($PSBoundParameters.ContainsKey('IncludeAgent365Info'))   { $script:TemporarilyDisabledSwitchesHit += '-IncludeAgent365Info' }
-if ($PSBoundParameters.ContainsKey('OnlyAgent365Info'))      { $script:TemporarilyDisabledSwitchesHit += '-OnlyAgent365Info' }
-if ($PSBoundParameters.ContainsKey('OutputPathAgent365Info')) { $script:TemporarilyDisabledSwitchesHit += '-OutputPathAgent365Info' }
-if ($PSBoundParameters.ContainsKey('AppendAgent365Info'))    { $script:TemporarilyDisabledSwitchesHit += '-AppendAgent365Info' }
-if ($script:TemporarilyDisabledSwitchesHit.Count -gt 0) {
-	foreach ($d in $script:TemporarilyDisabledSwitchesHit) {
-		Microsoft.PowerShell.Utility\Write-Host ("{0} is temporarily disabled and will be enabled at a later time pending further testing." -f $d) -ForegroundColor Yellow
-	}
-	exit 0
-}
 
 # ============================================================
 # MANUAL -Resume PARAMETER PARSING
@@ -2159,7 +2188,31 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.11.9'
+$ScriptVersion = '1.11.10'
+
+function Invoke-PaxVersionCheck {
+	# Informational, non-blocking, failure-isolated version check against the public PAX repo.
+	# Reads versions.json from the release branch, compares the purview script version, and prints
+	# a single info line. Never prompts, never throws, capped at ~5s if the server is unreachable.
+	param([string]$CurrentVersion)
+	$repoUrl = 'https://github.com/microsoft/PAX'
+	try {
+		$verUrl = 'https://raw.githubusercontent.com/microsoft/PAX/release/versions.json'
+		$resp = Invoke-RestMethod -Uri $verUrl -TimeoutSec 5 -ErrorAction Stop
+		$latest = [string]$resp.products.purview.version
+		$relDate = [string]$resp.lastUpdated
+		if ($latest -and ([version]$latest) -gt ([version]$CurrentVersion)) {
+			$line = "  Update available: PAX v$latest"
+			if ($relDate) { $line += " (released $relDate)" }
+			$line += " - you are on v$CurrentVersion. Latest: $repoUrl"
+			Write-LogHost $line -ForegroundColor Cyan
+		} else {
+			Write-LogHost "  Version check: you are on the latest PAX version (v$CurrentVersion). $repoUrl" -ForegroundColor DarkGray
+		}
+	} catch {
+		Write-LogHost "  Version check skipped: the PAX GitHub repo was not reachable (offline or blocked). Latest: $repoUrl" -ForegroundColor DarkGray
+	}
+}
 
 # --- Initialize/Clear persistent script variables to prevent cross-run contamination ---
 # Note: Script-scoped variables persist across multiple script invocations in the same PowerShell session
@@ -10464,6 +10517,10 @@ function Merge-UsersCsv {
 	if (Test-Path -LiteralPath $TargetUsersCsv -PathType Leaf) {
 		$targetRows = @(script:Import-CsvDeduped -LiteralPath $TargetUsersCsv)
 	}
+	# APPEND SAFETY (data-loss guard): never overwrite a non-empty target that parsed to 0 rows.
+	if ($targetRows.Count -eq 0 -and (Test-Path -LiteralPath $TargetUsersCsv -PathType Leaf) -and ((Get-Item -LiteralPath $TargetUsersCsv).Length -gt 0)) {
+		throw "Merge-UsersCsv: target '$TargetUsersCsv' exists with content but parsed to 0 rows; refusing to overwrite (would discard existing data)."
+	}
 	# Schema-narrowing warning. The only header we strictly require on the target
 	# is the dedup key (PersonId_Normalized) — without it the union cannot
 	# correctly classify Retained vs New vs Departed. Display / enrichment
@@ -10666,6 +10723,14 @@ function Merge-FactCsv {
 	if (Test-Path -LiteralPath $TargetFactCsv -PathType Leaf) {
 		$targetRows = @(script:Import-CsvDeduped -LiteralPath $TargetFactCsv)
 	}
+	# APPEND SAFETY (data-loss guard): if the target file exists with content but parsed to
+	# zero rows, the read failed (parse/encoding/memory) or the key cannot be matched.
+	# Overwriting would replace the customer's file with current-run rows only (the TDOT
+	# shrink). Abort instead so the existing target is left untouched; the caller keeps the
+	# fresh current-run CSV on disk for a manual merge.
+	if ($targetRows.Count -eq 0 -and (Test-Path -LiteralPath $TargetFactCsv -PathType Leaf) -and ((Get-Item -LiteralPath $TargetFactCsv).Length -gt 0)) {
+		throw "Merge-FactCsv: target '$TargetFactCsv' exists with content but parsed to 0 rows; refusing to overwrite (would discard existing data). Verify the file's schema/key column ('$KeyColumn')."
+	}
 	# Schema-narrowing warning. The only header we strictly require on the target
 	# is the dedup key (-KeyColumn) — without it the union cannot correctly
 	# classify Retained vs New vs Departed. Display / enrichment columns
@@ -10778,6 +10843,13 @@ function Merge-FactCsv {
 
 	# 3. Atomic rewrite.
 	$unionCount = $merged.Count
+	# APPEND SAFETY (shrink guard): a union must never be smaller than the existing target.
+	# If the target keyed but the dedup column did not match (Retained+Departed=0 while the
+	# target had rows), the union collapses to current-only rows and the file shrinks. Abort
+	# before any write so the target is preserved.
+	if ($targetRows.Count -gt 0 -and $unionCount -lt $targetRows.Count) {
+		throw ("Merge-FactCsv: refusing to write a smaller file than the target (union={0} < target={1}); key '{2}' likely did not match. Target left unchanged." -f $unionCount, $targetRows.Count, $KeyColumn)
+	}
 	$tmpPath = "$OutputPath.merging"
 	$hdrArray = [string[]]$hdrOrder.ToArray()
 	$merged | Select-Object -Property $hdrArray | Export-Csv -LiteralPath $tmpPath -NoTypeInformation -Encoding UTF8
@@ -10898,6 +10970,10 @@ function Merge-M365RollupCsv {
 	$targetRows = @()
 	if (Test-Path -LiteralPath $TargetRollupCsv -PathType Leaf) {
 		$targetRows = @(script:Import-CsvDeduped -LiteralPath $TargetRollupCsv)
+	}
+	# APPEND SAFETY (data-loss guard): never overwrite a non-empty target that parsed to 0 rows.
+	if ($targetRows.Count -eq 0 -and (Test-Path -LiteralPath $TargetRollupCsv -PathType Leaf) -and ((Get-Item -LiteralPath $TargetRollupCsv).Length -gt 0)) {
+		throw "Merge-M365RollupCsv: target '$TargetRollupCsv' exists with content but parsed to 0 rows; refusing to overwrite (would discard existing data)."
 	}
 	$currentRows = @(script:Import-CsvDeduped -LiteralPath $CurrentRollupCsv)
 
@@ -11040,6 +11116,10 @@ function Merge-M365SessionStatsCsv {
 	$targetRows = @()
 	if (Test-Path -LiteralPath $TargetSessionStatsCsv -PathType Leaf) {
 		$targetRows = @(script:Import-CsvDeduped -LiteralPath $TargetSessionStatsCsv)
+	}
+	# APPEND SAFETY (data-loss guard): never overwrite a non-empty target that parsed to 0 rows.
+	if ($targetRows.Count -eq 0 -and (Test-Path -LiteralPath $TargetSessionStatsCsv -PathType Leaf) -and ((Get-Item -LiteralPath $TargetSessionStatsCsv).Length -gt 0)) {
+		throw "Merge-M365SessionStatsCsv: target '$TargetSessionStatsCsv' exists with content but parsed to 0 rows; refusing to overwrite (would discard existing data)."
 	}
 	$currentRows = @(script:Import-CsvDeduped -LiteralPath $CurrentSessionStatsCsv)
 
@@ -13368,6 +13448,7 @@ trap {
 # Emit PAX banner + sensitive-data warning to terminal/log BEFORE any other startup output
 Write-LogHost "=== Portable Audit eXporter (PAX) - Purview Audit Log Exporter ===" -ForegroundColor Cyan
 Write-LogHost ("Script Version: v$ScriptVersion") -ForegroundColor White
+if (-not $SkipVersionCheck) { Invoke-PaxVersionCheck -CurrentVersion $ScriptVersion }
 Write-LogHost ""
 Write-LogHost "=========================================================================" -ForegroundColor Yellow
 Write-LogHost "  !! SENSITIVE DATA WARNING - CUSTOMER RESPONSIBILITY !!" -ForegroundColor Yellow
@@ -17468,12 +17549,13 @@ function Test-Agent365FrontierAccess {
 		if ($status -in @(401,403,404)) {
 			Write-LogHost "" 
 			Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Yellow
-			Write-LogHost "|  Microsoft Agent 365 - Tenant not enrolled in Frontier program       |" -ForegroundColor Yellow
+			Write-LogHost "|  Microsoft Agent 365 - catalog unavailable for this tenant           |" -ForegroundColor Yellow
 			Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Yellow
 			Write-LogHost ("|  The Agent Package Management API returned HTTP {0,-3}, indicating     |" -f $status) -ForegroundColor Yellow
-			Write-LogHost "|  this tenant is not enrolled in the Microsoft Agent 365 Frontier    |" -ForegroundColor Yellow
-			Write-LogHost "|  program (or the signed-in user lacks AI Admin / Global Admin role). |" -ForegroundColor Yellow
-			Write-LogHost "|  The Agent 365 CSV will be skipped for this run.                    |" -ForegroundColor Yellow
+			Write-LogHost "|  this tenant is not enrolled in the Microsoft Agent 365 program (or  |" -ForegroundColor Yellow
+			Write-LogHost "|  lacks a Microsoft Agent 365 license), or the signed-in user lacks   |" -ForegroundColor Yellow
+			Write-LogHost "|  the AI Administrator / Global Administrator role. The Agent 365 CSV |" -ForegroundColor Yellow
+			Write-LogHost "|  will be skipped for this run.                                       |" -ForegroundColor Yellow
 			Write-LogHost "|                                                                      |" -ForegroundColor Yellow
 			Write-LogHost "|  Reference:                                                          |" -ForegroundColor Yellow
 			Write-LogHost "|  https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api|" -ForegroundColor Yellow
@@ -21333,6 +21415,7 @@ if ($RAWInputCSV) {
 	$paramSnapshot['FillerLabelText']           = $script:HierarchyFillLabel
 	$paramSnapshot['Force']                     = $Force.IsPresent
 	$paramSnapshot['SkipDiagnostics']           = $SkipDiagnostics.IsPresent
+	$paramSnapshot['SkipVersionCheck']          = $SkipVersionCheck.IsPresent
 	$paramSnapshot['EmitMetricsJson']           = $EmitMetricsJson.IsPresent
 	$paramSnapshot['MetricsPath']               = $(if ($MetricsPath) { $MetricsPath } else { '' })
 	$paramSnapshot['StreamingSchemaSample']     = $StreamingSchemaSample
@@ -21499,6 +21582,7 @@ else {
 	# block. They are intentionally not repeated here.
 	$paramSnapshot['Force'] = $Force.IsPresent
 	$paramSnapshot['SkipDiagnostics'] = $SkipDiagnostics.IsPresent
+	$paramSnapshot['SkipVersionCheck'] = $SkipVersionCheck.IsPresent
 	$paramSnapshot['Rollup'] = $Rollup.IsPresent
 	$paramSnapshot['RollupPlusRaw'] = $RollupPlusRaw.IsPresent
 	$paramSnapshot['Dashboard'] = $Dashboard
@@ -32126,7 +32210,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 						$rollupPurviewStem = [System.IO.Path]::GetFileNameWithoutExtension($rollupPurviewCsv)
 						$rollupFactCsv     = Join-Path $rollupOutputDir ("{0}_Interactions.csv" -f $rollupPurviewStem)
 						if (Test-Path -LiteralPath $rollupFactCsv) {
-							$rollupFactMergeStats = Merge-FactCsv -TargetFactCsv $AppendFile -CurrentFactCsv $rollupFactCsv -OutputPath $AppendFile
+							$rollupFactMergeStats = Merge-FactCsv -TargetFactCsv $AppendFile -CurrentFactCsv $rollupFactCsv -KeyColumn 'Message_Id' -OutputPath $AppendFile
 							Write-LogHost ("Rollup: -AppendFile merge: Retained={0:N0}  New={1:N0}  Departed={2:N0}  Union={3:N0}" -f $rollupFactMergeStats.Retained, $rollupFactMergeStats.New, $rollupFactMergeStats.Departed, $rollupFactMergeStats.Union) -ForegroundColor Green
 							$_rollupAfDisplay = if ($script:AppendRaw.ContainsKey('Purview') -and $script:AppendRaw['Purview']) { $script:AppendRaw['Purview'] } else { $AppendFile }
 							Write-LogHost ("Appended to: {0}" -f $_rollupAfDisplay) -ForegroundColor White

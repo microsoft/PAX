@@ -1,8 +1,8 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.9.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.9/PAX_Purview_Audit_Log_Processor_v1.11.9.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.10.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.10/PAX_Purview_Audit_Log_Processor_v1.11.10.ps1)
 >
-> **📅 Script v1.11.9 Release Date:** June 25, 2026
+> **📅 Script v1.11.10 Release Date:** June 29, 2026
 >
 > **📋 Release Notes:** See what's new → [v1.11.x Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
@@ -10,7 +10,7 @@
 >
 > **📚 Documentation Archive:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
-**Documentation Version:** v1.11.x (Current Script Version: v1.11.9)
+**Documentation Version:** v1.11.x (Current Script Version: v1.11.10)
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 7+ (required for default Graph API mode); PowerShell 5.1 supported only with `-UseEOM`  
 **License:** MIT
@@ -103,6 +103,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - **Fabric + managed identity for fully unattended runs:** Combine an `-OutputPath` Fabric URL with `-Auth ManagedIdentity` to run PAX as a scheduled/event-driven Azure Container Apps Job (or any Azure compute) that lands data directly in a Fabric workspace with no secrets to manage — see the repo-root **`fabric_resources`** folder for container images, Bicep/ARM templates, and the Azure-role + Fabric-workspace-role + Fabric-tenant-setting checklist
 - **Unattended Azure-hosted runs:** Sign in with a managed identity (`-Auth ManagedIdentity`) for scheduled/event-driven jobs on Azure Container Apps Jobs, Azure VMs, or similar Azure compute — no secrets to manage
 - **Graph API mode (default):** Supports Entra ID user enrichment + Microsoft 365 Copilot license detection via `-IncludeUserInfo` and `-OnlyUserInfo`; group expansion via `-GroupNames` uses `Get-MgGroup` + `Get-MgGroupMember` (requires `GroupMember.Read.All`)
+- **Microsoft Agent 365 catalog (`-IncludeAgent365Info` / `-OnlyAgent365Info`):** Export a point-in-time inventory of the agents registered in your tenant as a separate `Agent365_<timestamp>.csv` — alongside the audit export or on its own — for tenants licensed for Microsoft Agent 365 (requires an interactive AI Administrator / Global Administrator sign-in); see [Microsoft Agent 365 Parameters](#microsoft-agent-365-parameters)
 - **EOM mode (`-UseEOM`):** Supports group expansion via `-GroupNames` (uses `Get-DistributionGroupMember`) and 10K-per-query limit detection
 - **Optional anonymized output (`-Deidentify`):** A single switch replaces every identity in the output with irreversible, format-preserving tokens, so anonymized data can be shared for reporting without exposing who did what — while keeping the analytical fields and the relationships between records intact. OFF by default (output is unchanged when it is not used); see [Deidentification (Anonymized Output)](#deidentification-anonymized-output)
 - **Built-in org / manager hierarchy (Power BI rollup):** When producing input for the AI-in-One or AI Business Value dashboards, the rolled-up Users output automatically includes each person's place in the org chart — their level, manager, full management chain, and team-size counts — derived from the Entra manager data PAX already collects, ready for org-based Power BI views; see [Rollup Post-Processor (Power BI)](#rollup-post-processor-power-bi)
@@ -137,6 +138,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - **Group Filtering:** Group expansion via `-GroupNames` — uses `Get-DistributionGroupMember` (Exchange Online RBAC) in `-UseEOM` mode and `Get-MgGroup` + `Get-MgGroupMember` (requires `GroupMember.Read.All`) in Graph API mode
 - **Entra ID Enrichment + M365 Copilot Licensing (Graph API Mode Only):** Enrich audit data with Entra user attributes and M365 Copilot (MAC) license information via `-IncludeUserInfo` (default mode, not compatible with `-UseEOM`)
 - **User-Only Export (Graph API Mode Only):** Export only Entra ID user data and M365 Copilot licensing without audit records via `-OnlyUserInfo` (requires `-IncludeUserInfo`, not compatible with `-UseEOM`)
+- **Microsoft Agent 365 Catalog (Graph API Mode Only):** Inventory the tenant's registered agents (name, publisher, developer, and package metadata) via `-IncludeAgent365Info` (alongside audit) or `-OnlyAgent365Info` (catalog only); requires a Microsoft Agent 365 license and an interactive AI Administrator / Global Administrator sign-in. See [Microsoft Agent 365 Parameters](#microsoft-agent-365-parameters)
 - **Org / Manager Hierarchy (Power BI Rollup):** The AI-in-One and AI Business Value rollups add org/manager-hierarchy columns to the Users output — each person's level, manager, full management chain, and direct/total report counts — derived from the Entra manager data PAX already collects; ready for parent-child hierarchies, leaderboards, and team rollups in Power BI. See [Rollup Post-Processor (Power BI)](#rollup-post-processor-power-bi)
 - **Deidentification (`-Deidentify`):** Optionally anonymize every identifying value in the output with irreversible, format-preserving tokens for anonymous-style reporting, while preserving relationships and analytical fields. OFF by default. See [Deidentification (Anonymized Output)](#deidentification-anonymized-output)
 - **Streaming Export:** Memory-efficient chunked data writing for large datasets
@@ -315,6 +317,9 @@ Graph API mode requests scopes conditionally based on the switches you pass. The
 | **Graph: User.Read.All** | Entra user directory, MAC licensing | `-IncludeUserInfo`, `-OnlyUserInfo`, or `-GroupNames` | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: Organization.Read.All** | Tenant/organization context, license metadata | `-IncludeUserInfo` or `-OnlyUserInfo` | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: GroupMember.Read.All** | Group lookup and membership expansion (least privilege) | `-GroupNames` | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: CopilotPackages.Read.All** | Microsoft Agent 365 catalog / package metadata | `-IncludeAgent365Info` or `-OnlyAgent365Info` | ✅ Yes | ✅ Yes (via up-front interactive sign-in) | — N/A |
+| **Graph: Application.Read.All** | Publisher / developer name resolution for Agent 365 | `-IncludeAgent365Info` or `-OnlyAgent365Info` | ✅ Yes | ✅ Yes (interactive) | — N/A |
+| **Entra role: AI Administrator OR Global Administrator** | Required by the Agent 365 catalog API (delegated only) | `-IncludeAgent365Info` or `-OnlyAgent365Info` | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: Sites.ReadWrite.All** | Resolve the SharePoint site/library/folder and upload output files | `-OutputPath` is a SharePoint URL | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: Files.ReadWrite.All** | Create, replace, and resume uploads of output files in the SharePoint folder | `-OutputPath` is a SharePoint URL | ✅ Yes | ✅ Yes | — N/A |
 | **Azure role: Storage Blob Data Contributor** | Write PAX output into the OneLake `Tables/` namespace (Delta tables) and `Files/` namespace (operational artifacts) of the destination Lakehouse | `-OutputPath` is a Fabric lakehouse URL | ✅ Required on the signed-in user / managed identity | ✅ Required on the service principal | — N/A |
@@ -396,7 +401,7 @@ The **Purview Audit Reader** role is only required for EOM mode (`-UseEOM`) and 
 
 ### Download the Script
 
-- **Script:** [PAX_Purview_Audit_Log_Processor_v1.11.9.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.9/PAX_Purview_Audit_Log_Processor_v1.11.9.ps1)
+- **Script:** [PAX_Purview_Audit_Log_Processor_v1.11.10.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.10/PAX_Purview_Audit_Log_Processor_v1.11.10.ps1)
 - **Release Notes:** [v1.11.x](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md)
 
 Save the downloaded script to a working directory (e.g., `C:\Scripts\PAX\`).
@@ -451,6 +456,7 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -
 *Workload selection (what to collect):*
 - [Microsoft 365 Usage Parameters](#microsoft-365-usage-parameters)
 - [Dual-Mode & Enrichment Parameters](#dual-mode--enrichment-parameters)
+- [Microsoft Agent 365 Parameters](#microsoft-agent-365-parameters)
 
 *Power BI rollup output:*
 - [Rollup & Power BI Dashboard Parameters](#rollup--power-bi-dashboard-parameters)
@@ -478,6 +484,7 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -
 | `-AutoCompleteness` | `-ClientSecret` | `-ExportProgressInterval` | `-IncludeM365Usage` | `-OutputPath` | `-Rollup` | `-ThroughputDropPct` |
 |   | `-CombineOutput` |   | `-IncludeTelemetry` |   | `-RollupPlusRaw` | `-UseEOM` |
 |   |   |   | `-IncludeUserInfo` |   |   | `-UserIds` |
+| `-AppendAgent365Info` |   |   | `-IncludeAgent365Info` | `-OnlyAgent365Info` | `-OutputPathAgent365Info` | `-SkipVersionCheck` |
 
 </details>
 
@@ -1185,6 +1192,62 @@ All audit-related parameters are incompatible and will trigger validation errors
 
 ---
 
+### Microsoft Agent 365 Parameters
+
+These switches add a Microsoft Agent 365 catalog export — a point-in-time inventory of the agents registered in your tenant — produced as a separate `Agent365_<timestamp>.csv` file. The catalog is a snapshot taken at the moment the script runs; the `-StartDate` / `-EndDate` range applies only to audit data, not to the agent catalog. Both switches require an interactive sign-in by an **AI Administrator** or **Global Administrator**, and the tenant must be licensed for **Microsoft Agent 365**.
+
+#### `-IncludeAgent365Info` (switch)
+
+**Purpose:** Add a Microsoft Agent 365 catalog file to a normal run, alongside the audit export  
+**Default:** Off  
+**Use When:**
+
+- You want the audit/usage export and an agent inventory from the same run
+- Tracking which agents exist in the tenant, who published them, and when
+
+**Example:** `-IncludeAgent365Info -OutputPath C:\Reports\ -OutputPathAgent365Info C:\Reports\`
+
+**Requirements:**
+
+- Tenant licensed for Microsoft Agent 365
+- Signed-in account holds AI Administrator or Global Administrator
+- A destination for the catalog: pair with `-OutputPathAgent365Info` or `-AppendAgent365Info`
+- An interactive sign-in (WebLogin / DeviceCode / Credential / Silent). With `-Auth AppRegistration` the audit data is collected unattended and a one-time sign-in is requested up front for the agent step. Not available with `-Auth ManagedIdentity`.
+
+**Notes:**
+
+- Produces a separate `Agent365_<timestamp>.csv`.
+- Works with rollup, `-Deidentify`, and `-Resume` (the agent catalog is written at the end of the run).
+- If the tenant isn't enrolled/licensed for Microsoft Agent 365 — or the signed-in account lacks the AI Administrator / Global Administrator role — the catalog step is skipped with a clear notice explaining the likely cause, and the rest of the run finishes normally.
+
+#### `-OnlyAgent365Info` (switch)
+
+**Purpose:** Export only the Microsoft Agent 365 catalog, skipping all audit log retrieval  
+**Default:** Off  
+**Use When:**
+
+- You only need the agent inventory and not the audit/usage data
+
+**Example:** `-OnlyAgent365Info -OutputPathAgent365Info C:\Reports\`
+
+**Notes:**
+
+- Requires an interactive auth mode; not supported with `-Auth AppRegistration`. A quick confirmation prompt appears before any data is pulled — add `-Force` to skip it.
+
+#### `-OutputPathAgent365Info`
+
+**Purpose:** Choose where the Agent 365 catalog file is saved (overrides `-OutputPath` for this file only)  
+**Default:** Beside `-OutputPath`  
+**Notes:** Accepts a local folder, SharePoint library, or Fabric lakehouse, just like `-OutputPath`. All destinations in one run must be the same type. Pair with `-IncludeAgent365Info` or `-OnlyAgent365Info`.
+
+#### `-AppendAgent365Info`
+
+**Purpose:** Merge this run's Agent 365 catalog into an existing catalog file  
+**Default:** Off  
+**Notes:** Auto-enables `-IncludeAgent365Info`. Use either `-AppendAgent365Info` (merge) or `-OutputPathAgent365Info` (new/overwrite), not both, for the same file.
+
+---
+
 ### Rollup & Power BI Dashboard Parameters
 
 > These switches drive the embedded Python post-processor that produces input for the Copilot Analytics Lab Power BI dashboards. For the complete walkthrough — processor selection, runtime requirements, banner, checkpoint behavior, and examples — see the [Rollup Post-Processor (Power BI)](#rollup-post-processor-power-bi) section.
@@ -1458,6 +1521,22 @@ This is purely a display aid for Power BI parent-child hierarchies, where blank 
 
 - Stored in checkpoint and restored on `-Resume`
 - Affects polling status messages and backpressure wait progress output
+
+---
+
+#### `-SkipVersionCheck` (switch)
+
+**Purpose:** Skip the brief startup check that tells you whether a newer PAX version is available  
+**Default:** Off (the check runs)  
+**Use When:**
+
+- Running on an offline or locked-down machine where GitHub isn't reachable
+- Suppressing the informational version line in fully unattended jobs
+
+**Notes:**
+
+- The version check is **information only** — it never prompts, never changes anything, and never auto-updates. It prints one line: whether a newer version exists (with its release date), that you're already on the latest, or that the PAX repo couldn't be reached. The message always includes the https://github.com/microsoft/PAX link.
+- If the repo can't be reached, the check gives up after about 5 seconds and the run continues normally.
 
 ---
 
@@ -4575,7 +4654,7 @@ The script can emit a metrics JSON capturing execution telemetry and final state
 **JSON Includes (illustrative):**
 ```json
 {
-	"ScriptVersion": "1.11.9",
+	"ScriptVersion": "1.11.10",
 	"StartTimestampUtc": "2025-10-26T14:05:23Z",
 	"EndTimestampUtc": "2025-10-26T14:07:11Z",
 	"TotalWindows": 42,

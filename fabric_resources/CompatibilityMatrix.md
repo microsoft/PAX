@@ -2,13 +2,6 @@
 
 _This document captures the supported runtime contract for PAX as it is currently shipped._
 
-> [!IMPORTANT]
-> **Microsoft Agent 365 enrichment is temporarily disabled pending further testing.**
-> The switches `-IncludeAgent365Info`, `-OnlyAgent365Info`, `-OutputPathAgent365Info`,
-> and `-AppendAgent365Info` are gated at script startup and will cause PAX to exit
-> immediately with a notice. References to Agent 365 elsewhere in this document are
-> preserved for when the feature is re-enabled.
-
 This document captures the **supported runtime contract** for PAX when run under any
 of the three packaging modes (local pwsh, Azure Container Apps Job, Fabric notebook).
 Operators planning a deployment should treat each row as a hard requirement unless
@@ -94,7 +87,7 @@ Three trailing columns are appended at merge time to **any appended file**:
 | `Latest_Append_Date` | `YYYY-MM-DD` | Latest run timestamp that touched the file. Same value on every row; updated each append. |
 | `In_Latest_Append` | `TRUE` / `FALSE` | Whether the row appeared in the latest run's audit window or membership snapshot. `FALSE` for retained-but-departed rows. |
 
-The CopilotInteraction rollup Fact CSV additionally carries two trailing identity columns (always present, not just at append time) so per-run integer surrogates remain stable across appends: **`Message_Id_Raw`** (raw audit `Messages[].Id` GUID) and **`ThreadId_Raw`** (raw `CopilotEventData.ThreadId` GUID). Merge keys: `Message_Id_Raw` for the rollup Fact CSV, `RecordId` for the non-rollup raw audit CSV, `PersonId_Normalized` for the EntraUsers CSV, `AgentId` for the Agent 365 CSV.
+The CopilotInteraction rollup Fact CSV additionally carries two trailing identity columns (always present, not just at append time) so per-run integer surrogates remain stable across appends: **`Message_Id_Raw`** (raw audit `Messages[].Id` GUID) and **`ThreadId_Raw`** (raw `CopilotEventData.ThreadId` GUID). Merge keys: `Message_Id` for the rollup Fact CSV, `RecordId` for the non-rollup raw audit CSV, `PersonId_Normalized` for the EntraUsers CSV, `AgentId` for the Agent 365 CSV.
 
 **Deidentification (`-Deidentify`) and merge keys.** Under `-Deidentify`, identity values are replaced with irreversible deterministic tokens before any write. The documented merge keys remain usable: `PersonId_Normalized` is tokenized but deterministic (so EntraUsers/Users joins and distinct counts are preserved across runs), while `Message_Id_Raw` / `ThreadId_Raw` are message/thread GUIDs that are **not** tokenized. A run's deidentify state is detected from the target's identity columns; appending a `-Deidentify` run into a non-deidentified target (or the reverse) is hard-rejected at pre-flight to prevent token/raw identity mixing. `-Deidentify` is persisted in the checkpoint and restored on `-Resume`.
 
