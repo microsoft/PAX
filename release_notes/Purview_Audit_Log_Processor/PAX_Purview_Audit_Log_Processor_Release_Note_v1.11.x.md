@@ -2,8 +2,8 @@
 
 ## Release Information
 
-- **Latest Version:** 1.11.10
-- **Latest Release Date:** June 29, 2026
+- **Latest Version:** 1.11.11
+- **Latest Release Date:** July 2, 2026
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,12 +12,32 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.11.10:** [PAX_Purview_Audit_Log_Processor_v1.11.10.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.10/PAX_Purview_Audit_Log_Processor_v1.11.10.ps1)
+- **PAX Purview Audit Log Processor Script v1.11.11:** [PAX_Purview_Audit_Log_Processor_v1.11.11.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.11/PAX_Purview_Audit_Log_Processor_v1.11.11.ps1)
 - **Documentation v1.11.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md)
 
 ---
 
 ## Overview
+
+### v1.11.11
+
+Version 1.11.11 delivers the real fix for a cross-run `-AppendFile` reconciliation problem that persisted through v1.11.10 (reported by two customers), closes an Entra Users upload gap in a specific rollup + append combination, adds a new `-UserInfoFile` switch that lets you supply the user/organization directory from your own CSV instead of pulling it live from Entra, and extends the Microsoft Agent 365 catalog export to support app-only authentication (opt-in / pre-GA) in addition to interactive sign-in. Runs that use none of these paths behave as in v1.11.10, with one additive exception: the rolled-up interactions file now carries two trailing provenance columns used for reliable cross-run de-duplication.
+
+#### Reliable Cross-Run Append & One-Time Re-Baseline (`-AppendFile`)
+
+Appending a rollup run onto an existing file now reconciles on each interaction's stable message identity, so overlapping records de-duplicate, new records are added, and existing-only records are preserved — an exact union with nothing dropped or double-counted. Append files created **before v1.11.11** were written without the stable key the reconciliation relies on; to protect your data PAX does **not** silently merge onto them. Instead it leaves the old file untouched, writes this run's output to a new timestamped file, and prints re-baseline guidance. The practical effect: an older append file needs a **one-time re-baseline** (generate a fresh file once with v1.11.11 and append onto that from then on), and **no data is lost** in the transition.
+
+#### Rolled-Up Users Dimension Uploads in Every Append Combination
+
+The rolled-up Users dimension (the org / licensing companion to the interactions file) now uploads correctly in **all four** combinations of interactions-append and Users destination (`-OutputPathUserInfo` / `-AppendUserInfo`, appending or not). A previous gap in one specific combination — an appending interactions stream together with `-OutputPathUserInfo` and `-Rollup` — could leave the Users file un-uploaded; it now uploads exactly once in every case.
+
+#### Bring Your Own User Directory (`-UserInfoFile`)
+
+A new `-UserInfoFile` switch supplies the user / organization directory from a **CSV you provide** — on a local path, SharePoint, or Microsoft Fabric / OneLake — instead of pulling it live from Microsoft Entra. The supplied directory drives enrichment, org / manager hierarchy, the rolled-up Users dimension, de-identification, and upload end to end. Only `UserPrincipalName` is required; `DisplayName`, `Department`, `JobTitle`, and `ManagerUpn` are recommended, and header names are alias-aware and case-insensitive. It is mutually exclusive with `-GroupNames`. License handling is a per-user hybrid: a value you provide is used as-is, while a blank value is resolved online by UPN — so a run is **fully offline only when every row supplies a license value** (a single blank triggers a tenant license lookup). See the documentation's Entra ID User Enrichment section and the `-UserInfoFile` parameter for the full CSV schema.
+
+#### Microsoft Agent 365 Catalog — App-Only Authentication (Opt-In / Pre-GA)
+
+The Microsoft Agent 365 catalog export now works with app-only authentication — **AppRegistration (certificate)**, **AppRegistration (client secret)**, or **ManagedIdentity** — in addition to the existing interactive (delegated) sign-in. PAX reuses the run's own authentication mode with no new switch and no separate interactive prompt. App-only requires the service principal's **application** permissions `CopilotPackages.Read.All` and `Application.Read.All` (**admin-consented**), uses the Microsoft Graph **beta** catalog endpoint, and still requires a **Microsoft Agent 365 license**. This path is **opt-in and pre-GA** — validate it in your tenant before relying on it in production. Delegated Agent 365 behavior is unchanged.
 
 ### v1.11.10
 
@@ -214,6 +234,15 @@ New sixth value on the `-Auth` ValidateSet for Azure-hosted headless execution (
 ---
 
 ## What's New
+
+### v1.11.11
+
+- **Reliable cross-run append + one-time re-baseline (`-AppendFile`).** Rollup append now reconciles on each interaction's stable message identity — overlaps de-duplicate, new records are added, existing-only records are preserved (exact union, nothing dropped or double-counted). Append files created before v1.11.11 are **not** silently merged: the old file is left untouched, this run's output is written to a new timestamped file, and PAX prints re-baseline guidance. Older append files need a **one-time re-baseline**; **no data is lost**.
+- **Rolled-up Users dimension uploads in every append combination.** The Users dimension now uploads exactly once in all four combinations of interactions-append and Users destination (`-OutputPathUserInfo` / `-AppendUserInfo`, appending or not), closing a gap that previously left it un-uploaded in one specific rollup + append combination.
+- **Bring your own user directory (`-UserInfoFile`).** Supply the user/organization directory from a CSV you provide (local, SharePoint, or Microsoft Fabric / OneLake) instead of pulling it live from Entra. It drives enrichment, org / manager hierarchy, the rolled-up Users dimension, de-identification, and upload end to end. Only `UserPrincipalName` is required; header names are alias-aware and case-insensitive. Mutually exclusive with `-GroupNames`. License handling is a per-user hybrid — provided values are used as-is and blanks are resolved online by UPN, so a run is **fully offline only when every row supplies a license value** (a single blank triggers a tenant license lookup requiring `User.Read.All` + `Organization.Read.All`).
+- **Microsoft Agent 365 catalog — app-only authentication (opt-in / pre-GA).** The catalog export now works with app-only auth — AppRegistration (certificate), AppRegistration (client secret), or ManagedIdentity — in addition to interactive sign-in, reusing the run's own mode with no new switch and no separate prompt. Requires the service principal's **application** permissions `CopilotPackages.Read.All` + `Application.Read.All` (admin-consented), uses the Microsoft Graph **beta** catalog endpoint, and still requires a Microsoft Agent 365 license. Delegated behavior is unchanged.
+- **Local run files kept when an upload fails (remote-output runs).** In SharePoint or Microsoft Fabric / OneLake runs, if one or more files fail to upload, PAX now keeps the local run files instead of deleting them — the same protection that already applied when a run is interrupted with Ctrl+C or ends unexpectedly — and shows a clear message that the files were preserved because an upload didn't complete, and where to find them. Upload retry behavior and size thresholds are unchanged; only what happens to the local copy afterward is affected.
+- **Correct processor version shown in logs.** The rollup processor version PAX reports in its own run log and rollup banner now reads v4.2.0, matching the processor that actually runs; earlier builds displayed a stale v4.1.0 label in those messages. This is a display-only correction with no change to processing behavior or output.
 
 ### v1.11.10
 
