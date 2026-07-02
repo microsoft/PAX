@@ -59,8 +59,27 @@ Thumbs.db
 *.msi
 *.dmg
 *.zip
+*.bak
 
 # Logs
 *.log
 
 .dev-trio/wizard-progress.json
+
+# Dev-Trio scaffolded files
+# Remove entries below if your team wants to share
+# these configurations across the repo.
+
+# Agent role definitions (GitHub Copilot)
+copilot-instructions.md
+.github/agents/
+constraints.instructions.md
+dev-trio.prompt.md
+
+# Per-developer project memory (always keep ignored)
+memory/MEMORY.md
+memory/ROADMAP.md
+memory/PROMPT_EXAMPLES.md
+
+# Dev-Trio internal state
+.dev-trio/

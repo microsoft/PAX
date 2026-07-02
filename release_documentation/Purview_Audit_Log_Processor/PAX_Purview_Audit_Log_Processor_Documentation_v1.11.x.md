@@ -1,8 +1,8 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.10.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.10/PAX_Purview_Audit_Log_Processor_v1.11.10.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.11.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.11/PAX_Purview_Audit_Log_Processor_v1.11.11.ps1)
 >
-> **📅 Script v1.11.10 Release Date:** June 29, 2026
+> **📅 Script v1.11.11 Release Date:** July 2, 2026
 >
 > **📋 Release Notes:** See what's new → [v1.11.x Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
@@ -10,7 +10,7 @@
 >
 > **📚 Documentation Archive:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
-**Documentation Version:** v1.11.x (Current Script Version: v1.11.10)
+**Documentation Version:** v1.11.x (Current Script Version: v1.11.11)  
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 7+ (required for default Graph API mode); PowerShell 5.1 supported only with `-UseEOM`  
 **License:** MIT
@@ -139,7 +139,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - **Group Filtering:** Group expansion via `-GroupNames` — uses `Get-DistributionGroupMember` (Exchange Online RBAC) in `-UseEOM` mode and `Get-MgGroup` + `Get-MgGroupMember` (requires `GroupMember.Read.All`) in Graph API mode
 - **Entra ID Enrichment + M365 Copilot Licensing (Graph API Mode Only):** Enrich audit data with Entra user attributes and M365 Copilot (MAC) license information via `-IncludeUserInfo` (default mode, not compatible with `-UseEOM`)
 - **User-Only Export (Graph API Mode Only):** Export only Entra ID user data and M365 Copilot licensing without audit records via `-OnlyUserInfo` (requires `-IncludeUserInfo`, not compatible with `-UseEOM`)
-- **Microsoft Agent 365 Catalog (Graph API Mode Only):** Inventory the tenant's registered agents (name, publisher, developer, and package metadata) via `-IncludeAgent365Info` (alongside audit) or `-OnlyAgent365Info` (catalog only); requires a Microsoft Agent 365 license and an interactive AI Administrator / Global Administrator sign-in. See [Microsoft Agent 365 Parameters](#microsoft-agent-365-parameters)
+- **Microsoft Agent 365 Catalog (Graph API Mode Only):** Inventory the tenant's registered agents (name, publisher, developer, and package metadata) via `-IncludeAgent365Info` (alongside audit) or `-OnlyAgent365Info` (catalog only); requires a Microsoft Agent 365 license and either an interactive AI Administrator / Global Administrator sign-in or app-only authentication (AppRegistration certificate/secret or managed identity) with the required application permission admin-consented. See [Microsoft Agent 365 Parameters](#microsoft-agent-365-parameters)
 - **Org / Manager Hierarchy (Power BI Rollup):** The AI-in-One and AI Business Value rollups add org/manager-hierarchy columns to the Users output — each person's level, manager, full management chain, and direct/total report counts — derived from the Entra manager data PAX already collects; ready for parent-child hierarchies, leaderboards, and team rollups in Power BI. See [Rollup Post-Processor (Power BI)](#rollup-post-processor-power-bi)
 - **Deidentification (`-Deidentify`):** Optionally anonymize every identifying value in the output with irreversible, format-preserving tokens for anonymous-style reporting, while preserving relationships and analytical fields. OFF by default. See [Deidentification (Anonymized Output)](#deidentification-anonymized-output)
 - **Streaming Export:** Memory-efficient chunked data writing for large datasets
@@ -402,7 +402,7 @@ The **Purview Audit Reader** role is only required for EOM mode (`-UseEOM`) and 
 
 ### Download the Script
 
-- **Script:** [PAX_Purview_Audit_Log_Processor_v1.11.10.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.10/PAX_Purview_Audit_Log_Processor_v1.11.10.ps1)
+- **Script:** [PAX_Purview_Audit_Log_Processor_v1.11.11.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.11/PAX_Purview_Audit_Log_Processor_v1.11.11.ps1)
 - **Release Notes:** [v1.11.x](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md)
 
 Save the downloaded script to a working directory (e.g., `C:\Scripts\PAX\`).
@@ -485,6 +485,7 @@ powershell -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -
 | `-AutoCompleteness` | `-ClientSecret` | `-ExportProgressInterval` | `-IncludeM365Usage` | `-OutputPath` | `-Rollup` | `-ThroughputDropPct` |
 |   | `-CombineOutput` |   | `-IncludeTelemetry` |   | `-RollupPlusRaw` | `-UseEOM` |
 |   |   |   | `-IncludeUserInfo` |   |   | `-UserIds` |
+|   |   |   |   |   |   | `-UserInfoFile` |
 | `-AppendAgent365Info` |   |   | `-IncludeAgent365Info` | `-OnlyAgent365Info` | `-OutputPathAgent365Info` | `-SkipVersionCheck` |
 
 </details>
@@ -1193,9 +1194,33 @@ All audit-related parameters are incompatible and will trigger validation errors
 
 ---
 
+#### `-UserInfoFile` (string)
+
+**Purpose:** Supply the Entra-style user / organization directory from a **CSV file you provide** instead of pulling it live from Microsoft Entra. The supplied directory drives user enrichment, org / manager hierarchy, the rolled-up **Users dimension**, de-identification, and upload — everywhere the live Entra Users export would be used.  
+**Default:** Not set (PAX pulls the directory live from Entra)  
+**Accepts:** A **local path**, a **SharePoint** document URL, or a **Microsoft Fabric / OneLake** file URL (same destination forms as `-OutputPath`)  
+**Use When:**
+
+- You maintain your own authoritative user/org list (e.g., an HR extract)
+- You want organization data the live Entra pull doesn't carry
+- You want to enrich against a curated set of people without querying the directory
+
+**Example:** `-UserInfoFile "C:\Data\my_users.csv"`
+
+**Notes:**
+
+- **Schema:** Only `UserPrincipalName` is required; `DisplayName`, `Department`, `JobTitle`, and `ManagerUpn` are recommended; `HasLicense` and any extra columns are optional (extras pass through unchanged). Header names are alias-aware and case-insensitive. See [`-UserInfoFile` CSV Schema (Shareable Reference)](#-userinfofile-csv-schema-shareable-reference).
+- **Mutually exclusive with `-GroupNames`** — supply exactly one directory source; the run stops early if both are given.
+- **License handling is a per-user hybrid.** Enter the literal `TRUE`/`FALSE` (stored exactly as typed; other tokens aren't recognized). A value you supply is used as-is; a blank/whitespace value is resolved online by UPN (a user who can't be resolved is treated as unlicensed and named in the log). The run is **fully offline only when *every* row supplies `TRUE`/`FALSE`** — a single blank value triggers a tenant license lookup (requires `User.Read.All` + `Organization.Read.All`).
+- Passing `-UserInfoFile` is sufficient — you do not also need `-IncludeUserInfo`.
+
+---
+
 ### Microsoft Agent 365 Parameters
 
 These switches add a Microsoft Agent 365 catalog export — a point-in-time inventory of the agents registered in your tenant — produced as a separate `Agent365_<timestamp>.csv` file. The catalog is a snapshot taken at the moment the script runs; the `-StartDate` / `-EndDate` range applies only to audit data, not to the agent catalog. Both switches require an interactive sign-in by an **AI Administrator** or **Global Administrator**, and the tenant must be licensed for **Microsoft Agent 365**.
+
+> **Note:** these switches also work with **app-only** authentication — `-Auth AppRegistration` (certificate or client secret) or `-Auth ManagedIdentity` — with **no** interactive sign-in, when the service principal holds the **application** permissions `CopilotPackages.Read.All` + `Application.Read.All` (admin-consented). App-only uses the Microsoft Graph **beta** catalog endpoint and still requires a Microsoft Agent 365 license. See [Microsoft Agent 365 Catalog](#microsoft-agent-365-catalog) for the full delegated-vs-app-only matrix.
 
 #### `-IncludeAgent365Info` (switch)
 
@@ -1213,7 +1238,7 @@ These switches add a Microsoft Agent 365 catalog export — a point-in-time inve
 - Tenant licensed for Microsoft Agent 365
 - Signed-in account holds AI Administrator or Global Administrator
 - A destination for the catalog: pair with `-OutputPathAgent365Info` or `-AppendAgent365Info`
-- An interactive sign-in (WebLogin / DeviceCode / Credential / Silent). With `-Auth AppRegistration` the audit data is collected unattended and a one-time sign-in is requested up front for the agent step. Not available with `-Auth ManagedIdentity`.
+- An interactive sign-in (WebLogin / DeviceCode / Credential / Silent), or app-only authentication. The agent step honors the run's authentication mode: interactive modes work as before, and `-Auth AppRegistration` (certificate or client secret) and `-Auth ManagedIdentity` run unattended with no prompt, provided the application permission `CopilotPackages.Read.All` (plus `Application.Read.All`) is admin-consented on the app registration or managed identity. App-only uses the Microsoft Graph beta catalog endpoint.
 
 **Notes:**
 
@@ -1233,7 +1258,7 @@ These switches add a Microsoft Agent 365 catalog export — a point-in-time inve
 
 **Notes:**
 
-- Requires an interactive auth mode; not supported with `-Auth AppRegistration`. A quick confirmation prompt appears before any data is pulled — add `-Force` to skip it.
+- Works with interactive auth modes and app-only authentication (`-Auth AppRegistration` certificate/secret or `-Auth ManagedIdentity`) when the required application permission (`CopilotPackages.Read.All`, plus `Application.Read.All`) is admin-consented. A quick confirmation prompt appears before any data is pulled — add `-Force` to skip it.
 
 #### `-OutputPathAgent365Info`
 
@@ -1810,6 +1835,22 @@ The script supports six authentication methods:
 - **Silent:** Reuses cached authentication tokens when available (falls back to WebLogin).
 - **AppRegistration:** Non-interactive service principal credentials for automation pipelines (Graph mode only).
 - **ManagedIdentity:** Uses the managed identity of the Azure resource PAX is running on — no secrets, no interactive prompts (Graph mode only).
+
+<details>
+<summary>🤖 Microsoft Agent 365 catalog — delegated vs app-only authentication</summary>
+
+The Microsoft Agent 365 catalog export (`-IncludeAgent365Info` / `-OnlyAgent365Info`) works with **either** an interactive (delegated) sign-in **or** app-only authentication. Validate app-only support in your own tenant before relying on it in production.
+
+| Run's authentication mode | Agent 365 catalog uses | What it needs |
+|---|---|---|
+| **WebLogin / DeviceCode / Credential / Silent** (delegated) | The same interactive sign-in | An **AI Administrator** or **Global Administrator** account, with delegated `CopilotPackages.Read.All` + `Application.Read.All` |
+| **AppRegistration (certificate)** | The run's own app-only token — **no** interactive prompt | The app registration's **application** permissions `CopilotPackages.Read.All` + `Application.Read.All`, **admin-consented** |
+| **AppRegistration (client secret)** | The run's own app-only token — **no** interactive prompt | The same admin-consented **application** permissions |
+| **ManagedIdentity** | The run's own managed-identity token — **no** interactive prompt | The managed identity's **application** permissions `CopilotPackages.Read.All` + `Application.Read.All`, **admin-consented** |
+
+App-only Agent 365 calls the catalog through the Microsoft Graph **beta** endpoint and still requires a **Microsoft Agent 365 license** on the tenant. There is no new switch and no separate sign-in — PAX simply reuses the authentication mode the run is already using. Delegated behavior is unchanged. For the full requirements, flows, and troubleshooting, see [Microsoft Agent 365 Catalog](#microsoft-agent-365-catalog).
+
+</details>
 
 ### Token Refresh Behavior
 
@@ -3509,6 +3550,27 @@ Up to **15 levels** are tracked. For organizations deeper than that, the level c
 
 Adding `-Deidentify` to a rollup run anonymizes the rolled-up output as well — identity values in the Users and activity outputs are replaced with irreversible tokens, while per-user counts, joins, and the org-hierarchy structure are preserved exactly. See [Deidentification (Anonymized Output)](#deidentification-anonymized-output).
 
+### Cross-Run Append & Re-Baseline (`-AppendFile`)
+
+<details>
+<summary>🔁 Appending rollup output across runs — reconciliation, re-baseline, and the Users dimension</summary>
+
+When you point a rollup run at an existing rollup file with `-AppendFile`, PAX merges this run's rolled-up interactions into that file instead of writing a brand-new one, so you can grow a single dataset across many runs (for example, a monthly refresh onto a running history).
+
+**Reconciliation on stable message identity.** The append merge reconciles on each interaction's **stable message identity**, so overlapping records between runs are matched and de-duplicated, brand-new records are added, and records that are only in the existing file are preserved. The result is an exact union — no interaction is dropped, and overlaps are never double-counted.
+
+**One-time re-baseline for older seed files.** Append files created by **earlier versions of PAX** were written without the stable identity key the reconciliation relies on. To protect your data, PAX **does not silently merge** onto one of these older files:
+
+- The existing file is **left completely untouched**.
+- This run's rolled-up output is written to a **new, timestamped file** alongside it.
+- PAX prints clear **re-baseline guidance** to the screen and the run log.
+
+**What this means for you:** an append file you started with an **earlier version** needs a **one-time re-baseline** — generate a fresh rollup file with the current version once and use that as your new append target. From then on, every `-AppendFile` run reconciles and grows correctly. **No data is lost** in the process: your original file is preserved as-is, and this run's data is safely written to the new file.
+
+**The rolled-up Users dimension always uploads.** When a rollup run also produces the Users dimension (the org / licensing companion to the interactions file), that Users file is uploaded correctly in **all four** combinations of interactions-append and Users destination — whether the interactions stream is appending or not, and whether the Users destination is `-OutputPathUserInfo` or `-AppendUserInfo`. It uploads exactly once in every case.
+
+</details>
+
 ### Examples
 
 ```powershell
@@ -3563,6 +3625,8 @@ The output matches the Microsoft Admin Center "Agent 365" export (agent name, pa
 
 **Reference:** [Microsoft Agent 365 Graph API](https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api)
 
+> **App-only authentication.** The catalog export works with app-only authentication as well as an interactive (delegated) sign-in. When the run uses **AppRegistration (certificate)**, **AppRegistration (client secret)**, or **ManagedIdentity**, PAX calls the catalog with the run's own app-only token — no interactive prompt and no separate sign-in — provided the app / managed-identity service principal holds the **application** permissions `CopilotPackages.Read.All` **and** `Application.Read.All` (**admin-consented**). App-only calls use the Microsoft Graph **beta** endpoint and still require a **Microsoft Agent 365 license**. Validate this path in your tenant before relying on it in production. Delegated sign-in behavior is unchanged.
+
 ### When to Use Each Switch
 
 | Goal | Use |
@@ -3572,20 +3636,32 @@ The output matches the Microsoft Admin Center "Agent 365" export (agent name, pa
 
 ### Requirements
 
-1. **A Microsoft Agent 365 license** on the tenant. If absent (or the tenant isn't enrolled), the agent step is skipped with a clear notice and the rest of the run continues.
+1. **A Microsoft Agent 365 license** on the tenant (required for **both** delegated and app-only). If absent (or the tenant isn't enrolled), the agent step is skipped with a clear notice and the rest of the run continues.
+
+**With a delegated (interactive) sign-in — `-Auth WebLogin` / `DeviceCode` / `Credential` / `Silent`:**
+
 2. **AI Administrator or Global Administrator** on the signed‑in account (enforced by the API, separate from Graph scopes).
-3. Graph delegated scopes `CopilotPackages.Read.All` and `Application.Read.All`.
-4. An interactive (delegated) sign‑in — the catalog API does not accept app‑only tokens.
+3. Graph **delegated** scopes `CopilotPackages.Read.All` and `Application.Read.All`.
+
+**With app-only authentication — `-Auth AppRegistration` (certificate or client secret) or `-Auth ManagedIdentity`:**
+
+4. The app registration or managed-identity service principal must hold `CopilotPackages.Read.All` **and** `Application.Read.All` as **application** permissions, **admin-consented**. (An admin *role* such as AI/Global Administrator is **not** needed for app-only.)
+5. App-only calls the catalog through the Microsoft Graph **beta** endpoint. Validate this capability in your tenant before relying on it in production. A **Microsoft Agent 365 license** is still required (item 1).
 
 ### Authentication Flows
+
+App-only rows (AppRegistration and ManagedIdentity) should be validated in your tenant before you rely on them in production.
 
 | Scenario | Audit phase | Agent 365 phase |
 |----------|------------|-----------------|
 | `-Auth WebLogin` / `DeviceCode` / `Credential` / `Silent` + `-IncludeAgent365Info` | Interactive | Same interactive sign‑in |
-| `-Auth AppRegistration` + `-IncludeAgent365Info` | App‑only (unattended) | One‑time interactive sign‑in up front |
+| `-Auth AppRegistration` (certificate or client secret) + `-IncludeAgent365Info` | App‑only (unattended) | **App‑only — same token, no interactive prompt** |
+| `-Auth ManagedIdentity` + `-IncludeAgent365Info` | App‑only (unattended) | **App‑only — same identity, no interactive prompt** |
 | Interactive + `-OnlyAgent365Info` | (skipped) | Interactive |
-| `-Auth AppRegistration` + `-OnlyAgent365Info` | (skipped) | Not supported (use WebLogin / DeviceCode) |
-| `-Auth ManagedIdentity` | — | Not supported |
+| `-Auth AppRegistration` (certificate or client secret) + `-OnlyAgent365Info` | (skipped) | **App‑only — same token, no interactive prompt** |
+| `-Auth ManagedIdentity` + `-OnlyAgent365Info` | (skipped) | **App‑only — same identity, no interactive prompt** |
+
+> App-only requires the service principal's **application** permissions `CopilotPackages.Read.All` + `Application.Read.All` (admin-consented) and uses the Microsoft Graph **beta** catalog endpoint; a **Microsoft Agent 365 license** is still required. Delegated flows are unchanged.
 
 ### Output
 
@@ -3613,8 +3689,8 @@ The Agent 365 CSV is a **snapshot of the tenant catalog at the moment of the run
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | "catalog unavailable" notice | Tenant not licensed/enrolled, or caller lacks AI/Global Admin | Confirm a Microsoft Agent 365 license + admin role, then re-run |
-| 403 from the catalog API | Caller missing AI Administrator / Global Administrator | Assign the role and sign in again to refresh the token |
-| `-OnlyAgent365Info` exits with AppRegistration | App-only auth unsupported for this data | Use `-Auth WebLogin`/`DeviceCode`, or `-IncludeAgent365Info` with AppRegistration |
+| 403 from the catalog API (delegated run) | Caller missing AI Administrator / Global Administrator | Assign the role and sign in again to refresh the token |
+| "catalog unavailable" / 403 on an app-only run (AppRegistration or ManagedIdentity) | The app / managed-identity service principal is missing the `CopilotPackages.Read.All` **application** permission (admin-consented), or the tenant is unlicensed / not enrolled | Grant `CopilotPackages.Read.All` + `Application.Read.All` as admin-consented **application** permissions, confirm the Microsoft Agent 365 license, then re-run |
 | Empty catalog | No agents installed, or transient state | Re-run; verify in Admin Center → Agent 365 |
 
 </details>
@@ -4287,6 +4363,105 @@ The transformation happens **on the host before anything is written or uploaded*
 - **Data Enrichment:** Join audit data with HR systems using EmployeeId, Department, or Office location
 
 **Mode requirement:** Requires **Graph API mode** (default) — not compatible with `-UseEOM`
+
+---
+
+### Supplying Your Own User Directory File (`-UserInfoFile`)
+
+<details>
+<summary>📄 Bring your own user/organization directory from a CSV instead of pulling from Entra</summary>
+
+**What it does.** `-UserInfoFile` lets you supply the user and organization directory from a **CSV file you provide** instead of pulling it live from Microsoft Entra. Point it at a **local path, a SharePoint document, or a Microsoft Fabric / OneLake file** — the same destination types PAX supports everywhere else. The directory you supply is then used **everywhere the Entra Users export is used** — the standalone `EntraUsers_MAClicensing_<timestamp>.csv`, org / manager hierarchy, the rolled-up **Users dimension** for the AI-in-One and AI Business Value dashboards, de-identification (`-Deidentify`), and upload to your chosen destination — end to end. Simply passing `-UserInfoFile` is enough; you do not also have to request user enrichment separately.
+
+**Why use it.** Use your own file when you already maintain an authoritative user/org list (for example, an HR extract), when you want organization data the live Entra pull doesn't carry, or when you want to run enrichment against a curated set of people without querying the directory.
+
+**One directory source at a time.** `-UserInfoFile` and `-GroupNames` are **mutually exclusive** — supply exactly one. `-UserInfoFile` provides the directory *from your file*; `-GroupNames` filters against the *live* Entra directory. If you supply both, the run stops early with a clear message.
+
+**License handling — per-user hybrid.** For each person, a license value **you provide in the file is used exactly as-is** (no online check is made for that user). Enter the literal word **`TRUE`** or **`FALSE`** — the value is stored exactly as typed and is not converted, so other tokens such as Yes/No or 1/0 are not recognized as a license flag. Rows that **leave the license value blank** (or whitespace-only) are resolved online by user principal name from your tenant's current Microsoft 365 Copilot license data.
+
+> **⚠️ "Fully offline" is conditional.** The run avoids **any** license lookup — and builds the directory **fully offline** — **only when *every* row supplies a license value**. If even a **single** row leaves the license value blank or omits it, PAX makes a **tenant license lookup** for those users, which requires the `User.Read.All` and `Organization.Read.All` Graph permissions. Do not assume a run is offline unless every row carries a license value.
+
+The run reports — on screen and in the log — how many users came from your file, how many were resolved online, and how many could not be resolved (left blank / treated as unlicensed), and reminds you that clearing a user's license value forces an online check for that user.
+
+**Blank manager = top of chain.** If a person's `ManagerUpn` is blank or missing, they simply have no manager chain — they appear at the top of their own chain and the deeper hierarchy columns show the filler value (see `-FillerLabel`). This affects only that person; everyone else's hierarchy is built normally.
+
+**Example:**
+
+```powershell
+# Enrich using a directory you supply, instead of pulling from Entra
+./PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2026-06-01 -EndDate 2026-06-02 -UserInfoFile "C:\Data\my_users.csv"
+
+# Directory file on SharePoint, feeding an AI Business Value rollup
+./PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2026-06-01 -EndDate 2026-06-02 -Rollup -Dashboard AIBV -UserInfoFile "https://contoso.sharepoint.com/sites/Analytics/Shared%20Documents/my_users.csv"
+```
+
+</details>
+
+---
+
+### `-UserInfoFile` CSV Schema (Shareable Reference)
+
+<details open>
+<summary>📋 The CSV format for `-UserInfoFile` — a self-contained reference you can share</summary>
+
+This is a complete, standalone description of the CSV that `-UserInfoFile` expects. You can hand this section to anyone preparing the file.
+
+**File format**
+
+- **CSV**, **UTF-8** encoded, with a **header row** (the first row must be column names).
+- One person per row.
+- Only one column is required; the rest are recommended or optional.
+
+**Columns**
+
+| Column | Requirement | Purpose |
+|---|---|---|
+| `UserPrincipalName` | **Required** | The person's user principal name (sign-in name), e.g. `jane@contoso.com`. This is the key everything else joins on. |
+| `DisplayName` | Recommended | The person's full name, e.g. `Jane Smith`. |
+| `Department` | Recommended | Department / organization name, e.g. `Product Management`. |
+| `JobTitle` | Recommended | Job title, e.g. `Senior Product Manager`. |
+| `ManagerUpn` | Recommended | The **manager's** user principal name. Supplying this for everyone lets PAX build the full org / manager hierarchy. Leaving it **blank** for a person just means they have no manager chain — they appear at the top of their own chain and the deeper hierarchy-level columns show the filler value (see `-FillerLabel`); everyone else's hierarchy is unaffected. For the hierarchy to actually link a person to their manager, that manager also needs to be one of the people included in the file (as their own entry). If a listed manager isn't included, the connection simply isn't drawn — that person appears at the top of their own hierarchy, and their manager value is still recorded correctly, it just isn't linked to anyone above them. This mainly comes up with partial directories (for example, a licensed-users-only export); a full-company file already includes everyone's manager, so it won't run into this. |
+| `HasLicense` | Optional | Whether the person holds a Microsoft 365 Copilot license — enter the literal word `TRUE` or `FALSE` (stored exactly as typed; tokens like Yes/No or 1/0 are not recognized). Leave blank to resolve it online. See license handling below. |
+| *(any other columns)* | Optional | Preserved exactly as provided (passthrough) and carried through to the output. |
+
+**Accepted header aliases (case-insensitive)**
+
+Header names are matched **case-insensitively**, and common variants are recognized and mapped automatically:
+
+| Canonical column | Also accepted as |
+|---|---|
+| `UserPrincipalName` | `UPN`, `PersonId` |
+| `DisplayName` | `Name` |
+| `Department` | `Organization`, `Organisation` |
+| `JobTitle` | `Title` |
+| `ManagerUpn` | `Manager`, `ManagerEmail` |
+| `HasLicense` | `hasLicense`, `has license`, `hasCopilotLicense` |
+
+**License behavior (important)**
+
+- **Use the literal words `TRUE` or `FALSE`.** The value you provide is stored **exactly as you type it** — it is not converted, translated, or validated. Other tokens such as `Yes`/`No`, `Y`/`N`, or `1`/`0` are **not** recognized as a license flag and pass through unchanged, so use only `TRUE` / `FALSE`.
+- A `TRUE`/`FALSE` value you provide is used **exactly as-is** — no online check for that user.
+- A **blank, whitespace-only, or missing** value is resolved **online** by `UserPrincipalName` against your tenant's current Microsoft 365 Copilot license data.
+- If an online lookup **cannot resolve a user** (the user principal name isn't found), that user is **treated as unlicensed** (their license value is left blank), the **run continues**, and the run log **lists each affected user**.
+- The run is **fully offline only when *every* row supplies a `TRUE`/`FALSE` value.** A **single** blank/absent value triggers a tenant license lookup for the affected users, which requires the `User.Read.All` and `Organization.Read.All` Graph permissions.
+
+**Usage rules**
+
+- `-UserInfoFile` **cannot be combined with `-GroupNames`** — choose exactly one directory source.
+- The file may live on a **local path, SharePoint, or Microsoft Fabric / OneLake**.
+
+**Example CSV**
+
+```csv
+UserPrincipalName,DisplayName,Department,JobTitle,ManagerUpn,HasLicense
+jane@contoso.com,Jane Smith,Product Management,Senior Product Manager,dir@contoso.com,TRUE
+raj@contoso.com,Raj Patel,Engineering,Software Engineer,lead@contoso.com,FALSE
+sam@contoso.com,Sam Lee,Sales,Account Executive,dir@contoso.com,
+```
+
+*(In the third row, the blank `HasLicense` will be resolved online by UPN; the first two are used as provided.)*
+
+</details>
 
 ---
 

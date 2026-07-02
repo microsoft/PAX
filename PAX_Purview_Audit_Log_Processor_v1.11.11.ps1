@@ -1,5 +1,5 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.11.10
+# Version: v1.11.11
 # Requirements: PowerShell 7+ for default Graph API mode; PowerShell 5.1 supported ONLY with -UseEOM (serial Exchange Online Management mode, no parallel query/explosion).
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI activity types (specified via -ActivityTypes): AIInteraction, ConnectedAIAppInteraction, AIAppInteraction
@@ -1105,6 +1105,16 @@
 	  • Use either -AppendUserInfo (merge) or -OutputPathUserInfo (overwrite/redirect),
 	    not both, for the same destination.
 
+.PARAMETER UserInfoFile
+	Path to a customer-provided CSV that supplies the Entra user directory in lieu of the live
+	Entra /users pull. Storage tier is inferred from the value form (drive-rooted absolute path =
+	Local; https://*.sharepoint*/* URL = SharePoint;
+	https://*.onelake.dfs.fabric.microsoft.com/*Lakehouse/* URL = Fabric); remote inputs are staged
+	to local scratch before parsing. The file must be CSV with a header row, at least one data row,
+	and a UserPrincipalName column (required). DisplayName, Department, JobTitle, ManagerUpn, and
+	HasLicense are recognized when present; any other columns are preserved as passthrough. Mutually
+	exclusive with -GroupNames.
+
 .PARAMETER AppendAgent365Info
 	Append the Microsoft Agent 365 catalog export into an existing file. Filename rules match
 	-AppendFile. Auto-enables -IncludeAgent365Info. Incompatible with -OnlyAgent365Info. May be
@@ -1280,18 +1290,25 @@
 	Management API, with one narrow audit lookup per agent for creation date / created-by.
 
 	REQUIREMENTS:
-	  • Tenant enrolled in the Microsoft Agent 365 program
-	  • Signed-in caller holds AI Administrator or Global Administrator (the API is user-bound; no app-only support)
-	  • -Auth AppRegistration: a one-time interactive sign-in is launched up front for the agent phase (the audit phase still runs app-only)
+	  • Tenant enrolled in the Microsoft Agent 365 program (and holding a Microsoft Agent 365 license)
+	  • App-only auth (-Auth AppRegistration certificate/secret, or -Auth ManagedIdentity): the app
+	    registration / managed-identity service principal must be granted + admin-consented the
+	    APPLICATION permissions CopilotPackages.Read.All (and Application.Read.All for developer-name
+	    resolution). No interactive sign-in is performed; the Agent 365 phase reuses the app-only context.
+	  • Delegated auth (-Auth WebLogin / DeviceCode / Credential / Silent): the signed-in caller must
+	    hold AI Administrator or Global Administrator; the Agent 365 scopes are consented at sign-in.
 	  • Requires a destination — supply -OutputPathAgent365Info or -AppendAgent365Info
-	INCOMPATIBLE: -UseEOM, -RAWInputCSV; not supported with -Auth ManagedIdentity. Compatible with -Resume (the agent phase runs at end of run).
-	If the tenant is not enrolled, the agent phase is skipped with an explanatory banner and the rest of the run completes normally.
+	  • The catalog API is currently published at /beta only.
+	INCOMPATIBLE: -UseEOM, -RAWInputCSV. Compatible with -Resume (the agent phase runs at end of run) and
+	with all auth modes, including -Auth ManagedIdentity and headless / noninteractive hosts (no prompt).
+	If the tenant is not enrolled/licensed, the agent phase is skipped with an explanatory banner and the rest of the run completes normally.
 
 .PARAMETER OnlyAgent365Info
 	Export ONLY the Microsoft Agent 365 catalog (skips all audit log retrieval and EntraUsers
-	enrichment), producing only Agent365_<timestamp>.csv. Same requirements as -IncludeAgent365Info;
-	additionally requires an interactive auth mode and is incompatible with -Auth AppRegistration
-	and -Resume. A Y/N preflight confirms before any Graph call; pass -Force to auto-confirm.
+	enrichment), producing only Agent365_<timestamp>.csv. Same requirements as -IncludeAgent365Info
+	(including app-only support via -Auth AppRegistration or -Auth ManagedIdentity, and delegated
+	modes). Incompatible with -Resume (there is no audit phase to resume). A Y/N preflight confirms
+	before any Graph call; pass -Force to auto-confirm.
 
 .PARAMETER MaxNetworkOutageMinutes
 	Maximum continuous network outage the script will tolerate during audit log operations (query creation, polling, record retrieval).
@@ -1559,6 +1576,13 @@ param(
 	[Parameter(Mandatory = $false)]
 	[string]$AppendUserInfo,
 
+	# Ingest the Entra user directory from a customer-provided CSV in lieu of the live Entra /users pull.
+	# Storage tier is inferred from the value form (drive-rooted absolute path = Local; SharePoint URL =
+	# SharePoint; OneLake Lakehouse URL = Fabric); remote inputs are staged to scratch before parsing.
+	# CSV only; requires a UserPrincipalName column. Mutually exclusive with -GroupNames.
+	[Parameter(Mandatory = $false)]
+	[string]$UserInfoFile,
+
 	# Append Agent 365 catalog data into an existing file. Filename rules match -AppendFile.
 	# Auto-enables -IncludeAgent365Info. Incompatible with -OnlyAgent365Info. May be used standalone or together with -AppendFile.
 	[Parameter(Mandatory = $false)]
@@ -1775,15 +1799,6 @@ if ($script:DeprecatedSwitchesHit.Count -gt 0) {
 	}
 	exit 0
 }
-
-# ============================================================
-# AGENT 365 SWITCHES RE-ENABLED (v1.11.10)
-# The -IncludeAgent365Info / -OnlyAgent365Info / -OutputPathAgent365Info /
-# -AppendAgent365Info switches were temporarily gated in v1.11.2 pending
-# Microsoft admin center (Agent Package Management API) stabilization. That
-# issue is resolved; the gate is removed and the full Agent 365 pipeline is
-# active again. No other Agent 365 code was stubbed while disabled.
-# ============================================================
 
 # ============================================================
 # MANUAL -Resume PARAMETER PARSING
@@ -2023,6 +2038,34 @@ if ($OnlyUserInfo) {
 	$ActivityTypes = @()
 }
 
+# PAX4A-GUARD-BEGIN
+# -UserInfoFile / -GroupNames MUTUAL EXCLUSIVITY (Phase 4a)
+# -UserInfoFile supplies the Entra user directory from a customer-provided CSV (bypassing the
+# live /users pull). -GroupNames expands audit records against the LIVE directory. Supplying both
+# is contradictory. Hard-stop here in the early parameter-validation stage so it fires on EVERY
+# entry path (fresh and -Resume) BEFORE any -GroupNames consumer downstream (the RequiredScopes
+# builder and the permissions banner). No partial work is done.
+if ($PSBoundParameters.ContainsKey('UserInfoFile') -and $PSBoundParameters.ContainsKey('GroupNames')) {
+	Write-Host ""
+	Write-Host "ERROR: -UserInfoFile and -GroupNames cannot both be supplied." -ForegroundColor Red
+	Write-Host "  -UserInfoFile ingests the Entra user directory from a customer-provided CSV." -ForegroundColor Yellow
+	Write-Host "  -GroupNames expands audit records against the live Entra directory." -ForegroundColor Yellow
+	Write-Host "  Supply exactly ONE: -UserInfoFile for a supplied directory, or -GroupNames for group filtering." -ForegroundColor Yellow
+	Write-Host ""
+	exit 1
+}
+# PAX4A-GUARD-END
+
+# PAX4D-AUTOENABLE-BEGIN
+# -UserInfoFile auto-enables -IncludeUserInfo (FU6): every -UserInfoFile export path (file naming,
+# the multi-tab workbook, and the directory substitution seam) is gated on $IncludeUserInfo, so a
+# customer need only pass -UserInfoFile. Mirrors the -OnlyUserInfo auto-enable above; fires on every
+# entry path before any $IncludeUserInfo consumer. No effect when -UserInfoFile is unset.
+if ($PSBoundParameters.ContainsKey('UserInfoFile') -and -not [string]::IsNullOrWhiteSpace($UserInfoFile) -and -not $IncludeUserInfo) {
+	$IncludeUserInfo = $true
+}
+# PAX4D-AUTOENABLE-END
+
 # Canonical maps for Graph filter normalization
 $recordTypeCanonicalMap = @{
 	'azureactivedirectory'             = 'AzureActiveDirectory'
@@ -2188,7 +2231,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.11.10'
+$ScriptVersion = '1.11.11'
 
 function Invoke-PaxVersionCheck {
 	# Informational, non-blocking, failure-isolated version check against the public PAX repo.
@@ -3749,96 +3792,21 @@ if (($IncludeAgent365Info -or $OnlyAgent365Info)) {
 	}
 }
 
-# Agent 365 + -Auth ManagedIdentity: rejected.
-# Microsoft Graph Agent Package Management API requires the AI Admin or Global Admin
-# directory role, which can only be held by a signed-in user. A managed identity has no
-# user principal and cannot satisfy this requirement. Reject before any Graph traffic.
-if (($IncludeAgent365Info -or $OnlyAgent365Info) -and $Auth -eq 'ManagedIdentity') {
-	Write-Host ""
-	Write-Host "+----------------------------------------------------------------------+" -ForegroundColor Red
-	Write-Host "|  Agent 365 enrichment is not supported with -Auth ManagedIdentity    |" -ForegroundColor Red
-	Write-Host "+----------------------------------------------------------------------+" -ForegroundColor Red
-	Write-Host "|  The Microsoft Graph Agent Package Management API requires the AI    |" -ForegroundColor Yellow
-	Write-Host "|  Admin or Global Admin directory role, which can only be held by a   |" -ForegroundColor Yellow
-	Write-Host "|  signed-in user. A managed identity has no user principal and cannot |" -ForegroundColor Yellow
-	Write-Host "|  satisfy this requirement, even with admin-consented application     |" -ForegroundColor Yellow
-	Write-Host "|  permissions.                                                        |" -ForegroundColor Yellow
-	Write-Host "|                                                                      |" -ForegroundColor Yellow
-	Write-Host "|  Re-run with one of the supported delegated auth modes:              |" -ForegroundColor Yellow
-	Write-Host "|      -Auth WebLogin     (default)                                    |" -ForegroundColor Yellow
-	Write-Host "|      -Auth DeviceCode                                                |" -ForegroundColor Yellow
-	Write-Host "|      -Auth Credential                                                |" -ForegroundColor Yellow
-	Write-Host "|      -Auth Silent                                                    |" -ForegroundColor Yellow
-	Write-Host "|      -Auth AppRegistration   (with -IncludeAgent365Info; the script  |" -ForegroundColor Yellow
-	Write-Host "|                               will interactively top up a delegated  |" -ForegroundColor Yellow
-	Write-Host "|                               context for the Agent 365 phase)       |" -ForegroundColor Yellow
-	Write-Host "|                                                                      |" -ForegroundColor Yellow
-	Write-Host "|  Or omit -IncludeAgent365Info / -OnlyAgent365Info to skip enrichment.|" -ForegroundColor Yellow
-	Write-Host "+----------------------------------------------------------------------+" -ForegroundColor Red
-	Write-Host ""
-	exit 1
-}
-
-# -IncludeAgent365Info / -OnlyAgent365Info + -Auth AppRegistration on a NONINTERACTIVE host: rejected.
-# AppReg + Agent365 requires an interactive delegated sign-in (see Invoke-Agent365EarlyInteractiveSignIn).
-# In a container/ACA Job/Windows Service/CI runner there is no interactive console — the eager
-# delegated prompt would either hang indefinitely waiting on stdin or surface a confusing MSAL
-# error mid-run. Fail-fast at parameter validation with a clear, actionable message so the
-# operator either drops Agent365 enrichment or switches to a delegated auth mode on a host
-# that accepts interactive sign-in.
-if (($IncludeAgent365Info -or $OnlyAgent365Info) -and $Auth -eq 'AppRegistration' -and (script:Test-IsNonInteractive)) {
-	Write-Host ""
-	Write-Host "+----------------------------------------------------------------------+" -ForegroundColor Red
-	Write-Host "|  Agent 365 + -Auth AppRegistration is not supported on this host     |" -ForegroundColor Red
-	Write-Host "+----------------------------------------------------------------------+" -ForegroundColor Red
-	Write-Host "|  Detected a noninteractive host (container, ACA Job, Windows         |" -ForegroundColor Yellow
-	Write-Host "|  service, scheduled task, or pipeline with redirected stdin).        |" -ForegroundColor Yellow
-	Write-Host "|                                                                      |" -ForegroundColor Yellow
-	Write-Host "|  Agent 365 enrichment under -Auth AppRegistration requires an        |" -ForegroundColor Yellow
-	Write-Host "|  interactive delegated sign-in BEFORE the audit phase begins (the    |" -ForegroundColor Yellow
-	Write-Host "|  Graph Agent Package Management API requires the AI Admin or Global  |" -ForegroundColor Yellow
-	Write-Host "|  Admin directory role, which only a user principal can hold). A      |" -ForegroundColor Yellow
-	Write-Host "|  noninteractive host cannot satisfy that prompt - the run would      |" -ForegroundColor Yellow
-	Write-Host "|  hang indefinitely or fail mid-execution.                            |" -ForegroundColor Yellow
-	Write-Host "|                                                                      |" -ForegroundColor Yellow
-	Write-Host "|  Choose ONE of the following:                                        |" -ForegroundColor Yellow
-	Write-Host "|    1) Drop -IncludeAgent365Info / -OnlyAgent365Info from the run     |" -ForegroundColor Yellow
-	Write-Host "|       (audit data is still collected; Agent 365 enrichment skipped). |" -ForegroundColor Yellow
-	Write-Host "|    2) Re-run on an interactive workstation with a delegated auth     |" -ForegroundColor Yellow
-	Write-Host "|       mode: -Auth WebLogin, -Auth DeviceCode, -Auth Credential,      |" -ForegroundColor Yellow
-	Write-Host "|       or -Auth Silent.                                               |" -ForegroundColor Yellow
-	Write-Host "|    3) If this host DOES accept keyboard input despite the detector,  |" -ForegroundColor Yellow
-	Write-Host "|       set PAX_FORCE_INTERACTIVE=1 and re-run (use with caution).     |" -ForegroundColor Yellow
-	Write-Host "+----------------------------------------------------------------------+" -ForegroundColor Red
-	Write-Host ""
-	exit 1
-}
-
-# -OnlyAgent365Info + -Auth AppRegistration: rejected with informational banner
-# Microsoft Graph Agent Package Management API does not support app-only application
-# permissions; it requires the AI Admin or Global Admin directory role (user-assignable only).
-if ($OnlyAgent365Info -and $Auth -eq 'AppRegistration') {
-	Write-Host ""
-	Write-Host "+----------------------------------------------------------------------+" -ForegroundColor Cyan
-	Write-Host "|  -OnlyAgent365Info is incompatible with -Auth AppRegistration        |" -ForegroundColor Cyan
-	Write-Host "+----------------------------------------------------------------------+" -ForegroundColor Cyan
-	Write-Host "|  The Microsoft Graph endpoint for Agent 365 data (Agent Package      |" -ForegroundColor Cyan
-	Write-Host "|  Management API) does not currently support app-only application    |" -ForegroundColor Cyan
-	Write-Host "|  permissions. It requires the AI Admin or Global Admin directory    |" -ForegroundColor Cyan
-	Write-Host "|  directory role, which can only be held by a signed-in user.        |" -ForegroundColor Cyan
-	Write-Host "|                                                                      |" -ForegroundColor Cyan
-	Write-Host "|  Re-run with one of the supported interactive auth modes:            |" -ForegroundColor Cyan
-	Write-Host "|      -Auth WebLogin     (default)                                    |" -ForegroundColor Cyan
-	Write-Host "|      -Auth DeviceCode                                                |" -ForegroundColor Cyan
-	Write-Host "|      -Auth Credential                                                |" -ForegroundColor Cyan
-	Write-Host "|      -Auth Silent                                                    |" -ForegroundColor Cyan
-	Write-Host "|                                                                      |" -ForegroundColor Cyan
-	Write-Host "|  Reference:                                                          |" -ForegroundColor Cyan
-	Write-Host "|  https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api|" -ForegroundColor Cyan
-	Write-Host "+----------------------------------------------------------------------+" -ForegroundColor Cyan
-	Write-Host ""
-	exit 0
-}
+# Agent 365 + app-only auth (AppRegistration certificate, AppRegistration client secret,
+# ManagedIdentity): SUPPORTED as of v1.11.11 (defect D3). The Microsoft Graph Agent Package
+# Management API exposes an APPLICATION permission (CopilotPackages.Read.All app-role; plus
+# Application.Read.All for developer-name resolution) per Microsoft Learn "List Copilot packages"
+# (https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api). The app-only token
+# already carries these app-roles when they are granted + admin-consented on the app / managed-
+# identity service principal, so the Agent 365 phase runs on the EXISTING application context
+# with NO interactive delegated sign-in. Because no prompt is involved, app-only + Agent 365 is
+# also valid on headless / noninteractive hosts (containers, ACA Jobs, services, CI runners) and
+# with -OnlyAgent365Info. A missing app-role, unlicensed tenant, or absent program enrollment is
+# surfaced at runtime as a 403 by Test-Agent365FrontierAccess (see the app-only 403 banner there).
+# Delegated auth modes (WebLogin / DeviceCode / Credential / Silent) are unchanged and continue to
+# consent the Agent 365 scopes at their initial interactive sign-in.
+# NOTE: the catalog API is currently published at /beta only; the tenant must hold a Microsoft
+# Agent 365 license / program enrollment. No auth-mode is rejected up-front for Agent 365.
 
 # Validate AppendFile has proper filename format
 if ($AppendFile) {
@@ -4309,7 +4277,7 @@ if ($fillerLabelBound) {
 # resolved Python interpreter, and deleted in finally. Single-quoted here-
 # strings prevent any PowerShell variable expansion of the Python source.
 # ============================================================================
-$Script:EMBEDDED_PROCESSOR_COPILOT_VERSION = '4.1.0'
+$Script:EMBEDDED_PROCESSOR_COPILOT_VERSION = '4.2.0'
 $Script:EMBEDDED_PROCESSOR_M365_VERSION    = '2.6.1'
 
 # >>> BEGIN-EMBEDDED-COPILOT-PROCESSOR
@@ -4422,15 +4390,19 @@ except ImportError:
     _JSON_ENGINE = "json (stdlib)"
 
 
-SCRIPT_VERSION = "4.1.0"
+SCRIPT_VERSION = "4.2.0"
 
 # ---------------------------------------------------------------------------
 # Output schemas — TWO PROFILES
 #
-#   --profile aio   : reproduces the v3.1.0 AIO-faithful output EXACTLY
-#                     (36-col fact, 5-value Environment vocabulary). This is
-#                     the contract the AI-in-One dashboard already consumes;
-#                     it must remain byte-identical to v3.1.0.
+#   --profile aio   : reproduces the v3.1.0 AIO-faithful output EXACTLY except
+#                     for two provenance columns (Message_Id_Raw, ThreadId_Raw)
+#                     APPENDED LAST in v4.2.0 for cross-run append reconciliation.
+#                     The original 36 columns are unchanged in name, order, and
+#                     value (5-value Environment vocabulary), so the pre-existing
+#                     AIO output stays byte-identical to v3.1.0; only the two
+#                     trailing raw keys are new. This is the contract the
+#                     AI-in-One dashboard already consumes.
 #   --profile aibv  : the AIBV-faithful superset (50-col fact, 3-value
 #                     Environment, all offloaded calc cols + grain-promoted
 #                     sliceable flags) built in this v4.0.0 effort.
@@ -4472,8 +4444,20 @@ GRAIN_KEYS_AIBV: tuple[str, ...] = _GRAIN_KEYS_COMMON + (
     "Workflow_Action",
 )
 
-# AIO non-grain carried attrs = exactly the v3.1.0 set (ends at ActivityDate).
-_NONGRAIN_ATTRS_AIO: tuple[str, ...] = (
+# Cross-run append reconciliation keys (v4.2.0): the stable raw GUIDs behind the
+# INT surrogates Message_Id (message) and ThreadId (thread). Appended as the FINAL
+# two columns of EVERY profile so all pre-existing column positions are unchanged.
+# The PAX append layer (ConvertTo-FactSeedMaps / Merge-FactCsv) dedups cross-run on
+# Message_Id_Raw. Under --deidentify these carry the deterministic deid_guid token
+# (same raw GUID -> same token across runs) so append dedup still reconciles.
+_RAW_ID_ATTRS: tuple[str, ...] = (
+    "Message_Id_Raw",
+    "ThreadId_Raw",
+)
+
+# AIO non-grain carried attrs = exactly the v3.1.0 set (ends at ActivityDate);
+# the trailing _RAW_ID_ATTRS are appended below to form _NONGRAIN_ATTRS_AIO.
+_NONGRAIN_ATTRS_AIO_BASE: tuple[str, ...] = (
     "CreationDate",
     "WeekStart",
     "MonthStart",
@@ -4495,9 +4479,13 @@ _NONGRAIN_ATTRS_AIO: tuple[str, ...] = (
     "Value_Outcome",
     "ActivityDate",
 )
+# AIO carried attrs = the v3.1.0 base set + the trailing raw reconciliation keys.
+_NONGRAIN_ATTRS_AIO: tuple[str, ...] = _NONGRAIN_ATTRS_AIO_BASE + _RAW_ID_ATTRS
 
-# AIBV non-grain carried attrs = AIO set + AIBV-only offloaded columns.
-_NONGRAIN_ATTRS_AIBV: tuple[str, ...] = _NONGRAIN_ATTRS_AIO + (
+# AIBV non-grain carried attrs = AIO base set + AIBV-only offloaded columns, with
+# the raw reconciliation keys appended LAST so they remain the trailing two columns
+# for this profile too (all pre-existing AIBV column positions unchanged).
+_NONGRAIN_ATTRS_AIBV: tuple[str, ...] = _NONGRAIN_ATTRS_AIO_BASE + (
     # M1: UPN passthrough for AIBV joins + DISTINCTCOUNT.
     "Audit_UserId",
     "Audit_UserId_Normalized",
@@ -4516,7 +4504,7 @@ _NONGRAIN_ATTRS_AIBV: tuple[str, ...] = _NONGRAIN_ATTRS_AIO + (
     # Remaining row-level calc cols (offloaded).
     "Behavior_Plausible",
     "Delegation_Event_Key",
-)
+) + _RAW_ID_ATTRS
 
 # Final fact CSV schemas. One row per (grain x Message_Id). Message_Id is
 # emitted as a sequential INT surrogate (1-based, assigned in input order).
@@ -6217,8 +6205,11 @@ def explode_record(
             user_key_map[audit_user_id_norm] = user_key
     else:
         user_key = ""
-    # ThreadId INT surrogate.
-    thread_id_raw = to_text(ced.get("ThreadId"))
+    # ThreadId INT surrogate. deid_guid is a no-op unless --deidentify; under
+    # --deidentify it returns a deterministic, format-preserving token (same raw
+    # ThreadId -> same token across runs) so the INT-surrogate keying, the
+    # ThreadId_Raw output column, and cross-run append dedup stay consistent.
+    thread_id_raw = deid_guid(to_text(ced.get("ThreadId")))
     if thread_id_raw:
         thread_key = thread_key_map.get(thread_id_raw)
         if thread_key is None:
@@ -6282,6 +6273,9 @@ def explode_record(
         "Behavior_Source": "",
         "Value_Outcome": "",
         "ActivityDate": interaction_date_str,
+        # Cross-run append reconciliation key (trailing). Constant per record;
+        # Message_Id_Raw (per message) is injected in the emit loop below.
+        "ThreadId_Raw": thread_id_raw,
     }
     if is_aibv:
         base_nongrain.update({
@@ -6307,7 +6301,11 @@ def explode_record(
     # by profile (AIO 16 keys; AIBV 19 — the 3 promoted sliceable flags).
     rows: list[tuple[tuple[str, ...], str, dict[str, Any], bool, str]] = []
     for message in prompts:
-        message_id = to_text(message.get("Id"))
+        # deid_guid is a no-op unless --deidentify (then deterministic + format-
+        # preserving), so message_id doubles as the raw Message_Id_Raw dedup key
+        # AND the stable mid_to_int surrogate key that aligns with --seed-mid-map
+        # across runs.
+        message_id = deid_guid(to_text(message.get("Id")))
         for resource in resources:
             res_type_str = to_text(resource.get("Type"))
             res_action_str = to_text(resource.get("Action"))
@@ -6330,6 +6328,7 @@ def explode_record(
             )
 
             nongrain = dict(base_nongrain)
+            nongrain["Message_Id_Raw"] = message_id
             nongrain["AccessedResource_Type"] = res_type_str
             nongrain["AccessedResource_Action"] = res_action_str
             nongrain["AccessedResource_SiteUrl"] = deid_resource(res_site_str)
@@ -13336,6 +13335,10 @@ function Get-GraphAuditApiUri {
 $script:CtrlCPressed = $false
 $script:ScriptCompleted = $false
 $script:EarlyExit = $false
+# Track whether ANY file upload (SharePoint/Fabric output, metrics, or run log) failed
+# this run. When true, local run files are preserved at end of run - treated the same as
+# Ctrl+C / early-exit / crash - so nothing is lost when a destination upload did not complete.
+$script:AnyUploadFailed = $false
 
 # Register exit handler that ALWAYS runs when PowerShell exits
 # This works even when Ctrl+C is pressed before the try block (e.g., during module loading)
@@ -13815,13 +13818,14 @@ function Connect-PurviewAudit {
 		if ($GroupNames -and $GroupNames.Count -gt 0) {
 			if ($RequiredScopes -notcontains 'GroupMember.Read.All') { [void]$RequiredScopes.Add('GroupMember.Read.All') }
 		}
-		# Microsoft Agent 365 enrichment scopes (interactive/delegated auth modes only).
-		# AppRegistration path takes a separate interactive context for the agent phase
-		# (see banner 7a near Connect-PurviewAudit), so these are not added there.
-		# ManagedIdentity is rejected up-front by parameter validation (no user principal
-		# can hold the AI Admin / Global Admin role the endpoint requires), but exclude
-		# it here as defense-in-depth so the scope is never added even if validation
-		# changes.
+		# Microsoft Agent 365 enrichment scopes - DELEGATED auth modes only.
+		# Delegated modes (WebLogin / DeviceCode / Credential / Silent) request
+		# CopilotPackages.Read.All (+ Application.Read.All) as DELEGATED scopes here at sign-in.
+		# App-only modes (AppRegistration certificate/secret, ManagedIdentity) do NOT request
+		# delegated scopes: the Agent 365 catalog is read with the matching APPLICATION app-roles
+		# granted + admin-consented on the app / managed-identity service principal out-of-band
+		# (see Connect-Agent365InteractiveContext). The $AuthMethod -notin guard below therefore
+		# correctly excludes both app-only modes from delegated scope requests.
 		if (($IncludeAgent365Info -or $OnlyAgent365Info) -and $AuthMethod -notin @('AppRegistration','ManagedIdentity')) {
 			if ($RequiredScopes -notcontains 'CopilotPackages.Read.All') { [void]$RequiredScopes.Add('CopilotPackages.Read.All') }
 			if ($RequiredScopes -notcontains 'Application.Read.All')    { [void]$RequiredScopes.Add('Application.Read.All') }
@@ -14082,7 +14086,12 @@ function Connect-PurviewAudit {
 			# In that case, defer the per-line Tenant/Account/Scopes display until AFTER Phase 2
 			# sign-in completes, so the log shows BOTH phases honestly side-by-side. Capture the
 			# Phase 1 context now into script-scope vars so the combined emitter can use them.
-			$script:DeferAuthContextDisplay = ($AuthMethod -eq 'AppRegistration') -and ($IncludeAgent365Info -or $OnlyAgent365Info)
+			#
+			# v1.11.11 (D3): Agent 365 now runs on the SAME app-only context as the audit phase
+			# (app-only modes) - or the same delegated context (delegated modes) - so there is no
+			# separate Phase 2 context to combine and nothing to defer. Always emit the auth-context
+			# display inline below for every auth mode.
+			$script:DeferAuthContextDisplay = $false
 			if ($script:DeferAuthContextDisplay) {
 				$script:Phase1Context = [pscustomobject]@{
 					TenantId        = $context.TenantId
@@ -17362,168 +17371,59 @@ function Get-Agent365PackagesUri {
 function Connect-Agent365InteractiveContext {
 	<#
 	.SYNOPSIS
-		Establishes (or restores) a delegated Microsoft Graph context for the Agent 365 phase
-		when -Auth AppRegistration is in use (which cannot satisfy the Agent Package
-		Management API's user-bound role requirement).
+		Establishes the Microsoft Graph context for the Agent 365 phase.
 
-		Idempotent: safe to call multiple times. After Invoke-Agent365EarlyInteractiveSignIn
-		has run once at startup, subsequent calls re-issue Connect-MgGraph -Scopes which
-		normally completes silently from MSAL token cache (no second prompt).
+		Delegated auth modes (WebLogin / DeviceCode / Credential / Silent) already carry the
+		Agent 365 scopes consented at their initial interactive sign-in, so this is a no-op
+		for them (early return $true).
+
+		App-only auth modes (AppRegistration certificate, AppRegistration client secret,
+		ManagedIdentity) reuse the EXISTING application Graph context. The app-only token must
+		already carry the APPLICATION app-role CopilotPackages.Read.All (plus Application.Read.All
+		for developer-name resolution via /applications), granted and admin-consented on the app
+		registration / managed-identity service principal. NO interactive sign-in and NO
+		Connect-MgGraph -Scopes call is performed - the catalog GET runs directly on the active
+		app-only context. Idempotent: safe to call multiple times.
 	#>
-	if ($Auth -ne 'AppRegistration') { return $true }   # all other modes already have the right scopes
+	# Delegated modes: their initial sign-in already consented the Agent 365 scopes.
+	if ($Auth -ne 'AppRegistration' -and $Auth -ne 'ManagedIdentity') { return $true }
 
-	$agent365Scopes = @('CopilotPackages.Read.All', 'Application.Read.All')
-
-	if ($script:Agent365PreAuthCompleted) {
-		# Token already acquired earlier in this run; restore the delegated context silently.
-		Write-LogHost ""
-		Write-LogHost "  Restoring Agent 365 interactive context (using cached credentials from earlier sign-in)..." -ForegroundColor Cyan
-	} else {
-		Write-LogHost ""
-		Write-LogHost "=== Phase 2: Agent 365 - Interactive sign-in ===" -ForegroundColor Cyan
-		Write-LogHost "  Reason: Agent 365 endpoint has no app-only Graph scope." -ForegroundColor Gray
-		Write-LogHost "  Requesting DELEGATED scopes:" -ForegroundColor White
-		Write-LogHost ("    [Delegated] {0}" -f ($agent365Scopes -join ', ')) -ForegroundColor Yellow
-		Write-LogHost "  Required Entra role on signed-in user:" -ForegroundColor White
-		Write-LogHost "    [Role]      AI Administrator  -OR-  Global Administrator" -ForegroundColor Yellow
-		Write-LogHost "  (Without the role, Graph returns 403 even after consent.)" -ForegroundColor Gray
-		Write-LogHost ""
-	}
-	try {
-		# Connect-MgGraph with new -Scopes establishes a delegated context layered
-		# on top of the existing AppReg context; no manual disconnect needed.
-		Connect-MgGraph -Scopes $agent365Scopes -NoWelcome -ErrorAction Stop
-		$script:Agent365InteractiveCtx = $true
-		if ($script:Agent365PreAuthCompleted) {
-			Write-LogHost "  Interactive context restored (no prompt needed)." -ForegroundColor Green
-		} else {
-			Write-LogHost "  Interactive context established." -ForegroundColor Green
-			# Dual-context runs deferred the Phase 1 Tenant/Account/Scopes display so we can
-			# emit BOTH phases together now that Phase 2 (delegated) is also live.
-			if ($script:DeferAuthContextDisplay -and $script:Phase1Context) {
-				try {
-					$delegCtx = Get-MgContext
-					Write-LogHost ""
-					Write-LogHost "  Effective auth context (dual-mode):" -ForegroundColor White
-					Write-LogHost "    Phase 1 (Audit / EntraUsers / M365) - APP-ONLY (AppRegistration):" -ForegroundColor Gray
-					Write-LogHost "      Tenant ID: $($script:Phase1Context.TenantId)" -ForegroundColor Gray
-					Write-LogHost "      Account:   (app-only / AppRegistration - no interactive user)" -ForegroundColor Gray
-					Write-LogHost "      Scopes:    $($script:Phase1Context.GrantedRequired -join ', ')" -ForegroundColor Gray
-					Write-LogHost "    Phase 2 (Agent 365 catalog) - DELEGATED (interactive sign-in):" -ForegroundColor Gray
-					if ($delegCtx) {
-						Write-LogHost "      Tenant ID: $($delegCtx.TenantId)" -ForegroundColor Gray
-						$delegAcct = Get-MaskedUsername -Username $delegCtx.Account
-						if ([string]::IsNullOrWhiteSpace($delegAcct)) { $delegAcct = '(unknown)' }
-						Write-LogHost "      Account:   $delegAcct" -ForegroundColor Gray
-						$delegGranted = @($agent365Scopes | Where-Object { $delegCtx.Scopes -contains $_ })
-						Write-LogHost "      Scopes:    $($delegGranted -join ', ')" -ForegroundColor Gray
-					} else {
-						Write-LogHost "      (delegated context not retrievable)" -ForegroundColor Gray
-					}
-					Write-LogHost ""
-					$script:DeferAuthContextDisplay = $false
-				} catch { }
-			}
-		}
-		return $true
-	} catch {
-		Write-LogHost ("  ERROR: Interactive sign-in for Agent 365 failed: {0}" -f $_.Exception.Message) -ForegroundColor Red
-		return $false
-	}
+	# App-only modes: surface an APP-ONLY Phase 2 banner (no delegated user, no prompt) so the
+	# log is honest about the auth surface, then reuse the existing application context as-is.
+	$appOnlyLabel = if ($Auth -eq 'ManagedIdentity') { 'managed identity service principal' } else { 'app registration service principal' }
+	Write-LogHost ""
+	Write-LogHost "=== Phase 2: Agent 365 - APP-ONLY context (no interactive sign-in) ===" -ForegroundColor Cyan
+	Write-LogHost ("  Reusing the existing app-only Graph context ({0})." -f $appOnlyLabel) -ForegroundColor Gray
+	Write-LogHost "  Required APPLICATION permissions (granted + admin-consented on the SP):" -ForegroundColor White
+	Write-LogHost "    [App-only] CopilotPackages.Read.All   (read /copilot/admin/catalog/packages)" -ForegroundColor Yellow
+	Write-LogHost "    [App-only] Application.Read.All        (resolve developer/owner via /applications)" -ForegroundColor Yellow
+	Write-LogHost "  Note: the catalog API is published at /beta only; the tenant must hold a" -ForegroundColor Gray
+	Write-LogHost "        Microsoft Agent 365 license / program enrollment." -ForegroundColor Gray
+	Write-LogHost ""
+	return $true
 }
+
 
 function Invoke-Agent365EarlyInteractiveSignIn {
 	<#
 	.SYNOPSIS
-		Eager up-front interactive sign-in for the Agent 365 phase.
+		No-op retained for call-site stability (defect D3, v1.11.11).
 
 	.DESCRIPTION
-		When -Auth AppRegistration is combined with -IncludeAgent365Info, the Agent 365
-		phase requires a separate DELEGATED user sign-in (no app-only scope exists).
-		Without this helper, the user would only see the interactive prompt AFTER the
-		audit phase finishes - which can be hours into the run on large tenants.
-
-		This function performs the interactive prompt immediately after the Phase 1
-		AppReg connection is established, then probes the Agent 365 endpoint to validate
-		tenant enrollment + caller role, then restores the AppReg context for Phase 1.
-		The MSAL token cache lets the deferred Phase 2 re-Connect happen silently.
+		Historically this performed an eager up-front interactive DELEGATED sign-in for the
+		Agent 365 phase under -Auth AppRegistration, because the catalog endpoint was assumed to
+		have no app-only Graph scope. As of v1.11.11 the Agent Package Management API is read with
+		the APPLICATION app-role CopilotPackages.Read.All (+ Application.Read.All) on the app /
+		managed-identity service principal, so NO interactive sign-in is required in ANY auth mode:
+		  - app-only modes (AppRegistration cert/secret, ManagedIdentity) reuse the existing
+		    application context (see Connect-Agent365InteractiveContext);
+		  - delegated modes (WebLogin / DeviceCode / Credential / Silent) already consented the
+		    Agent 365 scopes at their initial sign-in.
+		This function is intentionally a no-op so the startup wiring that calls it stays stable.
 
 	.OUTPUTS
-		$true  - early sign-in succeeded (or not applicable for this run)
-		$false - early sign-in failed; caller should treat Agent 365 phase as unavailable
+		$true always (no early sign-in is ever needed).
 	#>
-	if ($Auth -ne 'AppRegistration') { return $true }
-	if (-not ($IncludeAgent365Info -or $OnlyAgent365Info)) { return $true }
-	if ($script:Agent365PreAuthCompleted) { return $true }
-
-	Write-LogHost ""
-	Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Cyan
-	Write-LogHost "|  Eager Agent 365 sign-in (Phase 2 prompt up-front)                   |" -ForegroundColor Cyan
-	Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Cyan
-	Write-LogHost "|  Prompting NOW so you do not have to babysit the run. After you      |" -ForegroundColor Cyan
-	Write-LogHost "|  sign in, Phase 1 (audit, app-only) starts and runs unattended.      |" -ForegroundColor Cyan
-	Write-LogHost "|  Phase 2 (Agent 365) reuses the cached delegated token at end of run.|" -ForegroundColor Cyan
-	Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Cyan
-
-	# Step 1: prompt for delegated credentials and switch to interactive context.
-	if (-not (Connect-Agent365InteractiveContext)) {
-		Write-LogHost "  Eager Agent 365 sign-in failed; the Agent 365 phase will be skipped at end of run." -ForegroundColor Red
-		$script:Agent365FrontierAvailable = $false
-		return $false
-	}
-
-	# Step 2: probe the Frontier endpoint while the interactive context is active.
-	#         This validates tenant enrollment + AI Admin/Global Admin role NOW,
-	#         instead of after a long audit run.
-	Write-LogHost "  Validating Agent 365 endpoint access (Frontier program + role)..." -ForegroundColor Gray
-	$frontierOk = Test-Agent365FrontierAccess
-	if (-not $frontierOk) {
-		Write-LogHost "  Agent 365 endpoint is not accessible from this tenant/user." -ForegroundColor Yellow
-		Write-LogHost "  The Agent 365 phase will be skipped, but the run will continue with audit data." -ForegroundColor Yellow
-		# leave $script:Agent365FrontierAvailable = $false so Invoke-Agent365Phase short-circuits
-	}
-
-	# Step 3: mark pre-auth complete BEFORE swapping back, so Phase 2 knows to use
-	#         abbreviated messaging when it re-establishes the delegated context.
-	$script:Agent365PreAuthCompleted = $true
-
-	# Step 4: restore the AppReg (app-only) context for Phase 1 audit work.
-	#         CRITICAL: do NOT use Invoke-TokenRefresh here - it calls Disconnect-MgGraph
-	#         first, which wipes the in-memory MSAL cache for the delegated context we
-	#         just established. That would force a SECOND interactive prompt at end of run.
-	#         Instead, call Connect-MgGraph directly for the AppReg credentials; the SDK
-	#         replaces the active context in place and the delegated MSAL cache survives.
-	Write-LogHost "  Restoring app-only context for Phase 1 (audit)..." -ForegroundColor Gray
-	$restored = $false
-	try {
-		if ($script:AuthConfig.ClientSecret) {
-			$cred = New-Object System.Management.Automation.PSCredential($script:AuthConfig.ClientId, $script:AuthConfig.ClientSecret)
-			Connect-MgGraph -TenantId $script:AuthConfig.TenantId -ClientSecretCredential $cred -NoWelcome -ErrorAction Stop
-			$restored = $true
-		} elseif ($script:AuthConfig.CertObject) {
-			Connect-MgGraph -TenantId $script:AuthConfig.TenantId -ClientId $script:AuthConfig.ClientId -Certificate $script:AuthConfig.CertObject -NoWelcome -ErrorAction Stop
-			$restored = $true
-		} elseif ($script:AuthConfig.CertThumbprint) {
-			Connect-MgGraph -TenantId $script:AuthConfig.TenantId -ClientId $script:AuthConfig.ClientId -CertificateThumbprint $script:AuthConfig.CertThumbprint -NoWelcome -ErrorAction Stop
-			$restored = $true
-		}
-	} catch {
-		Write-LogHost ("  ERROR: Could not restore app-only context after Agent 365 sign-in: {0}" -f $_.Exception.Message) -ForegroundColor Red
-	}
-	if (-not $restored) {
-		Write-LogHost "  ERROR: No AppRegistration credentials available to restore Phase 1 context." -ForegroundColor Red
-		throw "Failed to restore AppRegistration context after early Agent 365 sign-in."
-	}
-	# Refresh the shared token state so Phase 1 thread jobs use the new app-only token.
-	$tokenInfo = Get-GraphAccessTokenWithExpiry
-	if ($tokenInfo) {
-		$script:SharedAuthState.Token = $tokenInfo.Token
-		$script:SharedAuthState.ExpiresOn = $tokenInfo.ExpiresOn
-		$script:SharedAuthState.LastRefresh = Get-Date
-		$script:AuthConfig.TokenIssueTime = Get-Date
-	}
-	Write-LogHost "  App-only context restored. Phase 1 will run unattended." -ForegroundColor Green
-	Write-LogHost ""
 	return $true
 }
 
@@ -17547,15 +17447,28 @@ function Test-Agent365FrontierAccess {
 		$status = $null
 		try { if ($_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode } } catch {}
 		if ($status -in @(401,403,404)) {
+			# Message branches by auth surface: an app-only 403 means the APP/MI service
+			# principal lacks the app-role (or the tenant is unlicensed/not-enrolled), NOT that
+			# a signed-in user needs a directory role. Delegated text is kept byte-identical.
+			$isAppOnlyMode = ($Auth -eq 'AppRegistration' -or $Auth -eq 'ManagedIdentity')
 			Write-LogHost "" 
 			Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Yellow
 			Write-LogHost "|  Microsoft Agent 365 - catalog unavailable for this tenant           |" -ForegroundColor Yellow
 			Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Yellow
 			Write-LogHost ("|  The Agent Package Management API returned HTTP {0,-3}, indicating     |" -f $status) -ForegroundColor Yellow
-			Write-LogHost "|  this tenant is not enrolled in the Microsoft Agent 365 program (or  |" -ForegroundColor Yellow
-			Write-LogHost "|  lacks a Microsoft Agent 365 license), or the signed-in user lacks   |" -ForegroundColor Yellow
-			Write-LogHost "|  the AI Administrator / Global Administrator role. The Agent 365 CSV |" -ForegroundColor Yellow
-			Write-LogHost "|  will be skipped for this run.                                       |" -ForegroundColor Yellow
+			if ($isAppOnlyMode) {
+				Write-LogHost "|  this tenant is not enrolled in the Microsoft Agent 365 program (or  |" -ForegroundColor Yellow
+				Write-LogHost "|  lacks a Microsoft Agent 365 license), OR the app registration /     |" -ForegroundColor Yellow
+				Write-LogHost "|  managed-identity service principal has NOT been granted the         |" -ForegroundColor Yellow
+				Write-LogHost "|  CopilotPackages.Read.All APPLICATION permission (admin-consented).  |" -ForegroundColor Yellow
+				Write-LogHost "|  App-only auth needs the app-role, not a user directory role. The    |" -ForegroundColor Yellow
+				Write-LogHost "|  Agent 365 CSV will be skipped for this run.                         |" -ForegroundColor Yellow
+			} else {
+				Write-LogHost "|  this tenant is not enrolled in the Microsoft Agent 365 program (or  |" -ForegroundColor Yellow
+				Write-LogHost "|  lacks a Microsoft Agent 365 license), or the signed-in user lacks   |" -ForegroundColor Yellow
+				Write-LogHost "|  the AI Administrator / Global Administrator role. The Agent 365 CSV |" -ForegroundColor Yellow
+				Write-LogHost "|  will be skipped for this run.                                       |" -ForegroundColor Yellow
+			}
 			Write-LogHost "|                                                                      |" -ForegroundColor Yellow
 			Write-LogHost "|  Reference:                                                          |" -ForegroundColor Yellow
 			Write-LogHost "|  https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api|" -ForegroundColor Yellow
@@ -17985,19 +17898,13 @@ function Invoke-Agent365Phase {
 	Write-LogHost " Microsoft Agent 365 enrichment phase" -ForegroundColor Cyan
 	Write-LogHost "============================================================" -ForegroundColor Cyan
 
-	# AppRegistration path: ensure the eager up-front delegated sign-in succeeded.
-	# (Connect-Agent365InteractiveContext is idempotent and will silently restore
-	# the cached delegated context here when Invoke-Agent365EarlyInteractiveSignIn
-	# already ran at startup.)
-	if ($Auth -eq 'AppRegistration') {
-		# If the eager sign-in already determined Frontier is unavailable (401/403/404),
-		# do NOT prompt again - the agent phase is permanently skipped for this run.
-		if ($script:Agent365PreAuthCompleted -and $script:Agent365FrontierAvailable -eq $false) {
-			Write-LogHost "  Agent 365 phase skipped (tenant not enrolled / role missing - detected at startup)." -ForegroundColor Yellow
-			return @{ CsvPath = $null; Rows = @() }
-		}
+	# App-only modes (AppRegistration certificate/secret, ManagedIdentity): surface the app-only
+	# Phase 2 banner and reuse the EXISTING application Graph context (no interactive sign-in).
+	# Delegated modes skip this block and go straight to the Frontier probe using the Agent 365
+	# scopes already consented at their initial sign-in.
+	if ($Auth -eq 'AppRegistration' -or $Auth -eq 'ManagedIdentity') {
 		if (-not (Connect-Agent365InteractiveContext)) {
-			Write-LogHost "  Agent 365 phase aborted (interactive sign-in failed)." -ForegroundColor Red
+			Write-LogHost "  Agent 365 phase aborted (app-only Graph context unavailable)." -ForegroundColor Red
 			return @{ CsvPath = $null; Rows = @() }
 		}
 	}
@@ -20328,7 +20235,9 @@ else {
 	$auditContextLbl = if ($isManagedId) { 'APP-ONLY (managed identity / application permissions)' }
 					   elseif ($isAppOnlyAuth) { 'APP-ONLY (application permissions)' }
 					   else { 'DELEGATED (interactive user sign-in)' }
-	$dualContextRun  = ($Auth -eq 'AppRegistration') -and ($IncludeAgent365Info -or $OnlyAgent365Info)
+	# v1.11.11 (D3): Agent 365 no longer opens a separate delegated Phase 2 context - app-only modes
+	# reuse the app-only audit context and delegated modes reuse their delegated context. There is no
+	# longer a dual-context run, so the auth-context summary shows a single context for every mode.
 
 	Write-LogHost "═══════════════════════════════════════════════════════" -ForegroundColor Green
 	Write-LogHost "  QUERY MODE: Microsoft Graph Security API (Default)" -ForegroundColor Green
@@ -20341,16 +20250,10 @@ else {
 
 	# ---- Auth Context summary ----
 	Write-LogHost "" -ForegroundColor White
-	if ($dualContextRun) {
-		Write-LogHost "  Auth Context:     DUAL-CONTEXT RUN" -ForegroundColor Yellow
-		Write-LogHost "                      Phase 1 (Audit):     $auditContextLbl" -ForegroundColor White
-		Write-LogHost "                      Phase 2 (Agent 365): DELEGATED (interactive sign-in)" -ForegroundColor White
-		Write-LogHost "                    Reason: -Auth AppRegistration cannot satisfy the Agent 365" -ForegroundColor Gray
-		Write-LogHost "                    endpoint (no app-only Graph scope exists). The Phase 2" -ForegroundColor Gray
-		Write-LogHost "                    interactive sign-in is requested UP-FRONT (immediately after" -ForegroundColor Gray
-		Write-LogHost "                    Phase 1 connects) so the run can proceed unattended afterward." -ForegroundColor Gray
-	} else {
-		Write-LogHost "  Auth Context:     $auditContextLbl" -ForegroundColor White
+	Write-LogHost "  Auth Context:     $auditContextLbl" -ForegroundColor White
+	if ($isAppOnlyAuth -and ($IncludeAgent365Info -or $OnlyAgent365Info)) {
+		Write-LogHost "                    Agent 365 phase reuses this SAME app-only context" -ForegroundColor Gray
+		Write-LogHost "                    (application app-role CopilotPackages.Read.All; no sign-in)." -ForegroundColor Gray
 	}
 
 	# ---- Permissions list ----
@@ -20360,9 +20263,11 @@ else {
 
 	# Build conditional Tag legend so only relevant tags are shown:
 	#   [App-only]   appears under -Auth AppRegistration OR -Auth ManagedIdentity (both are app-only)
-	#   [Delegated]  appears under any non-app-only auth, OR under AppRegistration + Agent 365
-	#                (Agent 365 always uses delegated scopes even when audit is app-only)
-	#   [Role]       appears only when Agent 365 is in this run (it is the only section that needs a role)
+	#   [Delegated]  appears only under a non-app-only (delegated) auth mode. As of v1.11.11 Agent 365
+	#                uses APPLICATION app-roles under app-only auth, so app-only runs surface no
+	#                [Delegated] tag even when Agent 365 is included.
+	#   [Role]       appears only when Agent 365 is in a DELEGATED run (an app-only run needs the
+	#                CopilotPackages.Read.All app-role, not an Entra directory role on a user)
 	#   [Azure RBAC] appears only when an -OutputPath* value is a OneLake URL (Fabric uses storage RBAC, not Graph)
 	$tagLegendLines = New-Object System.Collections.Generic.List[string]
 	if ($isAppOnlyAuth) {
@@ -20372,10 +20277,10 @@ else {
 			$tagLegendLines.Add('[App-only]   = grant on app registration as Application permission')
 		}
 	}
-	if ((-not $isAppOnlyAuth) -or $IncludeAgent365Info -or $OnlyAgent365Info) {
+	if (-not $isAppOnlyAuth) {
 		$tagLegendLines.Add('[Delegated]  = consented at interactive sign-in')
 	}
-	if ($IncludeAgent365Info -or $OnlyAgent365Info) {
+	if (($IncludeAgent365Info -or $OnlyAgent365Info) -and (-not $isAppOnlyAuth)) {
 		$tagLegendLines.Add('[Role]       = Entra directory role on signed-in user')
 	}
 	if ($script:RemoteOutputMode -eq 'Fabric') {
@@ -23759,27 +23664,30 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 			Import-Module ExchangeOnlineManagement -Force
 		}
 
-		# Banner 7a: AppRegistration + -IncludeAgent365Info informational notice.
-		# The Microsoft Graph Agent Package Management API requires a signed-in user with
-		# AI Admin or Global Admin role; app-only auth cannot satisfy it. The script prompts
-		# for the Agent 365 interactive sign-in UP-FRONT (immediately after Phase 1 connects)
-		# so the audit phase can run unattended after a single user prompt.
-		if ($IncludeAgent365Info -and $Auth -eq 'AppRegistration') {
+		# Banner 7a: app-only Agent 365 informational notice (AppRegistration certificate/secret or
+		# ManagedIdentity + Agent 365). As of v1.11.11 (D3) the Agent 365 catalog is read with the
+		# APPLICATION app-role CopilotPackages.Read.All on the service principal - no interactive
+		# sign-in is performed and the whole run stays on a single app-only Graph context.
+		if (($IncludeAgent365Info -or $OnlyAgent365Info) -and ($Auth -eq 'AppRegistration' -or $Auth -eq 'ManagedIdentity')) {
 			Write-LogHost ""
 			Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Cyan
-			Write-LogHost "|  DUAL-CONTEXT RUN: -Auth AppRegistration + -IncludeAgent365Info     |" -ForegroundColor Cyan
+			Write-LogHost "|  APP-ONLY Agent 365 run (no interactive sign-in)                     |" -ForegroundColor Cyan
 			Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Cyan
-			Write-LogHost "|  Phase 1 (Audit, EntraUsers, M365 usage):                            |" -ForegroundColor Cyan
-			Write-LogHost "|    APP-ONLY using your app registration (unattended).                |" -ForegroundColor Cyan
+			Write-LogHost ("|  Auth mode: {0,-57}|" -f $Auth) -ForegroundColor Cyan
 			Write-LogHost "|                                                                      |" -ForegroundColor Cyan
-			Write-LogHost "|  Phase 2 (Agent 365 catalog):                                        |" -ForegroundColor Cyan
-			Write-LogHost "|    DELEGATED (interactive sign-in, prompts ONCE up-front, before    |" -ForegroundColor Cyan
-			Write-LogHost "|    audit work begins). Required because the Agent 365 endpoint has   |" -ForegroundColor Cyan
-			Write-LogHost "|    no app-only Graph scope; it requires AI Admin or Global Admin on  |" -ForegroundColor Cyan
-			Write-LogHost "|    a signed-in user.                                                 |" -ForegroundColor Cyan
+			Write-LogHost "|  The audit AND Agent 365 phases both run on the SAME app-only Graph  |" -ForegroundColor Cyan
+			Write-LogHost "|  context (your app registration / managed-identity service           |" -ForegroundColor Cyan
+			Write-LogHost "|  principal). No user prompt is shown at any point.                   |" -ForegroundColor Cyan
 			Write-LogHost "|                                                                      |" -ForegroundColor Cyan
-			Write-LogHost "|  Order: Phase 1 connect -> Phase 2 prompt -> Phase 2 cached ->       |" -ForegroundColor Cyan
-			Write-LogHost "|         restore Phase 1 -> audit runs unattended -> Phase 2 silent. |" -ForegroundColor Cyan
+			Write-LogHost "|  Required APPLICATION permissions (granted + admin-consented):       |" -ForegroundColor Cyan
+			Write-LogHost "|    - CopilotPackages.Read.All  (read the Agent 365 catalog)          |" -ForegroundColor Cyan
+			Write-LogHost "|    - Application.Read.All       (resolve developer/owner names)      |" -ForegroundColor Cyan
+			Write-LogHost "|                                                                      |" -ForegroundColor Cyan
+			Write-LogHost "|  Caveats:                                                            |" -ForegroundColor Cyan
+			Write-LogHost "|    - The catalog API is published at /beta only.                     |" -ForegroundColor Cyan
+			Write-LogHost "|    - The tenant must hold a Microsoft Agent 365 license/enrollment.  |" -ForegroundColor Cyan
+			Write-LogHost "|    - A 403 means the app-role is missing OR the tenant is not        |" -ForegroundColor Cyan
+			Write-LogHost "|      licensed/enrolled (NOT a missing user directory role).          |" -ForegroundColor Cyan
 			Write-LogHost "|                                                                      |" -ForegroundColor Cyan
 			Write-LogHost "|  Reference:                                                          |" -ForegroundColor Cyan
 			Write-LogHost "|  https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api|" -ForegroundColor Cyan
@@ -23888,19 +23796,124 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 			}
 		}
 
-		# EAGER Agent 365 sign-in: when -Auth AppRegistration + -IncludeAgent365Info,
-		# prompt the user for the Agent 365 delegated sign-in NOW so they don't have
-		# to babysit the run waiting for the prompt to appear hours later.
+		# PAX4A-INGEST-BEGIN
+		# -UserInfoFile INGEST + VALIDATE + NORMALIZE (Phase 4a; UNWIRED)
+		# Classify the -UserInfoFile VALUE ITSELF (independent of the output tier /
+		# $script:RemoteOutputMode). Local: read in place. SharePoint / Fabric: split the
+		# input URL into its OWN parent + leaf and stage to local scratch via the matching
+		# Get-RemoteFile-* with -ParentOverride = the input's own parent. Parse as CSV,
+		# hard-stop on any fetch/format/required-field failure (NO fallback to the Entra
+		# pull), then normalize to an Array[psobject] matching the Entra users contract.
+		# Result -> the NEW variable $script:UserInfoFileData; intentionally NOT wired into
+		# any consumer in this phase.
+		$script:UserInfoFileData = $null
+		if ($PSBoundParameters.ContainsKey('UserInfoFile') -and -not [string]::IsNullOrWhiteSpace($UserInfoFile)) {
+			$uiRaw  = $UserInfoFile.Trim()
+			$uiTier = script:Get-PathTier -Value $uiRaw -SwitchName 'UserInfoFile'
+			$uiLocalPath = $null
+			try {
+				if ($uiTier -eq 'Local') {
+					$uiLocalPath = $uiRaw
+				}
+				else {
+					$uiLeaf   = ($uiRaw -split '[\\/]' | Where-Object { $_ }) | Select-Object -Last 1
+					$uiParent = $uiRaw.Substring(0, $uiRaw.Length - $uiLeaf.Length).TrimEnd('/', '\')
+					$uiLocalPath = Join-Path $OutputPath ('.pax_userinfoseed_{0}' -f $uiLeaf)
+					if ($uiTier -eq 'SharePoint') {
+						Get-RemoteFile-SharePoint -RelativeName $uiLeaf -DestinationPath $uiLocalPath -ParentOverride $uiParent -ErrorAction Stop
+					}
+					else {
+						Get-RemoteFile-OneLake    -RelativeName $uiLeaf -DestinationPath $uiLocalPath -ParentOverride $uiParent -ErrorAction Stop
+					}
+					Write-LogHost ("-UserInfoFile ({0}) staged to scratch: {1}" -f $uiTier, $uiLocalPath) -ForegroundColor Cyan
+				}
+			}
+			catch {
+				Write-LogHost ("ERROR: -UserInfoFile could not be fetched from '{0}': {1}" -f $uiRaw, $_.Exception.Message) -ForegroundColor Red
+				throw
+			}
+			if (-not (Test-Path -LiteralPath $uiLocalPath -PathType Leaf)) {
+				Write-LogHost ("ERROR: -UserInfoFile not found or unreadable: {0}" -f $uiRaw) -ForegroundColor Red
+				throw "-UserInfoFile not found or unreadable: $uiRaw"
+			}
+			$uiRows = $null
+			try {
+				$uiRows = @(Import-Csv -LiteralPath $uiLocalPath -ErrorAction Stop)
+			}
+			catch {
+				Write-LogHost ("ERROR: -UserInfoFile is not readable as CSV: {0} ({1})" -f $uiRaw, $_.Exception.Message) -ForegroundColor Red
+				throw
+			}
+			$uiHeaders = @()
+			if ($uiRows.Count -gt 0) {
+				$uiHeaders = @($uiRows[0].PSObject.Properties.Name)
+			}
+			else {
+				$uiFirstLine = Get-Content -LiteralPath $uiLocalPath -TotalCount 1 -ErrorAction SilentlyContinue
+				if ([string]::IsNullOrWhiteSpace($uiFirstLine)) {
+					Write-LogHost ("ERROR: -UserInfoFile has no header row (not a CSV): {0}" -f $uiRaw) -ForegroundColor Red
+					throw "-UserInfoFile has no header row (not a CSV): $uiRaw"
+				}
+			}
+			if ($uiRows.Count -eq 0) {
+				Write-LogHost ("ERROR: -UserInfoFile contains a header but zero data rows: {0}" -f $uiRaw) -ForegroundColor Red
+				throw "-UserInfoFile contains zero data rows: $uiRaw"
+			}
+			$uiHeaderMap = @{}
+			foreach ($h in $uiHeaders) { if ($h) { $uiHeaderMap[$h.Trim().ToLowerInvariant()] = $h } }
+			# Alias backfill (Phase 4b): first-match-wins resolution of documented header aliases over
+			# the lower-cased $uiHeaderMap (case-insensitive; source headers are never renamed).
+			$uiResolveCol = { param([string[]]$Aliases) foreach ($a in $Aliases) { if ($uiHeaderMap.ContainsKey($a)) { return $uiHeaderMap[$a] } } return $null }
+			$uiUpnCol     = & $uiResolveCol @('userprincipalname','upn','personid')
+			$uiDisplayCol = & $uiResolveCol @('displayname','name')
+			$uiDeptCol    = & $uiResolveCol @('department','organization','organisation')
+			$uiTitleCol   = & $uiResolveCol @('jobtitle','title')
+			$uiMgrCol     = & $uiResolveCol @('managerupn','manager','manageremail')
+			$uiLicCol     = & $uiResolveCol @('haslicense','has license','hascopilotlicense')
+			if (-not $uiUpnCol) {
+				Write-LogHost ("ERROR: -UserInfoFile is missing the required 'UserPrincipalName' column. Found: {0}" -f ($uiHeaders -join ', ')) -ForegroundColor Red
+				throw "-UserInfoFile missing required UserPrincipalName column"
+			}
+			$uiMissing = @()
+			if (-not $uiDisplayCol) { $uiMissing += 'DisplayName' }
+			if (-not $uiDeptCol)    { $uiMissing += 'Department' }
+			if (-not $uiTitleCol)   { $uiMissing += 'JobTitle' }
+			if (-not $uiMgrCol)     { $uiMissing += 'ManagerUpn' }
+			if (-not $uiLicCol)     { $uiMissing += 'HasLicense' }
+			if ($uiMissing.Count -gt 0) {
+				Write-LogHost ("-UserInfoFile: recommended/optional column(s) not present, left unmapped: {0}" -f ($uiMissing -join ', ')) -ForegroundColor Yellow
+			}
+			$uiConsumed = @($uiUpnCol, $uiDisplayCol, $uiDeptCol, $uiTitleCol, $uiMgrCol, $uiLicCol) | Where-Object { $_ }
+			$uiPassthrough = @($uiHeaders | Where-Object { $_ -and ($uiConsumed -notcontains $_) })
+			$uiNormalized = [System.Collections.Generic.List[object]]::new()
+			foreach ($row in $uiRows) {
+				$o = [ordered]@{}
+				# Blank-fill (Phase 4b): seed EVERY authoritative Entra column (in $EntraUsersHeader
+				# order) with '' so file rows are shape-complete vs the Entra users contract; an absent
+				# Entra value renders as '' exactly like a real Graph /users pull.
+				foreach ($col in $EntraUsersHeader) { $o[$col] = '' }
+				$o['userPrincipalName'] = $row.$uiUpnCol
+				if ($uiDisplayCol) { $o['displayName'] = $row.$uiDisplayCol }
+				if ($uiDeptCol)    { $o['department']  = $row.$uiDeptCol }
+				if ($uiTitleCol)   { $o['jobTitle']    = $row.$uiTitleCol }
+				if ($uiMgrCol)     { $o['manager_userPrincipalName'] = $row.$uiMgrCol }
+				if ($uiLicCol)     { $o['hasLicense']  = $row.$uiLicCol }
+				# Passthrough: custom columns append AFTER the header set; a passthrough column whose
+				# name matches an authoritative column fills it in place (lossless — no file value dropped).
+				foreach ($pc in $uiPassthrough) { $o[$pc] = $row.$pc }
+				$uiNormalized.Add([PSCustomObject]$o)
+			}
+			$script:UserInfoFileData = @($uiNormalized)
+			Write-LogHost ("-UserInfoFile ingest OK: {0} user row(s) normalized to the Entra users contract (UNWIRED in this phase)." -f $script:UserInfoFileData.Count) -ForegroundColor Green
+		}
+		# PAX4A-INGEST-END
+
+		# Agent 365 no longer requires an eager interactive sign-in (v1.11.11, D3): app-only modes
+		# (AppRegistration cert/secret, ManagedIdentity) reuse the existing application context and
+		# delegated modes already hold their Agent 365 scopes from the initial sign-in. The call
+		# below is a retained no-op kept for wiring stability; it never prompts in any auth mode.
 		if (-not $UseEOM) {
 			$null = Invoke-Agent365EarlyInteractiveSignIn
-			# Fallback: if Phase 2 sign-in failed (or was skipped), the dual-context display
-			# never emitted. Disclose the Phase 1 context now so the log is not missing it.
-			if ($script:DeferAuthContextDisplay -and $script:Phase1Context) {
-				Write-LogHost "  Tenant ID: $($script:Phase1Context.TenantId)" -ForegroundColor Gray
-				Write-LogHost "  Account:   (app-only / AppRegistration - no interactive user; Phase 2 sign-in did not complete)" -ForegroundColor Gray
-				Write-LogHost "  Scopes:    $($script:Phase1Context.GrantedRequired -join ', ')" -ForegroundColor Gray
-				$script:DeferAuthContextDisplay = $false
-			}
 		}
 		
 		# Fetch user directory and license data if requested (Graph API mode only)
@@ -23914,8 +23927,52 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		$script:EntraUsersPartial = $false
 		if ($IncludeUserInfo -and -not $UseEOM) {
 			Write-LogHost "Fetching Entra user directory and license data..." -ForegroundColor Cyan
-			$script:LicenseData = Get-UserLicenseData
-			$script:EntraUsersData = Get-EntraUsersData
+			$uiFileMode = ($PSBoundParameters.ContainsKey('UserInfoFile') -and -not [string]::IsNullOrWhiteSpace($UserInfoFile))
+			# Bulk license fetch runs for the live-directory path exactly as before. For the -UserInfoFile
+			# path it is deferred and only invoked on demand (Phase 4d license hybrid, below), so a fully
+			# file-supplied directory stays offline.
+			if (-not $uiFileMode) { $script:LicenseData = Get-UserLicenseData }
+			if ($uiFileMode) {
+				# Phase 4b: -UserInfoFile supplies the Entra user directory from a customer-provided CSV.
+				# Skip the Graph /users directory pull entirely and use the ingested, schema-completed rows.
+				Write-LogHost "-UserInfoFile provided: using supplied user directory (skipping Graph /users pull)." -ForegroundColor Cyan
+				$script:EntraUsersData = $script:UserInfoFileData
+				# PAX4D-LICENSE-HYBRID-BEGIN
+				# License hybrid (Phase 4d): a file-provided HasLicense value WINS and is used as-is (no online
+				# check). Rows with a BLANK HasLicense are resolved online by UPN from the existing bulk
+				# Get-UserLicenseData. When NO row is blank the online lookup is skipped entirely (fully offline
+				# directory build). File-provided values are never overwritten by online data.
+				$uiFromFile = @($script:EntraUsersData | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.hasLicense) })
+				$uiBlank    = @($script:EntraUsersData | Where-Object { [string]::IsNullOrWhiteSpace([string]$_.hasLicense) })
+				$uiResolved = 0
+				$uiFailed   = 0
+				if ($uiBlank.Count -eq 0) {
+					Write-LogHost ("license: {0} user(s) from file (no online check); 0 blank -> online license lookup skipped (fully offline)." -f $uiFromFile.Count) -ForegroundColor Green
+				}
+				else {
+					$script:LicenseData = Get-UserLicenseData
+					foreach ($uiRow in $uiBlank) {
+						$uiUpn = [string]$uiRow.userPrincipalName
+						if ($script:LicenseData -and $script:LicenseData.UserHasCopilot.ContainsKey($uiUpn)) {
+							$uiRow.hasLicense = [bool]$script:LicenseData.UserHasCopilot[$uiUpn]
+							if ([string]::IsNullOrWhiteSpace([string]$uiRow.assignedLicenses) -and $script:LicenseData.UserLicenses.ContainsKey($uiUpn)) {
+								$uiRow.assignedLicenses = ($script:LicenseData.UserLicenses[$uiUpn] -join ';')
+							}
+							$uiResolved++
+						}
+						else {
+							Write-LogHost ("  license: online lookup failed for '{0}' (UPN not found) - left blank, treated as unlicensed." -f $uiUpn) -ForegroundColor Yellow
+							$uiFailed++
+						}
+					}
+					Write-LogHost ("license: {0} user(s) from file (no online check); {1} resolved online by UPN; {2} failed online lookup (left blank, treated as unlicensed). File-provided values are used as-is; remove a row's HasLicense value to force the online check." -f $uiFromFile.Count, $uiResolved, $uiFailed) -ForegroundColor Green
+				}
+				# PAX4D-LICENSE-HYBRID-END
+				Test-EntraUsersSchema -Users $script:EntraUsersData -Quiet
+			}
+			else {
+				$script:EntraUsersData = Get-EntraUsersData
+			}
 		}
 		elseif ($IncludeUserInfo -and $UseEOM) {
 			Write-LogHost "WARNING: -IncludeUserInfo requires Graph API mode (not supported with -UseEOM)" -ForegroundColor Yellow
@@ -32197,6 +32254,43 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 					}
 				}
 
+				# -OutputPathUserInfo (overwrite/redirect) OR the default Users-dim
+				# destination under CopilotInteraction rollup — i.e. NOT -AppendUserInfo
+				# (which owns its own merge + upload wiring above and DELETES the transient
+				# rolled-up Users CSV). The rolled-up '<entra_stem>_Users.csv' is the
+				# customer-facing Users dimension and must be uploaded (plain overwrite) to
+				# the UserInfo destination. When -OutputPathUserInfo supplies a file-form leaf,
+				# the rolled-up leaf ('<custom-stem>_Users.csv') does NOT carry the current
+				# run timestamp, so the remote upload sweep's timestamp wildcard misses it
+				# (D2 / NatWest: '-AppendFile + -OutputPathUserInfo + -Rollup' shipped only
+				# 2 artifacts, dropping the Entra Users dim). Register the leaf explicitly —
+				# exactly like the M365 sidecar leaves — so the upload sweep includes it;
+				# per-data-type routing (Get-DataTypeForOutputFile -> 'UserInfo') then lands
+				# it at -OutputPathUserInfo. No union/merge, no In_Latest_Append provenance.
+				# Retention deletes ONLY the RAW Entra input CSV (never this rolled-up dim),
+				# so NO delete-list change is made here.
+				if (-not $AppendUserInfo -and $script:RollupProcessorMode -eq 'CopilotInteraction') {
+					try {
+						$rollupUsersStem   = [System.IO.Path]::GetFileNameWithoutExtension($rollupEntraCsv)
+						$rollupUsersDimCsv = Join-Path $rollupOutputDir ("{0}_Users.csv" -f $rollupUsersStem)
+						if (Test-Path -LiteralPath $rollupUsersDimCsv) {
+							$rollupUsersDimLeaf = [System.IO.Path]::GetFileName($rollupUsersDimCsv)
+							if (-not $script:RollupUsersDimLeafs) { $script:RollupUsersDimLeafs = New-Object System.Collections.Generic.List[string] }
+							if ($rollupUsersDimLeaf -and -not $script:RollupUsersDimLeafs.Contains($rollupUsersDimLeaf)) {
+								[void]$script:RollupUsersDimLeafs.Add($rollupUsersDimLeaf)
+							}
+							$rollupUsersDimDisplay = if ($script:DestIsBound.ContainsKey('UserInfo') -and $script:DestIsBound['UserInfo'] -and $script:DestRaw.ContainsKey('UserInfo') -and $script:DestRaw['UserInfo']) { $script:DestRaw['UserInfo'] } else { Get-DisplayPath -LocalPath $rollupUsersDimCsv }
+							Write-LogHost ("Rollup: Users dim registered for upload (overwrite): {0}" -f $rollupUsersDimDisplay) -ForegroundColor Gray
+						}
+						else {
+							Write-LogHost ("Rollup: expected rolled-up Users CSV not found at '{0}'; Users dim not registered for upload." -f $rollupUsersDimCsv) -ForegroundColor Yellow
+						}
+					}
+					catch {
+						Write-LogHost ("Rollup: Users-dim upload registration failed (non-fatal): {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow
+					}
+				}
+
 				# -AppendFile (CopilotInteraction mode only): union-merge the target Fact CSV
 				# with the just-produced rolled-up Fact CSV. Python emits
 				# '<purview_stem>_Interactions.csv' beside the input Purview CSV. M365Bundle
@@ -32209,8 +32303,38 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 					try {
 						$rollupPurviewStem = [System.IO.Path]::GetFileNameWithoutExtension($rollupPurviewCsv)
 						$rollupFactCsv     = Join-Path $rollupOutputDir ("{0}_Interactions.csv" -f $rollupPurviewStem)
-						if (Test-Path -LiteralPath $rollupFactCsv) {
-							$rollupFactMergeStats = Merge-FactCsv -TargetFactCsv $AppendFile -CurrentFactCsv $rollupFactCsv -KeyColumn 'Message_Id' -OutputPath $AppendFile
+						# OD2 (append data-safety): a pre-v1.11.11 seed has no 'Message_Id_Raw'
+						# dedup key and cannot reconcile on real message identity. Merging into
+						# such a target would classify every existing row as departed and (when the
+						# seed is smaller than this run) silently overwrite it with current-only
+						# rows. Probe the target header; if the key is absent, SKIP the in-place
+						# merge, leave the seed untouched, and write this run's rollup to a new
+						# timestamped file so the customer can re-baseline. The run still succeeds.
+						$rollupAfSkipMerge = $false
+						if ((Test-Path -LiteralPath $rollupFactCsv) -and (Test-Path -LiteralPath $AppendFile -PathType Leaf)) {
+							try {
+								$rollupAfHdrLine = @(Get-Content -LiteralPath $AppendFile -TotalCount 1)
+								$rollupAfCols = if ($rollupAfHdrLine.Count -gt 0) { ($rollupAfHdrLine[0] -split ',') | ForEach-Object { $_.Trim().Trim('"') } } else { @() }
+								if (-not ($rollupAfCols -contains 'Message_Id_Raw')) { $rollupAfSkipMerge = $true }
+							}
+							catch {
+								# Header probe failed; fall through to Merge-FactCsv whose own
+								# 0-row and shrink guards still protect the target.
+								$rollupAfSkipMerge = $false
+							}
+						}
+						if ($rollupAfSkipMerge) {
+							$rollupAfRebaselineName = ("{0}_Interactions_{1}.csv" -f $rollupPurviewStem, $global:ScriptRunTimestamp)
+							$rollupAfRebaselinePath = Join-Path $rollupOutputDir $rollupAfRebaselineName
+							Move-Item -LiteralPath $rollupFactCsv -Destination $rollupAfRebaselinePath -Force
+							$_rollupAfDisplay = if ($script:AppendRaw.ContainsKey('Purview') -and $script:AppendRaw['Purview']) { $script:AppendRaw['Purview'] } else { $AppendFile }
+							Write-LogHost ("Rollup: -AppendFile: target lacks the 'Message_Id_Raw' dedup key (pre-v1.11.11 seed); append SKIPPED to prevent data loss.") -ForegroundColor Yellow
+							Write-LogHost ("Rollup:   -> Target left unchanged: {0}" -f $_rollupAfDisplay) -ForegroundColor Yellow
+							Write-LogHost ("Rollup:   -> This run's rollup written to: {0}" -f (Get-DisplayPath -LocalPath $rollupAfRebaselinePath)) -ForegroundColor Yellow
+							Write-LogHost  "Rollup:   -> To re-baseline: use this new file as your -AppendFile target going forward (it carries Message_Id_Raw); subsequent appends will reconcile on real message identity." -ForegroundColor Yellow
+						}
+						elseif (Test-Path -LiteralPath $rollupFactCsv) {
+							$rollupFactMergeStats = Merge-FactCsv -TargetFactCsv $AppendFile -CurrentFactCsv $rollupFactCsv -KeyColumn 'Message_Id_Raw' -OutputPath $AppendFile
 							Write-LogHost ("Rollup: -AppendFile merge: Retained={0:N0}  New={1:N0}  Departed={2:N0}  Union={3:N0}" -f $rollupFactMergeStats.Retained, $rollupFactMergeStats.New, $rollupFactMergeStats.Departed, $rollupFactMergeStats.Union) -ForegroundColor Green
 							$_rollupAfDisplay = if ($script:AppendRaw.ContainsKey('Purview') -and $script:AppendRaw['Purview']) { $script:AppendRaw['Purview'] } else { $AppendFile }
 							Write-LogHost ("Appended to: {0}" -f $_rollupAfDisplay) -ForegroundColor White
@@ -32661,6 +32785,18 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 					if ($m365Sc -and -not $appendLeafs.Contains($m365Sc)) { [void]$appendLeafs.Add($m365Sc) }
 				}
 			}
+			# Rolled-up Users dimension ('<entra_stem>_Users.csv') from a non-AppendUserInfo
+			# rollup (default beside -OutputPath, or -OutputPathUserInfo overwrite). Its leaf
+			# may not carry the current-run timestamp (file-form -OutputPathUserInfo), so the
+			# timestamp wildcard above can miss it (D2). Register it explicitly so the sweep
+			# ships it; per-data-type routing (Get-DataTypeForOutputFile -> 'UserInfo') lands
+			# it at the -OutputPathUserInfo destination. Included via the same OR predicate, so
+			# a file that ALSO matches the timestamp wildcard is still swept exactly once.
+			if ($script:RollupUsersDimLeafs) {
+				foreach ($usersDimLeaf in $script:RollupUsersDimLeafs) {
+					if ($usersDimLeaf -and -not $appendLeafs.Contains($usersDimLeaf)) { [void]$appendLeafs.Add($usersDimLeaf) }
+				}
+			}
 			# Run-log companion: the .log file is named after
 			# $OutputFile's basename, which in -AppendFile mode carries the Append target's
 			# ORIGINAL timestamp (not $global:ScriptRunTimestamp). That means the timestamp
@@ -32786,6 +32922,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 								Write-LogHost ("WARNING: Delta write failed for '{0}'; falling back to Files/ upload." -f $uploadFile.Name) -ForegroundColor Yellow
 								try { Invoke-OutputUpload -LocalPath $uploadFile.FullName -ParentOverride $dtParentUrl } catch {
 									Write-LogHost ("WARNING: Files/ upload also failed for '{0}': {1}" -f $uploadFile.Name, (Get-GraphErrorDetail -ErrorRecord $_)) -ForegroundColor Yellow
+									$script:AnyUploadFailed = $true
 								}
 							}
 						}
@@ -32793,6 +32930,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 							Write-LogHost ("WARNING: Delta write threw for '{0}': {1}. Falling back to Files/ upload." -f $uploadFile.Name, $_.Exception.Message) -ForegroundColor Yellow
 							try { Invoke-OutputUpload -LocalPath $uploadFile.FullName -ParentOverride $dtParentUrl } catch {
 								Write-LogHost ("WARNING: Files/ upload also failed for '{0}': {1}" -f $uploadFile.Name, (Get-GraphErrorDetail -ErrorRecord $_)) -ForegroundColor Yellow
+								$script:AnyUploadFailed = $true
 							}
 						}
 					}
@@ -32801,6 +32939,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 							Invoke-OutputUpload -LocalPath $uploadFile.FullName -ParentOverride $dtParentUrl
 						} catch {
 							Write-LogHost ("WARNING: Upload failed for '{0}': {1}" -f $uploadFile.Name, (Get-GraphErrorDetail -ErrorRecord $_)) -ForegroundColor Yellow
+							$script:AnyUploadFailed = $true
 						}
 					}
 				}
@@ -32909,7 +33048,7 @@ finally {
 	# Agent365 phase, output summary), reap this run's incremental JSONLs and checkpoint here.
 	# Gated on the SAME success criteria as the _PARTIAL log rename: script completed AND not
 	# Ctrl+C AND not early-exit. Idempotent — no-op if the success path already cleaned up.
-	if ($script:ScriptCompleted -and -not $script:CtrlCPressed -and -not $script:EarlyExit -and $global:ScriptRunTimestamp) {
+	if ($script:ScriptCompleted -and -not $script:CtrlCPressed -and -not $script:EarlyExit -and -not $script:AnyUploadFailed -and $global:ScriptRunTimestamp) {
 		try {
 			$cleanupBaseDir = if ($OutputFile) { Split-Path $OutputFile -Parent } elseif ($OutputPath) { $OutputPath } else { $null }
 			if ($cleanupBaseDir -and (Test-Path $cleanupBaseDir)) {
@@ -33069,7 +33208,7 @@ finally {
 				$logParentOverride = if ($script:DestParentUrl.ContainsKey('Log')) { $script:DestParentUrl['Log'] } else { $script:DestRaw['Log'] }
 			}
 			if ($metricsPath -and (Test-Path -LiteralPath $metricsPath -ErrorAction SilentlyContinue)) {
-				try { Invoke-OutputUpload -LocalPath $metricsPath -ParentOverride $logParentOverride } catch { Write-Verbose ("Metrics upload failed: {0}" -f $_.Exception.Message) }
+				try { Invoke-OutputUpload -LocalPath $metricsPath -ParentOverride $logParentOverride } catch { $script:AnyUploadFailed = $true; Write-Verbose ("Metrics upload failed: {0}" -f $_.Exception.Message) }
 			}
 			if ($LogFile -and (Test-Path -LiteralPath $LogFile -ErrorAction SilentlyContinue)) {
 				# Short-retry the run-log upload; on persistent failure, attempt a
@@ -33087,6 +33226,7 @@ finally {
 					}
 				}
 				if (-not $logUploadOk) {
+					$script:AnyUploadFailed = $true
 					try {
 						$partialLogLocal = [System.IO.Path]::ChangeExtension($LogFile, '.partial.log')
 						Copy-Item -LiteralPath $LogFile -Destination $partialLogLocal -Force -ErrorAction Stop
@@ -33139,7 +33279,7 @@ finally {
 	# Remote-output: scratch directory cleanup. Only on a clean, successful run — preserve
 	# scratch on Ctrl+C / early-exit / failure so the operator can inspect locally if running
 	# attended, or so a re-run from the same container can resume from local state.
-	if ($script:RemoteScratchDir -and $script:ScriptCompleted -and -not $script:CtrlCPressed -and -not $script:EarlyExit) {
+	if ($script:RemoteScratchDir -and $script:ScriptCompleted -and -not $script:CtrlCPressed -and -not $script:EarlyExit -and -not $script:AnyUploadFailed) {
 		try {
 			if (Test-Path -LiteralPath $script:RemoteScratchDir) {
 				Remove-Item -LiteralPath $script:RemoteScratchDir -Recurse -Force -ErrorAction Stop
@@ -33149,11 +33289,14 @@ finally {
 			Write-LogHost ("WARNING: Scratch cleanup failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
 		}
 	}
+	elseif ($script:RemoteScratchDir -and $script:AnyUploadFailed -and (Test-Path -LiteralPath $script:RemoteScratchDir)) {
+		Write-LogHost ("Local run files preserved: one or more uploads did not complete successfully. Location: {0}" -f $script:RemoteScratchDir) -ForegroundColor Yellow
+	}
 
 	# Fabric tier: drop the durable resume mirror on a clean, successful run so the
 	# Lakehouse Files/.pax_resume/ namespace stays clean. Preserved on any non-clean
 	# exit so a subsequent container can resume from it.
-	if ($script:ScriptCompleted -and -not $script:CtrlCPressed -and -not $script:EarlyExit -and $global:ScriptRunTimestamp) {
+	if ($script:ScriptCompleted -and -not $script:CtrlCPressed -and -not $script:EarlyExit -and -not $script:AnyUploadFailed -and $global:ScriptRunTimestamp) {
 		try { Remove-FabricResumeMirror -RunTimestamp $global:ScriptRunTimestamp } catch {}
 	}
 
