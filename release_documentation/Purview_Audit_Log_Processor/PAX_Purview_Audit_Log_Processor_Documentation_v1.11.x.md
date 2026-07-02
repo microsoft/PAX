@@ -70,13 +70,17 @@
 19. [Checkpoint & Resume](#checkpoint--resume)
 20. [Output Files & Schema](#output-files--schema)
 21. [Deidentification (Anonymized Output)](#deidentification-anonymized-output)
-22. [Activity Types Reference](#activity-types-reference)
-23. [Record & Service Filters](#record--service-filters)
-24. [Advanced Features](#advanced-features)
-25. [Performance Tuning](#performance-tuning)
-26. [Troubleshooting](#troubleshooting)
-27. [Known Limitations](#known-limitations)
-28. [Security & Compliance](#security--compliance)
+22. [Bring Your Own Directory (BYOD)](#bring-your-own-directory-byod)
+23. [Activity Types Reference](#activity-types-reference)
+24. [Record & Service Filters](#record--service-filters)
+25. [Advanced Features](#advanced-features)
+26. [Performance Tuning](#performance-tuning)
+27. [Troubleshooting](#troubleshooting)
+28. [Known Limitations](#known-limitations)
+29. [Security & Compliance](#security--compliance)
+30. [License & Disclaimer](#license--disclaimer)
+31. [Additional Resources](#additional-resources)
+32. [Support](#support)
 
 ---
 
@@ -4345,7 +4349,7 @@ The transformation happens **on the host before anything is written or uploaded*
 
 ---
 
-## Entra ID User Enrichment
+## Bring Your Own Directory (BYOD)
 
 <details>
 <summary>👤 View Entra ID Enrichment Guide (Click to Expand)</summary>
