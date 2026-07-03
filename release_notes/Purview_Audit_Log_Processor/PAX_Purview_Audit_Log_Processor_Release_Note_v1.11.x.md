@@ -2,8 +2,8 @@
 
 ## Release Information
 
-- **Latest Version:** 1.11.11
-- **Latest Release Date:** July 2, 2026
+- **Latest Version:** 1.11.12
+- **Latest Release Date:** July 3, 2026
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,12 +12,28 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.11.11:** [PAX_Purview_Audit_Log_Processor_v1.11.11.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.11/PAX_Purview_Audit_Log_Processor_v1.11.11.ps1)
+- **PAX Purview Audit Log Processor Script v1.11.12:** [PAX_Purview_Audit_Log_Processor_v1.11.12.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.12/PAX_Purview_Audit_Log_Processor_v1.11.12.ps1)
 - **Documentation v1.11.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md)
 
 ---
 
 ## Overview
+
+### v1.11.12
+
+Version 1.11.12 fixes a cross-run `-AppendFile` reconciliation problem in the rolled-up interactions file, adds a supporting identity column to the AI-in-One (AIO) rolled-up interactions file, and improves the reliability of the Microsoft Agent 365 catalog export. Runs that do not append rolled-up interactions and do not use Agent 365 behave as in v1.11.11, with one additive exception: the AIO rolled-up interactions file now carries one extra identity column (described below). A one-time re-baseline applies to interaction append files created before v1.11.12.
+
+#### Fan-Out-Safe Cross-Run Append & One-Time Re-Baseline (`-AppendFile`)
+
+A single interaction (message) can produce **several** rolled-up rows — one per distinct combination of the analytical grain (for example, per accessed resource). v1.11.11 reconciled an appended rollup on the message identity alone, which treated all of a message's rows as one and could drop the extra rows when a later run re-emitted only some of them. v1.11.12 reconciles on the **full grain together with the message identity**, so every row is matched independently: overlapping rows de-duplicate, new rows are added, and existing-only rows are preserved — an exact union with nothing dropped or double-counted. To protect your data, PAX does **not** silently merge onto an append file that predates this change or that lacks any column the new reconciliation needs (for example an older AIO file created before the new identity column existed). Instead it leaves the old file untouched, writes this run's output to a new timestamped file, and prints re-baseline guidance. The practical effect is a **one-time re-baseline** — generate a fresh file once with v1.11.12 and append onto that from then on — with **no data lost** in the transition.
+
+#### Stable User Identity on the AI-in-One Rolled-Up Interactions File
+
+The AIO rolled-up interactions file now carries a stable, normalized user-identity column (`User_Id_Normalized`), matching the equivalent column the AI Business Value (AIBV) rollup already provides. It is **additive** — every existing column is unchanged — and it anchors the cross-run reconciliation above on a stable identity rather than a per-run surrogate. When `-Deidentify` is used, this column is anonymized with the same irreversible, format-preserving token as every other identity in the output, so it never exposes a raw user identity.
+
+#### Microsoft Agent 365 Catalog — Reliability
+
+The Microsoft Agent 365 catalog export is more resilient to Microsoft Graph throttling: catalog reads now retry automatically on rate-limit (HTTP 429) and transient server responses, honoring the service's `Retry-After` timing when provided. An internal variable-naming issue in the package-details path that could interfere with per-package processing is also corrected. There are no new switches and no change to how you run the Agent 365 export.
 
 ### v1.11.11
 
@@ -234,6 +250,12 @@ New sixth value on the `-Auth` ValidateSet for Azure-hosted headless execution (
 ---
 
 ## What's New
+
+### v1.11.12
+
+- **Fan-out-safe cross-run append + one-time re-baseline (`-AppendFile`).** A single interaction (message) can produce **several** rolled-up rows — one per distinct combination of the analytical grain (for example, per accessed resource). Rollup append now reconciles on the **full grain together with the message identity** rather than the message identity alone, so every row is matched independently — overlaps de-duplicate, new rows are added, and existing-only rows are preserved (exact union, nothing dropped or double-counted). Append files created before v1.11.12 — or any file missing a column the new reconciliation needs (for example an older AI-in-One file created before the new identity column existed) — are **not** silently merged: the old file is left untouched, this run's output is written to a new timestamped file, and PAX prints re-baseline guidance. The practical effect is a **one-time re-baseline** (generate a fresh file once with v1.11.12 and append onto that from then on), with **no data lost** in the transition. The existing 0-row overwrite refusal and union-shrink protections still apply.
+- **Stable user identity on the AI-in-One rolled-up interactions file (`User_Id_Normalized`).** The AI-in-One (AIO) rollup now carries a stable, normalized user-identity column, matching the equivalent column the AI Business Value (AIBV) rollup already provides. It is **additive** — every existing column is unchanged and it sits ahead of the trailing provenance columns — and it anchors the cross-run reconciliation above on a stable identity rather than a per-run surrogate. Under `-Deidentify` it is anonymized with the same irreversible, format-preserving token as every other identity in the output, so it never exposes a raw user identity.
+- **Microsoft Agent 365 catalog — throttling resilience.** Catalog reads now retry automatically on rate-limit (HTTP 429) and transient server (5xx) responses, honoring the service's `Retry-After` timing when provided and otherwise backing off exponentially (capped at 60 seconds); non-throttling errors surface immediately. An internal variable-naming issue in the package-details path that could interfere with per-package processing is also corrected. There are no new switches and no change to how you run the Agent 365 export.
 
 ### v1.11.11
 
