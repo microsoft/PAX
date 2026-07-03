@@ -1,8 +1,8 @@
 # PAX Purview Audit Log Processor — Prerequisites (Container path)
 
 > [!IMPORTANT]
-> **Microsoft Agent 365 enrichment is fully supported.**
-> The `-IncludeAgent365Info`, `-OnlyAgent365Info`, `-OutputPathAgent365Info`, and `-AppendAgent365Info` switches require interactive (delegated) sign-in by an AI Administrator or Global Administrator; ManagedIdentity is not supported for this stream.
+> **Microsoft Agent 365 enrichment is supported on the container path via app-only auth (opt-in / pre-GA).**
+> The `-IncludeAgent365Info`, `-OnlyAgent365Info`, `-OutputPathAgent365Info`, and `-AppendAgent365Info` switches run under `-Auth ManagedIdentity` (app-only) once the managed identity holds the application permissions `CopilotPackages.Read.All` + `Application.Read.All` (admin-consented) — no interactive sign-in is required. Those permissions are **not** granted by default; pass **`-IncludeAgent365`** to `Grant-PAXPermissions.ps1` to add them. This app-only path is **pre-GA** — validate it in your tenant before relying on it in production. (Delegated sign-in by an AI Administrator or Global Administrator also works, e.g. on the local-run path.)
 
 One-time setup before deploying the ACA Job. **Only required when you intend to run PAX as a containerized scheduled job on Azure Container Apps.** If you are running PAX directly from a host (laptop, on-prem server, Azure VM) and writing to Fabric/OneLake, see [`../LocalRun/README.md`](../LocalRun/README.md) instead — the prerequisites there are smaller and `Grant-PAXPermissions.ps1` is not required.
 
@@ -23,16 +23,19 @@ One-time setup before deploying the ACA Job. **Only required when you intend to 
    - `AuditLogsQuery-OneDrive.Read.All`
    - `AuditLogsQuery-SharePoint.Read.All`
 
+   With `-IncludeAgent365` (opt-in / pre-GA — enables app-only Microsoft Agent 365 enrichment):
+   - `CopilotPackages.Read.All`
+   - `Application.Read.All`
+
    `-Mode SharePoint` only:
    - `Sites.ReadWrite.All`, `Files.ReadWrite.All`
 
 4. **(Fabric mode only)** Grants `Storage Blob Data Contributor` on the Fabric workspace's OneLake (Azure RBAC).
 
-### Permissions intentionally NOT granted
+### Permissions not granted by default
 
-- `AuditLog.Read.All` — this is the Entra audit-activities permission, a different endpoint that PAX does not call. Earlier versions of this script granted it by mistake.
-- `CopilotPackages.Read.All` — Microsoft Agent 365 enrichment requires the AI Administrator or Global Administrator directory role, which can only be held by a signed-in user. A managed identity has no user principal and cannot satisfy this requirement. The PAX script rejects `-IncludeAgent365Info` / `-OnlyAgent365Info` under `-Auth ManagedIdentity` up-front. If you need Agent 365 enrichment, run PAX interactively (`-Auth WebLogin` or `DeviceCode`) or with `-Auth AppRegistration` (the script will interactively top up a delegated context for the Agent 365 phase only).
-- `Application.Read.All` — only consumed by the Agent 365 path, which is unsupported under `-Auth ManagedIdentity`.
+- `AuditLog.Read.All` — this is the Entra audit-activities permission, a different endpoint that PAX does not call. Earlier versions of this script granted it by mistake. **Never** granted.
+- `CopilotPackages.Read.All` and `Application.Read.All` — the Microsoft Agent 365 application permissions. PAX **does** support Agent 365 under app-only auth (`-Auth ManagedIdentity` or `-Auth AppRegistration`) using these permissions, with no interactive sign-in. They are **opt-in** — not granted by default, to keep the identity least-privileged. Pass **`-IncludeAgent365`** to this script to grant + admin-consent them. This app-only Agent 365 path is **pre-GA**; validate it in your tenant before relying on it in production. (Delegated Agent 365 instead relies on the signed-in user's AI Administrator / Global Administrator directory role and needs no application permission.)
 
 ## Operator pre-reqs
 
@@ -82,6 +85,22 @@ One-time setup before deploying the ACA Job. **Only required when you intend to 
     -FabricWorkspaceResourceId '/subscriptions/.../workspaces/PAX-Workspace' `
     -IncludeM365Usage
 ```
+
+### Fabric destination, also enabling app-only Agent 365 (opt-in / pre-GA)
+
+```powershell
+./Grant-PAXPermissions.ps1 `
+    -SubscriptionId            '00000000-0000-0000-0000-000000000000' `
+    -ResourceGroup             'rg-pax' `
+    -ManagedIdentityName       'uai-pax' `
+    -Location                  'eastus' `
+    -AcrResourceId             '/subscriptions/.../registries/paxacr' `
+    -Mode                      Fabric `
+    -FabricWorkspaceResourceId '/subscriptions/.../workspaces/PAX-Workspace' `
+    -IncludeAgent365
+```
+
+> **Agent 365 is pre-GA.** `-IncludeAgent365` grants `CopilotPackages.Read.All` + `Application.Read.All` so the managed identity can run `-IncludeAgent365Info` / `-OnlyAgent365Info` app-only (no interactive sign-in). Validate in your tenant before relying on it in production.
 
 > **Fabric note:** Azure RBAC alone is sometimes insufficient for OneLake DFS write access. After running the script, also add the managed identity as a **Contributor** on the Fabric workspace via the Fabric portal (Workspace settings → Manage access).
 
