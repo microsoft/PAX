@@ -1,8 +1,8 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.11.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.11/PAX_Purview_Audit_Log_Processor_v1.11.11.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.12.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.12/PAX_Purview_Audit_Log_Processor_v1.11.12.ps1)
 >
-> **📅 Script v1.11.11 Release Date:** July 2, 2026
+> **📅 Script v1.11.12 Release Date:** July 3, 2026
 >
 > **📋 Release Notes:** See what's new → [v1.11.x Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
@@ -10,7 +10,7 @@
 >
 > **📚 Documentation Archive:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
-**Documentation Version:** v1.11.x (Current Script Version: v1.11.11)  
+**Documentation Version:** v1.11.x (Current Script Version: v1.11.12)  
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 7+ (required for default Graph API mode); PowerShell 5.1 supported only with `-UseEOM`  
 **License:** MIT
@@ -406,7 +406,7 @@ The **Purview Audit Reader** role is only required for EOM mode (`-UseEOM`) and 
 
 ### Download the Script
 
-- **Script:** [PAX_Purview_Audit_Log_Processor_v1.11.11.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.11/PAX_Purview_Audit_Log_Processor_v1.11.11.ps1)
+- **Script:** [PAX_Purview_Audit_Log_Processor_v1.11.12.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.12/PAX_Purview_Audit_Log_Processor_v1.11.12.ps1)
 - **Release Notes:** [v1.11.x](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md)
 
 Save the downloaded script to a working directory (e.g., `C:\Scripts\PAX\`).
@@ -3561,15 +3561,17 @@ Adding `-Deidentify` to a rollup run anonymizes the rolled-up output as well —
 
 When you point a rollup run at an existing rollup file with `-AppendFile`, PAX merges this run's rolled-up interactions into that file instead of writing a brand-new one, so you can grow a single dataset across many runs (for example, a monthly refresh onto a running history).
 
-**Reconciliation on stable message identity.** The append merge reconciles on each interaction's **stable message identity**, so overlapping records between runs are matched and de-duplicated, brand-new records are added, and records that are only in the existing file are preserved. The result is an exact union — no interaction is dropped, and overlaps are never double-counted.
+**Reconciliation on the full analytical grain + stable message identity.** A single interaction (message) can produce **several** rolled-up rows — one per distinct combination of the analytical grain (for example, per accessed resource). The append merge reconciles on the **full grain together with each interaction's stable message identity**, so every one of those rows is matched independently: overlapping rows between runs are matched and de-duplicated, brand-new rows are added, and rows that are only in the existing file are preserved. The result is an exact union — no row is dropped (even when several rows share the same message), and overlaps are never double-counted.
 
-**One-time re-baseline for older seed files.** Append files created by **earlier versions of PAX** were written without the stable identity key the reconciliation relies on. To protect your data, PAX **does not silently merge** onto one of these older files:
+**One-time re-baseline for older seed files.** Append files created by **earlier versions of PAX** were written without every column the current reconciliation relies on — older files may lack the stable message identity key entirely, and files created **before v1.11.12** may lack a grain-composite column the fan-out-safe merge needs (for example, the AIO rolled-up interactions file gained a stable user-identity column in v1.11.12). To protect your data, PAX **does not silently merge** onto one of these older files:
 
 - The existing file is **left completely untouched**.
 - This run's rolled-up output is written to a **new, timestamped file** alongside it.
 - PAX prints clear **re-baseline guidance** to the screen and the run log.
 
 **What this means for you:** an append file you started with an **earlier version** needs a **one-time re-baseline** — generate a fresh rollup file with the current version once and use that as your new append target. From then on, every `-AppendFile` run reconciles and grows correctly. **No data is lost** in the process: your original file is preserved as-is, and this run's data is safely written to the new file.
+
+> **Note (v1.11.12):** if you have been appending onto an **AIO** rolled-up interactions file created before v1.11.12, expect this one-time re-baseline on your next run — the fan-out-safe merge needs a stable user-identity column that older AIO files do not carry. Your existing file is left untouched and the run writes a fresh, timestamped file to re-baseline from. AIBV files created in v1.11.11 already carry the needed identity column.
 
 **The rolled-up Users dimension always uploads.** When a rollup run also produces the Users dimension (the org / licensing companion to the interactions file), that Users file is uploaded correctly in **all four** combinations of interactions-append and Users destination — whether the interactions stream is appending or not, and whether the Users destination is `-OutputPathUserInfo` or `-AppendUserInfo`. It uploads exactly once in every case.
 

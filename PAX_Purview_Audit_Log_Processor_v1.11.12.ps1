@@ -1,5 +1,5 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.11.11
+# Version: v1.11.12
 # Requirements: PowerShell 7+ for default Graph API mode; PowerShell 5.1 supported ONLY with -UseEOM (serial Exchange Online Management mode, no parallel query/explosion).
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI activity types (specified via -ActivityTypes): AIInteraction, ConnectedAIAppInteraction, AIAppInteraction
@@ -979,13 +979,17 @@
 	  2. Single activity type: -ActivityTypes CopilotInteraction (only one activity type selected)
 	
 	**CSV Mode Behavior:**
-	  • Union-merges current-run rows with the target file keyed on RecordId (non-rollup) or
-	    Message_Id_Raw (rollup); rows in the target but missing from the current run are kept
-	    with In_Latest_Append = FALSE.
+	  • Union-merges current-run rows with the target file keyed on RecordId (non-rollup) or,
+	    for the rollup Fact CSV, on the full grain + Message_Id_Raw composite key (rollup Fact
+	    rows FAN OUT — many rows can share one Message_Id_Raw, one per distinct grain); rows in
+	    the target but missing from the current run are kept with In_Latest_Append = FALSE.
 	  • Date_Added / Latest_Append_Date / In_Latest_Append provenance columns are maintained
 	    on every row. NOTE: these three columns apply ONLY to the row-identity merges — the
 	    non-rollup raw audit CSV (keyed on RecordId) and the CopilotInteraction rollup Fact
-	    CSV (keyed on Message_Id_Raw), where one row maps to exactly one record. They are
+	    CSV (keyed on the grain + Message_Id_Raw composite). In the rollup Fact CSV a single
+	    Message_Id_Raw can map to MULTIPLE rows (one per distinct grain, e.g. per accessed
+	    resource), so append dedup keys on the whole grain plus Message_Id_Raw — never on
+	    Message_Id_Raw alone (doing so would collapse fan-out rows and lose data). They are
 	    intentionally NOT added to the M365 Usage bundle rollup (-IncludeM365Usage + -Rollup),
 	    whose rows are additive aggregates summed across runs — see the per-row provenance
 	    caveat in the M365 Rollup Anchoring section below.
@@ -2231,7 +2235,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.11.11'
+$ScriptVersion = '1.11.12'
 
 function Invoke-PaxVersionCheck {
 	# Informational, non-blocking, failure-isolated version check against the public PAX repo.
@@ -3793,7 +3797,7 @@ if (($IncludeAgent365Info -or $OnlyAgent365Info)) {
 }
 
 # Agent 365 + app-only auth (AppRegistration certificate, AppRegistration client secret,
-# ManagedIdentity): SUPPORTED as of v1.11.11 (defect D3). The Microsoft Graph Agent Package
+# ManagedIdentity): The Microsoft Graph Agent Package
 # Management API exposes an APPLICATION permission (CopilotPackages.Read.All app-role; plus
 # Application.Read.All for developer-name resolution) per Microsoft Learn "List Copilot packages"
 # (https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api). The app-only token
@@ -4479,8 +4483,17 @@ _NONGRAIN_ATTRS_AIO_BASE: tuple[str, ...] = (
     "Value_Outcome",
     "ActivityDate",
 )
-# AIO carried attrs = the v3.1.0 base set + the trailing raw reconciliation keys.
-_NONGRAIN_ATTRS_AIO: tuple[str, ...] = _NONGRAIN_ATTRS_AIO_BASE + _RAW_ID_ATTRS
+# AIO carried attrs = the v3.1.0 base set + a stable user-identity column + the
+# trailing raw reconciliation keys.
+_NONGRAIN_ATTRS_AIO: tuple[str, ...] = _NONGRAIN_ATTRS_AIO_BASE + (
+    # Stable, deid-consistent user identity for AIO. Mirrors the
+    # AIBV [Audit_UserId_Normalized] value (deid_upn -> normalize_user_id), so it
+    # is deterministically de-identified under -Deidentify and never exposes a raw
+    # UPN. Gives the cross-run append merge key a stable user component in place of
+    # the per-run UserKey INT surrogate. Placed BEFORE the raw keys so
+    # Message_Id_Raw / ThreadId_Raw stay the trailing reconciliation columns.
+    "User_Id_Normalized",
+) + _RAW_ID_ATTRS
 
 # AIBV non-grain carried attrs = AIO base set + AIBV-only offloaded columns, with
 # the raw reconciliation keys appended LAST so they remain the trailing two columns
@@ -6273,6 +6286,11 @@ def explode_record(
         "Behavior_Source": "",
         "Value_Outcome": "",
         "ActivityDate": interaction_date_str,
+        # Stable, deid-consistent user identity (AIO parity with the
+        # AIBV [Audit_UserId_Normalized] value). Emitted only for the AIO profile
+        # (AIBV's header carries Audit_UserId_Normalized instead), so for AIBV this
+        # key is a harmless extra that its fact-header selection ignores.
+        "User_Id_Normalized": audit_user_id_norm,
         # Cross-run append reconciliation key (trailing). Constant per record;
         # Message_Id_Raw (per message) is injected in the emit loop below.
         "ThreadId_Raw": thread_id_raw,
@@ -10682,6 +10700,61 @@ function Merge-UsersCsv {
 	}
 }
 
+function Get-FactCompositeKeyColumns {
+	<#
+	.SYNOPSIS
+		Return the grain-composite append dedup key column list for a rolled-up
+		Interactions Fact CSV, derived from its header columns.
+	.DESCRIPTION
+		FIX 1 (v1.11.12). Rolled-up fact rows FAN OUT: many rows share one
+		Message_Id_Raw, one per distinct grain (e.g. per AccessedResource). Cross-run
+		append dedup must therefore key on the FULL grain PLUS Message_Id_Raw; keying
+		on Message_Id_Raw alone collapses every fan-out row for a message to one and
+		silently discards the rest on merge.
+
+		Grain columns use their stable, cross-run-comparable forms: the per-run INT
+		surrogates 'UserKey' and 'ThreadId' are replaced by the deid-consistent
+		normalized user identity (AIO: 'User_Id_Normalized' (FIX 5); AIBV: the
+		pre-existing 'Audit_UserId_Normalized') and by 'ThreadId_Raw' respectively.
+		The remaining names mirror the embedded processor grain (GRAIN_KEYS_AIO /
+		GRAIN_KEYS_AIBV) verbatim. Profile is detected from the header (AIBV carries
+		'Is_Agent_Activity'). Returns @() when the header is not a recognizable fact
+		header (no Message_Id_Raw) so the caller falls back to its own guard.
+	#>
+	[CmdletBinding()]
+	param([Parameter(Mandatory)] [string[]] $HeaderColumns)
+
+	if (-not ($HeaderColumns -contains 'Message_Id_Raw')) { return @() }
+	$isAibv = ($HeaderColumns -contains 'Is_Agent_Activity')
+	$userIdCol = if ($isAibv) { 'Audit_UserId_Normalized' } else { 'User_Id_Normalized' }
+	$cols = [System.Collections.Generic.List[string]]::new()
+	$cols.Add($userIdCol)          # replaces the per-run 'UserKey' INT surrogate
+	$cols.Add('InteractionDate')
+	$cols.Add('AgentId')
+	$cols.Add('AgentName')
+	$cols.Add('AppHost')
+	$cols.Add('Environment')
+	$cols.Add('License Status')
+	$cols.Add('Context_Type')
+	$cols.Add('Behavior_Category')
+	$cols.Add('Behavior_Enriched')
+	$cols.Add('AI_Model')
+	$cols.Add('Is_Sensitive')
+	$cols.Add('Autonomy_Pattern')
+	$cols.Add('AppIdentity_AppId')
+	$cols.Add('AISystemPlugin_Name')
+	$cols.Add('ThreadId_Raw')      # replaces the per-run 'ThreadId' INT surrogate
+	if ($isAibv) {
+		$cols.Add('Is_Agent_Activity')
+		$cols.Add('Web_Grounded_Signal')
+		$cols.Add('Workflow_Action')
+	}
+	$cols.Add('Message_Id_Raw')
+	# Emit as a flat string[]; callers collect with @(...) (an empty return above
+	# unrolls to nothing, which @(...) normalizes to an empty array).
+	return $cols.ToArray()
+}
+
 function Merge-FactCsv {
 	<#
 	.SYNOPSIS
@@ -10711,12 +10784,33 @@ function Merge-FactCsv {
 		[Parameter(Mandatory)] [string] $CurrentFactCsv,
 		[Parameter()]          [string] $OutputPath,
 		[Parameter()]          [string] $KeyColumn = 'Message_Id_Raw',
+		[Parameter()]          [string[]] $CompositeKeyColumn = @(),
 		[Parameter()]          [string] $RunDate = (Get-Date -Format 'yyyy-MM-dd')
 	)
 	if (-not (Test-Path -LiteralPath $CurrentFactCsv -PathType Leaf)) {
 		throw "Merge-FactCsv: current Fact CSV not found: '$CurrentFactCsv'"
 	}
 	if ([string]::IsNullOrWhiteSpace($OutputPath)) { $OutputPath = $CurrentFactCsv }
+	# Grain-composite dedup key. When -CompositeKeyColumn is
+	# supplied, a row's key is the U+001F-joined values of those columns (ASCII Unit
+	# Separator 0x1F is a control char that never appears in audit field data), so
+	# fan-out fact rows (many per Message_Id_Raw) are each keyed distinctly instead of
+	# collapsing to one. Otherwise the single -KeyColumn is used (RecordId raw-audit
+	# path, unchanged). $getRowKey is invoked for every target/current row below.
+	$useCompositeKey = ($null -ne $CompositeKeyColumn -and @($CompositeKeyColumn).Count -gt 0)
+	$compositeSep = [char]0x1F
+	$getRowKey = {
+		param($row)
+		if ($useCompositeKey) {
+			$parts = foreach ($c in $CompositeKeyColumn) {
+				$pp = $row.PSObject.Properties[$c]
+				if ($pp) { [string]$pp.Value } else { '' }
+			}
+			return ($parts -join $compositeSep)
+		}
+		$kp = $row.PSObject.Properties[$KeyColumn]
+		if ($kp) { [string]$kp.Value } else { '' }
+	}
 	# Use script:Import-CsvDeduped for header-dupe safety (parallel to Merge-UsersCsv).
 	$targetRows = @()
 	if (Test-Path -LiteralPath $TargetFactCsv -PathType Leaf) {
@@ -10724,8 +10818,8 @@ function Merge-FactCsv {
 	}
 	# APPEND SAFETY (data-loss guard): if the target file exists with content but parsed to
 	# zero rows, the read failed (parse/encoding/memory) or the key cannot be matched.
-	# Overwriting would replace the customer's file with current-run rows only (the TDOT
-	# shrink). Abort instead so the existing target is left untouched; the caller keeps the
+	# Overwriting would replace the existing target file with current-run rows only (a
+	# row-count shrink). Abort instead so the existing target is left untouched; the caller keeps the
 	# fresh current-run CSV on disk for a manual merge.
 	if ($targetRows.Count -eq 0 -and (Test-Path -LiteralPath $TargetFactCsv -PathType Leaf) -and ((Get-Item -LiteralPath $TargetFactCsv).Length -gt 0)) {
 		throw "Merge-FactCsv: target '$TargetFactCsv' exists with content but parsed to 0 rows; refusing to overwrite (would discard existing data). Verify the file's schema/key column ('$KeyColumn')."
@@ -10741,11 +10835,13 @@ function Merge-FactCsv {
 	# get blanks for target-only fields).
 	if ($targetRows.Count -gt 0) {
 		$targetHeaders = @($targetRows[0].PSObject.Properties.Name)
-		if ($KeyColumn -notin $targetHeaders) {
+		$requiredKeyCols = if ($useCompositeKey) { @($CompositeKeyColumn) } else { @($KeyColumn) }
+		$missingKeyCols  = @($requiredKeyCols | Where-Object { $_ -notin $targetHeaders })
+		if ($missingKeyCols.Count -gt 0) {
 			Microsoft.PowerShell.Utility\Write-Host (
-				("WARNING: Merge-FactCsv: target Fact CSV is missing dedup key column '{0}'. " +
+				("WARNING: Merge-FactCsv: target Fact CSV is missing dedup key column(s) '{0}'. " +
 				 "Cannot classify Retained / New / Departed rows reliably; treating ALL current-run rows as New. " +
-				 "Target: {1}") -f $KeyColumn, $TargetFactCsv
+				 "Target: {1}") -f ($missingKeyCols -join ', '), $TargetFactCsv
 			) -ForegroundColor Yellow
 		}
 	}
@@ -10753,18 +10849,16 @@ function Merge-FactCsv {
 
 	$targetByKey  = @{}
 	foreach ($r in $targetRows) {
-		$kProp = $r.PSObject.Properties[$KeyColumn]
-		$k = if ($kProp) { $kProp.Value } else { $null }
-		if (-not [string]::IsNullOrWhiteSpace([string]$k) -and -not $targetByKey.ContainsKey([string]$k)) {
-			$targetByKey[[string]$k] = $r
+		$k = [string](& $getRowKey $r)
+		if (-not [string]::IsNullOrWhiteSpace($k) -and -not $targetByKey.ContainsKey($k)) {
+			$targetByKey[$k] = $r
 		}
 	}
 	$currentByKey = @{}
 	foreach ($r in $currentRows) {
-		$kProp = $r.PSObject.Properties[$KeyColumn]
-		$k = if ($kProp) { $kProp.Value } else { $null }
-		if (-not [string]::IsNullOrWhiteSpace([string]$k) -and -not $currentByKey.ContainsKey([string]$k)) {
-			$currentByKey[[string]$k] = $r
+		$k = [string](& $getRowKey $r)
+		if (-not [string]::IsNullOrWhiteSpace($k) -and -not $currentByKey.ContainsKey($k)) {
+			$currentByKey[$k] = $r
 		}
 	}
 
@@ -10789,20 +10883,20 @@ function Merge-FactCsv {
 
 	# 1. Current-run rows (retained + new).
 	foreach ($r in $currentRows) {
-		$kProp = $r.PSObject.Properties[$KeyColumn]
-		$k = if ($kProp) { [string]$kProp.Value } else { '' }
+		$k = [string](& $getRowKey $r)
 		$obj = [ordered]@{}
 		foreach ($c in $hdrOrder) { $obj[$c] = '' }
 		foreach ($p in $r.PSObject.Properties) { $obj[$p.Name] = $p.Value }
 
 		if ($k -and $targetByKey.ContainsKey($k)) {
 			$tr = $targetByKey[$k]
-			# When dedup-keyed on Message_Id_Raw, target's Message_Id INT wins
-			# (continuity across runs; embedded Python seed-mid-map normally aligns
-			# this, but enforce here so a seed-prep failure still produces a
-			# continuous union). For other key columns (e.g. RecordId on the raw
-			# audit CSV) there is no surrogate-INT continuity contract.
-			if ($KeyColumn -eq 'Message_Id_Raw') {
+			# When dedup-keyed on Message_Id_Raw (single or as part of the grain-
+			# composite key), target's Message_Id INT wins (continuity across runs;
+			# embedded Python seed-mid-map normally aligns this, but enforce here so a
+			# seed-prep failure still produces a continuous union). For other single key
+			# columns (e.g. RecordId on the raw audit CSV) there is no surrogate-INT
+			# continuity contract.
+			if ($KeyColumn -eq 'Message_Id_Raw' -or ($useCompositeKey -and (@($CompositeKeyColumn) -contains 'Message_Id_Raw'))) {
 				$trMid = $tr.PSObject.Properties['Message_Id']
 				if ($trMid -and -not [string]::IsNullOrWhiteSpace([string]$trMid.Value)) {
 					$obj['Message_Id'] = $trMid.Value
@@ -14087,7 +14181,6 @@ function Connect-PurviewAudit {
 			# sign-in completes, so the log shows BOTH phases honestly side-by-side. Capture the
 			# Phase 1 context now into script-scope vars so the combined emitter can use them.
 			#
-			# v1.11.11 (D3): Agent 365 now runs on the SAME app-only context as the audit phase
 			# (app-only modes) - or the same delegated context (delegated modes) - so there is no
 			# separate Phase 2 context to combine and nothing to defer. Always emit the auth-context
 			# display inline below for every auth mode.
@@ -17407,12 +17500,12 @@ function Connect-Agent365InteractiveContext {
 function Invoke-Agent365EarlyInteractiveSignIn {
 	<#
 	.SYNOPSIS
-		No-op retained for call-site stability (defect D3, v1.11.11).
+		No-op retained for call-site stability.
 
 	.DESCRIPTION
 		Historically this performed an eager up-front interactive DELEGATED sign-in for the
 		Agent 365 phase under -Auth AppRegistration, because the catalog endpoint was assumed to
-		have no app-only Graph scope. As of v1.11.11 the Agent Package Management API is read with
+		have no app-only Graph scope. The Agent Package Management API is read with
 		the APPLICATION app-role CopilotPackages.Read.All (+ Application.Read.All) on the app /
 		managed-identity service principal, so NO interactive sign-in is required in ANY auth mode:
 		  - app-only modes (AppRegistration cert/secret, ManagedIdentity) reuse the existing
@@ -17513,6 +17606,35 @@ function Get-Agent365Packages {
 	return $results.ToArray()
 }
 
+function Invoke-Agent365GraphWithRetry {
+	<#
+	.SYNOPSIS
+		Throttle-aware Graph GET for the Agent 365 catalog read path. Retries on HTTP 429
+		and 5xx with exponential backoff (up to 5 attempts, min(60, 2^attempt) seconds),
+		honoring a Retry-After header when present. Non-throttle / non-5xx errors rethrow
+		immediately so callers keep their existing skip-with-warning behavior. Mirrors the
+		backoff convention used by the chunked remote-upload path.
+	#>
+	param([Parameter(Mandatory = $true)][string]$Uri)
+	$attempt = 0
+	while ($true) {
+		try {
+			return Invoke-MgGraphRequest -Method GET -Uri $Uri -ErrorAction Stop
+		} catch {
+			$status = try { [int]$_.Exception.Response.StatusCode.value__ } catch { 0 }
+			if ($status -eq 0) { if ($_.Exception.Message -match '429|Too Many Requests|TooManyRequests') { $status = 429 } }
+			$attempt++
+			if (($status -eq 429 -or $status -ge 500) -and $attempt -lt 5) {
+				$retryAfter = try { [int]$_.Exception.Response.Headers['Retry-After'] } catch { 0 }
+				$wait = if ($retryAfter -gt 0) { $retryAfter } else { [Math]::Min(60, [Math]::Pow(2, $attempt)) }
+				Start-Sleep -Seconds $wait
+				continue
+			}
+			throw
+		}
+	}
+}
+
 function Get-Agent365PackageDetail {
 	<#
 	.SYNOPSIS
@@ -17524,7 +17646,7 @@ function Get-Agent365PackageDetail {
 		Refresh-GraphTokenIfNeeded -ErrorAction SilentlyContinue
 	} catch {}
 	try {
-		return Invoke-MgGraphRequest -Method GET -Uri $uri -ErrorAction Stop
+		return Invoke-Agent365GraphWithRetry -Uri $uri
 	} catch {
 		Write-LogHost ("  WARNING: Agent 365 detail fetch failed for '{0}': {1}" -f $PackageId, $_.Exception.Message) -ForegroundColor Yellow
 		return $null
@@ -17549,7 +17671,7 @@ function Resolve-Agent365DeveloperName {
 	$resolved = ''
 	try {
 		$appUri = "https://graph.microsoft.com/v1.0/applications?`$filter=appId eq '$AppId'&`$select=id,displayName,publisherDomain"
-		$appResp = Invoke-MgGraphRequest -Method GET -Uri $appUri -ErrorAction Stop
+		$appResp = Invoke-Agent365GraphWithRetry -Uri $appUri
 		if ($appResp -and $appResp.value -and $appResp.value.Count -gt 0) {
 			$app = $appResp.value[0]
 			if ($app.publisherDomain) { $resolved = $app.publisherDomain }
@@ -17558,7 +17680,7 @@ function Resolve-Agent365DeveloperName {
 			if (-not $resolved -and $app.id) {
 				try {
 					$ownerUri = "https://graph.microsoft.com/v1.0/applications/$($app.id)/owners?`$select=userPrincipalName,displayName"
-					$ownerResp = Invoke-MgGraphRequest -Method GET -Uri $ownerUri -ErrorAction Stop
+					$ownerResp = Invoke-Agent365GraphWithRetry -Uri $ownerUri
 					if ($ownerResp -and $ownerResp.value -and $ownerResp.value.Count -gt 0) {
 						$resolved = $ownerResp.value[0].displayName
 						if (-not $resolved) { $resolved = $ownerResp.value[0].userPrincipalName }
@@ -17930,17 +18052,17 @@ function Invoke-Agent365Phase {
 	$idx = 0
 	foreach ($p in $listed) {
 		$idx++
-		$pid = $null
-		try { $pid = $p.id } catch {}
-		if (-not $pid) { try { $pid = $p.titleId } catch {} }
-		if (-not $pid) { continue }
-		$detail = Get-Agent365PackageDetail -PackageId $pid
+		$pkgId = $null
+		try { $pkgId = $p.id } catch {}
+		if (-not $pkgId) { try { $pkgId = $p.titleId } catch {} }
+		if (-not $pkgId) { continue }
+		$detail = Get-Agent365PackageDetail -PackageId $pkgId
 		if (-not $detail) { continue }
 		try {
 			$row = ConvertTo-Agent365Row -Package $detail -AuditEnrichment $script:Agent365AuditEnrichment
 			[void]$rows.Add($row)
 		} catch {
-			Write-LogHost ("  WARNING: Row build failed for package '{0}': {1}" -f $pid, $_.Exception.Message) -ForegroundColor Yellow
+			Write-LogHost ("  WARNING: Row build failed for package '{0}': {1}" -f $pkgId, $_.Exception.Message) -ForegroundColor Yellow
 		}
 		if (($idx % 25) -eq 0) {
 			Write-LogHost ("    ... {0}/{1} packages processed" -f $idx, $listed.Count) -ForegroundColor DarkGray
@@ -20235,9 +20357,6 @@ else {
 	$auditContextLbl = if ($isManagedId) { 'APP-ONLY (managed identity / application permissions)' }
 					   elseif ($isAppOnlyAuth) { 'APP-ONLY (application permissions)' }
 					   else { 'DELEGATED (interactive user sign-in)' }
-	# v1.11.11 (D3): Agent 365 no longer opens a separate delegated Phase 2 context - app-only modes
-	# reuse the app-only audit context and delegated modes reuse their delegated context. There is no
-	# longer a dual-context run, so the auth-context summary shows a single context for every mode.
 
 	Write-LogHost "═══════════════════════════════════════════════════════" -ForegroundColor Green
 	Write-LogHost "  QUERY MODE: Microsoft Graph Security API (Default)" -ForegroundColor Green
@@ -20261,14 +20380,6 @@ else {
 	Write-LogHost "  Permissions Required for THIS run:" -ForegroundColor White
 	Write-LogHost "                    (Yellow = required this run; DarkGray = not needed this run)" -ForegroundColor Gray
 
-	# Build conditional Tag legend so only relevant tags are shown:
-	#   [App-only]   appears under -Auth AppRegistration OR -Auth ManagedIdentity (both are app-only)
-	#   [Delegated]  appears only under a non-app-only (delegated) auth mode. As of v1.11.11 Agent 365
-	#                uses APPLICATION app-roles under app-only auth, so app-only runs surface no
-	#                [Delegated] tag even when Agent 365 is included.
-	#   [Role]       appears only when Agent 365 is in a DELEGATED run (an app-only run needs the
-	#                CopilotPackages.Read.All app-role, not an Entra directory role on a user)
-	#   [Azure RBAC] appears only when an -OutputPath* value is a OneLake URL (Fabric uses storage RBAC, not Graph)
 	$tagLegendLines = New-Object System.Collections.Generic.List[string]
 	if ($isAppOnlyAuth) {
 		if ($isManagedId) {
@@ -23664,10 +23775,6 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 			Import-Module ExchangeOnlineManagement -Force
 		}
 
-		# Banner 7a: app-only Agent 365 informational notice (AppRegistration certificate/secret or
-		# ManagedIdentity + Agent 365). As of v1.11.11 (D3) the Agent 365 catalog is read with the
-		# APPLICATION app-role CopilotPackages.Read.All on the service principal - no interactive
-		# sign-in is performed and the whole run stays on a single app-only Graph context.
 		if (($IncludeAgent365Info -or $OnlyAgent365Info) -and ($Auth -eq 'AppRegistration' -or $Auth -eq 'ManagedIdentity')) {
 			Write-LogHost ""
 			Write-LogHost "+----------------------------------------------------------------------+" -ForegroundColor Cyan
@@ -23908,10 +24015,6 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		}
 		# PAX4A-INGEST-END
 
-		# Agent 365 no longer requires an eager interactive sign-in (v1.11.11, D3): app-only modes
-		# (AppRegistration cert/secret, ManagedIdentity) reuse the existing application context and
-		# delegated modes already hold their Agent 365 scopes from the initial sign-in. The call
-		# below is a retained no-op kept for wiring stability; it never prompts in any auth mode.
 		if (-not $UseEOM) {
 			$null = Invoke-Agent365EarlyInteractiveSignIn
 		}
@@ -32262,7 +32365,7 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				# the UserInfo destination. When -OutputPathUserInfo supplies a file-form leaf,
 				# the rolled-up leaf ('<custom-stem>_Users.csv') does NOT carry the current
 				# run timestamp, so the remote upload sweep's timestamp wildcard misses it
-				# (D2 / NatWest: '-AppendFile + -OutputPathUserInfo + -Rollup' shipped only
+				# (previously, '-AppendFile + -OutputPathUserInfo + -Rollup' produced only
 				# 2 artifacts, dropping the Entra Users dim). Register the leaf explicitly —
 				# exactly like the M365 sidecar leaves — so the upload sweep includes it;
 				# per-data-type routing (Get-DataTypeForOutputFile -> 'UserInfo') then lands
@@ -32303,19 +32406,35 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 					try {
 						$rollupPurviewStem = [System.IO.Path]::GetFileNameWithoutExtension($rollupPurviewCsv)
 						$rollupFactCsv     = Join-Path $rollupOutputDir ("{0}_Interactions.csv" -f $rollupPurviewStem)
-						# OD2 (append data-safety): a pre-v1.11.11 seed has no 'Message_Id_Raw'
-						# dedup key and cannot reconcile on real message identity. Merging into
-						# such a target would classify every existing row as departed and (when the
-						# seed is smaller than this run) silently overwrite it with current-only
-						# rows. Probe the target header; if the key is absent, SKIP the in-place
-						# merge, leave the seed untouched, and write this run's rollup to a new
-						# timestamped file so the customer can re-baseline. The run still succeeds.
 						$rollupAfSkipMerge = $false
+						$rollupAfSkipReason = ''
+						$rollupAfCompositeKey = @()
 						if ((Test-Path -LiteralPath $rollupFactCsv) -and (Test-Path -LiteralPath $AppendFile -PathType Leaf)) {
 							try {
 								$rollupAfHdrLine = @(Get-Content -LiteralPath $AppendFile -TotalCount 1)
 								$rollupAfCols = if ($rollupAfHdrLine.Count -gt 0) { ($rollupAfHdrLine[0] -split ',') | ForEach-Object { $_.Trim().Trim('"') } } else { @() }
-								if (-not ($rollupAfCols -contains 'Message_Id_Raw')) { $rollupAfSkipMerge = $true }
+								# Derive the grain-composite dedup key from the FRESH
+								# rollup fact header (always current-schema), then require the TARGET to
+								# carry every composite column. Fact rows fan out (many per
+								# Message_Id_Raw, one per grain), so append dedup MUST key on the full
+								# grain (UserKey/ThreadId in stable raw form) + Message_Id_Raw or fan-out
+								# rows collapse and data is lost. Missing composite columns on the target
+								# (e.g. an older AIO seed with no User_Id_Normalized) route to the
+								# same data-loss-safe re-baseline skip as an older seed with no reconciliation key.
+								$rollupCurHdrLine = @(Get-Content -LiteralPath $rollupFactCsv -TotalCount 1)
+								$rollupCurCols = if ($rollupCurHdrLine.Count -gt 0) { ($rollupCurHdrLine[0] -split ',') | ForEach-Object { $_.Trim().Trim('"') } } else { @() }
+								$rollupAfCompositeKey = @(Get-FactCompositeKeyColumns -HeaderColumns $rollupCurCols)
+								if (-not ($rollupAfCols -contains 'Message_Id_Raw')) {
+									$rollupAfSkipMerge = $true
+									$rollupAfSkipReason = "target lacks the 'Message_Id_Raw' dedup key (pre-v1.11.11 seed)"
+								}
+								elseif ($rollupAfCompositeKey.Count -gt 0) {
+									$rollupAfMissingKeyCols = @($rollupAfCompositeKey | Where-Object { $_ -notin $rollupAfCols })
+									if ($rollupAfMissingKeyCols.Count -gt 0) {
+										$rollupAfSkipMerge = $true
+										$rollupAfSkipReason = ("target is missing grain-composite dedup column(s) [{0}] (pre-v1.11.12 seed)" -f ($rollupAfMissingKeyCols -join ', '))
+									}
+								}
 							}
 							catch {
 								# Header probe failed; fall through to Merge-FactCsv whose own
@@ -32328,13 +32447,13 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 							$rollupAfRebaselinePath = Join-Path $rollupOutputDir $rollupAfRebaselineName
 							Move-Item -LiteralPath $rollupFactCsv -Destination $rollupAfRebaselinePath -Force
 							$_rollupAfDisplay = if ($script:AppendRaw.ContainsKey('Purview') -and $script:AppendRaw['Purview']) { $script:AppendRaw['Purview'] } else { $AppendFile }
-							Write-LogHost ("Rollup: -AppendFile: target lacks the 'Message_Id_Raw' dedup key (pre-v1.11.11 seed); append SKIPPED to prevent data loss.") -ForegroundColor Yellow
+							Write-LogHost ("Rollup: -AppendFile: {0}; append SKIPPED to prevent data loss." -f $rollupAfSkipReason) -ForegroundColor Yellow
 							Write-LogHost ("Rollup:   -> Target left unchanged: {0}" -f $_rollupAfDisplay) -ForegroundColor Yellow
 							Write-LogHost ("Rollup:   -> This run's rollup written to: {0}" -f (Get-DisplayPath -LocalPath $rollupAfRebaselinePath)) -ForegroundColor Yellow
-							Write-LogHost  "Rollup:   -> To re-baseline: use this new file as your -AppendFile target going forward (it carries Message_Id_Raw); subsequent appends will reconcile on real message identity." -ForegroundColor Yellow
+							Write-LogHost  "Rollup:   -> To re-baseline: use this new file as your -AppendFile target going forward (it carries Message_Id_Raw and the full grain-composite key); subsequent appends reconcile on real grain + message identity." -ForegroundColor Yellow
 						}
 						elseif (Test-Path -LiteralPath $rollupFactCsv) {
-							$rollupFactMergeStats = Merge-FactCsv -TargetFactCsv $AppendFile -CurrentFactCsv $rollupFactCsv -KeyColumn 'Message_Id_Raw' -OutputPath $AppendFile
+							$rollupFactMergeStats = Merge-FactCsv -TargetFactCsv $AppendFile -CurrentFactCsv $rollupFactCsv -KeyColumn 'Message_Id_Raw' -CompositeKeyColumn $rollupAfCompositeKey -OutputPath $AppendFile
 							Write-LogHost ("Rollup: -AppendFile merge: Retained={0:N0}  New={1:N0}  Departed={2:N0}  Union={3:N0}" -f $rollupFactMergeStats.Retained, $rollupFactMergeStats.New, $rollupFactMergeStats.Departed, $rollupFactMergeStats.Union) -ForegroundColor Green
 							$_rollupAfDisplay = if ($script:AppendRaw.ContainsKey('Purview') -and $script:AppendRaw['Purview']) { $script:AppendRaw['Purview'] } else { $AppendFile }
 							Write-LogHost ("Appended to: {0}" -f $_rollupAfDisplay) -ForegroundColor White
