@@ -21,9 +21,11 @@
               GroupMember.Read.All (always); AuditLogsQuery-Exchange.Read.All,
               AuditLogsQuery-OneDrive.Read.All, AuditLogsQuery-SharePoint.Read.All
               (only when PAX is invoked with -IncludeM365Usage).
-              Note: Agent 365 scopes (CopilotPackages.Read.All, Application.Read.All)
-              and the legacy AuditLog.Read.All Entra-audit scope are NOT used by PAX
-              and are intentionally not granted.
+              Agent 365 scopes (CopilotPackages.Read.All, Application.Read.All) are
+              granted only when Grant-PAXPermissions.ps1 is run with -IncludeAgent365
+              (opt-in / pre-GA app-only Agent 365 enrichment); they are not granted by
+              default. The legacy AuditLog.Read.All Entra-audit scope is not used by PAX
+              and is never granted.
           * Sites.ReadWrite.All + Files.ReadWrite.All (SharePoint mode), OR
             Contributor / Storage Blob Data Contributor on the Fabric workspace (Fabric mode)
 

@@ -1,8 +1,8 @@
 # PAX Purview Audit Log Processor — ACA Job Deployment (Container path)
 
 > [!IMPORTANT]
-> **Microsoft Agent 365 enrichment is fully supported.**
-> The `-IncludeAgent365Info`, `-OnlyAgent365Info`, `-OutputPathAgent365Info`, and `-AppendAgent365Info` switches require interactive (delegated) sign-in by an AI Administrator or Global Administrator; ManagedIdentity is not supported for this stream.
+> **Microsoft Agent 365 enrichment is supported on this container path via app-only auth (opt-in / pre-GA).**
+> The `-IncludeAgent365Info`, `-OnlyAgent365Info`, `-OutputPathAgent365Info`, and `-AppendAgent365Info` switches run under `-Auth ManagedIdentity` (app-only) once the managed identity holds the application permissions `CopilotPackages.Read.All` + `Application.Read.All` (admin-consented) — no interactive sign-in is required. Grant them by running `../Prereqs/Grant-PAXPermissions.ps1` with `-IncludeAgent365` (not granted by default). This app-only path is **pre-GA** — validate it in your tenant before relying on it in production.
 
 > **Two ways to use PAX with Fabric.** This README covers the **container path** — a scheduled, unattended run hosted on Azure Container Apps Jobs using a managed identity. If you want to run PAX directly from a laptop, on-prem server, or Azure VM and still write to Fabric/OneLake, see [`../LocalRun/README.md`](../LocalRun/README.md) (no container build, no ACR, no ACA — just PowerShell + an Entra identity that has Fabric workspace access). The top-level [`../README.md`](../README.md) compares the two paths side-by-side.
 
@@ -148,6 +148,8 @@ Rules enforced at parameter validation: every supplied URL must resolve to the s
     ) `
     -CronExpression '0 6 * * *'
 ```
+
+> **This example uses `-IncludeAgent365Info` under `-Auth ManagedIdentity` (app-only).** It requires the managed identity to hold `CopilotPackages.Read.All` + `Application.Read.All` — grant them with `../Prereqs/Grant-PAXPermissions.ps1 -IncludeAgent365`. App-only Agent 365 is opt-in / pre-GA; validate it in your tenant before relying on it in production. (Omit the Agent 365 switches, or the `-IncludeAgent365` grant, if you don't need this stream.)
 
 ### Provenance columns on appended files
 
@@ -325,7 +327,7 @@ Or open the file share in Azure Storage Explorer / Azure portal. The failed cont
 
 ## Notes
 
-- **Agent 365 enrichment is NOT supported under `-Auth ManagedIdentity`.** PAX rejects `-IncludeAgent365Info` and `-OnlyAgent365Info` up-front when `-Auth ManagedIdentity` is in effect. The Microsoft Graph Agent Package Management API requires the AI Administrator or Global Administrator directory role, which can only be held by a signed-in user; a managed identity has no user principal and cannot satisfy the requirement, even with admin-consented application permissions. If you need Agent 365 enrichment, run PAX interactively (`-Auth WebLogin` or `DeviceCode`), or with `-Auth AppRegistration` (PAX will interactively top up a delegated context for the Agent 365 phase only). For the unattended ACA-Job pattern this README covers, simply omit those switches.
+- **Agent 365 enrichment under `-Auth ManagedIdentity` (app-only, opt-in / pre-GA).** PAX runs `-IncludeAgent365Info` / `-OnlyAgent365Info` app-only under `-Auth ManagedIdentity` (and `-Auth AppRegistration`) with no interactive sign-in, provided the identity holds the application permissions `CopilotPackages.Read.All` + `Application.Read.All` (admin-consented). Grant them with `../Prereqs/Grant-PAXPermissions.ps1 -IncludeAgent365` — they are not granted by default. A missing app-role, unlicensed tenant, or absent program enrollment surfaces as a runtime 403 (the rest of the run completes normally). This app-only path is **pre-GA** — validate it before relying on it in production. (Delegated Agent 365 instead relies on the signed-in user's AI Administrator / Global Administrator directory role, e.g. on the local-run path.)
 - **Fabric `-OutputPath` shapes the script accepts:**
   - `https://<tenant>.onelake.dfs.fabric.microsoft.com/<Workspace>/<Lakehouse>.Lakehouse` — main Delta tables go under the Lakehouse's default `Tables/` area.
   - `…/<Lakehouse>.Lakehouse/Tables` — explicit non-Schemas form.

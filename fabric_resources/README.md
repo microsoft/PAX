@@ -8,15 +8,15 @@ PAX writes Delta tables and files to a Microsoft Fabric Lakehouse whenever an `-
 | **Setup complexity** | Low — no Azure resources required beyond the Fabric workspace itself | High — ACR, ACA environment, managed identity, image build |
 | **What invokes the script** | You (or Task Scheduler / cron on the host) | ACA Job runtime, on a cron expression |
 | **Auth modes that fit** | `-Auth WebLogin`, `-Auth DeviceCode`, `-Auth AppRegistration` (cert or secret), `-Auth Credential`, `-Auth Silent` | `-Auth ManagedIdentity` (recommended) or `-Auth AppRegistration` |
-| **Agent 365 enrichment (`-IncludeAgent365Info` / `-OnlyAgent365Info`) supported?** | Yes — under any delegated auth mode | No (under `-Auth ManagedIdentity`). Yes if you use `-Auth AppRegistration` (PAX top-ups a delegated context for the agent phase only). |
+| **Agent 365 enrichment (`-IncludeAgent365Info` / `-OnlyAgent365Info`) supported?** | Yes — delegated (the signed-in user needs the **AI Administrator** or **Global Administrator** directory role) | Yes — via **app-only** auth (`-Auth ManagedIdentity` or `-Auth AppRegistration`) using the application permissions `CopilotPackages.Read.All` + `Application.Read.All`. **Opt-in / pre-GA** — enable with `Grant-PAXPermissions.ps1 -IncludeAgent365` and validate in your tenant before relying on it in production. |
 | **Secret rotation** | Your responsibility (if using `AppRegistration` with a secret) | None when using managed identity |
 | **Setup scripts in this folder** | None required. See [`LocalRun/README.md`](LocalRun/README.md) for the step-by-step. | [`Prereqs/Grant-PAXPermissions.ps1`](Prereqs/Grant-PAXPermissions.ps1) and [`Deploy/Deploy-PAXAcaJob.ps1`](Deploy/Deploy-PAXAcaJob.ps1). See [`Prereqs/README.md`](Prereqs/README.md) and [`Deploy/README.md`](Deploy/README.md). |
 | **Image** | Not needed | Built from [`Dockerfile/PAX.Dockerfile`](Dockerfile/PAX.Dockerfile), pushed to ACR |
 
 ## Which one should I pick?
 
-- **Pick Path A** if you want the fastest possible time-to-first-write, you are okay with the run being tied to whatever host you put it on, and / or you need Agent 365 enrichment.
-- **Pick Path B** if you want a fully unattended scheduled run hosted entirely inside Azure, with no long-lived secrets, and you do not need Agent 365 enrichment.
+- **Pick Path A** if you want the fastest possible time-to-first-write, you are okay with the run being tied to whatever host you put it on, and / or you want the simplest route to **delegated** Agent 365 enrichment.
+- **Pick Path B** if you want a fully unattended scheduled run hosted entirely inside Azure, with no long-lived secrets. Agent 365 enrichment is also available on this path via **app-only** auth (opt-in / pre-GA — see `Prereqs/Grant-PAXPermissions.ps1 -IncludeAgent365`).
 
 Both paths write to the **same Fabric workspace and lakehouse** in the same way — the script does not detect whether it is containerized. The only difference is where the script runs and how its identity is established.
 
@@ -50,7 +50,15 @@ With `-IncludeM365Usage`:
 - `AuditLogsQuery-OneDrive.Read.All`
 - `AuditLogsQuery-SharePoint.Read.All`
 
-(The container path's `Prereqs/Grant-PAXPermissions.ps1` provisions all of these for you. The local path defers to whatever auth mode you pick — see `LocalRun/README.md`.)
+With Agent 365 enrichment (`-IncludeAgent365Info` / `-OnlyAgent365Info`) under **app-only** auth:
+- `CopilotPackages.Read.All`
+- `Application.Read.All`
+
+  **Opt-in / pre-GA.** On the container path, grant these with `Grant-PAXPermissions.ps1 -IncludeAgent365`; they are not granted by default. Under **delegated** auth the signed-in user instead needs the **AI Administrator** or **Global Administrator** directory role (no extra application permission).
+
+> **`-UserInfoFile` can reduce the required Graph scopes.** When you supply the user/organization directory from your own CSV via `-UserInfoFile` and every row carries a license value, PAX skips the live `/users` pull and the `/subscribedSkus` license lookup — so `User.Read.All` and `Organization.Read.All` may not be needed for that run. A single blank license value re-triggers the online license lookup (which needs `User.Read.All` + `Organization.Read.All`).
+
+(The container path's `Prereqs/Grant-PAXPermissions.ps1` provisions the always-on and `-IncludeM365Usage` scopes for you, plus the Agent 365 scopes when you pass `-IncludeAgent365`. The local path defers to whatever auth mode you pick — see `LocalRun/README.md`.)
 
 ## Destination model
 

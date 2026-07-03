@@ -1,6 +1,6 @@
 # PAX + Fabric — Local / Direct run (Path A)
 
-Run PAX directly from a Windows laptop, on-prem server, or Azure VM and write outputs to a Fabric Lakehouse. **No container build, no ACR, no ACA, and no `Grant-PAXPermissions.ps1` are required.** This is the lower-setup path; pick it when you do not need a fully unattended Azure-hosted scheduled run, or when you need Microsoft Agent 365 enrichment (which is unsupported under managed identity — see the container path README).
+Run PAX directly from a Windows laptop, on-prem server, or Azure VM and write outputs to a Fabric Lakehouse. **No container build, no ACR, no ACA, and no `Grant-PAXPermissions.ps1` are required.** This is the lower-setup path; pick it when you do not need a fully unattended Azure-hosted scheduled run, or when you want the simplest route to **delegated** Microsoft Agent 365 enrichment. (Agent 365 also runs **app-only** under managed identity on the container path — opt-in / pre-GA; see the container path README.)
 
 For the side-by-side comparison of this path vs. the container path, see [`../README.md`](../README.md).
 
@@ -58,7 +58,9 @@ When you intend to pass `-IncludeM365Usage`:
 - `AuditLogsQuery-OneDrive.Read.All`
 - `AuditLogsQuery-SharePoint.Read.All`
 
-If you want Microsoft Agent 365 enrichment (`-IncludeAgent365Info` / `-OnlyAgent365Info`), the **signed-in user** also needs the **AI Administrator** or **Global Administrator** directory role. This requirement is a server-side check on the Agent 365 endpoint and cannot be satisfied by application permissions alone. (Use `-Auth WebLogin`, `DeviceCode`, `Credential`, `Silent`, or `AppRegistration`. Managed identity is rejected up-front for Agent 365.)
+> **`-UserInfoFile` can reduce the required scopes.** If you supply the user/organization directory from your own CSV via `-UserInfoFile` and every row includes a license value, PAX skips the live `/users` pull and the `/subscribedSkus` license lookup — so `User.Read.All` and `Organization.Read.All` may not be needed for that run. A single blank license value re-triggers the online license lookup (`User.Read.All` + `Organization.Read.All`).
+
+If you want Microsoft Agent 365 enrichment (`-IncludeAgent365Info` / `-OnlyAgent365Info`) under **delegated** auth (`-Auth WebLogin` / `DeviceCode` / `Credential` / `Silent`), the **signed-in user** needs the **AI Administrator** or **Global Administrator** directory role — a server-side check on the Agent 365 endpoint. Under **app-only** auth (`-Auth AppRegistration` certificate/secret, or `-Auth ManagedIdentity`) no directory role or interactive sign-in is required; instead grant the application permissions **`CopilotPackages.Read.All`** + **`Application.Read.All`** (admin-consented). App-only Agent 365 is **opt-in / pre-GA** — validate it in your tenant before relying on it in production.
 
 ---
 
@@ -171,7 +173,7 @@ If you want unattended runs but prefer not to manage a cert or secret, host PAX 
        -Rollup
    ```
 
-This is functionally identical to the container path but skips the ACR + ACA layer. **Remember: Agent 365 enrichment is rejected up-front under `-Auth ManagedIdentity`.**
+This is functionally identical to the container path but skips the ACR + ACA layer. **Note: Agent 365 enrichment runs app-only under `-Auth ManagedIdentity` when the identity holds `CopilotPackages.Read.All` + `Application.Read.All` (opt-in / pre-GA — see the Microsoft Graph permissions section above).**
 
 ---
 
@@ -262,7 +264,7 @@ Every appended file gains three trailing columns at merge time:
 | `Latest_Append_Date` | `YYYY-MM-DD` | Latest run that touched the file (same on every row). |
 | `In_Latest_Append` | `TRUE` / `FALSE` | Whether the row appeared in this run's audit window / membership snapshot. `FALSE` for rows retained from prior runs that no longer surface today. |
 
-The CopilotInteraction rollup Fact CSV additionally carries two stable identity columns: **`Message_Id_Raw`** and **`ThreadId_Raw`**. These keep the per-run integer surrogates (`Message_Id`, `ThreadId`) stable across appends so multi-month threads remain a single thread in downstream models.
+The CopilotInteraction rollup Fact CSV additionally carries stable identity columns: the raw keys **`Message_Id_Raw`** and **`ThreadId_Raw`**, plus a normalized user column (**`User_Id_Normalized`** on the AIO fact; **`Audit_UserId_Normalized`** on AIBV). These keep the per-run integer surrogates (`Message_Id`, `ThreadId`, `UserKey`) stable across appends — the cross-run append merge dedups on the full grain plus `Message_Id_Raw`, so multi-month threads remain a single thread and fan-out rows (many per message) reconcile independently in downstream models.
 
 ### Pristine raw EntraUsers under `-AppendUserInfo`
 

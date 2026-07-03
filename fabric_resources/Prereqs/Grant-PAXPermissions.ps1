@@ -20,17 +20,22 @@
            - AuditLogsQuery-Exchange.Read.All         (-IncludeM365Usage only)
            - AuditLogsQuery-OneDrive.Read.All         (-IncludeM365Usage only)
            - AuditLogsQuery-SharePoint.Read.All       (-IncludeM365Usage only)
+           - CopilotPackages.Read.All                 (-IncludeAgent365 only — opt-in / pre-GA)
+           - Application.Read.All                     (-IncludeAgent365 only — opt-in / pre-GA)
            - Sites.ReadWrite.All, Files.ReadWrite.All (SharePoint mode only)
+
+         OPT-IN — Microsoft Agent 365 (app-only, pre-GA):
+           PAX supports Agent 365 enrichment (-IncludeAgent365Info / -OnlyAgent365Info)
+           under -Auth ManagedIdentity (and -Auth AppRegistration) app-only, using the
+           application permissions CopilotPackages.Read.All + Application.Read.All with NO
+           interactive sign-in. These are NOT granted by default (least-privilege). Pass
+           -IncludeAgent365 to grant + admin-consent them. This path is pre-GA — validate
+           in your tenant before relying on it in production. (Delegated Agent 365 instead
+           relies on the signed-in user's AI Admin / Global Admin directory role.)
 
          NOT granted (intentionally):
            - AuditLog.Read.All        — different endpoint (Entra audit activities), not
                                         used by PAX.
-           - CopilotPackages.Read.All — Agent 365 enrichment requires a user-bound role
-                                        (AI Admin / Global Admin) that a managed identity
-                                        cannot hold. PAX rejects -IncludeAgent365Info /
-                                        -OnlyAgent365Info under -Auth ManagedIdentity.
-           - Application.Read.All     — only consumed by the Agent 365 path, which is
-                                        unsupported under -Auth ManagedIdentity.
 
       4. (SharePoint mode) Adds Sites.ReadWrite.All and Files.ReadWrite.All to the
          scope list above so PAX can write outputs to the destination SharePoint
@@ -70,6 +75,13 @@
     AuditLogsQuery-SharePoint.Read.All). Omit when you only need the unified
     AuditLogsQuery.Read.All umbrella scope.
 
+.PARAMETER IncludeAgent365
+    Opt-in / pre-GA. Grant the two Microsoft Agent 365 application permissions
+    (CopilotPackages.Read.All + Application.Read.All) so the managed identity can run
+    PAX's -IncludeAgent365Info / -OnlyAgent365Info app-only (no interactive sign-in).
+    Omit unless you intend to run Agent 365 enrichment on the container path. This path
+    is pre-GA — validate in your tenant before relying on it in production.
+
 .EXAMPLE
     # SharePoint mode
     ./Grant-PAXPermissions.ps1 `
@@ -87,6 +99,16 @@
         -Mode Fabric `
         -FabricWorkspaceResourceId '/subscriptions/.../workspaces/PAX-Workspace' `
         -IncludeM365Usage
+
+.EXAMPLE
+    # Fabric mode, opt-in app-only Microsoft Agent 365 enrichment (pre-GA)
+    ./Grant-PAXPermissions.ps1 `
+        -SubscriptionId 'xxx' -ResourceGroup 'rg-pax' `
+        -ManagedIdentityName 'uai-pax' -Location 'eastus' `
+        -AcrResourceId '/subscriptions/.../registries/paxacr' `
+        -Mode Fabric `
+        -FabricWorkspaceResourceId '/subscriptions/.../workspaces/PAX-Workspace' `
+        -IncludeAgent365
 #>
 [CmdletBinding()]
 param(
@@ -97,7 +119,8 @@ param(
     [Parameter(Mandatory)] [string] $AcrResourceId,
     [Parameter(Mandatory)] [ValidateSet('SharePoint','Fabric')] [string] $Mode,
     [Parameter()]          [string] $FabricWorkspaceResourceId,
-    [Parameter()]          [switch] $IncludeM365Usage
+    [Parameter()]          [switch] $IncludeM365Usage,
+    [Parameter()]          [switch] $IncludeAgent365
 )
 
 $ErrorActionPreference = 'Stop'
@@ -215,6 +238,17 @@ if ($IncludeM365Usage) {
         'AuditLogsQuery-Exchange.Read.All',
         'AuditLogsQuery-OneDrive.Read.All',
         'AuditLogsQuery-SharePoint.Read.All'
+    )
+}
+if ($IncludeAgent365) {
+    # Opt-in / pre-GA: application permissions for app-only Microsoft Agent 365 enrichment
+    # (-IncludeAgent365Info / -OnlyAgent365Info) under -Auth ManagedIdentity. No interactive
+    # sign-in is performed; a missing app-role, unlicensed tenant, or absent program
+    # enrollment surfaces as a runtime 403 in PAX. Validate before relying on it in production.
+    Write-Host "  Agent 365 (opt-in / pre-GA): granting CopilotPackages.Read.All + Application.Read.All." -ForegroundColor Yellow
+    $requiredScopes += @(
+        'CopilotPackages.Read.All',
+        'Application.Read.All'
     )
 }
 if ($Mode -eq 'SharePoint') {
