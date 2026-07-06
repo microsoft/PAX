@@ -2,7 +2,7 @@
 
 ## Release Information
 
-- **Latest Version:** 1.11.13
+- **Latest Version:** 1.11.14
 - **Latest Release Date:** July 6, 2026
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
@@ -12,12 +12,24 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.11.13:** [PAX_Purview_Audit_Log_Processor_v1.11.13.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.13/PAX_Purview_Audit_Log_Processor_v1.11.13.ps1)
+- **PAX Purview Audit Log Processor Script v1.11.14:** [PAX_Purview_Audit_Log_Processor_v1.11.14.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.14/PAX_Purview_Audit_Log_Processor_v1.11.14.ps1)
 - **Documentation v1.11.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md)
 
 ---
 
 ## Overview
+
+### v1.11.14
+
+Version 1.11.14 is a reliability release that fixes two remote-output delivery defects. Both fixes restore intended behavior — there are no new switches, no output-schema changes, and no change to how any run is invoked; runs that do not use the affected remote-output paths behave exactly as in v1.11.13. The first fix ensures the Microsoft Agent 365 catalog CSV is actually delivered to a SharePoint or Microsoft Fabric / OneLake destination (previously it could be generated but not uploaded). The second ensures a custom-named per-stream output file is delivered to its own per-stream destination rather than the primary output location. This release also carries early groundwork for a future AI Solutions Intelligence Dashboard (AISID) capability that is **not available in this version** — see [Known Considerations → v1.11.14](#v11114-3).
+
+#### Microsoft Agent 365 Catalog CSV Delivered to Remote Destinations
+
+On a remote-output run (SharePoint or Microsoft Fabric / OneLake) that included the Microsoft Agent 365 catalog, the catalog CSV could be generated but not uploaded to the destination, even though the other artifacts (audit CSV, Entra Users, run log) uploaded normally. The catalog CSV is now registered with the end-of-run upload step in every remote-output mode, so it is delivered in the same final upload as every other artifact; a genuine upload failure now also preserves the local copy for retry. There are no new switches and no change to how the Agent 365 export is run. See [Bug Fixes → v1.11.14](#v11114-2) for details.
+
+#### Custom-Named Per-Stream Output Delivered to Its Own Destination
+
+On a remote-output run that sent a per-stream output (for example the Agent 365 catalog or the Entra Users file) to a per-stream destination using a custom file name, the file could be delivered to the primary output location rather than the per-stream destination that was specified. Each file is now identified by the stream that produced it, so a custom-named per-stream file is delivered to its own destination; files with standard names resolve to exactly the same destination as before. See [Bug Fixes → v1.11.14](#v11114-2) for details.
 
 ### v1.11.13
 
@@ -25,11 +37,11 @@ Version 1.11.13 is a reliability release that fixes two field-reported defects. 
 
 #### Microsoft Agent 365 Catalog Enrichment Restored (App-Only Runs)
 
-Under app-only authentication, the Agent 365 catalog enrichment step could fail for every catalog entry, producing an export with no rows even when the catalog listed hundreds of packages. Enrichment now completes normally so catalog rows are written, with a defensive fallback that logs a clear warning and continues with blank date-created / created-by values rather than dropping rows if enrichment data is ever unavailable. There are no new switches and no change to how the Agent 365 export is run. See [Bug Fixes → v1.11.13](#v11113-1) for details.
+Under app-only authentication, the Agent 365 catalog enrichment step could fail for every catalog entry, producing an export with no rows even when the catalog listed hundreds of packages. Enrichment now completes normally so catalog rows are written, with a defensive fallback that logs a clear warning and continues with blank date-created / created-by values rather than dropping rows if enrichment data is ever unavailable. There are no new switches and no change to how the Agent 365 export is run. See [Bug Fixes → v1.11.13](#v11113-2) for details.
 
 #### Cross-Run Append Restored for Custom-Named Remote Rollup Targets (`-AppendFile`)
 
-When appending a rolled-up interactions run (`-Rollup` with `-AppendFile`) to a target on SharePoint or Microsoft Fabric / OneLake whose filename did not follow the standard rolled-up naming, the run could add zero new rows and mark every existing row as departed — even though fresh interactions were retrieved. The run now always processes its own fresh export (never the downloaded copy of the target) regardless of the target's filename, so the append reconciles correctly: overlapping rows de-duplicate, new rows are added, and existing rows are preserved. A note is now logged when a rollup append target uses a non-standard name. The existing append data-safety protections are unchanged. See [Bug Fixes → v1.11.13](#v11113-1) for details.
+When appending a rolled-up interactions run (`-Rollup` with `-AppendFile`) to a target on SharePoint or Microsoft Fabric / OneLake whose filename did not follow the standard rolled-up naming, the run could add zero new rows and mark every existing row as departed — even though fresh interactions were retrieved. The run now always processes its own fresh export (never the downloaded copy of the target) regardless of the target's filename, so the append reconciles correctly: overlapping rows de-duplicate, new rows are added, and existing rows are preserved. A note is now logged when a rollup append target uses a non-standard name. The existing append data-safety protections are unchanged. See [Bug Fixes → v1.11.13](#v11113-2) for details.
 
 ### v1.11.12
 
@@ -81,11 +93,11 @@ Version 1.11.9 is a resume-only reliability release that fixes a regression in w
 
 #### Resumed Runs Restore Append, Deidentify, Filler, and Per-Stream Destinations
 
-A resumed run (`-Resume`) again reproduces the original run's settings instead of silently reverting them to defaults. A regression in v1.11.8's checkpoint-restore logic — a presence check that did not work against the checkpoint's in-memory form — caused several newer settings to be dropped on resume: most visibly a resumed `-AppendFile` run stopped appending and wrote a separate new file, and the same cause dropped `-Deidentify` (so a resumed anonymized run could write raw, identifiable data), `-FillerLabel` / `-FillerLabelText`, and the per-stream `-AppendUserInfo` / `-AppendAgent365Info` and `-OutputPathUserInfo` / `-OutputPathAgent365Info` / `-OutputPathLog` destinations. All are now restored exactly as the original run had them, on every storage tier (Local, SharePoint, Fabric), and the small-dataset (non-streaming) export path is also redirected to the restored append target so a small resumed append union-merges into the target rather than leaving a separate file. See [Bug Fixes → v1.11.9](#v1119-1) for details.
+A resumed run (`-Resume`) again reproduces the original run's settings instead of silently reverting them to defaults. A regression in v1.11.8's checkpoint-restore logic — a presence check that did not work against the checkpoint's in-memory form — caused several newer settings to be dropped on resume: most visibly a resumed `-AppendFile` run stopped appending and wrote a separate new file, and the same cause dropped `-Deidentify` (so a resumed anonymized run could write raw, identifiable data), `-FillerLabel` / `-FillerLabelText`, and the per-stream `-AppendUserInfo` / `-AppendAgent365Info` and `-OutputPathUserInfo` / `-OutputPathAgent365Info` / `-OutputPathLog` destinations. All are now restored exactly as the original run had them, on every storage tier (Local, SharePoint, Fabric), and the small-dataset (non-streaming) export path is also redirected to the restored append target so a small resumed append union-merges into the target rather than leaving a separate file. See [Bug Fixes → v1.11.9](#v1119-2) for details.
 
 #### Accurate Resume Reporting
 
-Two resume-time reporting issues are corrected. The post-interruption parameter snapshot now reports the restored `-Deidentify` / `-FillerLabel` / `-FillerLabelText` state (it previously printed the pre-restore defaults even though anonymization and the level-filler were applied to the output), and the graceful-exit "To resume later" hint now shows the credential the original run used — a certificate thumbprint or PFX path rather than always `-ClientSecret`, and nothing beyond `-Resume` for interactive and managed-identity runs. Both are display-only corrections and change no output data. See [Bug Fixes → v1.11.9](#v1119-1) for details.
+Two resume-time reporting issues are corrected. The post-interruption parameter snapshot now reports the restored `-Deidentify` / `-FillerLabel` / `-FillerLabelText` state (it previously printed the pre-restore defaults even though anonymization and the level-filler were applied to the output), and the graceful-exit "To resume later" hint now shows the credential the original run used — a certificate thumbprint or PFX path rather than always `-ClientSecret`, and nothing beyond `-Resume` for interactive and managed-identity runs. Both are display-only corrections and change no output data. See [Bug Fixes → v1.11.9](#v1119-2) for details.
 
 ### v1.11.8
 
@@ -119,7 +131,7 @@ Version 1.11.7 is a single-change follow-up to the v1.11.6 SharePoint upload wor
 
 #### Larger SharePoint Uploads Use Graph's Simple-Upload Ceiling
 
-The SharePoint simple-upload size cap is raised from 100 MB to 250 MB, the documented maximum for a single-request `PUT .../content`. Files at or below 250 MB now use the single-request path that already works for small and moderate artifacts in locked-down destination libraries, rather than crossing to the resumable upload-session API at 100 MB. Files above 250 MB are unchanged and continue to use the chunked upload-session path, which the destination library and network must permit. See [Bug Fixes → v1.11.7](#v1117-1) for details.
+The SharePoint simple-upload size cap is raised from 100 MB to 250 MB, the documented maximum for a single-request `PUT .../content`. Files at or below 250 MB now use the single-request path that already works for small and moderate artifacts in locked-down destination libraries, rather than crossing to the resumable upload-session API at 100 MB. Files above 250 MB are unchanged and continue to use the chunked upload-session path, which the destination library and network must permit. See [Bug Fixes → v1.11.7](#v1117-2) for details.
 
 ### v1.11.6
 
@@ -263,6 +275,14 @@ New sixth value on the `-Auth` ValidateSet for Azure-hosted headless execution (
 
 ## What's New
 
+### v1.11.14
+
+*Not applicable — v1.11.14 is a reliability release and introduces no new customer-facing features. Its two remote-output delivery fixes are described under [Overview → v1.11.14](#v11114) and [Bug Fixes → v1.11.14](#v11114-2). Early groundwork for a future AI Solutions Intelligence Dashboard (AISID) capability is noted under [Known Considerations → v1.11.14](#v11114-3); it is not available in this version.*
+
+### v1.11.13
+
+*Not applicable — v1.11.13 is a reliability (bug-fix) release with no new customer-facing features. See [Overview → v1.11.13](#v11113) and [Bug Fixes → v1.11.13](#v11113-2).*
+
 ### v1.11.12
 
 - **Fan-out-safe cross-run append + one-time re-baseline (`-AppendFile`).** A single interaction (message) can produce **several** rolled-up rows — one per distinct combination of the analytical grain (for example, per accessed resource). Rollup append now reconciles on the **full grain together with the message identity** rather than the message identity alone, so every row is matched independently — overlaps de-duplicate, new rows are added, and existing-only rows are preserved (exact union, nothing dropped or double-counted). Append files created before v1.11.12 — or any file missing a column the new reconciliation needs (for example an older AI-in-One file created before the new identity column existed) — are **not** silently merged: the old file is left untouched, this run's output is written to a new timestamped file, and PAX prints re-baseline guidance. The practical effect is a **one-time re-baseline** (generate a fresh file once with v1.11.12 and append onto that from then on), with **no data lost** in the transition. The existing 0-row overwrite refusal and union-shrink protections still apply.
@@ -283,6 +303,10 @@ New sixth value on the `-Auth` ValidateSet for Azure-hosted headless execution (
 - **Microsoft Agent 365 export re-enabled.** The `-IncludeAgent365Info`, `-OnlyAgent365Info`, `-OutputPathAgent365Info`, and `-AppendAgent365Info` switches — temporarily disabled in v1.11.2 — are active again. Use `-IncludeAgent365Info` to add a Microsoft Agent 365 catalog file (`Agent365_<timestamp>.csv`) alongside a normal audit export, or `-OnlyAgent365Info` to produce just the catalog. The capability works on Local, SharePoint, and Fabric destinations, with rollup, `-Deidentify`, append/merge, and resume. It requires an interactive sign-in by an AI Administrator or Global Administrator and a tenant licensed/enrolled for Microsoft Agent 365 (App Registration runs add a one-time interactive sign-in for the Agent 365 step; managed-identity is not supported for this data). No other behavior changes — runs without an Agent 365 switch are unchanged from v1.11.9.
 - **Up-front Agent 365 availability message.** If the Microsoft Agent 365 catalog can't be retrieved, PAX now clearly explains the likely reasons — the tenant isn't enrolled/licensed for Microsoft Agent 365, or the signed-in account lacks the AI Administrator / Global Administrator role — and skips just the catalog step; the rest of the run is unaffected.
 - **Startup "newer version available" notice (`-SkipVersionCheck`).** On launch PAX briefly checks the PAX GitHub repo and prints whether a newer version exists (with its release date), you're already current, or the repo couldn't be reached — including the https://github.com/microsoft/PAX link. It's information only (no prompts, no auto-update) and gives up after ~5 seconds if blocked. Add `-SkipVersionCheck` to turn it off on offline or locked-down machines.
+
+### v1.11.9
+
+*Not applicable — v1.11.9 is a resume-only reliability (bug-fix) release with no new customer-facing features. See [Overview → v1.11.9](#v1119) and [Bug Fixes → v1.11.9](#v1119-2).*
 
 ### v1.11.8
 
@@ -357,6 +381,10 @@ New sixth value on the `-Auth` ValidateSet for Azure-hosted headless execution (
 | **Compatibility** | Additive; the default (blank deeper levels) requires no action. Documented in the script's built-in help with an example. |
 
 ---
+
+### v1.11.7
+
+*Not applicable — v1.11.7 is a single-fix follow-up (SharePoint simple-upload cap raised to 250 MB) with no new customer-facing features. See [Overview → v1.11.7](#v1117) and [Bug Fixes → v1.11.7](#v1117-2).*
 
 ### v1.11.6
 
@@ -693,11 +721,25 @@ Excel filenames, Excel tab names, and the `EntraUsers_*` / `Agent365_*` filename
 
 ## Bug Fixes
 
+### v1.11.14
+
+- **(v1.11.14) Microsoft Agent 365 catalog CSV not delivered to remote destinations.** On a remote-output run (SharePoint or Microsoft Fabric / OneLake) that included the Microsoft Agent 365 catalog, the catalog CSV could be generated — the run log even showed it "written" with its destination — yet the file did not appear at the remote destination, while the other artifacts (audit CSV, Entra Users, run log) uploaded normally. The catalog CSV was the only customer-facing artifact never registered with the end-of-run upload step; it was included only when its filename happened to carry the run timestamp, so a catalog routed to a specifically named remote destination was skipped by the upload step and its temporary local copy was removed during normal cleanup. The catalog CSV is now registered with the upload step in every remote-output mode, exactly like the other artifacts, so it is delivered in the same final upload; a genuine upload failure now also preserves the local copy for retry, the same as for every other artifact. On remote runs the write-log line now states the file is staged locally and queued for upload rather than implying it is already at the destination. Local-output runs are unchanged.
+
+- **(v1.11.14) Custom-named per-stream output delivered to the primary location instead of its own destination.** On a remote-output run that sent a per-stream output (for example the Agent 365 catalog or the Entra Users file) to a per-stream destination using a custom file name (rather than a folder), the file could be delivered to the primary output location instead of the per-stream location that was specified, because the upload step identified each file's stream from its file-name pattern and a fully custom name did not match. The upload step now identifies each file by the stream that actually produced it, so a custom-named per-stream file is delivered to its own destination; files with standard names are unaffected and resolve to exactly the same destination as before.
+
 ### v1.11.13
 
 - **(v1.11.13) Microsoft Agent 365 catalog enrichment no longer produces an empty export under app-only authentication.** With Agent 365 enrichment enabled (`-IncludeAgent365Info` / `-OnlyAgent365Info`) under app-only authentication, an internal step that prepares each agent's "date created" / "created by" enrichment could return an unexpected value shape, which caused every catalog entry to be rejected during row assembly — so the run reported "Agent 365: no rows to write" and produced an empty export even though the catalog listed hundreds of packages. The enrichment step now always returns the expected result, so catalog rows build and write normally; the same class of issue was corrected in the adjacent package-listing and per-package-detail steps so the whole Agent 365 path is consistent. A defensive safeguard was also added: if the enrichment data is ever not in the expected form, the run logs a clear warning and continues with blank "date created" / "created by" values rather than dropping every row. Agent 365 only — no other export is affected, and there is no change to how the Agent 365 switches are run.
 
 - **(v1.11.13) Cross-run `-AppendFile` to a custom-named remote rollup target no longer appends nothing.** When appending a rolled-up interactions run (`-Rollup` / `-RollupPlusRaw` with `-AppendFile`) to a target stored on SharePoint or Microsoft Fabric / OneLake whose filename did not follow the standard rolled-up naming, the run could add zero new rows and mark every existing row as departed — silently dropping the current run's interactions — even though the audit retrieval returned new records. The cause was a working-file naming collision: with a custom-named remote target, the run's fresh audit export and the downloaded copy of the existing target could resolve to the same location, so the rollup step processed the already-rolled-up target instead of the fresh export (which it correctly rejects, yielding zero rolled-up rows). Under `-Rollup` / `-RollupPlusRaw`, the run now always writes its fresh export to a distinct, timestamped working file regardless of the append target's name, so the rollup always processes this run's fresh records and merges them into the target; overlapping rows de-duplicate, new rows are added, and existing rows are preserved. A note is also logged when a rollup append target uses a non-standard name, so the situation is visible going forward. Affects only rolled-up `-AppendFile` runs whose remote target uses a custom name — standard-named targets, local targets, and non-rollup appends are unaffected, and the existing append data-safety protections (the zero-row overwrite refusal, the union-shrink guard, and the one-time re-baseline) are unchanged.
+
+### v1.11.12
+
+*Not applicable — v1.11.12's changes (fan-out-safe cross-run append with one-time re-baseline, the stable AI-in-One user-identity column, and Microsoft Agent 365 catalog throttling resilience) are described under [Overview → v1.11.12](#v11112) and [What's New → v1.11.12](#v11112-1). No separate bug-fix entries are recorded for this version.*
+
+### v1.11.11
+
+*Not applicable — v1.11.11's changes (reliable cross-run append with one-time re-baseline, rolled-up Users dimension uploads, `-UserInfoFile`, and Agent 365 app-only authentication) are described under [Overview → v1.11.11](#v11111) and [What's New → v1.11.11](#v11111-1). No separate bug-fix entries are recorded for this version.*
 
 ### v1.11.10
 
@@ -708,6 +750,10 @@ Excel filenames, Excel tab names, and the `EntraUsers_*` / `Agent365_*` filename
 - **(v1.11.9) `-Resume` now restores append, deidentify, filler-label, and per-stream destination settings.** On `-Resume`, PAX loads the checkpoint as an in-memory hashtable, but the v1.11.8 restore logic tested for each of the newer settings with a presence check (`… .PSObject.Properties.Name -contains '<key>'`) that, against that hashtable form, enumerates the type's own members (`Keys`, `Values`, `Count`, …) instead of the stored keys — so the check was always false and the value was never restored, silently reverting to its default. The most visible effect was that a resumed non-rollup `-AppendFile` run stopped appending and wrote a new, separate output file alongside the untouched target; the same root cause also dropped `-Deidentify` (so a resumed anonymized run could emit **raw, identifiable** data — a privacy-affecting regression), `-FillerLabel` / `-FillerLabelText`, the per-stream append targets `-AppendUserInfo` / `-AppendAgent365Info`, and the per-stream destinations `-OutputPathUserInfo` / `-OutputPathAgent365Info` / `-OutputPathLog`. Each affected check now uses the dictionary-correct key test, so a resumed run reproduces the original run's settings exactly: it union-merges into the existing append target on all tiers (Local, SharePoint, Fabric), re-applies anonymization and the hierarchy level-filler, and routes each stream to its original destination. The standard (non-streaming) export path used for small datasets is additionally redirected to the restored `-AppendFile` seed so a small resumed append merges into the target rather than leaving a separate file in the checkpoint folder. The change is resume-only — fresh (non-resume) runs are byte-for-byte unchanged — and the equivalent presence checks elsewhere in the script (against Microsoft Graph response objects) were already correct and are untouched; checkpoints written by older versions that do not contain these keys resume exactly as before (the setting is simply not applied).
 
 - **(v1.11.9) Resume console/log reporting now matches what the resumed run actually does.** The post-interruption "Parameter Snapshot" is assembled before the checkpoint restore re-arms these settings, and the resume-time refresh that corrects the other restored fields (auth, rollup, dashboard, dates, destinations) did not also patch the anonymization and filler fields — so a resumed run's banner printed `Deidentify = False` / `FillerLabel = none` even though both were correctly applied to the output. The refresh now also re-reads `-Deidentify` / `-FillerLabel` / `-FillerLabelText`, so the banner matches the run. Separately, the graceful-exit "To resume later" hint shown when a run is interrupted now reflects the credential kind the original App Registration run used — `-ClientCertificateThumbprint` or `-ClientCertificatePath` instead of always printing `-ClientSecret` — while interactive (`WebLogin` / `DeviceCode` / `Credential` / `Silent`) and `ManagedIdentity` runs show just `-Resume "<checkpoint>"` (the auth identity, tenant, and client ID are restored from the checkpoint, so no credential need be re-supplied for those). Both are display/hint-only corrections — no data, switch semantics, or resume behavior changes.
+
+### v1.11.8
+
+*Not applicable — v1.11.8 is a capability release (the `-Deidentify` anonymization mode and the built-in org / manager hierarchy). Its changes are described under [Overview → v1.11.8](#v1118) and [What's New → v1.11.8](#v1118-1). No separate bug-fix entries are recorded for this version.*
 
 ### v1.11.7
 
@@ -805,6 +851,34 @@ The following authentication and certificate-handling fixes apply to `-Auth AppR
 
 ## Known Considerations
 
+### v1.11.14
+
+- **(v1.11.14) Looking ahead — AI Solutions Intelligence Dashboard (AISID) under active development:** PAX is working toward support for the AI Solutions Intelligence Dashboard (AISID), a future capability that will enrich the Purview and Entra dataset with Microsoft Defender signals about how AI solutions are used across the organization. It is **not available in this version**: selecting `-Dashboard AISID` exits immediately with a notice and does nothing, and the related `-OutputPathDefenderUsage` / `-AppendDefenderUsage` options have no effect. Full AISID functionality is planned for an upcoming release. No action is needed today.
+
+### v1.11.13
+
+*No additional considerations for this release — see [Overview → v1.11.13](#v11113).*
+
+### v1.11.12
+
+*No additional considerations for this release — see [Overview → v1.11.12](#v11112).*
+
+### v1.11.11
+
+*No additional considerations for this release — see [Overview → v1.11.11](#v11111).*
+
+### v1.11.10
+
+*No additional considerations for this release — see [Overview → v1.11.10](#v11110).*
+
+### v1.11.9
+
+*No additional considerations for this release — see [Overview → v1.11.9](#v1119).*
+
+### v1.11.8
+
+*No additional considerations for this release — see [Overview → v1.11.8](#v1118).*
+
 ### v1.11.7
 
 - **(v1.11.7) SharePoint simple-upload cap raised to 250 MB:** Output files up to 250 MB (raised from 100 MB in v1.11.6) now upload to SharePoint in a single Microsoft Graph request — the documented maximum for a simple `PUT .../content` — avoiding the resumable upload-session API that some locked-down libraries or egress proxies reject. Files larger than 250 MB are unchanged: Microsoft Graph offers no single-request upload above that size, so they continue to use the chunked upload-session path, which the destination library and outbound network/proxy must permit (for example, by exempting `graph.microsoft.com` and `*.sharepoint.com` from TLS break-and-inspect). Behavior changes only for files between 100 MB and 250 MB; smaller files and files above 250 MB are unaffected. No parameter or schema change.
@@ -830,6 +904,10 @@ The following authentication and certificate-handling fixes apply to `-Auth AppR
 - **(v1.11.5) New exit code `30` for Entra directory failure:** A failed or partial Entra user directory fetch now sets exit code `30` (and is surfaced in the end-of-run summary). Existing exit codes are unchanged: `0` success, `10` completeness/result-limit, `20` circuit-breaker. Automation that only checked for `0` should treat `30` as a directory-collection failure warranting a re-run.
 
 - **(v1.11.5) Checkpoint gains one optional field (`rollupDashboard`):** Checkpoints written by v1.11.4 (which lack it) resume cleanly under v1.11.5 — the restore is guarded and falls back to the normal derivation. An explicit `-Dashboard` on the resume command line overrides the checkpoint (last-write-wins).
+
+### v1.11.4
+
+*No additional considerations for this release — see [Overview → v1.11.4](#v1114).*
 
 ### v1.11.3
 

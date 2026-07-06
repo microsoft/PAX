@@ -1,5 +1,5 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.11.13
+# Version: v1.11.14
 # Requirements: PowerShell 7+ for default Graph API mode; PowerShell 5.1 supported ONLY with -UseEOM (serial Exchange Online Management mode, no parallel query/explosion).
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI activity types (specified via -ActivityTypes): AIInteraction, ConnectedAIAppInteraction, AIAppInteraction
@@ -239,6 +239,14 @@
 	# Export ONLY the Microsoft Agent 365 catalog (skips audit pull; -Force auto-confirms the preflight)
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -OnlyAgent365Info -Force -OutputPathAgent365Info C:\Temp\
 .EXAMPLE
+	# AISID dashboard — RESERVED FOR AN UPCOMING RELEASE; NOT YET AVAILABLE. Selecting -Dashboard AISID in
+	# this version exits immediately with a notice and does nothing. The command below shows how it will be
+	# used once the feature is available: a full Purview + Entra + Defender run. Enables the Defender/AISID
+	# pipeline and adds ThreatHunting.Read.All at sign-in (delegated) / requires it pre-consented (app-only).
+	# Requires -IncludeUserInfo (with its own destination); -Rollup is auto-enabled for the Purview/Entra
+	# output. The 6 AISID CSVs land in the dedicated -OutputPathDefenderUsage folder.
+	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-31 -Dashboard AISID -IncludeUserInfo -OutputPath C:\Reports\ -OutputPathUserInfo C:\Reports\ -OutputPathDefenderUsage C:\Reports\AISID\
+.EXAMPLE
 	# Combine individual users and groups
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -UserIds "ceo@contoso.com" -GroupNames "Board of Directors" -OutputPath C:\Temp\
 .EXAMPLE
@@ -429,6 +437,16 @@
 		Group expansion (only when -GroupNames is set):
 			[App-only / Delegated]  GroupMember.Read.All           (read /groups + /groups/{id}/members)
 
+		AISID dashboard - Defender / AI Solutions hunting (only when -Dashboard AISID is set):
+			[App-only / Delegated]  ThreatHunting.Read.All
+			                        (POST /security/runHuntingQuery - Defender advanced hunting)
+			NOTE: delegated modes (-Auth WebLogin / DeviceCode) request this scope at sign-in in the
+			      SAME consent as everything else (no separate login, no second prompt). App-only
+			      modes (-Auth Credential / AppRegistration / Silent / ManagedIdentity) do NOT
+			      request it at runtime: grant ThreatHunting.Read.All as an APPLICATION permission
+			      with admin consent on the app registration / managed-identity service principal
+			      ahead of time (a one-time customer prerequisite).
+
 		Remote output - SharePoint (only when an -OutputPath* value is a SharePoint URL):
 			[App-only / Delegated]  Sites.ReadWrite.All            (resolve site/drive via /sites + /drives)
 			[App-only / Delegated]  Files.ReadWrite.All            (PUT / createUploadSession to /drives/{id}/items)
@@ -575,6 +593,16 @@
 	(Fabric Tables/* URLs are rejected — logs are not tabular). When omitted, the log lands in
 	$PSScriptRoot for Local runs and in the active remote destination's run-log folder for
 	SharePoint / Fabric runs.
+
+.PARAMETER OutputPathDefenderUsage
+	RESERVED FOR AN UPCOMING RELEASE; NOT YET AVAILABLE. This switch is tied to -Dashboard AISID, which is
+	not yet enabled, so supplying it has no effect in this version. When the feature is available it will
+	be the destination for the AISID (AI Solutions Intelligence Dashboard) output set — all 6 Defender/AISID
+	CSVs, including the solutions catalog, are written here. FOLDER-ONLY: supply a folder path, a
+	SharePoint folder URL, or a Fabric OneLake folder URL; a file leaf is rejected. Storage tier is
+	inferred exactly like the other -OutputPath* switches and must match the run's other destinations.
+	Mutually exclusive with -AppendDefenderUsage. Only meaningful with -Dashboard AISID; supplying it
+	without -Dashboard AISID is rejected.
 
 .PARAMETER FlatDepth
 	Maximum JSON flatten depth for exploding CopilotEventData and AuditData (default 120).
@@ -1007,11 +1035,11 @@
 	                                                     IsAgentInteraction).
 	    • '<stem>_UserStats_<YYYYMMDD_HHMMSS>.csv'     — recomputed per-user metrics (sidecar).
 	    • '<stem>_SessionCohort_<YYYYMMDD_HHMMSS>.csv' — recomputed (UserId, App, Bucket) cohorts (sidecar).
-	    • '<stem>_SessionStats_<YYYYMMDD_HHMMSS>.csv'  — (v2.6.0+) per-(UserId, Date, AppHost)
+	    • '<stem>_SessionStats_<YYYYMMDD_HHMMSS>.csv'  — per-(UserId, Date, AppHost)
 	                                                     DISTINCTCOUNT(ThreadId) + PromptCount /
 	                                                     AgentPromptCount / ResponseCount /
 	                                                     AgentSessionCount.
-	                                                     Drives the v2.6.0 CECopilotPercentile_*
+	                                                     Drives the CECopilotPercentile_*
 	                                                     measures from PromptCount semantics.
 	  Only the Rollup file supports the union-merge semantic. Under -AppendFile, the current
 	  run's Rollup is column-tolerant union-merged (keyed on the 9-tuple of UserId /
@@ -1124,6 +1152,14 @@
 	-AppendFile. Auto-enables -IncludeAgent365Info. Incompatible with -OnlyAgent365Info. May be
 	used standalone or together with -AppendFile. Use either -AppendAgent365Info (merge) or
 	-OutputPathAgent365Info (overwrite/redirect), not both, for the same destination.
+
+.PARAMETER AppendDefenderUsage
+	RESERVED FOR AN UPCOMING RELEASE; NOT YET AVAILABLE. This switch is tied to -Dashboard AISID, which is
+	not yet enabled, so supplying it has no effect in this version. When the feature is available it will
+	append the AISID (Defender/AI Solutions) output set into an existing AISID destination folder.
+	FOLDER-ONLY (points at the folder holding the AISID CSV set); a file leaf is rejected. Mutually
+	exclusive with -OutputPathDefenderUsage (exactly one of the pair per run). Only meaningful with
+	-Dashboard AISID.
 
 .PARAMETER CombineOutput
 	Combines all activity types into a single output file or tab.
@@ -1381,6 +1417,13 @@ param(
 	[Parameter(Mandatory = $false)]
 	[string]$OutputPathLog,
 
+	# Destination for the entire AISID (AI Solutions Intelligence Dashboard) output set — all 6 Defender/AISID
+	# CSVs (including the solutions catalog) land here. FOLDER-ONLY: supply a folder path / SharePoint folder URL /
+	# Fabric OneLake folder URL; a file leaf is rejected. Storage tier is inferred like the other -OutputPath*
+	# switches and must match the run's other destinations. Only meaningful with -Dashboard AISID.
+	[Parameter(Mandatory = $false)]
+	[string]$OutputPathDefenderUsage,
+
 	[Parameter(Mandatory = $false)]
 	[ValidateSet('WebLogin', 'DeviceCode', 'Credential', 'Silent', 'AppRegistration', 'ManagedIdentity')]
 	[string]$Auth = 'WebLogin',
@@ -1592,6 +1635,12 @@ param(
 	[Parameter(Mandatory = $false)]
 	[string]$AppendAgent365Info,
 
+	# Append AISID (Defender/AI Solutions) output into an existing AISID destination. FOLDER-ONLY (points at the
+	# folder holding the AISID CSV set); a file leaf is rejected. Mutually exclusive with -OutputPathDefenderUsage
+	# (exactly one of the pair per run). Only meaningful with -Dashboard AISID.
+	[Parameter(Mandatory = $false)]
+	[string]$AppendDefenderUsage,
+
 	# Combine all activity types into single output file/tab (CSV or Excel)
 	# CSV default when omitted: separate files per activity type
 	# Excel default when omitted: separate tabs per activity type
@@ -1668,10 +1717,18 @@ param(
 	#   AIO   (default) - AI-in-One dashboard          -> CopilotInteraction processor, --profile aio
 	#   AIBV            - AI Business Value dashboard   -> CopilotInteraction processor, --profile aibv
 	#   M365            - M365 Usage Analytics          -> M365 bundle processor (auto-enables -IncludeM365Usage)
+	#   AISID           - AI Solutions Intelligence Dashboard. RESERVED FOR AN UPCOMING RELEASE; NOT YET
+	#                     AVAILABLE — selecting it exits immediately with a notice and does nothing in this
+	#                     version. When enabled it will drive a full Purview + Entra + Defender run and the
+	#                     Defender/AISID data pipeline (the only trigger for it), require -IncludeUserInfo and a
+	#                     run not narrowed by any -Only* switch, reuse the AIO-shaped CopilotInteraction rollup
+	#                     for its Purview/Entra tables (its own Defender-sourced CSVs are exported without
+	#                     rollup processing), and add the ThreatHunting.Read.All Graph permission (delegated) /
+	#                     application permission (app-only modes) at sign-in.
 	# Only meaningful with -Rollup / -RollupPlusRaw; if supplied without either, -Rollup is auto-enabled.
 	# If omitted: M365 when -IncludeM365Usage is present, otherwise AIO. Case-insensitive.
 	[Parameter(Mandatory = $false)]
-	[ValidateSet('AIO', 'AIBV', 'M365')]
+	[ValidateSet('AIO', 'AIBV', 'M365', 'AISID')]
 	[string]$Dashboard = 'AIO',
 
 	# Deidentify (anonymize) all identifying values in RAW output files using a
@@ -1805,6 +1862,22 @@ if ($script:DeprecatedSwitchesHit.Count -gt 0) {
 	foreach ($d in $script:DeprecatedSwitchesHit) {
 		Microsoft.PowerShell.Utility\Write-Host ("{0} is deprecated and will be removed in a future release." -f $d) -ForegroundColor Yellow
 	}
+	exit 0
+}
+
+# ============================================================
+# AISID DASHBOARD — RESERVED (NOT YET AVAILABLE)
+# The -Dashboard AISID option (and its -OutputPathDefenderUsage / -AppendDefenderUsage
+# destination switches) is reserved for an upcoming release and is not yet available for
+# use. The underlying groundwork is present in this version but intentionally not enabled.
+# This early gate short-circuits any -Dashboard AISID invocation here — before any parameter
+# validation, permission (scope) request, or sign-in — so selecting it today has no side
+# effects (no extra permission requested, no authentication attempted, no partial run). To
+# enable the feature once its data pipeline is delivered, remove this single block.
+# ============================================================
+if ($Dashboard -eq 'AISID') {
+	Microsoft.PowerShell.Utility\Write-Host "The AI Solutions Intelligence Dashboard (-Dashboard AISID) is reserved for an upcoming release and is not yet available for use in this version." -ForegroundColor Yellow
+	Microsoft.PowerShell.Utility\Write-Host "  Use -Dashboard AIO, -Dashboard AIBV, or -Dashboard M365 (or omit -Dashboard) to run one of the currently available dashboards." -ForegroundColor Gray
 	exit 0
 }
 
@@ -2239,7 +2312,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.11.13'
+$ScriptVersion = '1.11.14'
 
 function Invoke-PaxVersionCheck {
 	# Informational, non-blocking, failure-isolated version check against the public PAX repo.
@@ -3075,6 +3148,7 @@ $destSwitches = @(
 	@{ Key = 'Purview'      ; Name = 'OutputPath'              ; Value = $OutputPath              ; AllowFabricFilesOnly = $false },
 	@{ Key = 'UserInfo'     ; Name = 'OutputPathUserInfo'      ; Value = $OutputPathUserInfo      ; AllowFabricFilesOnly = $false },
 	@{ Key = 'Agent365Info' ; Name = 'OutputPathAgent365Info'  ; Value = $OutputPathAgent365Info  ; AllowFabricFilesOnly = $false },
+	@{ Key = 'DefenderUsage'; Name = 'OutputPathDefenderUsage' ; Value = $OutputPathDefenderUsage ; AllowFabricFilesOnly = $false },
 	@{ Key = 'Log'          ; Name = 'OutputPathLog'           ; Value = $OutputPathLog           ; AllowFabricFilesOnly = $true  }
 )
 foreach ($ds in $destSwitches) {
@@ -3099,7 +3173,8 @@ $script:AppendIsRemote = @{}
 $appendSwitches = @(
 	@{ Key = 'Purview'      ; Name = 'AppendFile'         ; Value = $AppendFile          ; Bound = $PSBoundParameters.ContainsKey('AppendFile')         },
 	@{ Key = 'UserInfo'     ; Name = 'AppendUserInfo'     ; Value = $AppendUserInfo      ; Bound = $PSBoundParameters.ContainsKey('AppendUserInfo')     },
-	@{ Key = 'Agent365Info' ; Name = 'AppendAgent365Info' ; Value = $AppendAgent365Info  ; Bound = $PSBoundParameters.ContainsKey('AppendAgent365Info') }
+	@{ Key = 'Agent365Info' ; Name = 'AppendAgent365Info' ; Value = $AppendAgent365Info  ; Bound = $PSBoundParameters.ContainsKey('AppendAgent365Info') },
+	@{ Key = 'DefenderUsage'; Name = 'AppendDefenderUsage' ; Value = $AppendDefenderUsage ; Bound = $PSBoundParameters.ContainsKey('AppendDefenderUsage') }
 )
 foreach ($as in $appendSwitches) {
 	$script:AppendIsBound[$as.Key] = $as.Bound
@@ -3139,7 +3214,7 @@ foreach ($as in $appendSwitches) {
 # Tier consistency across all bound destinations (excluding -OutputPathLog when it
 # targets Fabric Files/ — the log is allowed under Files/ on a Fabric data run).
 $tiersForConsistency = @()
-foreach ($k in @('Purview','UserInfo','Agent365Info','Log')) {
+foreach ($k in @('Purview','UserInfo','Agent365Info','DefenderUsage','Log')) {
 	if ($script:DestTier.ContainsKey($k)) { $tiersForConsistency += $script:DestTier[$k] }
 }
 $tiersForConsistency = $tiersForConsistency | Select-Object -Unique
@@ -3153,7 +3228,7 @@ if ($tiersForConsistency.Count -gt 1) {
 # folder with different default basenames are not collisions (compared on the
 # normalized input as supplied; default basenames are appended downstream).
 $normalizedDests = @{}
-foreach ($k in @('Purview','UserInfo','Agent365Info','Log')) {
+foreach ($k in @('Purview','UserInfo','Agent365Info','DefenderUsage','Log')) {
 	if (-not $script:DestRaw.ContainsKey($k)) { continue }
 	$norm = $script:DestRaw[$k].TrimEnd('/','\').ToLowerInvariant()
 	# Only flag collisions when the supplied form is a full file path (contains a basename extension).
@@ -3446,12 +3521,12 @@ if ($env:IDENTITY_ENDPOINT -and $Auth -ne 'ManagedIdentity') {
 #   .EffectiveDir - parent folder/URL the writer should land its file under
 #   .Basename    - default basename to use when the supplied form is folder/URL only
 #                  ('' when the supplied form already includes a basename)
-# Data-type keys: 'Purview', 'UserInfo', 'Agent365Info', 'Log'.
+# Data-type keys: 'Purview', 'UserInfo', 'Agent365Info', 'DefenderUsage', 'Log'.
 # When a non-Purview data type was not bound on the CLI, it inherits the Purview
 # tier/destination so legacy single-destination behavior is preserved.
 function script:Resolve-DataTypePaths {
 	param(
-		[Parameter(Mandatory)] [ValidateSet('Purview','UserInfo','Agent365Info','Log')] [string]$DataType,
+		[Parameter(Mandatory)] [ValidateSet('Purview','UserInfo','Agent365Info','DefenderUsage','Log')] [string]$DataType,
 		[string]$DefaultBasename = ''
 	)
 	$key = $DataType
@@ -3610,6 +3685,31 @@ $purviewInScope  = (-not $OnlyUserInfo) -and (-not $OnlyAgent365Info)
 $userInfoInScope = $IncludeUserInfo -or $OnlyUserInfo
 $agentInScope    = $IncludeAgent365Info -or $OnlyAgent365Info
 
+# --- AISID dashboard prerequisites (gate FIRST, one clear message) ---
+# -Dashboard AISID requires a run shaped to produce the FULL Purview + Entra + Defender dataset.
+# Validate the complete required shape here, before the per-stream checks below, so the user gets a
+# SINGLE actionable message listing exactly what to add/remove (rather than hitting per-stream errors
+# one at a time). Gracefully exits (no crash, no partial start). Keys off -Dashboard directly.
+if ($Dashboard -eq 'AISID') {
+	$aisidProblems = @()
+	if (-not $pvOutBound -and -not $pvAppBound)     { $aisidProblems += '  - add -OutputPath (or -AppendFile) for the Purview activity stream' }
+	if (-not ($IncludeUserInfo -or $OnlyUserInfo))  { $aisidProblems += '  - add -IncludeUserInfo (the AISID dashboard joins Defender signals to the Entra user directory)' }
+	elseif ($IncludeUserInfo -and -not $uiOutBound -and -not $uiAppBound) { $aisidProblems += '  - add -OutputPathUserInfo (or -AppendUserInfo) for the EntraUsers stream' }
+	if ($OnlyUserInfo)              { $aisidProblems += '  - remove -OnlyUserInfo (it suppresses the required Purview + Defender streams)' }
+	if ($OnlyAgent365Info)          { $aisidProblems += '  - remove -OnlyAgent365Info (it suppresses the required Purview + Entra streams)' }
+	if ($ExcludeCopilotInteraction) { $aisidProblems += '  - remove -ExcludeCopilotInteraction (the AISID dashboard needs Copilot interaction data)' }
+	if ($IncludeM365Usage)          { $aisidProblems += '  - remove -IncludeM365Usage / -Dashboard M365 (a different data source and processor; not part of AISID)' }
+	if ($RAWInputCSV)               { $aisidProblems += '  - remove -RAWInputCSV (AISID needs a live Graph/Defender run, not offline reprocessing)' }
+	if ($UseEOM)                    { $aisidProblems += '  - remove -UseEOM (AISID uses the Graph Security API, not Exchange Online Management)' }
+	if ($ExportWorkbook)            { $aisidProblems += '  - remove -ExportWorkbook (incompatible with the rollup run AISID performs)' }
+	if ($aisidProblems.Count -gt 0) {
+		Write-Host "ERROR: -Dashboard AISID requires a full Purview + Entra + Defender run. Adjust the following and re-run:" -ForegroundColor Red
+		$aisidProblems | ForEach-Object { Write-Host $_ -ForegroundColor Yellow }
+		Write-Host "  Example: pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-31 -Dashboard AISID -IncludeUserInfo -OutputPath C:\Reports\ -OutputPathUserInfo C:\Reports\ -OutputPathDefenderUsage C:\Reports\AISID\" -ForegroundColor Cyan
+		exit 1
+	}
+}
+
 # --- Purview stream ---
 if ($purviewInScope) {
 	if ($pvOutBound -and $pvAppBound) {
@@ -3679,6 +3779,42 @@ if ($agentInScope) {
 		Write-Host ("ERROR: {0} requires -IncludeAgent365Info or -OnlyAgent365Info to be in scope." -f $bn) -ForegroundColor Red
 		Write-Host "  Drop the destination switch, or add -IncludeAgent365Info / -OnlyAgent365Info." -ForegroundColor Yellow
 		exit 1
+	}
+}
+
+# --- AISID / Defender usage stream ---
+# In scope only under -Dashboard AISID. Pair-XOR: -OutputPathDefenderUsage and -AppendDefenderUsage
+# cannot both be supplied. Neither-bound is allowed (when no dedicated AISID destination is given the
+# AISID output set co-locates with the Purview -OutputPath folder; the dedicated export/append path
+# is a later phase). Supplying either switch without -Dashboard AISID is rejected.
+$duOutBound = $PSBoundParameters.ContainsKey('OutputPathDefenderUsage')
+$duAppBound = $PSBoundParameters.ContainsKey('AppendDefenderUsage')
+if ($Dashboard -eq 'AISID') {
+	if ($duOutBound -and $duAppBound) {
+		Write-Host "ERROR: -OutputPathDefenderUsage and -AppendDefenderUsage cannot both be supplied." -ForegroundColor Red
+		Write-Host "  Provide EXACTLY ONE for the AISID (Defender) output set." -ForegroundColor Yellow
+		exit 1
+	}
+} else {
+	if ($duOutBound -or $duAppBound) {
+		$bn = if ($duOutBound) { '-OutputPathDefenderUsage' } else { '-AppendDefenderUsage' }
+		Write-Host ("ERROR: {0} requires -Dashboard AISID." -f $bn) -ForegroundColor Red
+		Write-Host "  These switches route the AISID (Defender) output set, produced only under -Dashboard AISID." -ForegroundColor Yellow
+		exit 1
+	}
+}
+
+# Folder-only guard: the AISID destination addresses the whole 6-CSV set, so a file leaf is
+# rejected on either switch — supply a folder path / SharePoint folder URL / Fabric OneLake folder URL.
+foreach ($duPair in @(@{ N = 'OutputPathDefenderUsage'; V = $OutputPathDefenderUsage }, @{ N = 'AppendDefenderUsage'; V = $AppendDefenderUsage })) {
+	if ($PSBoundParameters.ContainsKey($duPair.N) -and -not [string]::IsNullOrWhiteSpace($duPair.V)) {
+		$duNorm = $duPair.V.Trim().TrimEnd('/', '\')
+		if ($duNorm -match '\.[a-z0-9]{2,5}$') {
+			Write-Host ("ERROR: -{0} must be a FOLDER, not a file leaf. The AISID output is a set of 6 CSVs." -f $duPair.N) -ForegroundColor Red
+			Write-Host ("       Supplied: {0}" -f $duPair.V) -ForegroundColor Yellow
+			Write-Host  "       Provide a folder path, a SharePoint folder URL, or a Fabric OneLake folder URL." -ForegroundColor Yellow
+			exit 1
+		}
 	}
 }
 
@@ -4137,7 +4273,19 @@ if ($dashboardExplicit) {
 	if (-not $Rollup -and -not $RollupPlusRaw) {
 		$Rollup = [System.Management.Automation.SwitchParameter]::new($true)
 		$dashboardImpliedRollup = $true
-		Write-Host "INFO: -Dashboard $Dashboard auto-enabled -Rollup (dashboard output is produced by the rollup post-processor)." -ForegroundColor Cyan
+		if ($dashboardUC -eq 'AISID') {
+			# AISID's Defender CSVs are not rollup-processed; only the Purview/Entra (Copilot) output is.
+			# Do NOT emit the "produced by the rollup post-processor" line here (it is misleading for AISID).
+			Write-Host "INFO: -Dashboard AISID auto-enabled -Rollup for the Purview/Entra (Copilot) output." -ForegroundColor Cyan
+		} else {
+			Write-Host "INFO: -Dashboard $Dashboard auto-enabled -Rollup (dashboard output is produced by the rollup post-processor)." -ForegroundColor Cyan
+		}
+	}
+	# -Dashboard AISID: clarify (once, non-fatal) that the Defender-sourced AISID CSVs are exported
+	# as-is with no rollup processing, even though -Rollup / -RollupPlusRaw is active for Purview/Entra.
+	# Fires whether -Rollup was auto-enabled above or supplied explicitly by the user.
+	if ($dashboardUC -eq 'AISID' -and ($Rollup -or $RollupPlusRaw)) {
+		Write-Host "INFO: -Dashboard AISID: the Purview/Entra output is rollup-processed as usual; the Defender-sourced AISID CSVs are exported as-is (no rollup processor exists for them yet)." -ForegroundColor Cyan
 	}
 }
 
@@ -4199,7 +4347,11 @@ if ($Rollup -or $RollupPlusRaw) {
 			# AIO/AIBV only reach here — an explicit -Dashboard M365 auto-enabled
 			# -IncludeM365Usage above and took the M365Bundle branch. Default to AIO
 			# when -Dashboard was not supplied (preserves today's behavior).
-			$script:RollupDashboard = if ($dashboardExplicit) { $dashboardUC } else { 'AIO' }
+			# -Dashboard AISID reuses the AIO-shaped CopilotInteraction rollup for its Purview/Entra
+			# tables, so it maps to the AIO profile here — no AISID-specific rollup mode/profile is
+			# introduced, and 'AISID' never leaks into the rollup/checkpoint machinery. AISID's own
+			# Defender CSVs are produced by the (later-phase) Defender pipeline, not this processor.
+			$script:RollupDashboard = if ($dashboardExplicit) { if ($dashboardUC -eq 'AISID') { 'AIO' } else { $dashboardUC } } else { 'AIO' }
 			$script:RollupDashboardProfile = $script:RollupDashboard.ToLowerInvariant()
 		}
 		else {
@@ -13928,6 +14080,18 @@ function Connect-PurviewAudit {
 			if ($RequiredScopes -notcontains 'CopilotPackages.Read.All') { [void]$RequiredScopes.Add('CopilotPackages.Read.All') }
 			if ($RequiredScopes -notcontains 'Application.Read.All')    { [void]$RequiredScopes.Add('Application.Read.All') }
 		}
+		# AISID (Defender / AI Solutions) hunting scope - DELEGATED auth modes only.
+		# -Dashboard AISID pulls Defender data via the Graph advanced-hunting endpoint
+		# (POST /v1.0/security/runHuntingQuery) using THIS SAME Graph token — no separate login.
+		# Delegated modes (WebLogin / DeviceCode) request ThreatHunting.Read.All here at sign-in.
+		# App-only modes (Credential client-secret, AppRegistration, Silent/ManagedIdentity) do NOT
+		# request delegated scopes: ThreatHunting.Read.All must be granted + admin-consented as an
+		# APPLICATION permission on the app registration / managed-identity service principal
+		# out-of-band (documented customer prerequisite). The -notin guard mirrors the Agent 365
+		# block above so app-only modes are correctly excluded from the delegated request.
+		if (($Dashboard -eq 'AISID') -and $AuthMethod -notin @('AppRegistration','ManagedIdentity')) {
+			if ($RequiredScopes -notcontains 'ThreatHunting.Read.All') { [void]$RequiredScopes.Add('ThreatHunting.Read.All') }
+		}
 		# SharePoint remote-output destination needs delegated/app drive write scopes.
 		# Fabric/OneLake uses a separate storage-audience token (Az.Accounts), not a Graph scope.
 		if ($script:RemoteOutputMode -eq 'SharePoint') {
@@ -17982,7 +18146,14 @@ function Export-Agent365Csv {
 		# Atomic write — Save-CsvAtomic uses temp+rename so a Ctrl+C / OOM-kill mid-write
 		# cannot leave a half-formed Agent365 CSV in the operator's output folder.
 		Save-CsvAtomic -InputObject ($rowsToWrite.ToArray()) -Path $outFile -NoTypeInformation -Encoding UTF8
-		Write-LogHost ("  Agent 365 CSV written: {0} ({1} rows)" -f (Get-DisplayPath -LocalPath $outFile), $rowsToWrite.Count) -ForegroundColor Green
+		# In remote (SharePoint/Fabric) mode the file lands in LOCAL SCRATCH and is uploaded
+		# by the end-of-run artifact sweep; say so, rather than implying it is already at the
+		# displayed remote destination.
+		if ($script:RemoteOutputMode -ne 'None') {
+			Write-LogHost ("  Agent 365 CSV written to scratch, queued for upload: {0} ({1} rows)" -f (Get-DisplayPath -LocalPath $outFile), $rowsToWrite.Count) -ForegroundColor Green
+		} else {
+			Write-LogHost ("  Agent 365 CSV written: {0} ({1} rows)" -f (Get-DisplayPath -LocalPath $outFile), $rowsToWrite.Count) -ForegroundColor Green
+		}
 		return $outFile
 	} catch {
 		Write-LogHost ("  ERROR: Failed to write Agent 365 CSV: {0}" -f $_.Exception.Message) -ForegroundColor Red
@@ -32071,6 +32242,22 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 				}
 				if ($agentResult.CsvPath) {
 					Write-LogHost ("Agent 365 file: {0}" -f (Get-DisplayPath -LocalPath $agentResult.CsvPath)) -ForegroundColor White
+					# Register the Agent 365 catalog CSV for the remote upload sweep. It is the only
+					# customer-facing artifact that otherwise relies solely on the run-timestamp
+					# wildcard; when -OutputPathAgent365Info supplies a file-form (non-timestamped)
+					# leaf the wildcard misses it and the file is generated but never uploaded (then
+					# deleted at scratch cleanup). Register explicitly — exactly like the rolled-up
+					# Users dim / M365 sidecars — so the sweep ships it and a genuine upload failure
+					# trips the retention guard. Included via the same OR predicate, so a timestamped
+					# leaf is still swept exactly once.
+					if ($script:RemoteOutputMode -ne 'None') {
+						$agent365UploadLeaf = [System.IO.Path]::GetFileName($agentResult.CsvPath)
+						if (-not $script:Agent365UploadLeafs) { $script:Agent365UploadLeafs = New-Object System.Collections.Generic.List[string] }
+						if ($agent365UploadLeaf -and -not $script:Agent365UploadLeafs.Contains($agent365UploadLeaf)) {
+							[void]$script:Agent365UploadLeafs.Add($agent365UploadLeaf)
+							Write-LogHost ("Agent 365 CSV registered for upload: {0}" -f (Get-DisplayPath -LocalPath $agentResult.CsvPath)) -ForegroundColor Gray
+						}
+					}
 				}
 			}
 		} catch {
@@ -32951,6 +33138,16 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 					if ($usersDimLeaf -and -not $appendLeafs.Contains($usersDimLeaf)) { [void]$appendLeafs.Add($usersDimLeaf) }
 				}
 			}
+			# Agent 365 catalog CSV: registered by the Agent 365 phase (see "registered for
+			# upload"). Its default leaf (Agent365_<ts>.csv) matches the timestamp wildcard, but a
+			# file-form -OutputPathAgent365Info leaf does not — so include it explicitly here, the
+			# same way as the Users dim / M365 sidecars, so it uploads in every remote form. Same OR
+			# predicate, so a timestamped leaf is still swept exactly once.
+			if ($script:Agent365UploadLeafs) {
+				foreach ($a365Leaf in $script:Agent365UploadLeafs) {
+					if ($a365Leaf -and -not $appendLeafs.Contains($a365Leaf)) { [void]$appendLeafs.Add($a365Leaf) }
+				}
+			}
 			# Run-log companion: the .log file is named after
 			# $OutputFile's basename, which in -AppendFile mode carries the Append target's
 			# ORIGINAL timestamp (not $global:ScriptRunTimestamp). That means the timestamp
@@ -33026,6 +33223,22 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 
 				$uploadDestDesc = if ($fabricDeltaMode -and $deltaReady) { 'Fabric (Delta tables + Files/)' } else { $script:RemoteOutputMode }
 				Write-LogHost ("Uploading {0} artifact(s) to {1}..." -f $uploadCandidates.Count, $uploadDestDesc) -ForegroundColor Cyan
+				# Origin-authoritative type map: the per-stream registration/append records already know
+				# each artifact's TRUE source stream at creation time. Consulting them makes routing robust
+				# for a custom (non-pattern) per-stream leaf — e.g. a file-form -OutputPathAgent365Info /
+				# -OutputPathUserInfo or a custom -Append* target leaf — which the filename-pattern classifier
+				# would otherwise send to the Purview fallback. Standard/default leaves resolve to the SAME
+				# type the pattern classifier gives, so this changes nothing for existing (folder-form) usage.
+				# M365 bundle sidecars are intentionally NOT mapped (they are Purview-destined).
+				$originTypeByLeaf = @{}
+				if ($script:Agent365UploadLeafs) { foreach ($lf in $script:Agent365UploadLeafs) { if ($lf) { $originTypeByLeaf[$lf] = 'Agent365Info' } } }
+				if ($script:RollupUsersDimLeafs) { foreach ($lf in $script:RollupUsersDimLeafs) { if ($lf) { $originTypeByLeaf[$lf] = 'UserInfo' } } }
+				foreach ($originKey in @('UserInfo','Agent365Info')) {
+					if ($script:AppendIsBound.ContainsKey($originKey) -and $script:AppendIsBound[$originKey] -and $script:AppendRaw.ContainsKey($originKey)) {
+						$originAppendLeaf = [System.IO.Path]::GetFileName($script:AppendRaw[$originKey])
+						if ($originAppendLeaf) { $originTypeByLeaf[$originAppendLeaf] = $originKey }
+					}
+				}
 				foreach ($uploadFile in $uploadCandidates) {
 					$isCsv = ($uploadFile.Extension -ieq '.csv')
 					# Per-data-type destination routing. Map filename → data-type key
@@ -33033,7 +33246,8 @@ function Profile-AuditData { param([object]$AuditData) } # No-op stub for thread
 					# not match a per-data-type pattern or that per-data-type switch wasn't
 					# supplied. Same-tier guarantee is enforced at parameter validation, so
 					# this only varies folder/lakehouse within the active tier.
-					$dtKey = Get-DataTypeForOutputFile -FileName $uploadFile.Name
+					# Origin record (true source stream) wins; filename-pattern classifier is the fallback.
+					$dtKey = if ($originTypeByLeaf.ContainsKey($uploadFile.Name)) { $originTypeByLeaf[$uploadFile.Name] } else { Get-DataTypeForOutputFile -FileName $uploadFile.Name }
 					$dtParentUrl = $null
 					# Per-data-type parent URL is resolvable when EITHER -OutputPath<key> OR
 					# -Append<key> was bound (XOR validator guarantees they don't both bind).
