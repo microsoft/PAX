@@ -1,5 +1,5 @@
 # Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Version: v1.11.12
+# Version: v1.11.13
 # Requirements: PowerShell 7+ for default Graph API mode; PowerShell 5.1 supported ONLY with -UseEOM (serial Exchange Online Management mode, no parallel query/explosion).
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 # DSPM for AI activity types (specified via -ActivityTypes): AIInteraction, ConnectedAIAppInteraction, AIAppInteraction
@@ -1626,14 +1626,18 @@ param(
 	# Include Microsoft Agent 365 enrichment in export (adds separate Agents365 CSV file/Excel tab).
 	# Sources data from the Microsoft Graph Agent Package Management API
 	# (https://graph.microsoft.com/beta/copilot/admin/catalog/packages).
-	# Requires AI Admin or Global Admin directory role; cannot be satisfied by app-only auth alone.
-	# When -Auth AppRegistration is used, an interactive sign-in is performed for the agent phase only.
+	# Runs under any auth mode (no auth mode is rejected up-front): app-only
+	# (-Auth AppRegistration certificate/secret or -Auth ManagedIdentity) uses the application
+	# permissions CopilotPackages.Read.All + Application.Read.All with no interactive sign-in;
+	# delegated auth requires the signed-in user to hold AI Administrator or Global Administrator.
+	# See the .PARAMETER IncludeAgent365Info help for full details.
 	[Parameter(Mandatory = $false)]
 	[switch]$IncludeAgent365Info,
 
 	# Export only Microsoft Agent 365 data (skips all audit log retrieval).
 	# Date created and Created by columns will be left blank (those rely on audit data).
-	# Not compatible with -Auth AppRegistration (Agent Package API requires interactive user auth).
+	# Supported under app-only auth (-Auth AppRegistration or -Auth ManagedIdentity) as well as
+	# delegated; no auth mode is rejected up-front (access failures surface as a runtime 403).
 	[Parameter(Mandatory = $false)]
 	[switch]$OnlyAgent365Info,
 
@@ -2235,7 +2239,7 @@ $m365UsageActivityBundle = @(
 ) | Select-Object -Unique
 
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
-$ScriptVersion = '1.11.12'
+$ScriptVersion = '1.11.13'
 
 function Invoke-PaxVersionCheck {
 	# Informational, non-blocking, failure-isolated version check against the public PAX repo.
@@ -10706,7 +10710,7 @@ function Get-FactCompositeKeyColumns {
 		Return the grain-composite append dedup key column list for a rolled-up
 		Interactions Fact CSV, derived from its header columns.
 	.DESCRIPTION
-		FIX 1 (v1.11.12). Rolled-up fact rows FAN OUT: many rows share one
+		Rolled-up fact rows FAN OUT: many rows share one
 		Message_Id_Raw, one per distinct grain (e.g. per AccessedResource). Cross-run
 		append dedup must therefore key on the FULL grain PLUS Message_Id_Raw; keying
 		on Message_Id_Raw alone collapses every fan-out row for a message to one and
@@ -17586,7 +17590,9 @@ function Get-Agent365Packages {
 	while ($uri) {
 		$pageNum++
 		try {
-			Refresh-GraphTokenIfNeeded -ErrorAction SilentlyContinue
+			# Suppress the return value ($true/$false/'Quit') so it does not leak into this
+			# function's output pipeline and pollute the returned package array.
+			$null = Refresh-GraphTokenIfNeeded -ErrorAction SilentlyContinue
 		} catch {}
 		try {
 			$resp = Invoke-MgGraphRequest -Method GET -Uri $uri -ErrorAction Stop
@@ -17643,7 +17649,9 @@ function Get-Agent365PackageDetail {
 	param([Parameter(Mandatory = $true)][string]$PackageId)
 	$uri = Get-Agent365PackagesUri -PackageId $PackageId
 	try {
-		Refresh-GraphTokenIfNeeded -ErrorAction SilentlyContinue
+		# Suppress the return value ($true/$false/'Quit') so it does not leak into this
+		# function's output pipeline and turn the returned detail object into an array.
+		$null = Refresh-GraphTokenIfNeeded -ErrorAction SilentlyContinue
 	} catch {}
 	try {
 		return Invoke-Agent365GraphWithRetry -Uri $uri
@@ -17758,7 +17766,9 @@ function Get-Agent365AuditEnrichment {
 	Write-LogHost ("  Polling enrichment query (timeout {0} min, refresh-token aware)..." -f $pollTimeoutMinutes) -ForegroundColor DarkGray
 	while ((Get-Date) -lt $pollDeadline) {
 		Start-Sleep -Seconds $pollIntervalSeconds
-		try { Refresh-GraphTokenIfNeeded -ErrorAction SilentlyContinue } catch {}
+		# Suppress the return value ($true/$false/'Quit') so it does not leak into this
+		# function's output pipeline and make the returned enrichment map an array.
+		try { $null = Refresh-GraphTokenIfNeeded -ErrorAction SilentlyContinue } catch {}
 		try { $status = Get-GraphAuditQueryStatus -QueryId $queryId } catch { $status = $null }
 		if ($status -and $status.Status -in @('succeeded','failed','cancelled')) { break }
 		# Heartbeat once per minute to keep long polls visible in logs.
@@ -18038,6 +18048,16 @@ function Invoke-Agent365Phase {
 
 	# Audit enrichment (skipped when -OnlyAgent365Info).
 	$script:Agent365AuditEnrichment = Get-Agent365AuditEnrichment
+	# Defensive safety net (NOT a substitute for the pipeline-leak suppression in the
+	# enrichment/list/detail helpers): the enrichment lookup must resolve to a single
+	# hashtable. If it is ever anything else, coerce to an empty map and warn loudly so
+	# row building degrades to blank enrichment columns instead of throwing a raw
+	# type-coercion error on every package.
+	if ($script:Agent365AuditEnrichment -isnot [hashtable]) {
+		$a365EnrType = if ($null -eq $script:Agent365AuditEnrichment) { 'null' } else { $script:Agent365AuditEnrichment.GetType().Name }
+		Write-LogHost ("  WARNING: Agent 365 audit enrichment resolved to an unexpected type ({0}); continuing with blank enrichment columns." -f $a365EnrType) -ForegroundColor Yellow
+		$script:Agent365AuditEnrichment = @{}
+	}
 
 	# List + per-package detail
 	Write-LogHost "  Listing Agent 365 packages..." -ForegroundColor DarkGray
@@ -19952,6 +19972,15 @@ elseif ($AppendFile) {
 	$rollupActive = ($Rollup -or $RollupPlusRaw)
 	$treatAppendAsRollupTarget = ($appendIsRollupShaped -and $rollupActive)
 
+	# (c) Visibility NOTE: a -Rollup / -RollupPlusRaw run whose -AppendFile target leaf does
+	# not match the rollup-shaped naming convention is still handled correctly (a fresh
+	# raw-audit input is written this run and merged into the target), but log a NOTE so this
+	# class of target naming is visible in the log rather than silent. The M365 rollup path
+	# enforces its own leaf rules below with a hard error, so it is excluded here.
+	if ($rollupActive -and -not $appendIsRollupShaped -and -not $IncludeM365Usage) {
+		Write-LogHost ("  NOTE: -AppendFile target leaf '{0}' does not match the rollup-shaped naming convention (expected an '_Interactions' / '_Rollup' / '_UserStats' / '_SessionCohort' / '_Exploded' suffix, optionally with a _YYYYMMDD_HHMMSS stamp). The rollup writes a fresh raw-audit input this run and merges into the target; consider naming rollup append targets accordingly." -f $appendLeaf) -ForegroundColor Yellow
+	}
+
 	# M365 rollup-mode leaf validation. When -IncludeM365Usage is set with -Rollup
 	# or -RollupPlusRaw, the embedded M365Bundle processor produces 4 outputs
 	# ('<stem>_Rollup_<ts>.csv', '<stem>_UserStats_<ts>.csv', '<stem>_SessionCohort_<ts>.csv',
@@ -19984,12 +20013,18 @@ elseif ($AppendFile) {
 		}
 	}
 
-	if ($treatAppendAsRollupTarget) {
-		# Raw audit CSV uses the precomputed combined-audit leaf — which is the
-		# single-activity name when $ActivityTypes is exactly one type, otherwise
-		# CombinedActivityTypes. The post-export dynamic downgrade is suppressed
-		# under -AppendFile, so the upfront prediction is what the log file (and
-		# the final raw artifact) inherit.
+	if ($rollupActive) {
+		# Under -Rollup / -RollupPlusRaw the writer always produces a FRESH raw-audit CSV
+		# (the rollup processor's --purview input); the -AppendFile target is a separate
+		# rollup artifact consumed only for seeding + merge. Force $OutputFile to the
+		# precomputed combined-audit leaf (single-activity name when $ActivityTypes is
+		# exactly one type, otherwise CombinedActivityTypes) REGARDLESS of whether the target
+		# leaf matches the rollup-shaped naming convention. This prevents a non-rollup-shaped
+		# target leaf from routing $OutputFile to the target's own scratch path — where the
+		# remote pre-flight download of the target would share that path and the rollup would
+		# ingest the already-rolled-up target instead of this run's fresh records. The
+		# post-export dynamic downgrade is suppressed under -AppendFile, so the upfront
+		# prediction is what the log file (and the final raw artifact) inherit.
 		$OutputFile = Join-Path $OutputPath $_combinedAuditLeaf
 	}
 	elseif ($appendInputTier -eq 'SharePoint' -or $appendInputTier -eq 'Fabric') {
@@ -20011,11 +20046,11 @@ elseif ($AppendFile) {
 	# downstream (the remote pre-flight at Connect time will pull the file into
 	# scratch; if the source does not exist there, the pull will raise a clear
 	# remote error).
-	# Skip the existence check entirely when we've routed AppendFile to the rollup
-	# processor — $OutputFile is now a fresh raw-audit path the writer will create,
-	# and the AppendFile target's existence is verified by the rollup pre-seed
-	# block (Test-Path -LiteralPath $AppendFile in the rollup setup downstream).
-	if (-not $treatAppendAsRollupTarget -and $appendInputTier -eq 'Local' -and -not (Test-Path $OutputFile)) {
+	# Skip the existence check entirely under -Rollup / -RollupPlusRaw — $OutputFile is
+	# now a fresh raw-audit path the writer will create, and the AppendFile target's
+	# existence is verified by the rollup pre-seed block (Test-Path -LiteralPath
+	# $AppendFile in the rollup setup downstream).
+	if (-not $rollupActive -and $appendInputTier -eq 'Local' -and -not (Test-Path $OutputFile)) {
 		Write-Host "ERROR: Cannot append to file - file does not exist: $OutputFile" -ForegroundColor Red
 		Write-Host "" -ForegroundColor Yellow
 		Write-Host "The file must exist before you can append to it." -ForegroundColor Yellow
