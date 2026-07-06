@@ -1,8 +1,8 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.12.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.12/PAX_Purview_Audit_Log_Processor_v1.11.12.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.13.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.13/PAX_Purview_Audit_Log_Processor_v1.11.13.ps1)
 >
-> **📅 Script v1.11.12 Release Date:** July 3, 2026
+> **📅 Script v1.11.13 Release Date:** July 6, 2026
 >
 > **📋 Release Notes:** See what's new → [v1.11.x Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
@@ -10,7 +10,7 @@
 >
 > **📚 Documentation Archive:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
-**Documentation Version:** v1.11.x (Current Script Version: v1.11.12)  
+**Documentation Version:** v1.11.x (Current Script Version: v1.11.13)  
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 7+ (required for default Graph API mode); PowerShell 5.1 supported only with `-UseEOM`  
 **License:** MIT
@@ -406,7 +406,7 @@ The **Purview Audit Reader** role is only required for EOM mode (`-UseEOM`) and 
 
 ### Download the Script
 
-- **Script:** [PAX_Purview_Audit_Log_Processor_v1.11.12.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.12/PAX_Purview_Audit_Log_Processor_v1.11.12.ps1)
+- **Script:** [PAX_Purview_Audit_Log_Processor_v1.11.13.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.13/PAX_Purview_Audit_Log_Processor_v1.11.13.ps1)
 - **Release Notes:** [v1.11.x](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md)
 
 Save the downloaded script to a working directory (e.g., `C:\Scripts\PAX\`).

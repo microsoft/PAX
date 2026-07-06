@@ -2,8 +2,8 @@
 
 ## Release Information
 
-- **Latest Version:** 1.11.12
-- **Latest Release Date:** July 3, 2026
+- **Latest Version:** 1.11.13
+- **Latest Release Date:** July 6, 2026
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,12 +12,24 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.11.12:** [PAX_Purview_Audit_Log_Processor_v1.11.12.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.12/PAX_Purview_Audit_Log_Processor_v1.11.12.ps1)
+- **PAX Purview Audit Log Processor Script v1.11.13:** [PAX_Purview_Audit_Log_Processor_v1.11.13.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.13/PAX_Purview_Audit_Log_Processor_v1.11.13.ps1)
 - **Documentation v1.11.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md)
 
 ---
 
 ## Overview
+
+### v1.11.13
+
+Version 1.11.13 is a reliability release that fixes two field-reported defects. Both fixes restore intended behavior — there are no new switches, no output-schema changes, and no change to how any run is invoked; runs that do not use the affected paths behave exactly as in v1.11.12. The first fix restores Microsoft Agent 365 catalog enrichment under app-only authentication, which could previously produce an Agent 365 export with no rows. The second restores cross-run `-AppendFile` reconciliation of the rolled-up interactions file when the remote append target is named with a custom (non-standard) filename.
+
+#### Microsoft Agent 365 Catalog Enrichment Restored (App-Only Runs)
+
+Under app-only authentication, the Agent 365 catalog enrichment step could fail for every catalog entry, producing an export with no rows even when the catalog listed hundreds of packages. Enrichment now completes normally so catalog rows are written, with a defensive fallback that logs a clear warning and continues with blank date-created / created-by values rather than dropping rows if enrichment data is ever unavailable. There are no new switches and no change to how the Agent 365 export is run. See [Bug Fixes → v1.11.13](#v11113-1) for details.
+
+#### Cross-Run Append Restored for Custom-Named Remote Rollup Targets (`-AppendFile`)
+
+When appending a rolled-up interactions run (`-Rollup` with `-AppendFile`) to a target on SharePoint or Microsoft Fabric / OneLake whose filename did not follow the standard rolled-up naming, the run could add zero new rows and mark every existing row as departed — even though fresh interactions were retrieved. The run now always processes its own fresh export (never the downloaded copy of the target) regardless of the target's filename, so the append reconciles correctly: overlapping rows de-duplicate, new rows are added, and existing rows are preserved. A note is now logged when a rollup append target uses a non-standard name. The existing append data-safety protections are unchanged. See [Bug Fixes → v1.11.13](#v11113-1) for details.
 
 ### v1.11.12
 
@@ -680,6 +692,12 @@ Excel filenames, Excel tab names, and the `EntraUsers_*` / `Agent365_*` filename
 ---
 
 ## Bug Fixes
+
+### v1.11.13
+
+- **(v1.11.13) Microsoft Agent 365 catalog enrichment no longer produces an empty export under app-only authentication.** With Agent 365 enrichment enabled (`-IncludeAgent365Info` / `-OnlyAgent365Info`) under app-only authentication, an internal step that prepares each agent's "date created" / "created by" enrichment could return an unexpected value shape, which caused every catalog entry to be rejected during row assembly — so the run reported "Agent 365: no rows to write" and produced an empty export even though the catalog listed hundreds of packages. The enrichment step now always returns the expected result, so catalog rows build and write normally; the same class of issue was corrected in the adjacent package-listing and per-package-detail steps so the whole Agent 365 path is consistent. A defensive safeguard was also added: if the enrichment data is ever not in the expected form, the run logs a clear warning and continues with blank "date created" / "created by" values rather than dropping every row. Agent 365 only — no other export is affected, and there is no change to how the Agent 365 switches are run.
+
+- **(v1.11.13) Cross-run `-AppendFile` to a custom-named remote rollup target no longer appends nothing.** When appending a rolled-up interactions run (`-Rollup` / `-RollupPlusRaw` with `-AppendFile`) to a target stored on SharePoint or Microsoft Fabric / OneLake whose filename did not follow the standard rolled-up naming, the run could add zero new rows and mark every existing row as departed — silently dropping the current run's interactions — even though the audit retrieval returned new records. The cause was a working-file naming collision: with a custom-named remote target, the run's fresh audit export and the downloaded copy of the existing target could resolve to the same location, so the rollup step processed the already-rolled-up target instead of the fresh export (which it correctly rejects, yielding zero rolled-up rows). Under `-Rollup` / `-RollupPlusRaw`, the run now always writes its fresh export to a distinct, timestamped working file regardless of the append target's name, so the rollup always processes this run's fresh records and merges them into the target; overlapping rows de-duplicate, new rows are added, and existing rows are preserved. A note is also logged when a rollup append target uses a non-standard name, so the situation is visible going forward. Affects only rolled-up `-AppendFile` runs whose remote target uses a custom name — standard-named targets, local targets, and non-rollup appends are unaffected, and the existing append data-safety protections (the zero-row overwrite refusal, the union-shrink guard, and the one-time re-baseline) are unchanged.
 
 ### v1.11.10
 
