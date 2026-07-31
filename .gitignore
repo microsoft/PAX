@@ -32,6 +32,7 @@ AGENTS.md
 .github/agents/
 .github/instructions/
 .github/prompts/
+.github/dev-trio/
 .github/copilot-instructions.md
 .dev-trio/
 
