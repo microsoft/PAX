@@ -60,9 +60,9 @@ The container image itself is **auth-agnostic** — it just bakes in PowerShell 
 
 ## Deploy
 
-> **Dashboard selection.** In `-ScriptArgs`, `-Rollup` targets the **AI-in-One (AIO)** dashboard by default. Add `'-Dashboard','AIBV'` for the **AI Business Value** dashboard, or `'-Dashboard','M365'` (equivalently `'-IncludeM365Usage'`) for **M365 Usage Analytics**. AIO and AIBV are produced from the same CopilotInteraction + Entra/MAC licensing data — no other args change.
+> **Dashboard selection.** In `-ScriptArgs`, `-Rollup` targets the **AI-in-One (AIO)** dashboard by default. Add `'-Dashboard','ValueLens'` for the **ValueLens** dashboard, or `'-Dashboard','M365'` (equivalently `'-IncludeM365Usage'`) for **M365 Usage Analytics**. AIO and ValueLens use the same CopilotInteraction + Entra/MAC licensing data, output schema, and append behavior; ValueLens is a name-only change, and existing checkpoints resume without customer intervention. <!-- Add `'-Dashboard','AISID'` for the **AI Solutions Intelligence Dashboard (AISID)** — the full Purview + Entra + Microsoft Defender pipeline; its 12 fixed-name files land in a dedicated `'-OutputPathDefenderUsage','<folder>'` (or `'-AppendDefenderUsage','<folder>'`) destination and are uploaded there exactly once, never to the Purview output. Three Microsoft Defender for Cloud Apps files are compatibility tables in this release: first runs write exact headers, while append runs preserve valid prior files byte-for-byte. -->
 
-> **Anonymization & hierarchy.** Add `'-Deidentify'` to `-ScriptArgs` to write anonymized output to the destination — every identity is replaced with an irreversible token on the host before upload (off by default; works under managed identity and app registration alike; no extra Graph permission). AIO / AIBV rollups automatically include org/manager-hierarchy columns in the Users output; `'-FillerLabel','Fixed','-FillerLabelText','<text>'` only controls how empty deeper org levels are labelled (the M365 dashboard has no hierarchy).
+> **Anonymization & hierarchy.** Add `'-Deidentify'` to `-ScriptArgs` to write anonymized output to the destination — every identity is replaced with an irreversible token on the host before upload (off by default; works under managed identity and app registration alike; no extra Graph permission). AIO / ValueLens rollups automatically include org/manager-hierarchy columns in the Users output; `'-FillerLabel','Fixed','-FillerLabelText','<text>'` only controls how empty deeper org levels are labelled (the M365 dashboard has no hierarchy).
 
 ### SharePoint destination, daily 06:00 UTC
 
@@ -118,6 +118,9 @@ The two examples above route every output to the same location (Purview audit, E
 | Purview audit (raw / rollup / event-level) | `-OutputPath` | `-AppendFile` |
 | EntraUsers / MAC licensing | `-OutputPathUserInfo` | `-AppendUserInfo` (auto-enables `-IncludeUserInfo`) |
 | Agent 365 catalog | `-OutputPathAgent365Info` | `-AppendAgent365Info` (auto-enables `-IncludeAgent365Info`) |
+<!--
+| AI Solutions Intelligence Dashboard (AISID) output set (12 fixed-name files) | `-OutputPathDefenderUsage` | `-AppendDefenderUsage` (folder-only; `-Dashboard AISID` runs) |
+-->
 | Run log | `-OutputPathLog` | _(n/a)_ |
 
 Rules enforced at parameter validation: every supplied URL must resolve to the same tier (mixed Local/SP/Fabric is rejected); UNC paths are rejected on every destination switch; exactly one of each stream's pair must be bound.
@@ -155,7 +158,7 @@ Rules enforced at parameter validation: every supplied URL must resolve to the s
 
 Every appended file (rollup Fact CSV under `-AppendFile`, raw audit CSV under non-rollup `-AppendFile`, EntraUsers CSV under `-AppendUserInfo`) gains three trailing columns at merge time: `Date_Added`, `Latest_Append_Date`, `In_Latest_Append`. Rows that departed from the current run's audit window are retained in the union with `In_Latest_Append = FALSE` so historical fact-table joins continue to resolve. The CopilotInteraction rollup Fact CSV additionally carries two stable identity columns (`Message_Id_Raw`, `ThreadId_Raw`) so per-run integer surrogates remain stable across appends. Under `-AppendUserInfo`, the raw Entra membership snapshot the audit phase writes is kept **pristine** — the union lands at the `-AppendUserInfo` target, the raw file keeps its natural timestamped name (or gets a `_raw` suffix on the rare path-and-leaf collision).
 
-**Under `-Deidentify`:** `PersonId_Normalized` is tokenized but deterministic (still a stable join key), while `Message_Id_Raw` / `ThreadId_Raw` keep their real GUID values; appending a deidentified run into a non-deidentified target (or vice-versa) is hard-rejected. **Org / manager-hierarchy columns** are added to the rollup Users output on AIO / AIBV runs — the Fabric Users append adds new columns but rejects appends that are *missing* existing columns, so keep a given Users Delta table on one PAX version line (or recreate it) to avoid mixed-schema appends.
+**Under `-Deidentify`:** `PersonId_Normalized` is tokenized but deterministic (still a stable join key), while `Message_Id_Raw` / `ThreadId_Raw` keep their real GUID values; appending a deidentified run into a non-deidentified target (or vice-versa) is hard-rejected. **Org / manager-hierarchy columns** are added to the rollup Users output on AIO / ValueLens runs — the Fabric Users append adds new columns but rejects appends that are *missing* existing columns, so keep a given Users Delta table on one PAX version line (or recreate it) to avoid mixed-schema appends.
 
 ## Alternative: app registration instead of managed identity
 
@@ -327,6 +330,9 @@ Or open the file share in Azure Storage Explorer / Azure portal. The failed cont
 
 ## Notes
 
+- **Replica safety:** Keep ACA job `parallelism` at `1`, and do not run concurrent replicas against the same output target.
+- **Validation sequence:** Run an explicit one-day UTC window first, for example `-StartDate '2026-07-01' -EndDate '2026-07-02'`; then run an explicit historical range such as `-StartDate '2026-06-01' -EndDate '2026-07-01'`; then append the next explicit range using the matching `-Append*` switches. Keep the PAX version and `-Deidentify` state consistent across the seed and append runs.
+- **Hosted resume and exit behavior:** Fabric mirrors durable resume artifacts to `Files/.pax_resume/<run timestamp>/`. PAX v1.11.15 corrects exact-byte transmission for checkpoint and `_PARTIAL` artifacts, and unexpected fatal top-level errors return exit code `1`. Observe the hosted process exit and resume behavior before broad production use.
 - **Agent 365 enrichment under `-Auth ManagedIdentity` (app-only, opt-in / pre-GA).** PAX runs `-IncludeAgent365Info` / `-OnlyAgent365Info` app-only under `-Auth ManagedIdentity` (and `-Auth AppRegistration`) with no interactive sign-in, provided the identity holds the application permissions `CopilotPackages.Read.All` + `Application.Read.All` (admin-consented). Grant them with `../Prereqs/Grant-PAXPermissions.ps1 -IncludeAgent365` — they are not granted by default. A missing app-role, unlicensed tenant, or absent program enrollment surfaces as a runtime 403 (the rest of the run completes normally). This app-only path is **pre-GA** — validate it before relying on it in production. (Delegated Agent 365 instead relies on the signed-in user's AI Administrator / Global Administrator directory role, e.g. on the local-run path.)
 - **Fabric `-OutputPath` shapes the script accepts:**
   - `https://<tenant>.onelake.dfs.fabric.microsoft.com/<Workspace>/<Lakehouse>.Lakehouse` — main Delta tables go under the Lakehouse's default `Tables/` area.

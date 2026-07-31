@@ -98,13 +98,24 @@ This is the fastest possible Fabric-from-laptop on-ramp. It uses `-Auth WebLogin
    (No `-StartDate` / `-EndDate` => script defaults to the last 30 days, UTC. To pin a window, pass e.g. `-StartDate '2026-04-14' -EndDate '2026-05-14'`.)
    You will get a browser prompt for the Graph scopes and (separately) for Az.Accounts to mint the OneLake storage token. After both succeed the script writes the audit Delta table(s) under `Tables/dbo/` and the run log under `Files/pax_logs/`.
 
-   > **Dashboard selection.** `-Rollup` targets the **AI-in-One (AIO)** dashboard by default. Add `-Dashboard AIBV` for the **AI Business Value** dashboard, or `-Dashboard M365` (equivalently `-IncludeM365Usage`) for **M365 Usage Analytics**. AIO and AIBV are produced from the same CopilotInteraction + Entra/MAC licensing data — no other switches change.
+  > **Dashboard selection.** `-Rollup` targets the **AI-in-One (AIO)** dashboard by default. Add `-Dashboard ValueLens` for the **ValueLens** dashboard, or `-Dashboard M365` (equivalently `-IncludeM365Usage`) for **M365 Usage Analytics**. AIO and ValueLens use the same CopilotInteraction + Entra/MAC licensing data, output schema, and append behavior; ValueLens is a name-only change, and existing checkpoints resume without customer intervention. <!-- Add `-Dashboard AISID` for the **AI Solutions Intelligence Dashboard (AISID)** — the full Purview + Entra + Microsoft Defender pipeline; its 12 fixed-name files land in a dedicated `-OutputPathDefenderUsage <folder>` (or `-AppendDefenderUsage <folder>`) destination and are uploaded there exactly once, never to the Purview output. Three Microsoft Defender for Cloud Apps files are compatibility tables in this release: first runs write exact headers, while append runs preserve valid prior files byte-for-byte. -->
 
    > **Anonymized output (`-Deidentify`).** Add `-Deidentify` to replace every identity (including the identity fields inside the raw `AuditData` JSON) with an irreversible, deterministic token **before** anything is written to the lakehouse — useful when the Fabric data will be shared more broadly. Off by default, works under any auth mode, and needs no extra Graph scope. See the main PAX documentation for the full field list.
 
-   > **Org / manager hierarchy.** AIO / AIBV rollups automatically add org/manager-hierarchy columns to the Users output (level, manager, full management chain, direct/total report counts) from the Entra manager data PAX already collects — ready for parent-child org views in Power BI. `-FillerLabel` (`Self` / `RepeatManager` / `Fixed`, with `-FillerLabelText "<text>"` for the literal) only controls how empty deeper level columns are labelled. The M365 dashboard has no hierarchy.
+   > **Org / manager hierarchy.** AIO / ValueLens rollups automatically add org/manager-hierarchy columns to the Users output (level, manager, full management chain, direct/total report counts) from the Entra manager data PAX already collects — ready for parent-child org views in Power BI. `-FillerLabel` (`Self` / `RepeatManager` / `Fixed`, with `-FillerLabelText "<text>"` for the literal) only controls how empty deeper level columns are labelled. The M365 dashboard has no hierarchy.
 
 That is the full minimum path. The rest of this README covers the variants you are likely to want next.
+
+<details>
+<summary><strong>Validation and scale-up sequence</strong></summary>
+
+1. Validate a single UTC day first with explicit dates, for example `-StartDate '2026-07-01' -EndDate '2026-07-02'`.
+2. Run an explicit historical range next, for example `-StartDate '2026-06-01' -EndDate '2026-07-01'`.
+3. Then append the next explicit range by replacing every `-OutputPath*` switch used in validation with its matching `-Append*` switch. Keep the PAX version and `-Deidentify` state consistent across the seed and append runs.
+
+Omitting both dates selects the last 30 UTC days. Fabric mirrors durable resume artifacts to `Files/.pax_resume/<run timestamp>/`. PAX v1.11.15 corrects exact-byte transmission for checkpoint and `_PARTIAL` artifacts, and unexpected fatal top-level errors return exit code `1`. Observe the hosted process exit and resume behavior before broad production use.
+
+</details>
 
 ---
 
@@ -224,7 +235,7 @@ pwsh -File .\PAX_Purview_Audit_Log_Processor_v<x.y.z>.ps1 `
 `-AppendFile` is supported under `-Rollup` and `-RollupPlusRaw` on all three tiers. The same example works against SharePoint or local paths by changing the URL / path form — no other switches change.
 
 > **Two append cautions when writing to Fabric Delta tables.**
-> - **Hierarchy / schema drift.** AIO / AIBV rollups add org/manager-hierarchy columns to the Users output. The Fabric Users append tolerates *added* columns but rejects *missing* ones — so appending current output into an older Users Delta table just adds the columns, but appending older (pre-hierarchy) output into a table that already has them fails the schema check. Keep a Users table on one PAX version line or recreate it.
+> - **Hierarchy / schema drift.** AIO / ValueLens rollups add org/manager-hierarchy columns to the Users output. The Fabric Users append tolerates *added* columns but rejects *missing* ones — so appending current output into an older Users Delta table just adds the columns, but appending older (pre-hierarchy) output into a table that already has them fails the schema check. Keep a Users table on one PAX version line or recreate it.
 > - **Deidentify consistency.** Appending a `-Deidentify` run into a non-deidentified table (or the reverse) is hard-rejected at pre-flight — use the same `-Deidentify` choice for every run that targets a given file/table.
 
 ### M365 rollup append anchoring (`-IncludeM365Usage` + `-Rollup` / `-RollupPlusRaw`)
@@ -264,7 +275,7 @@ Every appended file gains three trailing columns at merge time:
 | `Latest_Append_Date` | `YYYY-MM-DD` | Latest run that touched the file (same on every row). |
 | `In_Latest_Append` | `TRUE` / `FALSE` | Whether the row appeared in this run's audit window / membership snapshot. `FALSE` for rows retained from prior runs that no longer surface today. |
 
-The CopilotInteraction rollup Fact CSV additionally carries stable identity columns: the raw keys **`Message_Id_Raw`** and **`ThreadId_Raw`**, plus a normalized user column (**`User_Id_Normalized`** on the AIO fact; **`Audit_UserId_Normalized`** on AIBV). These keep the per-run integer surrogates (`Message_Id`, `ThreadId`, `UserKey`) stable across appends — the cross-run append merge dedups on the full grain plus `Message_Id_Raw`, so multi-month threads remain a single thread and fan-out rows (many per message) reconcile independently in downstream models.
+The CopilotInteraction rollup Fact CSV additionally carries stable identity columns: the raw keys **`Message_Id_Raw`** and **`ThreadId_Raw`**, plus a normalized user column (**`User_Id_Normalized`** in AIO output; **`Audit_UserId_Normalized`** in ValueLens output). These keep the per-run integer surrogates (`Message_Id`, `ThreadId`, `UserKey`) stable across appends — the cross-run append merge dedups on the full grain plus `Message_Id_Raw`, so multi-month threads remain a single thread and fan-out rows (many per message) reconcile independently in downstream models.
 
 ### Pristine raw EntraUsers under `-AppendUserInfo`
 

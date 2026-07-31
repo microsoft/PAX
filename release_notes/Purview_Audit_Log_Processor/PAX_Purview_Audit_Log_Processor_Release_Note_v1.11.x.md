@@ -2,8 +2,8 @@
 
 ## Release Information
 
-- **Latest Version:** 1.11.14
-- **Latest Release Date:** July 6, 2026
+- **Latest Version:** 1.11.15
+- **Latest Release Date:** July 31, 2026
 - **Released By:** Microsoft Copilot Growth ROI Advisory Team (copilot-roi-advisory-team-gh@microsoft.com)
 
 ---
@@ -12,16 +12,52 @@
 
 Download the script below.  For questions or issues, refer to the documentation.
 
-- **PAX Purview Audit Log Processor Script v1.11.14:** [PAX_Purview_Audit_Log_Processor_v1.11.14.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.14/PAX_Purview_Audit_Log_Processor_v1.11.14.ps1)
+- **PAX Purview Audit Log Processor Script v1.11.15:** [PAX_Purview_Audit_Log_Processor_v1.11.15.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.15/PAX_Purview_Audit_Log_Processor_v1.11.15.ps1)
 - **Documentation v1.11.x (Markdown):** [PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md](https://github.com/microsoft/PAX/blob/release/release_documentation/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Documentation_v1.11.x.md)
 
 ---
 
 ## Overview
 
+### v1.11.15
+
+Version 1.11.15 is **both a feature release and a reliability & correctness release.** As a feature release it renames one dashboard selector value to **ValueLens** and adds hybrid directory enrichment (`-UserInfoSupplement`); as a reliability release it delivers a broad set of correctness fixes that apply to normal runs, so existing workflows benefit. The **AI Solutions Intelligence Dashboard (AISID)** implementation is included in this release, but AISID remains **under development**: its customer entry points are gated in v1.11.15, no AISID customer run can authenticate, collect, or publish in this version, and availability is planned for a later PAX script version. See [What's New → v1.11.15](#v11115-1), [Bug Fixes → v1.11.15](#v11115-2), and [Known Considerations → v1.11.15](#v11115-3) for the full detail.
+
+#### AI Solutions Intelligence Dashboard (AISID) — Under Development, Entry Points Gated
+
+The AISID implementation is included in v1.11.15, but AISID is still **under development and is not available for customer use in this version**. The `-Dashboard AISID`, `-OutputPathDefenderUsage`, `-AppendDefenderUsage`, and `-DisableAISIDDeltaCache` entry points are gated: supplying any of them reports that AISID is under development and stops the run before any sign-in, collection, or publication, so an AISID customer run cannot contact a service or write output in this version. PAX has no Defender-only execution switch. The completed AISID engineering described in this release note is retained as implementation groundwork, and the entry points are planned to become available in a later PAX script version. See [What's New → v1.11.15](#v11115-1).
+
+#### ValueLens — Renamed Dashboard Selector
+
+The customer-facing value for one dashboard selector is renamed to **ValueLens**; select it with `-Dashboard ValueLens`. This is a name-only change — the data, output schema, append behavior, de-identification, and output files are unchanged — and existing checkpoints resume automatically as ValueLens with no customer intervention.
+
+#### Partition-Failure and Subdivision Reliability (Exit Code 40)
+
+On ordinary partitioned exports, a partition that keeps failing the same way now stops instead of retrying indefinitely, and a defensive depth limit stops runaway time-window subdivision; both situations are reported in the end-of-run summary with a `-Resume` hint. A run that finishes with such gaps returns a distinct "completed with gaps" process exit code (`40`) at lowest precedence, so automation can tell it apart from a clean success without disturbing the existing exit codes.
+
+#### SharePoint and Large-File Handling Corrections
+
+SharePoint output no longer over-requests permissions or emits a false missing-permission warning; a large existing SharePoint append target downloads memory-safely; an advisory appears before merging an unusually large append target; large single-file uploads use a corrected, bounded-memory path; and an upload failure preserves the local copy and is reflected in the run's outcome.
+
+#### Faster Interactions/Fact Append on Large Targets
+
+Appending a run into an existing Interactions/Fact CSV now completes substantially faster on large targets, and the improvement grows with the size of the target. The result is unchanged in every respect — the merged output is byte-for-byte identical, the same fixed memory budget applies, temporary disk space is still used during the merge and removed afterward, and there is no row limit or truncation. If the faster path is ever unavailable on a given machine, the original path is used automatically, so results and compatibility are preserved. See [Bug Fixes → v1.11.15](#v11115-2).
+
+#### Faster Fact Continuity Preparation for Append Rollups
+
+Before an append rollup begins, PAX prepares continuity keys from the existing Fact file so retained interactions keep their stable `Message_Id` and thread identifiers. That preparation now uses a disk-backed accelerator for supported identifier forms, completing substantially faster while keeping memory bounded. Seed contents, first-occurrence behavior, identifier casing, and continuity results remain unchanged. If the existing file contains an unsupported key form, PAX automatically uses the established compatibility path with no customer action or configuration required. Temporary working files are removed when the step finishes, and a failure leaves the existing append target untouched. See [Bug Fixes → v1.11.15](#v11115-2).
+
+
+
+User filtering now applies consistently on every directory-backed pass — first pass and any retry pass — so a run scoped only with `-GroupNames` no longer collects more broadly than intended. Runs that supply neither `-UserIds` nor `-GroupNames` are unchanged. See [Bug Fixes → v1.11.15](#v11115-2).
+
+#### AISID Completion, Resume, and Data Correctness (Implementation Groundwork)
+
+The behavior below is completed AISID implementation retained for a later PAX script version; because the AISID entry points are gated in v1.11.15, it is not reachable by a customer run in this version. An AISID run reports its outcome plainly — complete, complete-with-empty, complete-with-unavailable, completed-with-gaps, or interrupted — and cannot report a clean success when a required file is missing, unreadable, or undelivered. Resumed AISID runs restore the original run's dashboard, destination, cache setting, and collection window and give a truthful failure status if resume validation fails, and the dashboard's data-set measures are computed consistently and deterministically. See [What's New → v1.11.15](#v11115-1) and [Bug Fixes → v1.11.15](#v11115-2).
+
 ### v1.11.14
 
-Version 1.11.14 is a reliability release that fixes two remote-output delivery defects. Both fixes restore intended behavior — there are no new switches, no output-schema changes, and no change to how any run is invoked; runs that do not use the affected remote-output paths behave exactly as in v1.11.13. The first fix ensures the Microsoft Agent 365 catalog CSV is actually delivered to a SharePoint or Microsoft Fabric / OneLake destination (previously it could be generated but not uploaded). The second ensures a custom-named per-stream output file is delivered to its own per-stream destination rather than the primary output location. This release also carries early groundwork for a future AI Solutions Intelligence Dashboard (AISID) capability that is **not available in this version** — see [Known Considerations → v1.11.14](#v11114-3).
+Version 1.11.14 is a reliability release that fixes two remote-output delivery defects. Both fixes restore intended behavior — there are no new switches, no output-schema changes, and no change to how any run is invoked; runs that do not use the affected remote-output paths behave exactly as in v1.11.13. The first fix ensures the Microsoft Agent 365 catalog CSV is actually delivered to a SharePoint or Microsoft Fabric / OneLake destination (previously it could be generated but not uploaded). The second ensures a custom-named per-stream output file is delivered to its own per-stream destination rather than the primary output location. This release also carries early groundwork for the AI Solutions Intelligence Dashboard (AISID) capability; AISID remains under development and its customer entry points are gated in v1.11.15, with availability planned for a later PAX script version — see [What's New → v1.11.15](#v11115-1).
 
 #### Microsoft Agent 365 Catalog CSV Delivered to Remote Destinations
 
@@ -275,9 +311,35 @@ New sixth value on the `-Auth` ValidateSet for Azure-hosted headless execution (
 
 ## What's New
 
+### v1.11.15
+
+- **AI Solutions Intelligence Dashboard (AISID) — implementation included, entry points gated (`-Dashboard AISID`).** The AISID implementation ships in v1.11.15, but AISID is still under development and is **not available for customer use in this version**: supplying `-Dashboard AISID` reports that AISID is under development and stops the run before any sign-in, collection, or publication. The retained implementation runs the full Microsoft Purview + Microsoft Entra + Microsoft Defender pipeline and produces the input set for the Copilot Analytics Lab **AI Solutions Intelligence Dashboard**, reusing the AI-in-One-shaped CopilotInteraction rollup for its Purview/Entra tables and layering Microsoft Defender signals on top. Everything described in this AISID group is implementation groundwork retained for a later PAX script version. Runs that do not select AISID are unchanged.
+
+- **Dedicated AISID destination — three switches (all gated in v1.11.15).** Each of the three switches below is a gated AISID entry point in this version: supplying it reports that AISID is under development and stops the run. The behavior described for each is retained implementation groundwork for a later PAX script version.
+  - **`-OutputPathDefenderUsage <folder>`** — folder-only destination for the entire AISID output set. Supply a folder path, SharePoint folder URL, or Microsoft Fabric / OneLake folder URL (a file leaf is rejected); the storage tier is inferred exactly like the other `-OutputPath*` switches and must match the run's other destinations. Only meaningful with `-Dashboard AISID`.
+  - **`-AppendDefenderUsage <folder>`** — the append counterpart of `-OutputPathDefenderUsage`. Merges this run's AISID output into an existing set in the target folder rather than overwriting it: the fact tables reconcile on each table's key (overlapping rows update, new rows are added, existing rows are preserved) and the dimension tables (`EntraUsers.csv`, `ai_solutions_catalog.csv`) are regenerated each run. Mutually exclusive with `-OutputPathDefenderUsage` (supply exactly one of the pair per run). Only meaningful with `-Dashboard AISID`.
+  - **`-DisableAISIDDeltaCache`** — turns off the incremental result cache used by the off-hours-geography signal, forcing a full re-collection of its window on this run. Only meaningful with `-Dashboard AISID`.
+
+- **12 fixed-name output files.** An AISID run delivers exactly 12 files to the `-OutputPathDefenderUsage` / `-AppendDefenderUsage` destination, each loaded by the dashboard model under a fixed name: `ai_activity_sessions.csv`, `ai_offhours_geo.csv`, `ai_file_proximity.csv`, `ai_oauth_consents.csv`, `ai_sso_signins.csv`, `ai_client_channel.csv`, `ai_copilot_usage_graph.csv`, `ai_appgov_alerts.csv`, `ai_cloud_discovery.csv`, `ai_mda_sessions.csv`, `ai_solutions_catalog.csv`, and `EntraUsers.csv`. The three Microsoft Defender for Cloud Apps files are compatibility tables in this release; their collectors are not included yet. A first run writes their exact headers, while an append run preserves any valid prior files byte-for-byte. All 12 go to the AISID destination — never the primary Purview output location.
+
+- **Remote-safe delivery.** On a SharePoint or Microsoft Fabric / OneLake run, the AISID writers stage each file to the local scratch folder first, then a single end-of-run upload sweep ships each of the 12 files to the AISID destination exactly once. The internal `.aisid_cache` delta-cache folder is scratch only — it is never uploaded and is never a dashboard artifact.
+
+- **Explicit completion states.** Every AISID run ends in one of five states, reported in the run log: **complete** (all 12 files produced with data), **complete-with-empty** (a query succeeded with zero rows), **complete-with-unavailable** (a signal is not populated but its required header-only file is delivered), **completed-with-gaps** (one or more required files could not be produced), or **interrupted** (collection stopped before finishing, for example an authentication quit). A run that ends with gaps — including an AISID upload that fails to deliver — exits with a non-zero exit code (`40`), so schedulers and automation can detect it.
+
+- **`-Dashboard ValueLens` — renamed selector.** The customer-facing dashboard value formerly exposed publicly is now **ValueLens**; select it with `-Dashboard ValueLens`. It is a name-only change — same data, output schema, append behavior, de-identification, and output files — and the former public value is no longer accepted for new commands. Existing checkpoints resume automatically as ValueLens with no customer intervention.
+
+- **Bring Your Own Directory — hybrid enrichment (`-UserInfoSupplement`).** Alongside the existing `-UserInfoFile` (which *replaces* the Entra directory with a CSV), the new `-UserInfoSupplement` *enriches* the live directory: PAX fetches the live Entra `/users` directory normally, then appends the columns of a customer-provided CSV to each matching Entra row (an Entra-left join on `UserPrincipalName`). Every Entra user is preserved; supplemental rows that match no Entra user are reported and excluded (never added as directory users), and this alone never marks a run "completed with gaps". `UserPrincipalName` is the only required supplemental column and is a join key only — it is never copied into the output, so identity always comes from Entra. Supplemental column names, order, blanks, and values are preserved unchanged and are additive-only (a name collision with any Entra/PAX-owned column, a blank/duplicate UPN, or a duplicate header is a fatal input error). The supplemental input may be a local `.csv`, a SharePoint `.csv` URL, or a Fabric `/Files/.../*.csv` URL. Supplemental columns flow into the normal EntraUsers CSV and the AIO/ValueLens Rollup Users dimension, but not into the AISID `EntraUsers.csv` fixed 14-column schema. With `-Deidentify`, Entra-derived identity fields are de-identified as usual while supplemental values pass through unchanged — PAX does not inspect, mask, or de-identify them, and shows a prominent notice before processing. Auto-enables `-IncludeUserInfo`; compatible with `-UserIds`, `-GroupNames`, `-OnlyUserInfo`, AIO/ValueLens/AISID, `-AppendUserInfo`, and `-Deidentify`; mutually exclusive with `-UserInfoFile`, `-UseEOM`, and `-RAWInputCSV`.
+
+
+- **New "completed with gaps" exit code (`40`).** For unattended and scheduled use, PAX now returns a distinct process exit code `40` when a run finishes but one or more partitions failed terminally, a time window reached the subdivision-depth safeguard, or (on an AISID run) a required file could not be produced or delivered — so automation can tell "finished, but check the summary" apart from a clean success. The existing exit codes are unchanged and keep priority; `40` is the lowest-precedence signal. A full exit-code reference was added to the script's built-in help.
+
+- **Advisory before merging an unusually large append target (`PAX_APPEND_WARN_BYTES`).** Before merging into an existing append target, PAX checks the target's size without downloading it and, if it is larger than a set threshold (1 GB by default), prints a one-line advisory that a very large target may lengthen the merge and require temporary disk space and additional I/O. The append/merge processes the target within a fixed memory budget by spilling to a temporary disk-backed store rather than holding the whole target in memory. It is advisory only — the run always continues and a legitimately large target is never blocked — and it is silently skipped if the size can't be read or the target doesn't exist yet. The threshold can be changed with the `PAX_APPEND_WARN_BYTES` environment variable (in bytes), which controls only the advisory threshold and does not cap processing.
+
+- **AISID runs use the standard operational surface (retained implementation).** In the retained implementation an AISID run participates in the same run log, end-of-run output roster, parameter snapshot, checkpoint/resume, and metrics as every other run, and delivers its files to Local, SharePoint, or Microsoft Fabric / OneLake destinations through the same remote-delivery path. This behavior is not reachable in v1.11.15 because the AISID entry points are gated.
+
 ### v1.11.14
 
-*Not applicable — v1.11.14 is a reliability release and introduces no new customer-facing features. Its two remote-output delivery fixes are described under [Overview → v1.11.14](#v11114) and [Bug Fixes → v1.11.14](#v11114-2). Early groundwork for a future AI Solutions Intelligence Dashboard (AISID) capability is noted under [Known Considerations → v1.11.14](#v11114-3); it is not available in this version.*
+*Not applicable — v1.11.14 is a reliability release and introduces no new customer-facing features. Its two remote-output delivery fixes are described under [Overview → v1.11.14](#v11114) and [Bug Fixes → v1.11.14](#v11114-2). Early groundwork for the AI Solutions Intelligence Dashboard (AISID) capability shipped in this release; AISID remains under development and its customer entry points are gated in v1.11.15, with availability planned for a later PAX script version — see [What's New → v1.11.15](#v11115-1).*
 
 ### v1.11.13
 
@@ -721,6 +783,114 @@ Excel filenames, Excel tab names, and the `EntraUsers_*` / `Agent365_*` filename
 
 ## Bug Fixes
 
+### v1.11.15
+
+<details>
+<summary><strong>(v1.11.15) Graph / Purview collection reliability</strong></summary>
+
+- **A partition that keeps failing the same way now stops instead of retrying forever.** Under a persistent server-side failure, a partition that fails the same way enough times in a row is now treated as a terminal failure: it is dropped from the retry queue so the run can finish, and it is listed in the end-of-run summary with its time window, the kind of failure, and a `-Resume` hint. Transient sign-in / token forgiveness was tightened so it fires only on genuine authentication errors — not on unrelated text that merely contains "401" (such as a record count) — and genuine authentication failures are now labelled as such in the failure report.
+- **A safeguard prevents runaway time-window subdivision.** When a single window returns more records than the service releases at once, PAX splits it into smaller windows and retries; genuinely high-volume tenants that need many levels of splitting continue to work unchanged. A defensive depth limit now stops the splitting if it ever reaches an unreasonable depth without resolving; a window that reaches the limit is stopped, logged with its bounds and a `-Resume` hint, and reported in its own section of the end-of-run summary.
+- **Gaps return a distinct exit code without overriding higher-priority codes.** A run that finishes with one or more terminal partition failures and/or a window that reached the subdivision safeguard now returns exit `40` (completed with gaps). The existing exit codes keep priority — a hard record-limit result, an open reliability circuit breaker, or a directory-fetch shortfall still report their own codes — and a full exit-code reference was added to the script's built-in help.
+
+</details>
+
+<details>
+<summary><strong>(v1.11.15) <code>-UserIds</code> / <code>-GroupNames</code> user filtering</strong></summary>
+
+- **User filtering now applies to every directory-backed pass.** When a run is scoped with `-UserIds`, `-GroupNames`, or both, the resolved set of users — direct user IDs plus everyone expanded from the named groups — is now applied consistently on **both** the first pass and any retry pass. Previously a run scoped only with `-GroupNames` could skip that filtering on the directory-backed path and collect more broadly than intended; it now honors the group membership on every pass. Runs that supply neither option are unaffected and continue to collect without user filtering. _(The live `-UserIds` / `-GroupNames` end-to-end check against a tenant is still pending; the behavior is verified by the automated test suite.)_
+
+</details>
+
+<details>
+<summary><strong>(v1.11.15) SharePoint permissions, downloads, and append targets</strong></summary>
+
+- **SharePoint output no longer over-requests permissions.** When writing to SharePoint, PAX previously also asked for `Files.ReadWrite.All` on top of `Sites.ReadWrite.All`, even though `Sites.ReadWrite.All` alone authorizes every SharePoint operation PAX performs. The unneeded scope has been removed, which also clears a **false "missing required permission" warning** that appeared for identities granted only `Sites.ReadWrite.All` — those runs were already fully functional. Apps previously granted both scopes keep working and do not need to re-consent.
+- **Large SharePoint downloads no longer risk running out of memory.** When a run needs to pull an existing large remote file back down first (for example an append target that has grown large), the download now streams straight to disk instead of being held in memory in full, so its memory use is flat and independent of file size; a not-yet-present remote file is still treated as a first run.
+- **Upload failures preserve the local copy and are reported.** If any file fails to upload, the run is reported as completed-with-gaps (exit `40`) and the local working copy is kept so nothing is lost. The run's final remote log records the run's terminal result, the local recovery location, and the exit information before its own last upload, so the delivered log reflects how the run actually ended.
+- **Corrected large-file upload request; bounded memory.** Starting a large-file upload session to SharePoint now uses the corrected structured request body, and large files are streamed in bounded-size chunks so memory use stays flat regardless of file size.
+- **Faster Interactions/Fact append on large targets.** The record reading that previously dominated the Interactions/Fact append/merge on large histories has been optimized, so the step now finishes in a fraction of the time it used to take, with the improvement growing as the target grows. The result is unchanged in every respect: the merged output is byte-for-byte identical, the same fixed memory budget applies, temporary disk space is still used during the merge and removed afterward, and there is no row limit or truncation. If the optimized reader is ever unavailable on a given machine, the step falls back to the original reader automatically, so results and compatibility are preserved.
+
+</details>
+
+<details>
+<summary><strong>(v1.11.15) Faster, bounded-memory Fact continuity preparation</strong></summary>
+
+- **Large append rollups prepare continuity keys substantially faster.** PAX now uses a disk-backed accelerator when preparing the existing Fact file's `Message_Id` and thread continuity maps. Working memory remains bounded as the target grows, and progress remains visible throughout the step.
+- **Continuity results are unchanged.** The accelerated path preserves the exact seed contents, first-occurrence selection, original identifier casing, stable integer values, property order, and `ThreadKey` preference with `ThreadId` fallback.
+- **Compatibility is automatic.** If a Fact file contains a key or record form outside the accelerated path's supported domain, PAX automatically uses the established PowerShell preparation path for that run. No switch or customer action is required.
+- **Temporary work is cleaned up and failures remain data-safe.** Temporary script, database, journal, and seed files are removed when preparation ends. Neither continuity seed is published unless both complete successfully, and a preparation failure leaves the existing append target and prior outputs untouched.
+
+</details>
+
+<details>
+<summary><strong>(v1.11.15) Stable user keys across append runs</strong></summary>
+
+- **A user seen only in activity keeps their key.** The retained-key list used when appending to existing output is now built from the existing Users file **and** the existing activity file. Previously it was built from the Users file alone, so a user with activity but no directory row had no key retained: a later run could give that key to a different person and mint a second key for the original person. Any user who is new this run is now given a key above every key already in use.
+- **Every user in the activity data resolves to a Users row.** A user with activity but no directory row this run receives a minimal Users row carrying only their identity and the key already reserved for them. Every other field is left blank and nothing is invented. When a real directory row for that person arrives in a later run it replaces the minimal row, and the key does not change.
+- **A prior mapping that disagrees with itself stops the append.** If the existing files already hold one person under two keys, or one key claimed by two people, PAX refuses to build the retained-key list, leaves both existing files exactly as they were, and reports the run as completed with gaps (exit `40`).
+- **The activity file and the Users file are published together, or neither is.** Before either replaces its existing target, the two are checked against each other: every key in the activity data must resolve to exactly one Users row, and that row must be the same person. If the check does not pass, neither file is published, both existing targets remain byte-for-byte as they were, and this run's output is preserved for review.
+- **The Users union reports its progress.** Folding this run's users into the existing Users file now reports entry, aggregate progress, and completion or failure, so a long union never looks idle. The records carry aggregate numbers only, and the file produced is identical whether or not progress is reported.
+
+</details>
+
+<details>
+<summary><strong>(v1.11.15) Clearer wording while audit queries are being created</strong></summary>
+
+- **The wait line distinguishes local queue from total outstanding.** The line shown while audit queries are being created reported a single `queued` count, which read as though it covered everything still outstanding. It now reports `localQueued` — the items still waiting in the group being reported on — alongside `pending`, everything not yet finished. This is wording only: the counts, the work performed, the number of requests issued, and the pace of the run are unchanged.
+
+</details>
+
+<details>
+<summary><strong>(v1.11.15) Clear guidance for restricted PowerShell language mode</strong></summary>
+
+- **Restricted hosts stop before initialization.** PAX now checks the PowerShell language mode before creating a log, loading modules, signing in, or writing output. A host that is not running in `FullLanguage` mode stops with exit `1` and directs the user to contact their IT or security team for an approved PowerShell environment or to have PAX allowlisted. The message also clarifies that `ExecutionPolicy Bypass` does not change the language mode.
+
+</details>
+
+<details>
+<summary><strong>(v1.11.15) AISID integration &amp; data correctness (implementation groundwork)</strong></summary>
+
+- **AISID entry points are gated in v1.11.15.** Everything in this group is completed implementation retained for a later PAX script version. AISID is still under development; `-Dashboard AISID`, `-OutputPathDefenderUsage`, `-AppendDefenderUsage`, and `-DisableAISIDDeltaCache` are gated, and no AISID customer run can authenticate, collect, or publish in this version. PAX has no Defender-only execution switch.
+- **Remote destinations stage locally.** On a SharePoint or Microsoft Fabric / OneLake run, the AISID writers stage each file to a local working folder rather than treating a remote URL as a local path, and existing AISID history is read from the AISID (Defender-usage) destination rather than the Purview destination. All 12 files route to the AISID destination and upload exactly once per run.
+- **Truthful completion.** An empty-only run reports complete-with-empty and stays a clean success; a run whose required files are failed, incomplete, missing, unreadable, or undelivered cannot report a clean success and instead finishes completed-with-gaps (exit `40`).
+- **Off-hours / geography.** Country and off-hours measures are derived only from real count values and ignore the service's metadata annotations, and the primary country is chosen deterministically (highest count, with a stable tie-break), so figures are consistent from run to run.
+- **File proximity.** The size estimate that decides how finely the file-proximity window is divided now requires a real numeric value; if it can't be read, that data set is treated as failed instead of being mistaken for very high volume, so a single unreadable estimate can no longer trigger runaway window splitting.
+- **Copilot usage.** Each interaction contributes its actual number of user prompts — a response-only record counts as zero and a record with several prompts counts them all — and interaction timestamps are interpreted as UTC regardless of the machine's local time zone, so the same records always fall in the same collection window.
+- **Resume validation.** A resumed AISID run restores the original run's dashboard, destination, cache setting, and window, re-checks destination safety, and gives a truthful failure status if resume validation fails rather than a false "interrupted" or "cancelled" result.
+
+</details>
+
+<details>
+<summary><strong>(v1.11.15) Fabric checkpoint mirroring and unattended-host exit result</strong></summary>
+
+- **Fabric checkpoint mirroring now sends exact file bytes.** Small checkpoint files and final partial chunks are sent to Microsoft Fabric / OneLake as true byte arrays, a short final read is filled before transmission, and PAX verifies that every source byte was appended before asking OneLake to flush the file. Replacing an existing checkpoint path starts from a newly created file, a file that fails to send remains eligible for retry, and durable mirror state advances only after the complete create, append, and flush sequence succeeds. This corrects checkpoint-mirroring failures that surfaced as uploaded data not being contiguous or the append position not matching the file length.
+- **An unexpected fatal error now returns a non-zero exit result.** A fatal error that reaches the top-level handler returns exit `1` instead of falling through to a success result, so an unattended host — for example an Azure Container Apps Job — no longer treats a failed run as successful. Local scratch and Fabric resume data are preserved for diagnosis and recovery, and the intentional-interruption, completed-with-gaps (`40`), and other established exit results remain distinct.
+
+</details>
+
+<details>
+<summary><strong>(v1.11.15) Microsoft Graph audit-query lifecycle and duplicate-safe recovery</strong></summary>
+
+- **Audit queries are created and owned by the main run, not by its worker threads.** Creating each partition's Purview audit query is now performed once by the run itself before any worker starts, and the created query identifier is recorded durably before collection begins. A worker never creates a query; it only polls, pages, and retrieves. This removes the duplicate-query and lost-query-identifier behavior that could leave completed server-side queries unretrieved.
+- **A query whose creation outcome is uncertain is never blindly re-submitted.** If PAX cannot prove a submission was rejected — for example a transient service error or a dropped connection — it records the uncertainty durably and re-checks the service by exact query name before doing anything else. A matching existing query is adopted and reused; if more than one could match, the run stops rather than guessing. A second submission is only ever made after the service has been re-checked and no matching query was found.
+- **The audit-query interface version is pinned to the one proven end to end.** The query interface version is no longer inferred from a single service listing, which could select a version that then failed to return status or records for a query the Purview portal showed as complete. A retry no longer discards a live query identifier based on message text; the existing query is reused, and genuinely stuck windows remain bounded by the established terminal-failure safeguard.
+- **Resume state is written durably before it is relied on.** A checkpoint update that authorizes new work is written, re-read, and verified before the run continues; if the write cannot be proven durable the run stops with a failure result instead of proceeding. A failed publication restores the previous resume artifacts exactly rather than leaving a partially replaced set behind, and a successful restore replaces the resume artifacts as an exact set so stale files cannot be picked up later.
+- **Bounded memory for record reading and append processing.** The Interactions/Fact, Users, session-statistics, and Microsoft 365 append merges, the CSV record reader, and the large-file processing stages work within a fixed memory budget by spilling to temporary disk storage, so memory use no longer grows with the size of the accumulated history. Temporary space is released when the step finishes, results are unchanged, and there is no row limit or truncation.
+
+</details>
+
+<details>
+<summary><strong>(v1.11.15) Directory scoping, rollup fields, and run messaging</strong></summary>
+
+- **`-GroupNames` now scopes the directory output as well as the audit records.** A run scoped with `-GroupNames` previously still published the full tenant directory in its Entra/Users output on ordinary runs. The resolved user set is now applied to every directory destination — the Entra CSV, the rollup Users input, the append merge, and remote delivery — so a group-scoped run publishes only the users in scope. Runs that supply neither `-UserIds` nor `-GroupNames` are unchanged.
+- **`Organization` now shows the readable department name.** In the Users output the dashboards read, `Organization` is taken from the human-readable department value in the directory export. If that export also contains a separate column literally named `Organization` holding a department *number*, that number no longer displaces the readable name — it is preserved alongside it as `Organization_Id`. Organization slicers in the existing dashboards now receive readable text with no dashboard changes, and exports that contain only a department column are unaffected.
+- **The AI-in-One Users output uses the exact field names the model expects.** The AI-in-One Users output emits `DisplayName`, `Country`, and `Email` with the exact casing the dashboard model binds to, keeps `mail` alongside `Email`, backfills a blank canonical field from an equivalent source column, and keeps headers unique. De-identification applies to these fields exactly as before.
+- **Application-only and managed-identity runs no longer announce a second sign-in.** When Microsoft Agent 365 information is included, an application-registration or managed-identity run now reports that the Agent 365 step reuses the existing application context instead of announcing an interactive sign-in step that never happens.
+- **Token-refresh status is reported truthfully.** The long-run token-refresh heartbeat now reports an explicit state at every point in the run, so it no longer shows an unknown elapsed time before the first refresh has occurred.
+- **New guidance for scheduled refresh in the Power BI Service.** Written guidance now distinguishes the two settings most often confused when configuring a scheduled refresh: the authentication method (`OAuth2`) and the privacy level (`Organizational`).
+
+</details>
+
 ### v1.11.14
 
 - **(v1.11.14) Microsoft Agent 365 catalog CSV not delivered to remote destinations.** On a remote-output run (SharePoint or Microsoft Fabric / OneLake) that included the Microsoft Agent 365 catalog, the catalog CSV could be generated — the run log even showed it "written" with its destination — yet the file did not appear at the remote destination, while the other artifacts (audit CSV, Entra Users, run log) uploaded normally. The catalog CSV was the only customer-facing artifact never registered with the end-of-run upload step; it was included only when its filename happened to carry the run timestamp, so a catalog routed to a specifically named remote destination was skipped by the upload step and its temporary local copy was removed during normal cleanup. The catalog CSV is now registered with the upload step in every remote-output mode, exactly like the other artifacts, so it is delivered in the same final upload; a genuine upload failure now also preserves the local copy for retry, the same as for every other artifact. On remote runs the write-log line now states the file is staged locally and queued for upload rather than implying it is already at the destination. Local-output runs are unchanged.
@@ -851,9 +1021,21 @@ The following authentication and certificate-handling fixes apply to `-Auth AppR
 
 ## Known Considerations
 
+### v1.11.15
+
+- **(v1.11.15) AISID is under development and its entry points are gated.** The AISID implementation is included in v1.11.15, but AISID is not available for customer use in this version. Supplying `-Dashboard AISID`, `-OutputPathDefenderUsage`, `-AppendDefenderUsage`, or `-DisableAISIDDeltaCache` reports that AISID is under development and stops the run before any sign-in, collection, or publication, so no AISID customer run can authenticate, collect, or publish. PAX has no Defender-only execution switch. Availability is planned for a later PAX script version. The AISID behavior described elsewhere in this release note is retained implementation groundwork and is not reachable in this version.
+- **(v1.11.15) AISID signal availability depends on tenant licensing.** Individual AI Solutions Intelligence Dashboard (AISID) signals draw on Microsoft Defender and Microsoft Entra data your tenant may or may not be licensed for. A signal whose source is not available to the tenant is reported as *unavailable* and the run completes with a **complete-with-unavailable** status rather than failing — see [What's New → v1.11.15](#v11115-1). No action is needed for signals your tenant is not licensed to use.
+- **(v1.11.15) Advanced-hunting retention limits the AISID window.** The AISID data sets collect the date range you request intersected with the last 30 days that Microsoft advanced hunting keeps queryable by default. A requested range partly older than that window is trimmed to the available part with a single notice; a range entirely outside it stops before contacting any service. Your Purview activity export still covers the full requested range — only the dashboard's own data sets are limited to the available window.
+- **(v1.11.15) Complete-with-unavailable is not a gap.** A signal your tenant is not licensed for is reported as unavailable and the run completes with a **complete-with-unavailable** status; this is distinct from a real gap (a required file that failed, is incomplete, or was not delivered), which reports **completed-with-gaps** and returns exit `40`.
+- **(v1.11.15) ValueLens migration.** The former public dashboard selector value is no longer accepted for new commands — use `-Dashboard ValueLens`. Existing checkpoints resume automatically as ValueLens with no customer intervention; this is a name-only change with no effect on data, schema, or output files.
+- **(v1.11.15) The large-append-target warning is advisory.** The pre-merge size check is advisory only and never blocks a run. The Interactions/Fact and Users append/merge now processes its target within a fixed memory budget by spilling to a temporary disk-backed store, so a very large target no longer needs to be held in memory in full, though it can require temporary disk space and additional I/O proportional to the target size. The `PAX_APPEND_WARN_BYTES` environment variable (in bytes) controls only the advisory threshold — it does not cap processing.
+- **(v1.11.15) `-UserIds` / `-GroupNames` filtering — live validation deferred.** The corrected user-filtering behavior is proven by the automated test suite, but its end-to-end validation against a live tenant is still pending. Treat it as automated-test proven rather than live-confirmed until that check is completed.
+- **(v1.11.15) Very large SharePoint uploads — live validation deferred.** SharePoint files above 250 MiB use the resumable upload-session path. The current correction to that path is memory-safe and proven against automated / mock tests, but end-to-end delivery of a single file larger than 250 MiB has not yet been confirmed against a live service; treat very large single-file uploads as not-yet-live-verified. Recent live SharePoint deliveries have likewise not yet been independently audited.
+- **(v1.11.15) Fabric checkpoint and unattended-host exit corrections — live validation recommended.** The Fabric checkpoint byte-transmission correction and the unattended-host fatal-exit result are proven against the automated test suite but have not yet been confirmed by a live end-to-end run on a hosted schedule. Confirm the end-to-end result — including the exit code an Azure Container Apps Job observes — against your own environment before relying on it broadly.
+
 ### v1.11.14
 
-- **(v1.11.14) Looking ahead — AI Solutions Intelligence Dashboard (AISID) under active development:** PAX is working toward support for the AI Solutions Intelligence Dashboard (AISID), a future capability that will enrich the Purview and Entra dataset with Microsoft Defender signals about how AI solutions are used across the organization. It is **not available in this version**: selecting `-Dashboard AISID` exits immediately with a notice and does nothing, and the related `-OutputPathDefenderUsage` / `-AppendDefenderUsage` options have no effect. Full AISID functionality is planned for an upcoming release. No action is needed today.
+- **(v1.11.14) Looking ahead — AI Solutions Intelligence Dashboard (AISID):** In v1.11.14 PAX carried early groundwork for the AI Solutions Intelligence Dashboard (AISID), a capability that enriches the Purview and Entra dataset with Microsoft Defender signals about how AI solutions are used across the organization. **AISID remains under development.** Its customer entry points — `-Dashboard AISID`, `-OutputPathDefenderUsage`, `-AppendDefenderUsage`, and `-DisableAISIDDeltaCache` — are gated in v1.11.15, and availability is planned for a later PAX script version — see [What's New → v1.11.15](#v11115-1).
 
 ### v1.11.13
 
