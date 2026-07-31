@@ -1,8 +1,8 @@
 # Portable Audit eXporter (PAX) - <br/>Purview Audit Log Processor
 
-> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.14.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.14/PAX_Purview_Audit_Log_Processor_v1.11.14.ps1)
+> **📥 Quick Start:** Download the script → [`PAX_Purview_Audit_Log_Processor_v1.11.15.ps1`](https://github.com/microsoft/PAX/releases/download/purview-v1.11.15/PAX_Purview_Audit_Log_Processor_v1.11.15.ps1)
 >
-> **📅 Script v1.11.14 Release Date:** July 6, 2026
+> **📅 Script v1.11.15 Release Date:** July 31, 2026
 >
 > **📋 Release Notes:** See what's new → [v1.11.x Release Notes](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md) | [All Release Notes](https://github.com/microsoft/PAX/tree/release/release_notes/Purview_Audit_Log_Processor)
 >
@@ -10,7 +10,7 @@
 >
 > **📚 Documentation Archive:** [All Documentation](https://github.com/microsoft/PAX/tree/release/release_documentation/Purview_Audit_Log_Processor)
 
-**Documentation Version:** v1.11.x (Current Script Version: v1.11.14)  
+**Documentation Version:** v1.11.x (Current Script Version: v1.11.15)  
 **Audience:** IT admins, security/compliance analysts, BI/data teams  
 **Runtime:** PowerShell 7+ (required for default Graph API mode); PowerShell 5.1 supported only with `-UseEOM`  
 **License:** MIT
@@ -96,7 +96,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - Retrieves audit events from Microsoft 365 Unified Audit Log via **Graph API (default)** or **EOM mode** (`-UseEOM`)
 - **Graph API filter passthrough:** Optional `-RecordTypes` / `-ServiceTypes` switches target documented Purview workloads (SharePoint, OneDrive, and future additions) so non-Copilot office app activity returns alongside Copilot operations
 - **Microsoft 365 usage data (`-IncludeM365Usage`):** Curated cross-workload activity bundle spanning Outlook, Teams, SharePoint, OneDrive, Word, Excel, PowerPoint, OneNote, Forms, Stream, Planner, and PowerApps — captured in the same Graph audit run alongside Copilot telemetry for ROI and behavior-change analysis
-- **Multi-dashboard Power BI rollup (`-Rollup` / `-RollupPlusRaw` + `-Dashboard`):** Produce ready-to-load input for the Copilot Analytics Lab Power BI dashboards — **AI-in-One (AIO)**, the new **AI Business Value (AIBV)**, or **M365 Usage Analytics** — directly from a single PAX run via an embedded post-processor. The `-Dashboard` selector (default `AIO`) chooses the target dashboard; AIO and AIBV are produced from the same CopilotInteraction + Entra/MAC licensing data
+- **Multi-dashboard Power BI rollup (`-Rollup` / `-RollupPlusRaw` + `-Dashboard`):** Produce ready-to-load input for the Copilot Analytics Lab Power BI dashboards — **AI-in-One (AIO)**, **ValueLens**, or **M365 Usage Analytics** — directly from a single PAX run via an embedded post-processor. The `-Dashboard` selector (default `AIO`) chooses the target dashboard; AIO and ValueLens are produced from the same CopilotInteraction + Entra/MAC licensing data <!-- - **Multi-dashboard Power BI rollup (`-Rollup` / `-RollupPlusRaw` + `-Dashboard`):** Produce ready-to-load input for the Copilot Analytics Lab Power BI dashboards — **AI-in-One (AIO)**, **ValueLens**, **M365 Usage Analytics**, or the **AI Solutions Intelligence Dashboard (AISID)** — directly from a single PAX run via an embedded post-processor. The `-Dashboard` selector (default `AIO`) chooses the target dashboard; AIO and ValueLens are produced from the same CopilotInteraction + Entra/MAC licensing data -->
 - Exports to structured CSV
 - Includes enriched usage & ROI fields (tokens, models, latency, acceptance metrics)
 - Implements adaptive time slicing to navigate service limits intelligently
@@ -111,7 +111,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - **Microsoft Agent 365 catalog (`-IncludeAgent365Info` / `-OnlyAgent365Info`):** Export a point-in-time inventory of the agents registered in your tenant as a separate `Agent365_<timestamp>.csv` — alongside the audit export or on its own — for tenants licensed for Microsoft Agent 365 (requires an interactive AI Administrator / Global Administrator sign-in); see [Microsoft Agent 365 Parameters](#microsoft-agent-365-parameters)
 - **EOM mode (`-UseEOM`):** Supports group expansion via `-GroupNames` (uses `Get-DistributionGroupMember`) and 10K-per-query limit detection
 - **Optional anonymized output (`-Deidentify`):** A single switch replaces every identity in the output with irreversible, format-preserving tokens, so anonymized data can be shared for reporting without exposing who did what — while keeping the analytical fields and the relationships between records intact. OFF by default (output is unchanged when it is not used); see [Deidentification (Anonymized Output)](#deidentification-anonymized-output)
-- **Built-in org / manager hierarchy (Power BI rollup):** When producing input for the AI-in-One or AI Business Value dashboards, the rolled-up Users output automatically includes each person's place in the org chart — their level, manager, full management chain, and team-size counts — derived from the Entra manager data PAX already collects, ready for org-based Power BI views; see [Rollup Post-Processor (Power BI)](#rollup-post-processor-power-bi)
+- **Built-in org / manager hierarchy (Power BI rollup):** When producing input for the AI-in-One or ValueLens dashboards, the rolled-up Users output automatically includes each person's place in the org chart — their level, manager, full management chain, and team-size counts — derived from the Entra manager data PAX already collects, ready for org-based Power BI views; see [Rollup Post-Processor (Power BI)](#rollup-post-processor-power-bi)
 
 </details>
 
@@ -144,7 +144,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - **Entra ID Enrichment + M365 Copilot Licensing (Graph API Mode Only):** Enrich audit data with Entra user attributes and M365 Copilot (MAC) license information via `-IncludeUserInfo` (default mode, not compatible with `-UseEOM`)
 - **User-Only Export (Graph API Mode Only):** Export only Entra ID user data and M365 Copilot licensing without audit records via `-OnlyUserInfo` (requires `-IncludeUserInfo`, not compatible with `-UseEOM`)
 - **Microsoft Agent 365 Catalog (Graph API Mode Only):** Inventory the tenant's registered agents (name, publisher, developer, and package metadata) via `-IncludeAgent365Info` (alongside audit) or `-OnlyAgent365Info` (catalog only); requires a Microsoft Agent 365 license and either an interactive AI Administrator / Global Administrator sign-in or app-only authentication (AppRegistration certificate/secret or managed identity) with the required application permission admin-consented. See [Microsoft Agent 365 Parameters](#microsoft-agent-365-parameters)
-- **Org / Manager Hierarchy (Power BI Rollup):** The AI-in-One and AI Business Value rollups add org/manager-hierarchy columns to the Users output — each person's level, manager, full management chain, and direct/total report counts — derived from the Entra manager data PAX already collects; ready for parent-child hierarchies, leaderboards, and team rollups in Power BI. See [Rollup Post-Processor (Power BI)](#rollup-post-processor-power-bi)
+- **Org / Manager Hierarchy (Power BI Rollup):** The AI-in-One and ValueLens rollups add org/manager-hierarchy columns to the Users output — each person's level, manager, full management chain, and direct/total report counts — derived from the Entra manager data PAX already collects; ready for parent-child hierarchies, leaderboards, and team rollups in Power BI. See [Rollup Post-Processor (Power BI)](#rollup-post-processor-power-bi)
 - **Deidentification (`-Deidentify`):** Optionally anonymize every identifying value in the output with irreversible, format-preserving tokens for anonymous-style reporting, while preserving relationships and analytical fields. OFF by default. See [Deidentification (Anonymized Output)](#deidentification-anonymized-output)
 - **Streaming Export:** Memory-efficient chunked data writing for large datasets
 - **UTF-8 Encoding:** Consistent UTF-8 (no BOM) output for CSV files
@@ -212,7 +212,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 - Identify power users and underutilized licenses
 - Calculate ROI metrics based on time saved and acceptance rates
 - Analyze Word, Excel, PowerPoint, and OneNote document activity by pairing `-ActivityTypes` (e.g., `FileAccessed`, `FilePreviewed`) with `-RecordTypes`/`-ServiceTypes` to capture SharePoint and OneDrive workloads alongside Copilot usage
-- Roll Copilot adoption up by team, department, or management chain — and build leader leaderboards and drill-down org views — using the org/manager-hierarchy columns the AI-in-One / AI Business Value rollup adds to its Users output (see [Rollup Post-Processor (Power BI)](#rollup-post-processor-power-bi))
+- Roll Copilot adoption up by team, department, or management chain — and build leader leaderboards and drill-down org views — using the org/manager-hierarchy columns the AI-in-One / ValueLens rollup adds to its Users output (see [Rollup Post-Processor (Power BI)](#rollup-post-processor-power-bi))
 
 </details>
 
@@ -298,7 +298,7 @@ The **Portable Audit eXporter (PAX)** is an enterprise-grade PowerShell script t
 | **Unified Audit Logging**   | Enabled in tenant                       | Verify in Microsoft Purview compliance portal                |
 | **Graph API Permissions**   | See [Permission Details](#permission-details) below | Required for Graph API mode (default). Consented during interactive sign-in or pre-configured for app registrations. |
 | **Audit Role**              | Purview Audit Reader (or higher) | Required only for EOM mode (`-UseEOM`) and the Purview UI. Not required for Graph API mode (default), regardless of authentication method. |
-| **SharePoint write access** *(only when `-OutputPath` is a SharePoint URL)* | Edit/Contribute on the destination library + folder, plus the Graph delegated or application permissions `Sites.ReadWrite.All` and `Files.ReadWrite.All` | See [Sending Output to SharePoint](#sending-output-to-sharepoint) for the full setup. |
+| **SharePoint write access** *(only when `-OutputPath` is a SharePoint URL)* | Edit/Contribute on the destination library + folder, plus the Graph delegated or application permission `Sites.ReadWrite.All` (`Files.ReadWrite.All` is an accepted alternative but is not requested by the tool) | See [Sending Output to SharePoint](#sending-output-to-sharepoint) for the full setup. |
 | **Microsoft Fabric / OneLake access** *(only when `-OutputPath` is a Fabric lakehouse URL)* | All three layers are required: **(1)** the Azure role `Storage Blob Data Contributor` on the OneLake storage scope, **(2)** the **Contributor** (or higher) role on the Fabric workspace in the Fabric portal, **(3)** the tenant setting allowing service principals / Entra IDs to access Fabric APIs must be enabled by your Fabric admin | See [Sending Output to Microsoft Fabric (OneLake)](#sending-output-to-microsoft-fabric-onelake) for the full setup, and the `fabric_resources` folder in the repo root for detailed container/runbook material. |
 | **Az.Accounts PowerShell module** *(only when `-OutputPath` is a Fabric lakehouse URL)* | Used to obtain the OneLake storage token | Install manually if missing: `Install-Module Az.Accounts -Scope CurrentUser`. PAX surfaces a clear error at pre-flight if the module is not present. (Already present on Azure Cloud Shell and the PAX-on-ACA container image.) |
 | **Network Access**          | Microsoft 365 endpoints                 | Ensure firewall allows connections to Microsoft Graph and Exchange Online endpoints. When `-OutputPath` is a SharePoint URL, also allow `*.sharepoint.com`. When `-OutputPath` is a Fabric lakehouse URL, also allow `onelake.dfs.fabric.microsoft.com`. |
@@ -326,7 +326,7 @@ Graph API mode requests scopes conditionally based on the switches you pass. The
 | **Graph: Application.Read.All** | Publisher / developer name resolution for Agent 365 | `-IncludeAgent365Info` or `-OnlyAgent365Info` | ✅ Yes | ✅ Yes (interactive) | — N/A |
 | **Entra role: AI Administrator OR Global Administrator** | Required by the Agent 365 catalog API (delegated only) | `-IncludeAgent365Info` or `-OnlyAgent365Info` | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: Sites.ReadWrite.All** | Resolve the SharePoint site/library/folder and upload output files | `-OutputPath` is a SharePoint URL | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: Files.ReadWrite.All** | Create, replace, and resume uploads of output files in the SharePoint folder | `-OutputPath` is a SharePoint URL | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: Files.ReadWrite.All** *(optional — not requested)* | Accepted alternative to `Sites.ReadWrite.All` for creating, replacing, and resuming uploads of output files; the tool does not request it | Optional — `Sites.ReadWrite.All` alone authorizes all SharePoint output | Optional | Optional | — N/A |
 | **Azure role: Storage Blob Data Contributor** | Write PAX output into the OneLake `Tables/` namespace (Delta tables) and `Files/` namespace (operational artifacts) of the destination Lakehouse | `-OutputPath` is a Fabric lakehouse URL | ✅ Required on the signed-in user / managed identity | ✅ Required on the service principal | — N/A |
 | **Fabric portal role: Contributor** (or higher) on the workspace | Allow the identity to see and write into the lakehouse via Fabric APIs | `-OutputPath` is a Fabric lakehouse URL | ✅ Required | ✅ Required | — N/A |
 | **Fabric tenant setting: "Service principals can use Fabric APIs"** | Enables Entra service principals / managed identities to call Fabric/OneLake | `-OutputPath` is a Fabric lakehouse URL (only when using `-Auth AppRegistration` or `-Auth ManagedIdentity`) | — | ✅ Must be enabled by a Fabric admin | — N/A |
@@ -355,7 +355,7 @@ The **Purview Audit Reader** role is only required for EOM mode (`-UseEOM`) and 
 - Not applicable in EOM mode (`-UseEOM`)
 
 **Sending output directly to SharePoint (Optional Feature - Graph API Mode Only):**
-- Requires the Graph permissions **Sites.ReadWrite.All** and **Files.ReadWrite.All**, requested only when `-OutputPath` is a SharePoint URL
+- Requires the Graph permission **Sites.ReadWrite.All**, requested only when `-OutputPath` is a SharePoint URL (**Files.ReadWrite.All** is an accepted alternative but is not requested by the tool)
 - The signed-in account (or, for unattended runs, the service principal / managed identity) must additionally have **Edit** or **Contribute** permission on the destination SharePoint library and folder
 - See [Sending Output to SharePoint](#sending-output-to-sharepoint) for the full walkthrough, including how to get a valid URL and what kinds of links cannot be used
 - Not applicable in EOM mode (`-UseEOM`)
@@ -391,6 +391,8 @@ The **Purview Audit Reader** role is only required for EOM mode (`-UseEOM`) and 
 
 **PowerShell 5.1 (legacy):** Supported ONLY with `-UseEOM` (serial Exchange Online Management mode). Default Graph API mode and parallel query features require PowerShell 7+.
 
+**Language mode:** PAX requires `FullLanguage` mode. If WDAC, AppLocker, or another endpoint policy places PowerShell in `ConstrainedLanguage` mode, PAX stops before initialization and directs you to contact your IT or security team for an approved environment or to have PAX allowlisted. `ExecutionPolicy Bypass` does not change the PowerShell language mode. Check the current mode with `$ExecutionContext.SessionState.LanguageMode`.
+
 </details>
 
 </details>
@@ -406,7 +408,7 @@ The **Purview Audit Reader** role is only required for EOM mode (`-UseEOM`) and 
 
 ### Download the Script
 
-- **Script:** [PAX_Purview_Audit_Log_Processor_v1.11.14.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.14/PAX_Purview_Audit_Log_Processor_v1.11.14.ps1)
+- **Script:** [PAX_Purview_Audit_Log_Processor_v1.11.15.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.15/PAX_Purview_Audit_Log_Processor_v1.11.15.ps1)
 - **Release Notes:** [v1.11.x](https://github.com/microsoft/PAX/blob/release/release_notes/Purview_Audit_Log_Processor/PAX_Purview_Audit_Log_Processor_Release_Note_v1.11.x.md)
 
 Save the downloaded script to a working directory (e.g., `C:\Scripts\PAX\`).
@@ -1220,6 +1222,38 @@ All audit-related parameters are incompatible and will trigger validation errors
 
 ---
 
+#### `-UserInfoSupplement` (string)
+
+**Purpose:** **Enrich** (rather than replace) the live Entra directory. PAX fetches the live Entra `/users` directory normally, then appends the columns of a **CSV you provide** to each matching Entra row — an **Entra-left join** keyed on `UserPrincipalName`. Use this when you want to add your own columns (e.g., business unit, cost-center label, region) to the authoritative live directory without replacing it.  
+**Default:** Not set (no supplemental enrichment)  
+**Accepts:** A **local `.csv`**, a **SharePoint** `.csv` file URL, or a **Microsoft Fabric / OneLake** `/Files/.../*.csv` URL (folder URLs, Fabric roots, and Fabric `Tables` URLs are rejected). Remote inputs are staged to local scratch, parsed, and removed after use; they are never uploaded.  
+**Use When:**
+
+- You want to add curated attributes to the *live* directory (not substitute for it)
+- You need supplemental columns to flow into the EntraUsers CSV and the AIO/ValueLens Rollup Users dimension
+
+**Example:** `-IncludeUserInfo -UserInfoSupplement "C:\Data\dept_tags.csv"`
+
+**Notes:**
+
+- **Matching:** exactly one `UserPrincipalName` column is required (the only required column), matched **case-insensitively and whitespace-trimmed**. It is a **join key only and is never copied into the output** — the output identity always comes from Entra.
+- **Every Entra user is preserved.** A non-matching Entra user receives blank values in the supplemental columns.
+- **Unmatched supplemental rows are reported and excluded** — they never become synthetic directory users, and excluding them does not mark the run "completed with gaps".
+- **Additive-only, no transformation:** supplemental column names, order, blank values, and values are preserved exactly. A column name that collides (case-insensitively) with any Entra/PAX-owned directory, licensing, append-provenance, or hierarchy column is a **fatal input error**, as are a blank/duplicate `UserPrincipalName` and a duplicate header — so PAX-owned data can never be overwritten and data-quality errors are never silently hidden.
+- **Downstream:** supplemental columns appear in the normal EntraUsers CSV and the AIO/ValueLens Rollup Users dimension. <!-- - **Downstream:** supplemental columns appear in the normal EntraUsers CSV and the AIO/ValueLens Rollup Users dimension. The AISID `EntraUsers.csv` keeps its fixed 14-column dashboard schema and does **not** receive supplemental columns. -->
+- **De-identification:** with `-Deidentify`, PAX de-identifies Entra-derived identity fields as usual but passes **every supplemental column and value through unchanged** — PAX does not inspect, mask, hash, or de-identify supplemental values. A prominent notice is shown before processing and cannot be suppressed; you are responsible for ensuring the supplemental values are appropriate to export.
+- **Modes:** auto-enables `-IncludeUserInfo`; compatible with `-UserIds`, `-GroupNames`, `-OnlyUserInfo`, AIO/ValueLens, `-AppendUserInfo`, and `-Deidentify`; mutually exclusive with `-UserInfoFile`, `-UseEOM`, and `-RAWInputCSV`. <!-- - **Modes:** auto-enables `-IncludeUserInfo`; compatible with `-UserIds`, `-GroupNames`, `-OnlyUserInfo`, AIO/ValueLens/AISID, `-AppendUserInfo`, and `-Deidentify`; mutually exclusive with `-UserInfoFile`, `-UseEOM`, and `-RAWInputCSV`. -->
+- **Difference from `-UserInfoFile`:** `-UserInfoFile` *replaces* the directory with your CSV; `-UserInfoSupplement` *enriches* the live directory and keeps Entra authoritative.
+
+SharePoint / Fabric examples:
+
+```powershell
+-IncludeUserInfo -UserInfoSupplement "https://contoso.sharepoint.com/sites/HR/Shared Documents/dept_tags.csv" -OutputPath "C:\PAX\out"
+-IncludeUserInfo -UserInfoSupplement "https://onelake.dfs.fabric.microsoft.com/ws/lh.Lakehouse/Files/inbox/dept_tags.csv" -OutputPath "C:\PAX\out"
+```
+
+---
+
 ### Microsoft Agent 365 Parameters
 
 These switches add a Microsoft Agent 365 catalog export — a point-in-time inventory of the agents registered in your tenant — produced as a separate `Agent365_<timestamp>.csv` file. The catalog is a snapshot taken at the moment the script runs; the `-StartDate` / `-EndDate` range applies only to audit data, not to the agent catalog. Both switches require an interactive sign-in by an **AI Administrator** or **Global Administrator**, and the tenant must be licensed for **Microsoft Agent 365**.
@@ -1289,7 +1323,7 @@ These switches add a Microsoft Agent 365 catalog export — a point-in-time inve
 **Mutually exclusive with:** `-RollupPlusRaw`  
 **Use When:**
 
-- Producing input for a Copilot Analytics Lab Power BI dashboard (AI-in-One, AI Business Value, or M365 Usage Analytics)
+- Producing input for a Copilot Analytics Lab Power BI dashboard (AI-in-One, ValueLens, or M365 Usage Analytics) <!-- - Producing input for a Copilot Analytics Lab Power BI dashboard (AI-in-One, ValueLens, M365 Usage Analytics, or AISID) -->
 - You only need the rolled-up output, not the raw audit CSV
 
 **Notes:**
@@ -1314,38 +1348,89 @@ These switches add a Microsoft Agent 365 catalog export — a point-in-time inve
 #### `-Dashboard` (string)
 
 **Purpose:** Selects which Copilot Analytics Lab dashboard a rollup run produces input for  
-**Valid values:** `AIO` (AI-in-One), `AIBV` (AI Business Value), `M365` (M365 Usage Analytics) — case-insensitive  
+**Valid values:** `AIO` (AI-in-One), `ValueLens` (ValueLens), `M365` (M365 Usage Analytics) — case-insensitive   <!-- **Valid values:** `AIO` (AI-in-One), `ValueLens` (ValueLens), `M365` (M365 Usage Analytics), `AISID` (AI Solutions Intelligence Dashboard) — case-insensitive   -->
 **Default:** `AIO`  
 **Use When:**
 
-- Producing **AI Business Value** input (`-Dashboard AIBV`) instead of the default AI-in-One
-- Producing **M365 Usage Analytics** input (`-Dashboard M365`)
+- Producing **ValueLens** input (`-Dashboard ValueLens`) instead of the default AI-in-One
+- Producing **M365 Usage Analytics** input (`-Dashboard M365`) <!-- - Producing **AI Solutions Intelligence Dashboard** input (`-Dashboard AISID`) -->
 
 **Behavior:**
 
 - **Default `AIO`:** A CopilotInteraction-only rollup produces AI-in-One output — byte-for-byte identical to prior script versions.
-- **`AIBV`:** Same CopilotInteraction data + Entra/MAC licensing, emitted in the AI Business Value output profile.
-- **`M365`:** Auto-enables `-IncludeM365Usage` and runs the M365 Usage Bundle processor.
+- **`ValueLens`:** Same CopilotInteraction data + Entra/MAC licensing, with the same output schema and append behavior as before.
+- **`M365`:** Auto-enables `-IncludeM365Usage` and runs the M365 Usage Bundle processor. <!-- - **`AISID`:** Runs the full Purview + Entra + Defender data pipeline and reuses the AIO-shaped CopilotInteraction rollup for its Purview/Entra tables. -->
 - **Auto-rollup:** Supplying `-Dashboard` without `-Rollup` / `-RollupPlusRaw` auto-enables `-Rollup`.
 - **Omitting `-Dashboard`** reproduces prior behavior exactly (AIO for CopilotInteraction, M365 when `-IncludeM365Usage` is present).
-- **Persisted to the checkpoint** (`rollupDashboard`) and restored on `-Resume` (last-write-wins).
+- **The selected dashboard is remembered across a `-Resume`**, so a resumed run keeps producing the dashboard it started with.
 
 **Incompatibilities:**
 
-- `-Dashboard AIO` / `AIBV` cannot be combined with `-IncludeM365Usage` (different source data and processor) — PAX exits with an explicit error.
+- `-Dashboard AIO` / `ValueLens` cannot be combined with `-IncludeM365Usage` (different source data and processor) — PAX exits with an explicit error.
 
 **Example:**
 
 ```powershell
-# AI Business Value dashboard input (auto-enables -Rollup)
-.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2026-04-01 -EndDate 2026-04-30 -Dashboard AIBV
+# ValueLens dashboard input (auto-enables -Rollup)
+.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2026-04-01 -EndDate 2026-04-30 -Dashboard ValueLens
 ```
 
 ---
 
+<!--
+#### `-OutputPathDefenderUsage` (string)
+
+**Purpose:** Folder-only destination for the entire AI Solutions Intelligence Dashboard (AISID) output set — all 12 AISID files land here  
+**Default:** Unset  
+**Applies to:** `-Dashboard AISID` runs only — ignored otherwise  
+**Use When:**
+
+- Producing AISID input and you want its 12 files delivered to their own folder / SharePoint library / Fabric lakehouse, separate from the Purview output
+
+**Notes:**
+
+- **Folder only** — supply a folder path, SharePoint folder URL, or Fabric OneLake folder URL; a fully qualified file path is rejected (the 12 file names are fixed and chosen by the dashboard model).
+- Storage tier is inferred from the path form exactly like the other `-OutputPath*` switches and must match every other destination in the run (the tier-consistency rule).
+- Mutually exclusive with `-AppendDefenderUsage` — supply exactly one of the pair per run.
+
+---
+
+#### `-AppendDefenderUsage` (string)
+
+**Purpose:** Append counterpart of `-OutputPathDefenderUsage` — merges this run's AISID output into an existing AISID set in the target folder instead of overwriting it  
+**Default:** Unset  
+**Applies to:** `-Dashboard AISID` runs only — ignored otherwise  
+**Use When:**
+
+- Growing an AISID dataset across runs (for example a monthly refresh onto a running history)
+
+**Notes:**
+
+- **Folder only**, with the same tier-inference and tier-consistency rules as `-OutputPathDefenderUsage`.
+- The AISID fact tables reconcile on each table's key (overlapping rows update in place, new rows are added, existing rows are preserved); the dimension tables (`EntraUsers.csv`, `ai_solutions_catalog.csv`) are regenerated each run.
+- Mutually exclusive with `-OutputPathDefenderUsage` — supply exactly one of the pair per run.
+
+---
+
+#### `-DisableAISIDDeltaCache` (switch)
+
+**Purpose:** Turns off the incremental result cache used by the AISID off-hours-geography signal, forcing a full re-collection of its window on this run  
+**Default:** Off (the delta cache is used)  
+**Applies to:** `-Dashboard AISID` runs only — ignored otherwise  
+**Use When:**
+
+- You want the off-hours-geography signal recomputed from scratch rather than reusing cached window results (for example after a data correction)
+
+**Notes:**
+
+- The delta cache is internal scratch (`.aisid_cache`) — it is never uploaded and is never a dashboard artifact.
+
+---
+-->
+
 #### `-FillerLabel` (string)
 
-**Purpose:** Controls how empty parent slots are labelled in the org / manager hierarchy columns of the AI-in-One / AI Business Value rollup Users output  
+**Purpose:** Controls how empty parent slots are labelled in the org / manager hierarchy columns of the AI-in-One / ValueLens rollup Users output  
 **Valid values:** `Self`, `RepeatManager`, `Fixed` (omit the switch for the default blank behavior) — case-insensitive  
 **Default:** Unset — empty hierarchy level slots above a person are left blank  
 **Applies to:** The `Level0_Name` … `Level14_Name` columns in the rollup Users output (the structural columns are never affected)
@@ -1813,7 +1898,7 @@ Graph API mode requests scopes conditionally based on the switches you pass. The
 | **Graph: Organization.Read.All** | Tenant/organization context, license metadata | `-IncludeUserInfo` or `-OnlyUserInfo` | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: GroupMember.Read.All** | Group lookup and membership expansion (least privilege) | `-GroupNames` | ✅ Yes | ✅ Yes | — N/A |
 | **Graph: Sites.ReadWrite.All** | Resolve and upload to SharePoint destination folder | `-OutputPath` is a SharePoint URL | ✅ Yes | ✅ Yes | — N/A |
-| **Graph: Files.ReadWrite.All** | Create / replace / resume uploads to the SharePoint folder | `-OutputPath` is a SharePoint URL | ✅ Yes | ✅ Yes | — N/A |
+| **Graph: Files.ReadWrite.All** *(optional — not requested)* | Accepted alternative to `Sites.ReadWrite.All` for create / replace / resume uploads; not requested by the tool | Optional — `Sites.ReadWrite.All` alone authorizes SharePoint output | Optional | Optional | — N/A |
 | **Azure role: Storage Blob Data Contributor** | Write into the OneLake `Files/` area of the destination lakehouse | `-OutputPath` is a Fabric lakehouse URL | ✅ Required on user / managed identity | ✅ Required on service principal | — N/A |
 | **Fabric portal role: Contributor (or higher)** | Workspace access in the Fabric portal | `-OutputPath` is a Fabric lakehouse URL | ✅ Required | ✅ Required | — N/A |
 | **Fabric tenant setting: "Service principals can use Fabric APIs"** | Allows non-interactive identities to call Fabric/OneLake | `-OutputPath` is a Fabric lakehouse URL (when using `-Auth AppRegistration` or `-Auth ManagedIdentity`) | — | ✅ Must be enabled by a Fabric admin | — N/A |
@@ -2026,7 +2111,7 @@ Sign in using the managed identity attached to the Azure resource that is runnin
   - A system-assigned or user-assigned managed identity on the Azure resource hosting PAX.
   - The identity granted the same Microsoft Graph application permissions an `AppRegistration` would need (at minimum `AuditLogsQuery.Read.All`, plus any conditional scopes for the switches you use — see the Permissions tables above).
   - When `-OutputPath` is a Fabric lakehouse URL: the identity also needs `Storage Blob Data Contributor` (Azure role on the OneLake storage), the **Contributor** role on the Fabric workspace, and the Fabric tenant setting *Service principals can use Fabric APIs* enabled.
-  - When `-OutputPath` is a SharePoint URL: the identity also needs `Sites.ReadWrite.All` and `Files.ReadWrite.All`, plus Edit/Contribute on the destination folder.
+  - When `-OutputPath` is a SharePoint URL: the identity also needs `Sites.ReadWrite.All` (`Files.ReadWrite.All` is an accepted alternative but is not requested), plus Edit/Contribute on the destination folder.
   - If multiple identities are attached to the host (for example, both a system-assigned and one or more user-assigned identities), set the `AZURE_CLIENT_ID` environment variable to the client ID of the one PAX should use.
 - **Works in:** Graph API mode only; automatically blocked when `-UseEOM` is supplied.
 - **Automation suitability:** Strongly preferred over `AppRegistration` for any workload that already runs inside Azure — no secret rotation, no certificate management.
@@ -2140,11 +2225,11 @@ https://contoso.sharepoint.com/sites/AuditTeam/Shared Documents/PAX-Output
 
 | Layer | What you need | Why |
 |---|---|---|
-| Microsoft Graph application or delegated permission | `Sites.ReadWrite.All` | Resolve the site and library |
-| Microsoft Graph application or delegated permission | `Files.ReadWrite.All` | Create, replace, and resume uploads of output files |
+| Microsoft Graph application or delegated permission | `Sites.ReadWrite.All` | Resolve the site and library, and create, replace, and resume uploads of output files |
+| Microsoft Graph application or delegated permission | `Files.ReadWrite.All` *(optional alternative — not requested)* | Accepted alternative to `Sites.ReadWrite.All`; the tool does not request it |
 | SharePoint folder permission | Edit or Contribute on the destination folder | Standard SharePoint write access for the identity running PAX |
 
-For unattended runs using `-Auth AppRegistration` or `-Auth ManagedIdentity`, the same two Graph permissions must be granted to the service principal / managed identity as **application permissions** with tenant admin consent, and the identity must additionally hold Edit/Contribute on the folder.
+For unattended runs using `-Auth AppRegistration` or `-Auth ManagedIdentity`, the same Graph permission (`Sites.ReadWrite.All`) must be granted to the service principal / managed identity as an **application permission** with tenant admin consent, and the identity must additionally hold Edit/Contribute on the folder.
 
 ### More examples
 
@@ -2198,7 +2283,7 @@ $clientSecret = ConvertTo-SecureString $env:PAX_CLIENT_SECRET -AsPlainText -Forc
 |---|---|---|
 | `Could not resolve SharePoint folder...` at the very start of the run | The URL is a sharing link, view page, or query-string URL, not the folder path | Re-read the *How to get the right URL* section above and copy the address-bar URL from inside the folder. |
 | `Access denied` to the folder during the pre-flight check | The identity has Graph permissions but no SharePoint folder permission | Add Edit/Contribute on the destination folder for the identity, then re-run. |
-| `Sites.ReadWrite.All` or `Files.ReadWrite.All` listed as missing on consent | App registration / managed identity lacks one of the two required Graph permissions | Add the missing permission and grant admin consent. |
+| `Sites.ReadWrite.All` listed as missing on consent | The app registration / managed identity lacks the required `Sites.ReadWrite.All` Graph permission (`Files.ReadWrite.All` is an accepted alternative and is not itself required) | Add `Sites.ReadWrite.All` and grant admin consent. |
 | A long run uploads most files but the last big one fails | Almost always a transient network or auth blip | Re-run with the same parameters. PAX uses checkpoint/resume on the audit side and resumable upload on the destination side; you will not pay the full cost again. |
 | The folder is empty after PAX prints "Run complete" | Check the script log file — PAX always uploads its own log last; if the log is in the folder, the run succeeded. If you are looking in the wrong folder, double-check the URL you passed. | — |
 
@@ -2544,12 +2629,12 @@ elseif ($LASTEXITCODE -eq 20) { Write-Host 'Circuit breaker tripped – investig
 	-Deidentify `
 	-OutputPath "C:\Exports\\"
 
-# AI Business Value rollup — Users output includes org/manager-hierarchy columns
+# ValueLens rollup — Users output includes org/manager-hierarchy columns
 ./PAX_Purview_Audit_Log_Processor.ps1 `
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-31 `
 	-Rollup `
-	-Dashboard AIBV `
+	-Dashboard ValueLens `
 	-OutputPath "C:\Exports\\"
 
 # Rollup with empty org-level columns filled with a fixed label
@@ -2566,12 +2651,12 @@ elseif ($LASTEXITCODE -eq 20) { Write-Host 'Circuit breaker tripped – investig
 	-StartDate 2025-10-01 `
 	-EndDate 2025-10-31 `
 	-Rollup `
-	-Dashboard AIBV `
+	-Dashboard ValueLens `
 	-Deidentify `
 	-OutputPath "C:\Exports\\"
 ```
 
-See [Deidentification (Anonymized Output)](#deidentification-anonymized-output) and [Org / Manager Hierarchy](#org--manager-hierarchy-ai-in-one--ai-business-value) for full details.
+See [Deidentification (Anonymized Output)](#deidentification-anonymized-output) and [Org / Manager Hierarchy](#org--manager-hierarchy-ai-in-one--valuelens) for full details.
 
 </details>
 
@@ -3436,20 +3521,22 @@ When `-Rollup` or `-RollupPlusRaw` is specified, PAX runs an **embedded Python p
 | Run shape | `-Dashboard` | Embedded processor | Inputs consumed | Target Copilot Analytics Lab dashboard |
 | --- | --- | --- | --- | --- |
 | **CopilotInteraction-only** (default activity type, or `-ActivityTypes 'CopilotInteraction'`) | `AIO` *(default)* | `Purview_CopilotInteraction_Processor` | Purview CSV **+** Entra users CSV (`EntraUsers_MAClicensing_<timestamp>.csv`) | **AI-in-One (AIO)** |
-| **CopilotInteraction-only** | `AIBV` | `Purview_CopilotInteraction_Processor` | Purview CSV **+** Entra users CSV (`EntraUsers_MAClicensing_<timestamp>.csv`) | **AI Business Value (AIBV)** |
-| **`-IncludeM365Usage`** (or `-Dashboard M365`) | `M365` | `Purview_M365_Usage_Bundle_Explosion_Processor` | Combined Purview CSV (single file) | **M365 Usage Analytics** |
+| **CopilotInteraction-only** | `ValueLens` | `Purview_CopilotInteraction_Processor` | Purview CSV **+** Entra users CSV (`EntraUsers_MAClicensing_<timestamp>.csv`) | **ValueLens** |
+| **`-IncludeM365Usage`** (or `-Dashboard M365`) | `M365` | `Purview_M365_Usage_Bundle_Explosion_Processor` | Combined Purview CSV (single file) | **M365 Usage Analytics** | <!-- | **Full dashboard pipeline** | `AISID` | CopilotInteraction processor for Purview/Entra plus the Defender/AISID pipeline | Purview + Entra + Defender inputs | **AI Solutions Intelligence Dashboard** | -->
 
-> The CopilotInteraction processor produces **AIO** output by default. Pass `-Dashboard AIBV` to produce the **AI Business Value** output instead from the same audit + Entra/MAC licensing data — the data PAX collects is identical; only the shape of the rolled-up output differs. See [Dashboard Selection](#dashboard-selection) below.
+> The CopilotInteraction processor produces **AIO** output by default. Pass `-Dashboard ValueLens` to produce the **ValueLens** output instead from the same audit + Entra/MAC licensing data — the data PAX collects is identical; only the shape of the rolled-up output differs. See [Dashboard Selection](#dashboard-selection) below.
 
 ### Dashboard Selection
 
-The `-Dashboard` parameter chooses which Copilot Analytics Lab dashboard a rollup run produces input for. It accepts one of three values and **defaults to `AIO`**, so existing rollup commands are unchanged.
+The `-Dashboard` parameter chooses which Copilot Analytics Lab dashboard a rollup run produces input for. It accepts one of three values and **defaults to `AIO`**, so existing rollup commands are unchanged. <!-- The `-Dashboard` parameter chooses which Copilot Analytics Lab dashboard a rollup run produces input for. It accepts one of four values and **defaults to `AIO`**, so existing rollup commands are unchanged. -->
 
 | Want this dashboard | Use | What runs |
 | --- | --- | --- |
 | **AI-in-One (AIO)** — the default | `-Rollup` *(or `-Rollup -Dashboard AIO`)* | CopilotInteraction processor, AIO output profile |
-| **AI Business Value (AIBV)** | `-Rollup -Dashboard AIBV` | CopilotInteraction processor, AIBV output profile |
-| **M365 Usage Analytics** | `-Rollup -IncludeM365Usage` *(or `-Rollup -Dashboard M365`)* | M365 Usage Bundle processor |
+| **ValueLens** | `-Rollup -Dashboard ValueLens` | CopilotInteraction processor, same output as before (name-only change) |
+| **M365 Usage Analytics** | `-Rollup -IncludeM365Usage` *(or `-Rollup -Dashboard M365`)* | M365 Usage Bundle processor | <!-- | **AI Solutions Intelligence Dashboard (AISID)** | `-Dashboard AISID` | Full Purview + Entra + Defender pipeline; AIO-shaped CopilotInteraction rollup for Purview/Entra tables | -->
+
+> **ValueLens is a name-only change.** It uses the same source data, output schema, append behavior, and de-identification as before. Existing checkpoints resume as ValueLens automatically, without customer intervention.
 
 **Defaults and conveniences:**
 
@@ -3457,9 +3544,9 @@ The `-Dashboard` parameter chooses which Copilot Analytics Lab dashboard a rollu
 - **`-Dashboard M365`** automatically enables `-IncludeM365Usage` (the M365 dashboard consumes the M365 usage bundle).
 - **`-Dashboard` supplied without `-Rollup` / `-RollupPlusRaw`** automatically enables `-Rollup` (never `-RollupPlusRaw`).
 - **AIO output is unchanged** from prior script versions — the default produces byte-for-byte the same files it did before `-Dashboard` existed.
-- The selected dashboard is persisted to the checkpoint and restored on `-Resume`, so a resumed AIBV run stays AIBV.
+- The selected dashboard is persisted to the checkpoint and restored on `-Resume`, so a resumed ValueLens run stays ValueLens.
 
-> **`-Dashboard AIO` / `AIBV` cannot be combined with `-IncludeM365Usage`.** The Copilot dashboards (AIO/AIBV) and the M365 Usage Analytics dashboard read different source data **and** run different processors, so PAX rejects the combination with an explicit error — choose `-Dashboard M365` (or drop `-IncludeM365Usage`) instead.
+> **`-Dashboard AIO` / `ValueLens` cannot be combined with `-IncludeM365Usage`.** The Copilot dashboards (AIO/ValueLens) and the M365 Usage Analytics dashboard read different source data **and** run different processors, so PAX rejects the combination with an explicit error — choose `-Dashboard M365` (or drop `-IncludeM365Usage`) instead.
 
 ### Switches
 
@@ -3493,7 +3580,7 @@ When the rollup feature is active, PAX prints a cyan banner near the start of th
 
 ### Checkpoint Persistence
 
-Rollup configuration is persisted in the checkpoint JSON (`rollupMode` ∈ `None | Rollup | RollupPlusRaw`, `processorMode`, and `rollupDashboard` ∈ `AIO | AIBV | M365`). On resume, the saved values take precedence (last-write-wins) and the script re-derives the runtime processor selection so a resumed run produces the same Power BI input file as the original — a resumed AIBV run stays AIBV rather than reverting to the AIO default. An explicit `-Dashboard` on the resume command line overrides the saved value.
+The selected dashboard and rollup mode are saved with the run's checkpoint and restored on resume, so a resumed run keeps producing the same dashboard. Existing checkpoints created before the rename resume visibly as ValueLens; no customer intervention is required. An explicit `-Dashboard` on the resume command line overrides the saved value where permitted.
 
 ### Blocked Combinations
 
@@ -3502,15 +3589,58 @@ The rollup feature is intentionally narrow in scope. The script exits with an ex
 - `-UseEOM` (PowerShell 5.1 path)
 - `-OnlyUserInfo`
 - `-ExcludeCopilotInteraction` **without** `-IncludeM365Usage`
-- `-Dashboard AIO` or `-Dashboard AIBV` together with `-IncludeM365Usage` (the Copilot dashboards and the M365 dashboard use different source data and processors — pick one)
+- `-Dashboard AIO` or `-Dashboard ValueLens` together with `-IncludeM365Usage` (the Copilot dashboards and the M365 dashboard use different source data and processors — pick one)
 
 ### Output Files
 
 Rolled-up CSVs are written to the same directory as the raw Purview CSV (default: `./output/`). File names follow the embedded processor's own naming conventions and are the exact files expected by the Copilot Analytics Lab Power BI templates — **do not rename them**. See [Output Files & Schema](#output-files--schema) for the surrounding directory layout.
 
-### Org / Manager Hierarchy (AI-in-One / AI Business Value)
+<!--
+### AI Solutions Intelligence Dashboard (AISID)
 
-When a CopilotInteraction rollup runs (the **AI-in-One** and **AI Business Value** dashboards), PAX automatically enriches the rolled-up **Users** output with each person's place in the organization chart. This requires no extra switch — it is part of every AIO / AIBV rollup.
+Selecting `-Dashboard AISID` runs the full Microsoft Purview + Microsoft Entra + Microsoft Defender pipeline and produces the input set for the Copilot Analytics Lab **AI Solutions Intelligence Dashboard**. The Purview/Entra tables are built from the same AI-in-One-shaped CopilotInteraction rollup as an AIO run; AISID layers Microsoft Defender signals (activity sessions, off-hours geography, file proximity, OAuth consents, SSO sign-ins, client channel, Copilot usage) on top.
+
+**Where the AISID files go.** The AISID output set is delivered to the folder given by `-OutputPathDefenderUsage` (or `-AppendDefenderUsage` to merge into an existing set) — a destination separate from the Purview `-OutputPath`. Both switches are **folder-only** and follow the same tier-inference and tier-consistency rules as every other destination. See [`-OutputPathDefenderUsage`](#-outputpathdefenderusage-string) and [`-AppendDefenderUsage`](#-appenddefenderusage-string).
+
+**The 12 fixed output files.** An AISID run delivers exactly 12 files, each loaded by the dashboard model under a fixed name — **do not rename them**:
+
+| File | Contents |
+|---|---|
+| `ai_activity_sessions.csv` | Per-user, per-solution AI activity sessions (sessions, active days, estimated prompts, devices, risk tier). |
+| `ai_offhours_geo.csv` | Per-user off-hours and geography summary (off-hours %, distinct / anomalous countries). |
+| `ai_file_proximity.csv` | Files created or changed within minutes of an AI-site visit on the same device (a data-movement risk signal), collected only on tenants whose Microsoft Defender for Endpoint plan exposes the required device activity; where that activity is unavailable a valid header-only file is written so the dashboard still loads. |
+| `ai_oauth_consents.csv` | Per-user OAuth application consents granted to AI-related apps. |
+| `ai_sso_signins.csv` | Per-user SSO sign-ins to AI applications. |
+| `ai_client_channel.csv` | AI-site / client-channel event counts. |
+| `ai_copilot_usage_graph.csv` | Per-user Microsoft 365 Copilot usage by app (Teams, Word, Excel, Outlook, PowerPoint, chat). |
+| `ai_appgov_alerts.csv` | Microsoft Defender for Cloud Apps governance alerts; compatibility table in this release. |
+| `ai_cloud_discovery.csv` | Microsoft Defender for Cloud Apps discovery summary; compatibility table in this release. |
+| `ai_mda_sessions.csv` | Microsoft Defender for Cloud Apps session activity; compatibility table in this release. |
+| `ai_solutions_catalog.csv` | The AI solutions catalog dimension (solution, category, vendor, risk tier). |
+| `EntraUsers.csv` | The Entra users dimension used by the dashboard model. |
+
+The three Microsoft Defender for Cloud Apps collectors are not included yet. On a first run PAX writes their exact headers because the dashboard model loads those tables on every refresh. With `-AppendDefenderUsage`, any valid prior files for those tables are preserved byte-for-byte; an unreadable or header-mismatched prior file is reported as a gap and is never replaced by a false empty.
+
+**Remote behavior.** On a SharePoint or Microsoft Fabric / OneLake run, the AISID writers stage each file to the local scratch folder first; a single end-of-run upload sweep then ships each of the 12 files to the AISID destination exactly once — never to the Purview output location. The internal `.aisid_cache` delta-cache directory is scratch only: it is never uploaded and is never a dashboard artifact. (`-DisableAISIDDeltaCache` forces the off-hours-geography signal to recompute rather than reuse that cache.)
+
+> **Validation status.** Standard-size AISID uploads to SharePoint deliver as described. Large single-file uploads (over ~250 MiB) and remote delivery of accumulated AISID history are still undergoing live tenant validation in this version and are not yet confirmed end-to-end — verify these paths against your own tenant before relying on them.
+
+**Completion states.** Every AISID run ends in one of five states, reported in the run log:
+
+| State | Meaning |
+|---|---|
+| `complete` | All 12 files produced with data. |
+| `complete-with-empty` | A query succeeded but returned zero rows; the file is still delivered. |
+| `complete-with-unavailable` | A signal was skipped because the tenant is not licensed for its source. |
+| `completed-with-gaps` | One or more required files could not be produced (a real data gap). |
+| `interrupted` | Collection stopped before finishing (for example an authentication quit). |
+
+A run that ends with gaps — including an AISID upload that fails to deliver — exits with a non-zero exit code (`40`), so schedulers and automation can detect it.
+-->
+
+### Org / Manager Hierarchy (AI-in-One / ValueLens)
+
+When a CopilotInteraction rollup runs (the **AI-in-One** and **ValueLens** dashboards), PAX automatically enriches the rolled-up **Users** output with each person's place in the organization chart. This requires no extra switch — it is part of every AIO / ValueLens rollup.
 
 **How it tracks the hierarchy.** PAX already collects each user's manager when it enriches Entra data (the `-IncludeUserInfo` step that the rollup auto-enables). From those manager links, the processor reconstructs the full reporting tree: it walks from each person up through their managers to the top of their chain, works out how deep in the org each person sits, and counts how many people report to them — both directly and across their whole sub-organization. The result is a set of ready-to-use hierarchy columns on the Users output, so you can build org-based views in Power BI without modelling the tree yourself.
 
@@ -3571,7 +3701,7 @@ When you point a rollup run at an existing rollup file with `-AppendFile`, PAX m
 
 **What this means for you:** an append file you started with an **earlier version** needs a **one-time re-baseline** — generate a fresh rollup file with the current version once and use that as your new append target. From then on, every `-AppendFile` run reconciles and grows correctly. **No data is lost** in the process: your original file is preserved as-is, and this run's data is safely written to the new file.
 
-> **Note (v1.11.12):** if you have been appending onto an **AIO** rolled-up interactions file created before v1.11.12, expect this one-time re-baseline on your next run — the fan-out-safe merge needs a stable user-identity column that older AIO files do not carry. Your existing file is left untouched and the run writes a fresh, timestamped file to re-baseline from. AIBV files created in v1.11.11 already carry the needed identity column.
+> **Note (v1.11.12):** if you have been appending onto an **AIO** rolled-up interactions file created before v1.11.12, expect this one-time re-baseline on your next run — the fan-out-safe merge needs a stable user-identity column that older AIO files do not carry. Your existing file is left untouched and the run writes a fresh, timestamped file to re-baseline from. ValueLens files created in v1.11.11 already carry the needed identity column.
 
 **The rolled-up Users dimension always uploads.** When a rollup run also produces the Users dimension (the org / licensing companion to the interactions file), that Users file is uploaded correctly in **all four** combinations of interactions-append and Users destination — whether the interactions stream is appending or not, and whether the Users destination is `-OutputPathUserInfo` or `-AppendUserInfo`. It uploads exactly once in every case.
 
@@ -3584,8 +3714,8 @@ When you point a rollup run at an existing rollup file with `-AppendFile`, PAX m
 # Raw CSV(s) deleted on success; only the rollup output remains.
 .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -Rollup
 
-# AI Business Value (AIBV) dashboard — same data, AIBV output profile.
-.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -Rollup -Dashboard AIBV
+# ValueLens dashboard — same data and output as before (name-only change).
+.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -Rollup -Dashboard ValueLens
 
 # Same as the AIO example but keep the raw Purview + Entra users CSVs alongside the rollup output.
 .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -RollupPlusRaw
@@ -3594,8 +3724,8 @@ When you point a rollup run at an existing rollup file with `-AppendFile`, PAX m
 # -Rollup deletes the raw combined CSV after the rollup output is produced.
 .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -IncludeM365Usage -Rollup
 
-# AIBV rollup with org-level columns filled with a fixed label where chains are shallow.
-.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -Rollup -Dashboard AIBV -FillerLabel Fixed -FillerLabelText "Assistive Directs"
+# ValueLens rollup with org-level columns filled with a fixed label where chains are shallow.
+.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -Rollup -Dashboard ValueLens -FillerLabel Fixed -FillerLabelText "Assistive Directs"
 
 # Anonymized AIO rollup — org-hierarchy structure preserved, names tokenized.
 .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate '2026-04-01' -EndDate '2026-04-30' -Rollup -Deidentify
@@ -3603,7 +3733,7 @@ When you point a rollup run at an existing rollup file with `-AppendFile`, PAX m
 
 ### Best Practices
 
-1. **Pick your dashboard with `-Dashboard`.** A CopilotInteraction-only run defaults to **AI-in-One (AIO)**; add `-Dashboard AIBV` for **AI Business Value**; use `-IncludeM365Usage` (or `-Dashboard M365`) for **M365 Usage Analytics**. The Copilot dashboards (AIO/AIBV) and the M365 dashboard cannot be produced in the same run.
+1. **Pick your dashboard with `-Dashboard`.** A CopilotInteraction-only run defaults to **AI-in-One (AIO)**; add `-Dashboard ValueLens` for **ValueLens**; use `-IncludeM365Usage` (or `-Dashboard M365`) for **M365 Usage Analytics**. The Copilot dashboards (AIO/ValueLens) and the M365 dashboard cannot be produced in the same run.
 2. **Prefer `-RollupPlusRaw` for first-time validation.** Keeping the raw CSV lets you spot-check the rollup output against the source data before deleting raws on subsequent runs.
 3. **Don't rename output files.** The Copilot Analytics Lab templates load files by name pattern. Renaming will break the data refresh.
 4. **Don't repurpose rollup outputs.** The schemas are tuned for the named Power BI templates. For ad-hoc analytics, BI ingestion outside the Copilot Analytics Lab, or custom data warehouses, use the raw Purview CSV instead.
@@ -4091,6 +4221,33 @@ To prevent data loss during authentication failures or interruptions, PAX saves 
 
 > ⚠️ **Important:** Do not delete the `.pax_incremental` folder during an active run or before resuming an interrupted run, as it contains your retrieved data.
 
+### Fabric Durable Resume Mirror, Exit Codes, and Unattended (Azure-hosted) Execution
+
+**Local scratch.** On remote-output runs (SharePoint or Microsoft Fabric / OneLake), every artifact is written to a local scratch folder first (`$env:TEMP\PAX_<RunTimestamp>\`; on Linux/container hosts this resolves under `/tmp`) and delivered afterward. If remote delivery or a requested append cannot complete, the local working copy is preserved for recovery rather than deleted, and the run reports a non-zero exit result.
+
+**Fabric durable resume mirror.** On a Microsoft Fabric / OneLake run, the resume artifacts (checkpoint, incremental data, partial output) are also mirrored to durable OneLake storage at `Files/.pax_resume/<run timestamp>/`, so an interrupted run can be resumed even if the local host is ephemeral (for example a restarted container). Local and SharePoint runs keep their resume artifacts next to the script only.
+
+**Process exit codes.** PAX returns a distinct process exit code so schedulers and unattended hosts can act on the outcome:
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | Success. |
+| `1` | Unexpected fatal error (the run did not complete). |
+| `10` | Completeness / result-limit reached (re-run with `-AutoCompleteness`). |
+| `20` | Reliability circuit breaker tripped (investigate throttling). |
+| `30` | Entra user-directory fetch failed or was incomplete. |
+| `40` | Completed with gaps — a partition failed terminally or a window reached the subdivision-depth safeguard. Lowest precedence. | <!-- | `40` | Completed with gaps — a partition failed terminally, a window reached the subdivision-depth safeguard, or (on an AISID run) a required file could not be produced or delivered. Lowest precedence. | -->
+
+The complete reference, including precedence and whether `-Resume` applies, is in the script's built-in help (`Get-Help ... -Full`, under `.NOTES`).
+
+**Azure Container Apps and other unattended hosts should evaluate the PAX process exit result.** A fatal error returns exit `1` rather than a success result, so configure the job to treat any non-zero exit code as a failure and to inspect the run log and the preserved local scratch for diagnosis.
+
+**Operational guidance.**
+
+- Run a **one-day** export first to validate configuration and permissions before launching a large historical load.
+- Schedule ongoing incremental collection as **separate** runs that write to append targets (`-AppendFile` / `-AppendUserInfo`), rather than repeatedly re-collecting the full history.
+- Do **not** run concurrent PAX jobs against the **same** checkpoint or the **same** append targets — a checkpoint and its append targets belong to a single run at a time.
+
 ### Token Refresh Prompts
 
 When using delegated authentication (WebLogin/DeviceCode), PAX uses **reactive** token refresh detection with a **silent-first** approach. Instead of prompting at a fixed time interval, the script monitors for 401 Unauthorized errors indicating the token has actually expired. When detected:
@@ -4320,7 +4477,7 @@ Because anonymization is deterministic, everything that depends on matching iden
 
 - **Joins** between files (for example, activity records to the Entra Users file) still line up, because a given person carries the same token everywhere.
 - **Per-user counts and rollups** are unchanged — the number of distinct users, interactions per user, and adoption rollups are identical to a non-anonymized run.
-- **The org / manager hierarchy is preserved.** In the Power BI rollup, the hierarchy columns are built on a stable internal key rather than on names, so the **structure** of the org chart — levels, management chains, and report counts — is byte-for-byte identical with or without `-Deidentify`; only the name columns are tokenized. See [Org / Manager Hierarchy](#org--manager-hierarchy-ai-in-one--ai-business-value) for details.
+- **The org / manager hierarchy is preserved.** In the Power BI rollup, the hierarchy columns are built on a stable internal key rather than on names, so the **structure** of the org chart — levels, management chains, and report counts — is byte-for-byte identical with or without `-Deidentify`; only the name columns are tokenized. See [Org / Manager Hierarchy](#org--manager-hierarchy-ai-in-one--valuelens) for details.
 
 ### Where it applies
 
@@ -4341,8 +4498,8 @@ The transformation happens **on the host before anything is written or uploaded*
 ```
 
 ```powershell
-# Anonymized Power BI rollup input (AI Business Value)
-.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2026-04-01 -EndDate 2026-04-30 -Dashboard AIBV -Deidentify -OutputPath C:\Temp\
+# Anonymized Power BI rollup input (ValueLens)
+.\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2026-04-01 -EndDate 2026-04-30 -Dashboard ValueLens -Deidentify -OutputPath C:\Temp\
 ```
 
 </details>
@@ -4377,7 +4534,7 @@ The transformation happens **on the host before anything is written or uploaded*
 <details>
 <summary>📄 Bring your own user/organization directory from a CSV instead of pulling from Entra</summary>
 
-**What it does.** `-UserInfoFile` lets you supply the user and organization directory from a **CSV file you provide** instead of pulling it live from Microsoft Entra. Point it at a **local path, a SharePoint document, or a Microsoft Fabric / OneLake file** — the same destination types PAX supports everywhere else. The directory you supply is then used **everywhere the Entra Users export is used** — the standalone `EntraUsers_MAClicensing_<timestamp>.csv`, org / manager hierarchy, the rolled-up **Users dimension** for the AI-in-One and AI Business Value dashboards, de-identification (`-Deidentify`), and upload to your chosen destination — end to end. Simply passing `-UserInfoFile` is enough; you do not also have to request user enrichment separately.
+**What it does.** `-UserInfoFile` lets you supply the user and organization directory from a **CSV file you provide** instead of pulling it live from Microsoft Entra. Point it at a **local path, a SharePoint document, or a Microsoft Fabric / OneLake file** — the same destination types PAX supports everywhere else. The directory you supply is then used **everywhere the Entra Users export is used** — the standalone `EntraUsers_MAClicensing_<timestamp>.csv`, org / manager hierarchy, the rolled-up **Users dimension** for the AI-in-One and ValueLens dashboards, de-identification (`-Deidentify`), and upload to your chosen destination — end to end. Simply passing `-UserInfoFile` is enough; you do not also have to request user enrichment separately.
 
 **Why use it.** Use your own file when you already maintain an authoritative user/org list (for example, an HR extract), when you want organization data the live Entra pull doesn't carry, or when you want to run enrichment against a curated set of people without querying the directory.
 
@@ -4397,8 +4554,8 @@ The run reports — on screen and in the log — how many users came from your f
 # Enrich using a directory you supply, instead of pulling from Entra
 ./PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2026-06-01 -EndDate 2026-06-02 -UserInfoFile "C:\Data\my_users.csv"
 
-# Directory file on SharePoint, feeding an AI Business Value rollup
-./PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2026-06-01 -EndDate 2026-06-02 -Rollup -Dashboard AIBV -UserInfoFile "https://contoso.sharepoint.com/sites/Analytics/Shared%20Documents/my_users.csv"
+# Directory file on SharePoint, feeding a ValueLens rollup
+./PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2026-06-01 -EndDate 2026-06-02 -Rollup -Dashboard ValueLens -UserInfoFile "https://contoso.sharepoint.com/sites/Analytics/Shared%20Documents/my_users.csv"
 ```
 
 </details>
@@ -4527,7 +4684,7 @@ Comprehensive user profile data per user, automatically deduplicated by UserPrin
 | `OrgLevel_3Label` | Org level 3 (HR systems) | (null) |
 | ... (additional extended attributes) | ... | ... |
 
-> **In a Power BI rollup (AI-in-One / AI Business Value), the Users output gains additional org / manager-hierarchy columns** — each person's `OrgLevel`, `Manager_UserKey`, `TopOfChain_UserKey`, `HierarchyPath`, `IsManager`, `DirectReports`, `TotalReports`, and `Level0`…`Level14` columns — derived from the manager data shown above. These appear only in the rolled-up Users output; see [Org / Manager Hierarchy](#org--manager-hierarchy-ai-in-one--ai-business-value).
+> **In a Power BI rollup (AI-in-One / ValueLens), the Users output gains additional org / manager-hierarchy columns** — each person's `OrgLevel`, `Manager_UserKey`, `TopOfChain_UserKey`, `HierarchyPath`, `IsManager`, `DirectReports`, `TotalReports`, and `Level0`…`Level14` columns — derived from the manager data shown above. These appear only in the rolled-up Users output; see [Org / Manager Hierarchy](#org--manager-hierarchy-ai-in-one--valuelens).
 
 **License Detection Logic:**
 
@@ -5436,7 +5593,7 @@ These are **suggestions**, not requirements, and are common to any read-only Pow
 
 ### Copilot Analytics Lab
 
-The Copilot Analytics Lab is the central landing page for PAX-compatible Power BI templates, dashboards, and companion analytics tooling — including the AI-in-One (AIO) Dashboard, the AI Business Value (AIBV) Dashboard, the Copilot Chat & Agent Intelligence Dashboards, and the broader ROI / adoption / governance visualization library.
+The Copilot Analytics Lab is the central landing page for PAX-compatible Power BI templates, dashboards, and companion analytics tooling — including the AI-in-One (AIO) Dashboard, the ValueLens Dashboard, the Copilot Chat & Agent Intelligence Dashboards, and the broader ROI / adoption / governance visualization library.
 
 - **[Copilot Analytics Lab](https://microsoft.github.io/CopilotAnalyticsLabs/)** — Single entry point for downstream visualization and analysis assets that consume PAX output
 

@@ -69,13 +69,16 @@ PAX routes each data type to its own destination through a symmetric `-OutputPat
 - `https://…onelake.dfs.fabric.microsoft.com/…` URL → Fabric tier.
 - UNC paths (`\\server\share\…`) are rejected on every destination switch.
 
-The seven switches and their pairings:
+The nine switches and their pairings:
 
 | Data destination switch | Paired append switch | Purpose |
 |---|---|---|
 | `-OutputPath` | `-AppendFile` | Purview audit output (raw, rollup, or event-level) |
 | `-OutputPathUserInfo` | `-AppendUserInfo` | EntraUsers / MAC licensing CSV |
 | `-OutputPathAgent365Info` | `-AppendAgent365Info` | Agent 365 catalog CSV |
+<!--
+| `-OutputPathDefenderUsage` | `-AppendDefenderUsage` | AI Solutions Intelligence Dashboard (AISID) output set — 12 fixed-name files (folder-only; `-Dashboard AISID` runs) |
+-->
 | `-OutputPathLog` | _(n/a)_ | Run log |
 
 Operating rules:
@@ -84,10 +87,24 @@ Operating rules:
 - **Pair XOR.** For each stream in scope, exactly one of its `-OutputPath*` / `-Append*` pair must be supplied — both bound or neither bound is rejected.
 - **Append surface.** `-AppendFile` works under `-Rollup` and `-RollupPlusRaw` on all three tiers. Per-dimension `-AppendUserInfo` and `-AppendAgent365Info` perform a union merge on the EntraUsers and Agent 365 catalog respectively, keyed on `PersonId_Normalized` and `AgentId`.
 - **Deidentification (`-Deidentify`).** Optional anonymization that replaces every identifying value (including the identity fields inside the raw `AuditData` JSON) with an irreversible, deterministic token, applied on the host **before** any write or upload — so anonymized data is what lands in the Fabric lakehouse / SharePoint folder / local path. Off by default. It is dashboard- and tier-agnostic (works under every `-Auth` mode and on all three tiers, including Fabric Delta tables) and needs no extra Graph scope. Merge keys stay usable: `PersonId_Normalized` is tokenized but deterministic, so EntraUsers/Users joins and distinct counts are preserved; `Message_Id_Raw` / `ThreadId_Raw` are message/thread GUIDs and are **not** tokenized. A hard-stop guard rejects mixing a `-Deidentify` run into a non-deidentified append target (and vice-versa). `-Deidentify` is persisted in the checkpoint and restored on `-Resume`.
-- **Org / manager hierarchy (AIO / AIBV rollup).** When `-Rollup` / `-RollupPlusRaw` produces **AI-in-One** or **AI Business Value** input, the rolled-up Users output automatically gains org/manager-hierarchy columns (`OrgLevel`, `Manager_UserKey`, `TopOfChain_UserKey`, `HierarchyPath`, `IsManager`, `DirectReports`, `TotalReports`, and `Level0`…`Level14` name/key pairs) derived from the Entra manager data PAX already collects via `$expand=manager` (no new Graph scope). On Fabric these land in the rollup Users Delta table; the structural columns are built on a stable internal key, so they are byte-identical with or without `-Deidentify`. The M365 dashboard has no hierarchy. `-FillerLabel` (`Self` / `RepeatManager` / `Fixed`, with `-FillerLabelText` for the literal) only controls how empty deeper level columns are labelled.
+- **Org / manager hierarchy (AIO / ValueLens rollup).** When `-Rollup` / `-RollupPlusRaw` produces **AI-in-One** or **ValueLens** input, the rolled-up Users output automatically gains org/manager-hierarchy columns (`OrgLevel`, `Manager_UserKey`, `TopOfChain_UserKey`, `HierarchyPath`, `IsManager`, `DirectReports`, `TotalReports`, and `Level0`…`Level14` name/key pairs) derived from the Entra manager data PAX already collects via `$expand=manager` (no new Graph scope). On Fabric these land in the rollup Users Delta table; the structural columns are built on a stable internal key, so they are byte-identical with or without `-Deidentify`. The M365 dashboard has no hierarchy. `-FillerLabel` (`Self` / `RepeatManager` / `Fixed`, with `-FillerLabelText` for the literal) only controls how empty deeper level columns are labelled.
 - **M365 rollup append.** Under `-IncludeM365Usage` + `-Rollup` / `-RollupPlusRaw`, the embedded M365 Bundle processor emits four files into the same destination — `_Rollup.csv`, `_UserStats.csv`, `_SessionCohort.csv`, and `_SessionStats.csv`. `-AppendFile` MUST point to the `_Rollup.csv` leaf; the three sidecars are recomputed/merged each run, anchored off the same leaf stem, and overwrite their derived destination URLs in-place (`_SessionStats.csv` is union-merged in place with additive counter semantics). Sidecar leaves (`_UserStats.csv`, `_SessionCohort.csv`, `_SessionStats.csv`) and CopilotInteraction (`_Interactions.csv`) / event-level (`_Exploded.csv`) leaves are rejected at pre-flight.
 - **Provenance columns.** Every appended file (Fact CSV, raw `-AppendFile` audit CSV, EntraUsers CSV) gains three trailing columns at merge time: `Date_Added`, `Latest_Append_Date`, `In_Latest_Append`. Rows that departed from the latest audit window are retained in the union with `In_Latest_Append = FALSE` so historical fact-table joins continue to resolve. The CopilotInteraction rollup Fact CSV additionally carries two stable raw-identity columns: `Message_Id_Raw` and `ThreadId_Raw`. (Under `-Deidentify` these two keep their real GUID values; only `PersonId_Normalized` is tokenized — deterministically, so it stays a stable join key.)
 - **Pristine raw EntraUsers under `-AppendUserInfo`.** The raw Entra membership snapshot written by the audit phase is never overwritten by the append-merge. The union lands at the `-AppendUserInfo` target; the raw file keeps its natural timestamped leaf (or gets a `_raw` suffix on the rare path/leaf collision).
+<!--
+- **AISID output set (`-Dashboard AISID`).** An AISID run delivers exactly 12 fixed-name files — `ai_activity_sessions.csv`, `ai_offhours_geo.csv`, `ai_file_proximity.csv`, `ai_oauth_consents.csv`, `ai_sso_signins.csv`, `ai_client_channel.csv`, `ai_copilot_usage_graph.csv`, `ai_appgov_alerts.csv`, `ai_cloud_discovery.csv`, `ai_mda_sessions.csv`, `ai_solutions_catalog.csv`, and `EntraUsers.csv` — to the folder-only `-OutputPathDefenderUsage` (or `-AppendDefenderUsage`) destination, never to the Purview `-OutputPath`. The three Microsoft Defender for Cloud Apps files are compatibility tables in this release: first runs write exact headers, while append runs preserve valid prior files byte-for-byte. On SharePoint / Fabric runs the writers stage locally and a single end-of-run sweep uploads each of the 12 exactly once; the internal `.aisid_cache` delta-cache is scratch and is never uploaded. `-DisableAISIDDeltaCache` forces the off-hours-geography signal to recompute rather than reuse that cache.
+-->
+
+<details>
+<summary><strong>Hosted operational validation and scale-up</strong></summary>
+
+1. Validate a single UTC day first with explicit dates, for example `-StartDate '2026-07-01' -EndDate '2026-07-02'`.
+2. Run an explicit historical range next, for example `-StartDate '2026-06-01' -EndDate '2026-07-01'`.
+3. Then append the next explicit range by replacing every `-OutputPath*` switch used in validation with its matching `-Append*` switch. Keep the PAX version and `-Deidentify` state consistent across the seed and append runs.
+
+Always provide dates for this validation sequence; omitting both dates selects the last 30 UTC days. Fabric mirrors durable resume artifacts to `Files/.pax_resume/<run timestamp>/`. PAX v1.11.15 corrects exact-byte transmission for checkpoint and `_PARTIAL` artifacts, and unexpected fatal top-level errors return exit code `1`. Observe the hosted process exit and resume behavior before broad production use.
+
+</details>
 
 When any `-OutputPath*` resolves to a Fabric OneLake URL, customer-visible outputs are written as **Delta tables** under the Lakehouse `Tables/` namespace (Schemas-mode Lakehouse `Tables/<schema>` is the current Fabric default; `dbo` is typical). Operational artifacts (run log, metrics JSON) land under `Files/`. The Python `deltalake` package is auto-installed on first use; offline hosts can pre-install it (see `LocalRun/README.md` and `Dockerfile/PAX.Dockerfile`).
 
