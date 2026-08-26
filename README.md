@@ -10,9 +10,9 @@
 
 ## What this branch is
 
-This branch holds **early preview builds** of the PAX Purview Audit Log Processor that are shared with a small
-group of customers ahead of general release. It exists so that real-world feedback can shape a version *before*
-it ships to everyone.
+This branch holds **early preview builds** of the PAX Purview Audit Log Processor — versions published ahead of
+general release so that real-world feedback can shape them *before* they ship to everyone. Anyone who finds this
+branch is welcome to use what's here; it simply isn't advertised alongside the released version.
 
 A prerelease build is **not** the released product. The current released version always lives on the
 [`release`](https://github.com/microsoft/PAX/tree/release) branch, and that is what you should use for anything
@@ -23,8 +23,8 @@ you depend on day to day.
 ## Please read before you run it
 
 > [!IMPORTANT]
-> **This build has not completed full customer testing.** It has been tested internally and by a limited number
-> of preview customers, but it has not been through the complete validation that a released version receives.
+> **This build has not completed full customer testing.** It has been tested internally and against real tenant
+> data, but it has not been through the complete validation that a released version receives.
 
 - **Check the results against your own tenant** before you rely on them, share them, or publish them to a
   dashboard. Confirm the row counts, the date range, and the people included look the way you expect.
@@ -32,8 +32,8 @@ you depend on day to day.
   than at the files your reporting already depends on.
 - **Expect the possibility of change.** Behavior, messages, and file names in a preview build can still change
   before the version is released.
-- **Preview builds are not published as a GitHub release** and are not linked from the main README. They are
-  provided directly to preview participants.
+- **Preview builds are not published as a GitHub release** and are not linked from the main README, so bookmark
+  this branch if you want to find your way back to it.
 - **Use the released version for production reporting.** If a preview build causes you any trouble, switching
   back to the released version is always a safe fallback.
 
@@ -56,7 +56,9 @@ a short description of what you expected versus what you saw. Please don't send 
 <tr>
 <td>
 
-### 📦 `PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260825a.ps1`
+### 📦 [PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260825a.ps1](https://github.com/microsoft/PAX/raw/968b15aaf467964b9dc75809128907d31832d563/PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260825a.ps1)
+
+<sub>⬇️ Click the file name above to download this exact build.</sub>
 
 <sub>**SHA256:** `17882ED51E11F6BF8611AA753FF55DB46E8F2E7C53495DAC8957B4A479392899`</sub>
 
@@ -109,7 +111,7 @@ permission problems are now reported in plain language that tells you which perm
 
 ---
 
-**🆕 Included as a hotfix in this build — not yet in the official changelog**
+**🆕 Newest fix in this build**
 
 **✏️ The Entra Users filename you ask for is now the filename you get.** When you point the Entra Users output at
 a specific file name, the finished users file is written under exactly that name — locally and at SharePoint or
