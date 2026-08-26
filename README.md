@@ -32,8 +32,8 @@ you depend on day to day.
   than at the files your reporting already depends on.
 - **Expect the possibility of change.** Behavior, messages, and file names in a preview build can still change
   before the version is released.
-- **Preview builds are not published as a GitHub release** and are not linked from the main README, so bookmark
-  this branch if you want to find your way back to it.
+- **Preview builds are tagged as a pre-release, never as the latest release**, and are not linked from the main
+  README, so bookmark this branch if you want to find your way back to it.
 - **Use the released version for production reporting.** If a preview build causes you any trouble, switching
   back to the released version is always a safe fallback.
 
@@ -56,7 +56,7 @@ a short description of what you expected versus what you saw. Please don't send 
 <tr>
 <td>
 
-### 📦 [PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260825a.ps1](https://github.com/microsoft/PAX/raw/968b15aaf467964b9dc75809128907d31832d563/PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260825a.ps1)
+### 📦 [PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260825a.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.16-prerelease-20260825a/PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260825a.ps1)
 
 <sub>⬇️ Click the file name above to download this exact build.</sub>
 
