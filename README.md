@@ -81,6 +81,12 @@ leaves your existing files exactly as they were, publishes nothing partial, and 
 collected — so you can simply run it again. A run that finds no activity still produces the other output you
 asked for. On a first run, everyone appearing in the activity data is guaranteed a matching user row.
 
+**✏️ The Entra Users file is written under the exact name you ask for.** When you point the Entra Users output at
+a specific file name, that is the name the finished file gets — locally and at SharePoint or Fabric destinations
+— instead of a variation that had to be renamed by hand afterwards. The raw directory extract is kept separately
+under its own name so the two never collide, and if the file can't be published the run says so and leaves
+whatever you already had untouched. Runs that point at a folder rather than a specific file name are unaffected.
+
 **📤 Large uploads and busy services are handled far more gracefully.** A large SharePoint upload now resumes
 from where it stopped after a dropped connection instead of starting over, and can recover if your sign-in lapses
 while the transfer is being set up. The agent catalog now works its way through sustained service throttling
@@ -108,17 +114,6 @@ counts more clearly.
 permission problems are now reported in plain language that tells you which permission is actually missing.
 
 **📖 Refreshed guidance** on Power BI connectivity, required permissions, and data retention.
-
----
-
-**🆕 Newest fix in this build**
-
-**✏️ The Entra Users filename you ask for is now the filename you get.** When you point the Entra Users output at
-a specific file name, the finished users file is written under exactly that name — locally and at SharePoint or
-Fabric destinations — instead of a variation of it that had to be renamed by hand afterwards. The raw directory
-extract is kept separately under its own name, so the two never overwrite each other, and if the file can't be
-published for any reason the run says so and leaves whatever you already had completely untouched. Runs that ask
-for a folder rather than a specific file name behave exactly as they always have.
 
 </td>
 </tr>
