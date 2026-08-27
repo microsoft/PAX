@@ -56,15 +56,25 @@ a short description of what you expected versus what you saw. Please don't send 
 <tr>
 <td>
 
-### 📦 [PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260825a.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.16-prerelease-20260825a/PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260825a.ps1)
+### 📦 [PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260826a.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.16-prerelease-20260826a/PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260826a.ps1)
 
 <sub>⬇️ Click the file name above to download this exact build.</sub>
 
-<sub>**SHA256:** `17882ED51E11F6BF8611AA753FF55DB46E8F2E7C53495DAC8957B4A479392899`</sub>
+<sub>**SHA256:** `9AD81A9545FDA3A0CE5B92BCBAA3095961F3B79BBA01AA5FF7F772181E2ECA1A`</sub>
 
-<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260825a.ps1 -Algorithm SHA256`</sub>
+<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260826a.ps1 -Algorithm SHA256`</sub>
 
 ---
+
+**📄 An output file name you specify is used exactly as you wrote it.** When you point an output at a particular
+file name rather than at a folder, the finished file is written under precisely that name, locally and at
+SharePoint or Fabric destinations. Previously a folder could be created carrying that name, with the output
+placed inside it. Runs that point at a folder rather than a specific file name are unaffected.
+
+**➕ Folding a run into an existing dataset publishes the combined result.** When a run is added to a dataset you
+already have, the merged result is written out and the rows you already had are carried through it. If the
+combined result cannot be published, the run reports that plainly instead of finishing quietly, and the dataset
+you already had is left exactly as it was.
 
 **⚡ Large tenants and large existing datasets process dramatically faster.** Preparing a big user directory,
 matching people to the identifiers they were given on previous runs, and folding a new run into an existing
