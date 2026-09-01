@@ -56,15 +56,51 @@ a short description of what you expected versus what you saw. Please don't send 
 <tr>
 <td>
 
-### 📦 [PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260826a.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.16-prerelease-20260826a/PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260826a.ps1)
+### 📦 [PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260901a.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.16-prerelease-20260901a/PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260901a.ps1)
 
 <sub>⬇️ Click the file name above to download this exact build.</sub>
 
-<sub>**SHA256:** `9AD81A9545FDA3A0CE5B92BCBAA3095961F3B79BBA01AA5FF7F772181E2ECA1A`</sub>
+<sub>**SHA256:** `A20AEBBCC44F09584E93B943B1171F6F65B9C9BDFE74621F3103B4F836EEFD99`</sub>
 
-<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260826a.ps1 -Algorithm SHA256`</sub>
+<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260901a.ps1 -Algorithm SHA256`</sub>
 
 ---
+
+**🕒 License state is now recorded as it was at the time, not as it is today.** Turn on user history and each
+person's licensing state is written once with the date it applied from, and activity is attributed to the state
+that was actually in effect when it happened. Without this, historical activity is reported against today's
+license state, which makes adoption and trend reporting wrong for anyone whose license changed rather than
+simply incomplete. A state is stored once, so repeating a run adds nothing and a new row appears only when
+somebody's licensing genuinely changes.
+
+**🔍 A collection that comes up short says so instead of reporting success.** Each part of a collection is now
+checked against the number of records the service said it would return. If retrieval ends early, the run reports
+a gap and returns a failure result. Previously a short retrieval could be accepted as complete, and the missing
+records were never mentioned.
+
+**▶️ Resuming an interrupted collection works again.** An ordinary resume is no longer stopped by an unrelated
+internal marker that was being written into every saved progress file. Resumes that were failing immediately now
+continue normally.
+
+**⏱️ A run that has finished its work now actually ends.** Monitoring reconciles the state of each part of the
+collection against the jobs doing it, so a completed collection no longer waits indefinitely on a job that will
+never report back. Genuinely long work is never cut short, and there is still no time limit of any kind.
+
+**💻 A fully local run stays local.** If you supply both your own audit file and your own users file, the run does
+not sign in and does not contact any service, because nothing about it needs to.
+
+**🧾 Run logs are never overwritten.** A run log keeps its timestamp even when you specify a fixed output file
+name, so a later run cannot quietly replace the log of an earlier one.
+
+**🚦 A run that fails now reports failure.** A destination that cannot be reached before collection starts, and a
+post-processing step that does not finish, both return a failure result instead of exiting as though everything
+worked.
+
+**💬 Messages describe what actually happened.** An append target is described as a target rather than as a
+finished append, internal working files are no longer reported as your destination, the merge summary explains
+that "departed" means absent from the window you collected rather than removed from your data, an interruption is
+only attributed to you pressing Ctrl+C when that can genuinely be established, and the notice explaining that
+dates do not filter an audit file you supplied now appears.
 
 **📄 An output file name you specify is used exactly as you wrote it.** When you point an output at a particular
 file name rather than at a folder, the finished file is written under precisely that name, locally and at
