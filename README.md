@@ -56,15 +56,38 @@ a short description of what you expected versus what you saw. Please don't send 
 <tr>
 <td>
 
-### 📦 [PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260901a.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.16-prerelease-20260901a/PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260901a.ps1)
+### 📦 [PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260910a.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.16-prerelease-20260910a/PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260910a.ps1)
 
 <sub>⬇️ Click the file name above to download this exact build.</sub>
 
-<sub>**SHA256:** `A20AEBBCC44F09584E93B943B1171F6F65B9C9BDFE74621F3103B4F836EEFD99`</sub>
+<sub>**SHA256:** `703294A115C94498FFCE2E603EDAAA50C4991F442BED61EB6FA55E98D5B1108B`</sub>
 
-<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260901a.ps1 -Algorithm SHA256`</sub>
+<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260910a.ps1 -Algorithm SHA256`</sub>
 
 ---
+
+### ✨ Features and enhancements
+
+**📊 One command can now produce several dashboard data sets at once.** `-Dashboard` accepts more than one
+value, such as `-Dashboard AIO,M365,ValueLens`, so a single collection generates the data for every dashboard
+you ask for instead of requiring a separate collection for each. Each data set is written beneath its own
+folder, and the whole set publishes together or not at all — if one dashboard cannot be produced, nothing is
+published as complete, the collected data is kept for review, and the run reports failure.
+
+> ℹ️ **A multi-dashboard run produces a fresh set of outputs.** Adding to a data set you already have is done
+> one dashboard at a time in this build. If you select more than one dashboard together with an append target,
+> the run stops and explains why before anything is collected or written, so nothing you already have is
+> touched. Running one dashboard at a time supports adding to an existing data set exactly as before.
+
+**💧 Catch up on whatever you missed, without tracking dates by hand.** Point a run at a dataset you already
+have and PAX works out which whole UTC days are missing, then collects exactly those in a single run. Local,
+SharePoint, and Microsoft Fabric destinations are all supported. The marker only moves forward after every
+required output has published and been verified, so an interrupted or failed run simply collects the same
+window again next time rather than leaving a hole.
+
+**🤖 A substantially expanded agent catalog.** The export now carries the Entra Agent ID and the additional
+contract columns without changing any existing column, explains why a fixed column is blank instead of leaving
+it unexplained, and works its way through sustained service throttling rather than giving up.
 
 **🕒 License state is now recorded as it was at the time, not as it is today.** Turn on user history and each
 person's licensing state is written once with the date it applied from, and activity is attributed to the state
@@ -72,6 +95,61 @@ that was actually in effect when it happened. Without this, historical activity 
 license state, which makes adoption and trend reporting wrong for anyone whose license changed rather than
 simply incomplete. A state is stored once, so repeating a run adds nothing and a new row appears only when
 somebody's licensing genuinely changes.
+
+**� A single command can now collect your full Microsoft 365 usage history.** Long historical ranges are no
+longer capped part-way through.
+
+> ⚠️ **If a Microsoft 365 usage collection is currently in progress on an older build**, finish it there first.
+> This build divides the requested range differently, so an in-flight collection will either stop and tell you
+> so, or restart the range from the beginning. Nothing is corrupted or lost either way. Collections that have
+> already finished, and ongoing appends to an existing dataset, are unaffected.
+
+**🛡️ Stronger protection for the data you already have.** Results are confirmed complete *before* anything is
+merged into your existing files or uploaded. If any part of a run can't be confirmed, the run stops, says why,
+leaves your existing files exactly as they were, publishes nothing partial, and doesn't record the period as
+collected — so you can simply run it again. A run that finds no activity still produces the other output you
+asked for. On a first run, everyone appearing in the activity data is guaranteed a matching user row.
+
+**⚡ Large tenants and large existing datasets process dramatically faster.** Preparing a big user directory,
+matching people to the identifiers they were given on previous runs, and folding a new run into an existing
+dataset all now run through a much faster, disk-backed path. Steps that could previously take hours on a large
+existing dataset now typically complete in minutes. Where data is unusual, the run quietly falls back to the
+previous method rather than guessing.
+
+**⏳ You can see what a long run is doing.** The slow steps now report steady progress while they work, roughly
+once a minute, instead of appearing to hang with nothing on screen.
+
+**📤 Large uploads and busy services are handled far more gracefully.** A large SharePoint upload now resumes
+from where it stopped after a dropped connection instead of starting over, and can recover if your sign-in lapses
+while the transfer is being set up. The agent catalog now works its way through sustained service throttling
+rather than giving up, including throttling that arrives disguised as a different kind of error.
+
+**🗄️ Microsoft Fabric destinations are checked up front.** Lakehouse destinations are now resolved and verified
+*before* collection begins, so a destination problem stops the run early instead of after all the work is done —
+including destinations whose names contain spaces. If a table still can't be written, the data is preserved to
+`Files/` for recovery and the run truthfully reports *completed with gaps* rather than implying success.
+
+**🔐 Agent catalog reads use the generally available endpoint first**, falling back only when needed, and
+permission problems are now reported in plain language that tells you which permission is actually missing.
+
+**📖 Refreshed guidance** on Power BI connectivity, required permissions, and data retention.
+
+---
+
+### 🛠️ Fixes
+
+**� Everyone in the activity data has a matching row in the people file.** In a multi-dashboard run, each
+dashboard's people file now carries a row for every person appearing in that dashboard's activity data,
+including identities that exist only in activity and never in your directory, such as service and agent
+accounts. Previously the directory listing was published on its own, so a small number of activity rows
+referred to people the accompanying file did not describe, and adding such a run to an existing data set
+would stop rather than publish the mismatch. Those runs now complete. Single-dashboard runs already behaved
+this way and are unchanged.
+
+**�🗂️ Each Microsoft 365 file keeps its own name in a multi-dashboard run.** The Microsoft 365 Rollup, UserStats,
+SessionCohort, and SessionStats outputs are each written under their own distinct file name. Previously a
+multi-dashboard run that included `M365` stopped with a duplicate destination error and published nothing at
+all. Single-dashboard runs were never affected.
 
 **🔍 A collection that comes up short says so instead of reporting success.** Each part of a collection is now
 checked against the number of records the service said it would return. If retrieval ends early, the run reports
@@ -112,54 +190,16 @@ already have, the merged result is written out and the rows you already had are 
 combined result cannot be published, the run reports that plainly instead of finishing quietly, and the dataset
 you already had is left exactly as it was.
 
-**⚡ Large tenants and large existing datasets process dramatically faster.** Preparing a big user directory,
-matching people to the identifiers they were given on previous runs, and folding a new run into an existing
-dataset all now run through a much faster, disk-backed path. Steps that could previously take hours on a large
-existing dataset now typically complete in minutes. Where data is unusual, the run quietly falls back to the
-previous method rather than guessing.
-
-**⏳ You can see what a long run is doing.** The slow steps now report steady progress while they work, roughly
-once a minute, instead of appearing to hang with nothing on screen.
-
-**🛡️ Stronger protection for the data you already have.** Results are confirmed complete *before* anything is
-merged into your existing files or uploaded. If any part of a run can't be confirmed, the run stops, says why,
-leaves your existing files exactly as they were, publishes nothing partial, and doesn't record the period as
-collected — so you can simply run it again. A run that finds no activity still produces the other output you
-asked for. On a first run, everyone appearing in the activity data is guaranteed a matching user row.
-
 **✏️ The Entra Users file is written under the exact name you ask for.** When you point the Entra Users output at
 a specific file name, that is the name the finished file gets — locally and at SharePoint or Fabric destinations
 — instead of a variation that had to be renamed by hand afterwards. The raw directory extract is kept separately
 under its own name so the two never collide, and if the file can't be published the run says so and leaves
 whatever you already had untouched. Runs that point at a folder rather than a specific file name are unaffected.
 
-**📤 Large uploads and busy services are handled far more gracefully.** A large SharePoint upload now resumes
-from where it stopped after a dropped connection instead of starting over, and can recover if your sign-in lapses
-while the transfer is being set up. The agent catalog now works its way through sustained service throttling
-rather than giving up, including throttling that arrives disguised as a different kind of error.
-
-**🗄️ Microsoft Fabric destinations are checked up front.** Lakehouse destinations are now resolved and verified
-*before* collection begins, so a destination problem stops the run early instead of after all the work is done —
-including destinations whose names contain spaces. If a table still can't be written, the data is preserved to
-`Files/` for recovery and the run truthfully reports *completed with gaps* rather than implying success.
-
-**📚 A single command can now collect your full Microsoft 365 usage history.** Long historical ranges are no
-longer capped part-way through.
-
-> ⚠️ **If a Microsoft 365 usage collection is currently in progress on an older build**, finish it there first.
-> This build divides the requested range differently, so an in-flight collection will either stop and tell you
-> so, or restart the range from the beginning. Nothing is corrupted or lost either way. Collections that have
-> already finished, and ongoing appends to an existing dataset, are unaffected.
-
 **📅 Clearer, more accurate reporting.** A date range that covers no time at all is refused immediately with a
 plain explanation, before any sign-in. Date-only ranges are treated consistently from midnight to midnight UTC,
 so the same command returns the same records wherever it is run. The end-of-run summary reports identifier
 counts more clearly.
-
-**🔐 Agent catalog reads use the generally available endpoint first**, falling back only when needed, and
-permission problems are now reported in plain language that tells you which permission is actually missing.
-
-**📖 Refreshed guidance** on Power BI connectivity, required permissions, and data retention.
 
 </td>
 </tr>
