@@ -56,17 +56,24 @@ a short description of what you expected versus what you saw. Please don't send 
 <tr>
 <td>
 
-### 📦 [PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260910a.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.16-prerelease-20260910a/PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260910a.ps1)
+### 📦 [PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260911a.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.16-prerelease-20260911a/PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260911a.ps1)
 
 <sub>⬇️ Click the file name above to download this exact build.</sub>
 
-<sub>**SHA256:** `703294A115C94498FFCE2E603EDAAA50C4991F442BED61EB6FA55E98D5B1108B`</sub>
+<sub>**SHA256:** `99E87F4B6116D6EEA406314CB5EEE782865F4DB1107ACB5396B5CF81EE57655A`</sub>
 
-<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260910a.ps1 -Algorithm SHA256`</sub>
+<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260911a.ps1 -Algorithm SHA256`</sub>
 
 ---
 
 ### ✨ Features and enhancements
+
+**🧾 When access is refused, the log now says why.** If Microsoft 365 refuses an audit request, PAX writes down
+the reason it was given rather than just noting that the request failed. That includes the error code and
+message returned by the service, the Microsoft request identifier for that exact call, the service diagnostic
+detail, and any sign-in policy challenge attached to the response. The full response and every response header
+are recorded as well, so nothing is left out. If you need to take the problem to your IT or security team, or
+to Microsoft support, the log already contains the details they will ask for.
 
 **📊 One command can now produce several dashboard data sets at once.** `-Dashboard` accepts more than one
 value, such as `-Dashboard AIO,M365,ValueLens`, so a single collection generates the data for every dashboard
@@ -137,6 +144,13 @@ permission problems are now reported in plain language that tells you which perm
 ---
 
 ### 🛠️ Fixes
+
+**🧩 Refusal details are no longer lost, so a genuine access problem is reported instead of retried.** On
+PowerShell 7 the details Microsoft returns with a refused audit request were being discarded before they could
+be read. Because those details were missing, a refusal caused by permissions or by a sign-in policy looked the
+same as a passing glitch, so the run kept retrying it and eventually gave up without saying what happened.
+Those runs could take hours and still finish with nothing to act on. PAX now reads the response correctly, so
+a real access problem is recognized on the first attempt and the run stops promptly with the reason.
 
 **� Everyone in the activity data has a matching row in the people file.** In a multi-dashboard run, each
 dashboard's people file now carries a row for every person appearing in that dashboard's activity data,
