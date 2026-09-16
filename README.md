@@ -56,13 +56,13 @@ a short description of what you expected versus what you saw. Please don't send 
 <tr>
 <td>
 
-### 📦 [PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260911a.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.16-prerelease-20260911a/PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260911a.ps1)
+### 📦 [PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260916-06.ps1](https://github.com/microsoft/PAX/releases/download/purview-v1.11.16-prerelease-20260916-06/PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260916-06.ps1)
 
 <sub>⬇️ Click the file name above to download this exact build.</sub>
 
-<sub>**SHA256:** `99E87F4B6116D6EEA406314CB5EEE782865F4DB1107ACB5396B5CF81EE57655A`</sub>
+<sub>**SHA256:** `46D4B1EE6DD60C74076AC8C00D5FF50F0C95A9BA3672A00BC161CB715B7DA04C`</sub>
 
-<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260911a.ps1 -Algorithm SHA256`</sub>
+<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v1.11.16-prerelease-20260916-06.ps1 -Algorithm SHA256`</sub>
 
 ---
 
@@ -144,6 +144,12 @@ permission problems are now reported in plain language that tells you which perm
 ---
 
 ### 🛠️ Fixes
+
+**Multiple group names work with the existing `pwsh -File` command.** Supply each name in quotes, for example
+`-GroupNames "Engineering Managers","Product Leads"`. Names containing spaces are kept together instead of
+being interpreted as unrelated output or authentication parameters, preventing misleading Agent 365
+output-path errors. Single-group inputs and direct PowerShell arrays remain supported. Keep comma separators
+adjacent to the quoted names in legacy shells.
 
 **🧩 Refusal details are no longer lost, so a genuine access problem is reported instead of retried.** On
 PowerShell 7 the details Microsoft returns with a refused audit request were being discarded before they could
