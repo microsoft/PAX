@@ -103,7 +103,7 @@ license state, which makes adoption and trend reporting wrong for anyone whose l
 simply incomplete. A state is stored once, so repeating a run adds nothing and a new row appears only when
 somebody's licensing genuinely changes.
 
-**� A single command can now collect your full Microsoft 365 usage history.** Long historical ranges are no
+**🗓️ A single command can now collect your full Microsoft 365 usage history.** Long historical ranges are no
 longer capped part-way through.
 
 > ⚠️ **If a Microsoft 365 usage collection is currently in progress on an older build**, finish it there first.
@@ -145,7 +145,7 @@ permission problems are now reported in plain language that tells you which perm
 
 ### 🛠️ Fixes
 
-**Multiple group names work with the existing `pwsh -File` command.** Supply each name in quotes, for example
+**👥 Multiple group names work with the existing `pwsh -File` command.** Supply each name in quotes, for example
 `-GroupNames "Engineering Managers","Product Leads"`. Names containing spaces are kept together instead of
 being interpreted as unrelated output or authentication parameters, preventing misleading Agent 365
 output-path errors. Single-group inputs and direct PowerShell arrays remain supported. Keep comma separators
@@ -158,7 +158,7 @@ same as a passing glitch, so the run kept retrying it and eventually gave up wit
 Those runs could take hours and still finish with nothing to act on. PAX now reads the response correctly, so
 a real access problem is recognized on the first attempt and the run stops promptly with the reason.
 
-**� Everyone in the activity data has a matching row in the people file.** In a multi-dashboard run, each
+**👤 Everyone in the activity data has a matching row in the people file.** In a multi-dashboard run, each
 dashboard's people file now carries a row for every person appearing in that dashboard's activity data,
 including identities that exist only in activity and never in your directory, such as service and agent
 accounts. Previously the directory listing was published on its own, so a small number of activity rows
@@ -166,7 +166,7 @@ referred to people the accompanying file did not describe, and adding such a run
 would stop rather than publish the mismatch. Those runs now complete. Single-dashboard runs already behaved
 this way and are unchanged.
 
-**�🗂️ Each Microsoft 365 file keeps its own name in a multi-dashboard run.** The Microsoft 365 Rollup, UserStats,
+**🗂️ Each Microsoft 365 file keeps its own name in a multi-dashboard run.** The Microsoft 365 Rollup, UserStats,
 SessionCohort, and SessionStats outputs are each written under their own distinct file name. Previously a
 multi-dashboard run that included `M365` stopped with a duplicate destination error and published nothing at
 all. Single-dashboard runs were never affected.
