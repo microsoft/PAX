@@ -28730,15 +28730,97 @@ function script:Test-PaxM365PostRegenerationOutput {
 	return [PSCustomObject]@{ Valid = $true; Reason = 'ok'; Details = $details.ToArray() }
 }
 
+function script:Invoke-PaxAzTokenIsolated {
+	<#
+	.SYNOPSIS
+		Acquires an Azure access token through Az.Accounts in a separate PowerShell process.
+	.DESCRIPTION
+		Az.Accounts and Microsoft.Graph.Authentication each ship their own Azure.Identity. When both
+		load into one process, whichever loads first can leave the other bound to an incompatible
+		copy; interactive Graph sign-in then fails with "Method not found ...
+		InteractiveBrowserCredential.Authenticate". Running every Az.Accounts call in a child process
+		keeps Az assemblies out of this process entirely, so no installed Az or Graph version can
+		conflict. The child reuses the persisted Az sign-in context exactly as an in-process call did.
+		The secret reaches the child only through its inherited environment, never its command line,
+		and the token is returned only through the child's standard output.
+	#>
+	param([Parameter(Mandatory)][string]$ResourceUrl)
+	$childScript = @'
+$ErrorActionPreference = 'Stop'
+try {
+	Import-Module Az.Accounts -ErrorAction Stop | Out-Null
+	# A subscription picker would wait for input nobody can see; OneLake needs no subscription.
+	try { Update-AzConfig -LoginExperienceV2 Off -Scope Process -WarningAction SilentlyContinue | Out-Null } catch { }
+	$tag = 'Interactive'
+	$ctx = Get-AzContext -ErrorAction SilentlyContinue
+	if (-not $ctx) {
+		if ($env:PAX_AZ_AUTH -eq 'ManagedIdentity') {
+			$tag = 'ManagedIdentity'
+			if ($env:AZURE_CLIENT_ID) { Connect-AzAccount -Identity -AccountId $env:AZURE_CLIENT_ID -ErrorAction Stop | Out-Null }
+			else { Connect-AzAccount -Identity -ErrorAction Stop | Out-Null }
+		}
+		elseif ($env:PAX_AZ_AUTH -eq 'AppRegistration' -and $env:PAX_AZ_TENANT -and $env:PAX_AZ_CLIENT -and $env:PAX_AZ_SECRET) {
+			$tag = 'AppRegistration'
+			$cred = New-Object System.Management.Automation.PSCredential($env:PAX_AZ_CLIENT, (ConvertTo-SecureString -String $env:PAX_AZ_SECRET -AsPlainText -Force))
+			Connect-AzAccount -ServicePrincipal -Tenant $env:PAX_AZ_TENANT -Credential $cred -ErrorAction Stop | Out-Null
+		}
+		else { Connect-AzAccount -ErrorAction Stop | Out-Null }
+	}
+	elseif ($ctx.Account -and $ctx.Account.Type -eq 'ManagedService') { $tag = 'ManagedIdentity' }
+	elseif ($ctx.Account -and $ctx.Account.Type -eq 'ServicePrincipal') { $tag = 'AppRegistration' }
+	$t = Get-AzAccessToken -ResourceUrl $env:PAX_AZ_RESOURCE -ErrorAction Stop
+	$tok = if ($t.Token -is [System.Security.SecureString]) { [System.Net.NetworkCredential]::new('', $t.Token).Password } else { [string]$t.Token }
+	$exp = if ($t.ExpiresOn -is [System.DateTimeOffset]) { $t.ExpiresOn.UtcDateTime }
+		elseif ($t.ExpiresOn -is [datetime]) { if ($t.ExpiresOn.Kind -eq [System.DateTimeKind]::Utc) { $t.ExpiresOn } else { $t.ExpiresOn.ToUniversalTime() } }
+		else { ([datetime]$t.ExpiresOn).ToUniversalTime() }
+	$payload = @{ ok = $true; token = $tok; expiresUtc = $exp.ToString('o'); authMethod = $tag } | ConvertTo-Json -Compress
+}
+catch { $payload = @{ ok = $false; error = [string]$_.Exception.Message } | ConvertTo-Json -Compress }
+[Console]::Out.WriteLine('PAXAZRESULT:' + [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($payload)))
+'@
+	$hostPath = $null
+	try { $hostPath = (Get-Process -Id $PID -ErrorAction Stop).Path } catch { }
+	if (-not $hostPath -or ([System.IO.Path]::GetFileNameWithoutExtension($hostPath) -notin @('pwsh', 'powershell'))) { $hostPath = 'pwsh' }
+	$encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($childScript))
+	$childEnv = [ordered]@{
+		PAX_AZ_RESOURCE = $ResourceUrl
+		PAX_AZ_AUTH     = [string]$Auth
+		PAX_AZ_TENANT   = [string]$script:TenantId
+		PAX_AZ_CLIENT   = [string]$script:ClientId
+		PAX_AZ_SECRET   = [string]$script:ClientSecret
+	}
+	try {
+		foreach ($k in $childEnv.Keys) { [System.Environment]::SetEnvironmentVariable($k, $childEnv[$k], 'Process') }
+		$childLines = @($null | & $hostPath -NoProfile -NoLogo -EncodedCommand $encoded 2>&1 | ForEach-Object { [string]$_ })
+	}
+	finally {
+		foreach ($k in $childEnv.Keys) { [System.Environment]::SetEnvironmentVariable($k, $null, 'Process') }
+	}
+	$resultLine = @($childLines | Where-Object { $_.StartsWith('PAXAZRESULT:') }) | Select-Object -Last 1
+	foreach ($line in @($childLines | Where-Object { -not $_.StartsWith('PAXAZRESULT:') -and -not [string]::IsNullOrWhiteSpace($_) })) {
+		Write-LogHost ("  [AZ] {0}" -f $line.Trim()) -ForegroundColor DarkGray
+	}
+	if (-not $resultLine) { throw "The Az.Accounts token helper process ended without a result (host: $hostPath)." }
+	$result = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($resultLine.Substring('PAXAZRESULT:'.Length))) | ConvertFrom-Json
+	if (-not $result.ok) { throw [string]$result.error }
+	return [pscustomobject]@{
+		Token      = [string]$result.token
+		ExpiresOn  = ([datetime]::Parse([string]$result.expiresUtc, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)).ToUniversalTime()
+		AuthMethod = [string]$result.authMethod
+	}
+}
+
 function script:Invoke-PaxFabricApiRequest {
 	<#
 	.SYNOPSIS
 		One authenticated GET against the Fabric REST API, using the identity the run already holds.
 	#>
 	param([Parameter(Mandatory)][string]$Uri)
-	Import-Module Az.Accounts -ErrorAction Stop | Out-Null
-	$tok = Get-AzAccessToken -ResourceUrl 'https://api.fabric.microsoft.com' -ErrorAction Stop
-	$plain = if ($tok.Token -is [System.Security.SecureString]) { [System.Net.NetworkCredential]::new('', $tok.Token).Password } else { [string]$tok.Token }
+	$cache = $script:PaxFabricApiTokenCache
+	if (-not $cache -or -not $cache.Token -or (($cache.ExpiresOn - (Get-Date).ToUniversalTime()).TotalMinutes -lt 5)) {
+		$script:PaxFabricApiTokenCache = script:Invoke-PaxAzTokenIsolated -ResourceUrl 'https://api.fabric.microsoft.com'
+	}
+	$plain = [string]$script:PaxFabricApiTokenCache.Token
 	try {
 		# The token is used for this call only and is never logged, echoed or persisted.
 		return Invoke-RestMethod -Uri $Uri -Method GET -Headers @{ Authorization = "Bearer $plain" } -ErrorAction Stop
@@ -29682,55 +29764,9 @@ function Get-FabricStorageTokenRaw {
 	if (-not (Get-Module -Name Az.Accounts -ListAvailable -ErrorAction SilentlyContinue)) {
 		throw "Az.Accounts module not installed. Install with: Install-Module Az.Accounts -Scope CurrentUser"
 	}
-	Import-Module Az.Accounts -ErrorAction Stop | Out-Null
-
-	$authMethodTag = 'Interactive'
-	$ctx = Get-AzContext -ErrorAction SilentlyContinue
-	if (-not $ctx) {
-		if ($Auth -eq 'ManagedIdentity') {
-			$authMethodTag = 'ManagedIdentity'
-			if ($env:AZURE_CLIENT_ID) {
-				Connect-AzAccount -Identity -AccountId $env:AZURE_CLIENT_ID -ErrorAction Stop | Out-Null
-			} else {
-				Connect-AzAccount -Identity -ErrorAction Stop | Out-Null
-			}
-		}
-		elseif ($Auth -eq 'AppRegistration' -and $script:TenantId -and $script:ClientId -and $script:ClientSecret) {
-			$authMethodTag = 'AppRegistration'
-			$secureSecret = ConvertTo-SecureString -String $script:ClientSecret -AsPlainText -Force
-			$cred = New-Object System.Management.Automation.PSCredential($script:ClientId, $secureSecret)
-			Connect-AzAccount -ServicePrincipal -Tenant $script:TenantId -Credential $cred -ErrorAction Stop | Out-Null
-		}
-		else {
-			Connect-AzAccount -ErrorAction Stop | Out-Null
-		}
-	} else {
-		# Reuse existing context; classify by account type so cooldown/log lines stay accurate.
-		if ($ctx.Account -and $ctx.Account.Type -eq 'ManagedService') { $authMethodTag = 'ManagedIdentity' }
-		elseif ($ctx.Account -and $ctx.Account.Type -eq 'ServicePrincipal') { $authMethodTag = 'AppRegistration' }
-	}
-
-	$tokenObj = Get-AzAccessToken -ResourceUrl $resource -ErrorAction Stop
-	# Token shape: newer Az returns SecureString; older returns plain string.
-	$tokenStr = if ($tokenObj.Token -is [System.Security.SecureString]) {
-		[System.Net.NetworkCredential]::new('', $tokenObj.Token).Password
-	} else {
-		[string]$tokenObj.Token
-	}
-	# ExpiresOn shape: newer Az returns DateTimeOffset; older returns DateTime; defensive parse for string.
-	$expiresUtc = if ($tokenObj.ExpiresOn -is [System.DateTimeOffset]) {
-		$tokenObj.ExpiresOn.UtcDateTime
-	} elseif ($tokenObj.ExpiresOn -is [datetime]) {
-		if ($tokenObj.ExpiresOn.Kind -eq [System.DateTimeKind]::Utc) { $tokenObj.ExpiresOn } else { $tokenObj.ExpiresOn.ToUniversalTime() }
-	} else {
-		([datetime]$tokenObj.ExpiresOn).ToUniversalTime()
-	}
-
-	return [pscustomobject]@{
-		Token      = $tokenStr
-		ExpiresOn  = $expiresUtc
-		AuthMethod = $authMethodTag
-	}
+	# Az.Accounts runs in a child process so its Azure.Identity can never conflict with the one
+	# Microsoft Graph loads into this process (see Invoke-PaxAzTokenIsolated).
+	return (script:Invoke-PaxAzTokenIsolated -ResourceUrl $resource)
 }
 
 function Invoke-AzTokenAcquire {
