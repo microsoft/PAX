@@ -230,7 +230,7 @@ This preview is the **v2.0.0** line. Everything below is new or changed compared
 ### ⚠️ Good to know in this build
 
 - **Multi-dashboard output to Microsoft Fabric goes to the lakehouse `Files/` area.** A multi-dashboard run pointed at Fabric Tables/Delta or at a bare lakehouse root stops before anything is collected. Single-dashboard runs continue to write Tables/Delta output.
-- **Multi-dashboard append has a few boundaries.** A multi-dashboard append that includes `AISID` is refused, a resumed append cannot change which dashboards are included, and incremental catch-up cannot start a newly added dashboard's history; the run gives you the backfill command instead.
+- **Multi-dashboard append has a few boundaries.** A resumed append cannot change which dashboards are included, and incremental catch-up cannot start a newly added dashboard's history; the run gives you the backfill command instead.
 - **Older de-identified Users histories need to be regenerated before appending.** A protected history created before this build does not carry the new verification columns, so appending to it is refused and the file is left unchanged. Regenerate it from the original identified source with a fresh run.
 - **User history stays off unless you turn it on.** `-UserHistory` is off by default in this build.
 
