@@ -58966,7 +58966,23 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 													if (-not $pageFlushFilePath) {
 														$pageFlushFilePath = Join-Path $incrementalDir "Part${idx}_${runTimestamp}_qid-${queryId}_${jobRunId}.jsonl"
 													}
-													$allRecords | ForEach-Object { $_ | ConvertTo-Json -Depth 10 -Compress } | Add-Content -Path $pageFlushFilePath -Encoding utf8
+													# Add-Content reported a locked file as a non-terminating error, so a page could be
+													# counted as flushed without being written. The Fabric resume mirror briefly holds
+													# these files open while uploading them; wait for the file to become writable within a
+													# bounded budget, and let any real write failure reach the fail-closed catch below.
+													$flushText = (@($allRecords | ForEach-Object { $_ | ConvertTo-Json -Depth 10 -Compress }) -join [Environment]::NewLine) + [Environment]::NewLine
+													$flushBytes = [System.Text.UTF8Encoding]::new($false).GetBytes($flushText)
+													$flushDeadline = [DateTime]::UtcNow.AddSeconds(300)
+													$flushStream = $null
+													while ($null -eq $flushStream) {
+														try { $flushStream = [System.IO.File]::Open($pageFlushFilePath, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read) }
+														catch [System.IO.IOException] {
+															if ([DateTime]::UtcNow -ge $flushDeadline) { throw }
+															Start-Sleep -Milliseconds 250
+														}
+													}
+													try { $flushStream.Write($flushBytes, 0, $flushBytes.Length); $flushStream.Flush($true) }
+													finally { $flushStream.Dispose() }
 													$pageFlushTotalCount += $allRecords.Count
 													$allRecords.Clear()
 													$threadSavedToDisk = $true
@@ -59148,7 +59164,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 											New-Item -ItemType Directory -Path $incrementalDir -Force | Out-Null
 										}
 										$threadSavedFile = Join-Path $incrementalDir "Part${idx}_${runTimestamp}_qid-${queryId}_$($allRecords.Count)records.jsonl"
-										$allRecords | ForEach-Object { $_ | ConvertTo-Json -Depth 10 -Compress } | Out-File -FilePath $threadSavedFile -Encoding utf8 -Force
+										$allRecords | ForEach-Object { $_ | ConvertTo-Json -Depth 10 -Compress } | Out-File -FilePath $threadSavedFile -Encoding utf8 -Force -ErrorAction Stop
 										$threadSavedToDisk = $true
 										Write-Output "[SAVE-THREAD] Partition $($idx)/$($tot): $($allRecords.Count) records persisted by thread job"
 									} catch {
@@ -63089,7 +63105,24 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 				$totalStreamedRecords = $inMemoryCount + $streamedCount
 			} else {
 				# No in-memory records - stream directly to final temp file
+				$reconDupesBefore = [int]$script:StreamingMergeDuplicatesSkipped
+				$reconTrimBefore = [int]$script:DateTrimCount
 				$totalStreamedRecords = Merge-IncrementalSaves-Streaming -OutputFile $exportTemp -OutputDirectory $script:StreamingMergeDirectory -OnlyPartitionIndices $script:StreamingMergePartitions -Columns $fastPathColumns -ExcludeRecordIds $appendFileSeenIds -ActivityCounts ([ref]$streamingActivityCounts) -RunTimestamp $global:ScriptRunTimestamp
+				# Reconcile what reached the export with what the service returned. Every record a
+				# completed partition retrieved must be exported, skipped as a duplicate, or trimmed
+				# as out of range; anything else never reached disk intact.
+				$reconExpected = [int64]($script:StreamingMergeRecordCount ?? 0)
+				$reconAccounted = [int64]$totalStreamedRecords + ([int]$script:StreamingMergeDuplicatesSkipped - $reconDupesBefore) + ([int]$script:DateTrimCount - $reconTrimBefore)
+				if ($reconExpected -gt 0 -and $reconAccounted -lt $reconExpected) {
+					$reconShortfall = $reconExpected - $reconAccounted
+					Write-LogHost "" -ForegroundColor Red
+					Write-LogHost ("  [DATA-LOSS] {0:N0} of {1:N0} retrieved record(s) did not reach the export ({2:N0} exported, {3:N0} accounted for)." -f $reconShortfall, $reconExpected, [int64]$totalStreamedRecords, $reconAccounted) -ForegroundColor Red
+					Write-LogHost "  [DATA-LOSS] The output is marked PARTIAL, the run reports completed with gaps (exit code 40), and the incremental watermark is not advanced." -ForegroundColor Red
+					Write-LogHost "" -ForegroundColor Red
+					$script:StreamingMergeDataLoss = $true
+					$script:HadTerminalFailures = $true
+					if (-not $script:StreamingMergeMissingPartitions) { $script:StreamingMergeMissingPartitions = @('record-count shortfall') }
+				}
 			}
 			
 			# If data loss detected, rename output to include _PARTIAL suffix so users know data is incomplete

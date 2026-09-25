@@ -32,7 +32,7 @@ A prerelease build is **not** the released product. The current released version
 
 <sub>⬇️ Click the file name above to download this exact build.</sub>
 
-<sub>**SHA256:** `BE440C63CAA9CBCCF91E8A3A940F32DDC8404F7E7E485942389D646AA2897F37`</sub>
+<sub>**SHA256:** `22FDA35BC4C1037549DF441BFE2CDDDA5D6BDCC53406B890FB97D2DA0A2E67F1`</sub>
 
 <sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20260924-07.ps1 -Algorithm SHA256`</sub>
 
@@ -162,6 +162,8 @@ This preview is the **v2.0.0** line. Everything below is new or changed compared
 <a id="destinations"></a>
 
 ### 🗄️ SharePoint, OneDrive and Fabric destinations
+
+**🆕 🧮 Fabric runs keep every record they collect.** When output goes to Microsoft Fabric, a run could skip some records it had already collected while it was backing up its progress to the lakehouse, and still finish reporting success. Every collected record is now saved, and the finished export is checked against the number of records the service returned. If anything is missing, the run says exactly how many, marks the output as partial and reports completed with gaps instead of success.
 
 **🆕 ☁️ OneDrive destinations resolve correctly.** A destination in a personal OneDrive now reaches the right document library, so an existing file there is found instead of being reported as missing. When a SharePoint or OneDrive read does fail, the run now reports the address it requested, the library and folder it resolved, and the file name it looked for.
 
