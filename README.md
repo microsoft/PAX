@@ -65,7 +65,7 @@ Earlier preview builds are kept in [`prerelease_archive`](https://github.com/mic
 
 Please reach out — that is the entire point of a preview, and there is no such thing as too small a report.
 
-**📧 [bmiddendorf@microsoft.com](mailto:bmiddendorf@microsoft.com)**
+**📧 [pax@microsoft.com](mailto:pax@microsoft.com)**
 
 It helps a great deal if you can include the command you ran, the run log file produced beside your output, and a short description of what you expected versus what you saw. Please don't send audit data or user details.
 
@@ -240,6 +240,6 @@ This preview is the **v2.0.0** line. Everything below is new or changed compared
 
 <sub>Preview build · Not a released version · Validate results before relying on them</sub>
 
-<sub>Questions or problems → [bmiddendorf@microsoft.com](mailto:bmiddendorf@microsoft.com)</sub>
+<sub>Questions or problems → [pax@microsoft.com](mailto:pax@microsoft.com)</sub>
 
 </div>
