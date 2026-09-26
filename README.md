@@ -32,7 +32,7 @@ A prerelease build is **not** the released product. The current released version
 
 <sub>⬇️ Click the file name above to download this exact build.</sub>
 
-<sub>**SHA256:** `7D73B96565765A28D344FAB634E04A21C82E0835F4EC3CCB522E7825505C8E55`</sub>
+<sub>**SHA256:** `2CC7050C8ED5B50CF4C8FC7DC318E0340B78F91D105FF97515BF705828A4ECBF`</sub>
 
 <sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20260924-07.ps1 -Algorithm SHA256`</sub>
 

@@ -50987,20 +50987,19 @@ function ConvertTo-Agent365Row {
 		'Contains uploaded files'               = (script:Get-Agent365BooleanCell -Value (_g $elem @('containsUploadedFiles')))
 		'Uploaded files'                        = (_g $elem @('uploadedFiles'))
 		'Status'                                = $status
-		'Creator'                               = $creator
 		'Publisher'                             = $publisher
 		'Channel'                               = $channel
-		'Creator ID'                            = $creatorId
-		'Environment ID'                        = $environmentId
-		'Bot ID'                                = $botId
-		'Custom Actions List'                   = $customActionsList
+		'Creator Id'                            = $creatorId
+		'Environment Id'                        = $environmentId
+		'Bot Id'                                = $botId
+		'Custom action list'                    = $customActionsList
 		'Instructions'                          = $instructions
-		'Groups Shared'                         = $groupsShared
-		'Users Shared'                          = ''
+		'Groups shared'                         = $groupsShared
+		'Users shared'                          = ''
 		'Risks'                                 = $risks
 		'Active Users'                          = ''
-		'Total Sessions'                        = ''
-		'Exception Rate'                        = ''
+		'Total sessions'                        = ''
+		'Exception rate'                        = ''
 		'Last Activity Date'                    = ''
 		'Entra Agent ID'                        = $entraAgentId
 	}
@@ -51014,13 +51013,13 @@ function Get-Agent365ColumnAvailabilityReport {
 	)
 
 	$columnNames = @(
-		'Date created', 'Created by', 'Status', 'Creator', 'Publisher', 'Channel',
-		'Creator ID', 'Environment ID', 'Bot ID', 'Custom Actions List', 'Instructions',
-		'Groups Shared', 'Users Shared', 'Risks', 'Active Users', 'Total Sessions',
-		'Exception Rate', 'Last Activity Date', 'Entra Agent ID'
+		'Date created', 'Created by', 'Status', 'Publisher', 'Channel',
+		'Creator Id', 'Environment Id', 'Bot Id', 'Custom action list', 'Instructions',
+		'Groups shared', 'Users shared', 'Risks', 'Active Users', 'Total sessions',
+		'Exception rate', 'Last Activity Date', 'Entra Agent ID'
 	)
-	$adminCenterOnly = @('Users Shared', 'Active Users', 'Total Sessions', 'Exception Rate', 'Last Activity Date')
-	$auditColumns = @('Date created', 'Created by', 'Creator')
+	$adminCenterOnly = @('Users shared', 'Active Users', 'Total sessions', 'Exception rate', 'Last Activity Date')
+	$auditColumns = @('Date created', 'Created by')
 	$report = New-Object System.Collections.Generic.List[object]
 	foreach ($columnName in $columnNames) {
 		$hasValue = $false
