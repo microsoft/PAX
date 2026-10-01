@@ -1149,8 +1149,9 @@
 	  -Dashboard AISID, Excel (.xlsx) append targets, and Fabric Tables/Delta append targets.
 	  -RAWInputCSV is retired and rejected for every run.
 
-	Overlap is safe: the append reconciliation de-duplicates on the stable raw message key, so a
-	repeated day cannot duplicate rows in the target.
+	Overlap is safe: the append reconciliation de-duplicates on the stable raw message key, and the
+	Microsoft 365 usage rollup replaces a re-collected day's stored rows, so a repeated day cannot
+	duplicate or double-count rows in the target.
 
 	With more than one dashboard, one shared watermark tracks the base output folder and one collected
 	window. Advancement occurs once, only after every required dashboard-qualified output is verified.
@@ -1269,7 +1270,9 @@
 	  Provenance columns: the M365 bundle rollup merge is ADDITIVE (on a 9-tuple key match
 	  EventCount / ItemsAccessedCount are summed, CreationTime = min, MaxCreationTime = max,
 	  IsAgentInteraction = OR), so a merged row is a blend of multiple runs and is NOT owned
-	  by any single run. The Date_Added / Latest_Append_Date / In_Latest_Append columns are
+	  by any single run. A day that this run collects again replaces that day's stored Rollup
+	  and SessionStats rows instead of being added to them, so overlapping windows never count
+	  a day twice; a day this run returned no rows for keeps its stored rows. The Date_Added / Latest_Append_Date / In_Latest_Append columns are
 	  therefore intentionally NOT written to the rollup, SessionStats, or the regenerated
 	  UserStats / SessionCohort sidecars (they would be meaningless on a summed row). The
 	  rollup keeps exactly its 14 canonical columns. (Per-row provenance is carried only by
@@ -1298,7 +1301,10 @@
 	    • For first-time append: run once WITHOUT -AppendFile to produce the initial timestamped
 	      Rollup (plus its sidecars), then point -AppendFile at that Rollup on subsequent runs
 	      (either keep the timestamped leaf or rename to drop the timestamp — both shapes are
-	      accepted).
+	      accepted). SessionStats history is read from '<anchor_stem>_SessionStats.csv' when it
+	      exists, otherwise from the timestamped '<anchor_stem>_SessionStats_<YYYYMMDD_HHMMSS>.csv'
+	      written beside a timestamped Rollup. If the Rollup exists but neither SessionStats file
+	      does, the append stops rather than discard earlier SessionStats days.
 	  Fabric Tables/ destinations: the table name follows the AppendFile leaf stem and stays
 	  stable across runs (the customer sets that stem; only the current-run scratch output
 	  carries a fresh timestamp, and the merge anchors back to the fixed AppendFile target).
@@ -28967,13 +28973,31 @@ function script:Invoke-PaxKeyedAdditiveMerge {
 		[Parameter(Mandatory)][hashtable]$Defaults,
 		[Parameter(Mandatory)][int64]$MemoryBudgetBytes,
 		[Parameter(Mandatory)][string]$Label,
-		[scriptblock]$OnMissingColumns
+		[scriptblock]$OnMissingColumns,
+		# When set, every target row whose date in this column also appears in the current CSV is
+		# dropped before folding, so a re-collected day replaces the stored day instead of adding to it.
+		[string]$ReplaceDateColumn
 	)
 	$inv = [System.Globalization.CultureInfo]::InvariantCulture
 	$hdrCount = $Header.Length
 	# Header name -> canonical index.
 	$hdrIndex = @{}
 	for ($i = 0; $i -lt $hdrCount; $i++) { $hdrIndex[$Header[$i]] = $i }
+	$replaceDateIdx = -1
+	if ($ReplaceDateColumn) {
+		if (-not $hdrIndex.ContainsKey($ReplaceDateColumn)) { throw "${Label}: replace-date column '$ReplaceDateColumn' is not in the canonical header." }
+		$replaceDateIdx = [int]$hdrIndex[$ReplaceDateColumn]
+	}
+	# Calendar-day key for a stored date value (ISO prefix, or any parseable form normalized to UTC).
+	$dateKey = {
+		param($raw)
+		$s = ([string]$raw).Trim()
+		if (-not $s) { return '' }
+		if ($s -match '^\d{4}-\d{2}-\d{2}') { return $s.Substring(0, 10) }
+		$parsed = [datetime]::MinValue
+		if ([datetime]::TryParse($s, $inv, ([System.Globalization.DateTimeStyles]::AssumeUniversal -bor [System.Globalization.DateTimeStyles]::AdjustToUniversal), [ref]$parsed)) { return $parsed.ToString('yyyy-MM-dd', $inv) }
+		return $s
+	}
 	$keyIdx = @($KeyColumns | ForEach-Object { [int]$hdrIndex[$_] })
 	$foldSet = [System.Collections.Generic.HashSet[int]]::new()
 	foreach ($c in $FoldColumns) { [void]$foldSet.Add([int]$hdrIndex[$c]) }
@@ -29025,8 +29049,30 @@ function script:Invoke-PaxKeyedAdditiveMerge {
 	}
 
 	$retained = 0; $newCount = 0; $updated = 0; $union = 0
+	$replacedRows = [int64]0
+	$replaceDates = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+	$replacedDateSet = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 	try {
 		[void][System.IO.Directory]::CreateDirectory($workDir)
+		# Dates carried by the current run. Only days that actually hold current rows are replaced,
+		# so a day the service returned nothing for keeps its stored history.
+		if ($replaceDateIdx -ge 0) {
+			$pr = [System.IO.StreamReader]::new($CurrentCsv, $true)
+			try {
+				$ph = script:Read-PaxCsvRecord -Reader $pr
+				if ($null -ne $ph) {
+					$pmap = & $mapSourceIndices $ph
+					while ($true) {
+						$prow = script:Read-PaxCsvRecord -Reader $pr
+						if ($null -eq $prow) { break }
+						$pvals = & $projectFields $prow $pmap
+						$pd = & $dateKey $pvals[$replaceDateIdx]
+						if ($pd) { [void]$replaceDates.Add($pd) }
+					}
+				}
+			}
+			finally { $pr.Dispose() }
+		}
 		$workPath = Join-Path $workDir 'work.csv'
 		$workHdr = @('__K', '__SEQ', '__SIDE') + $Header
 		$ww = [System.IO.StreamWriter]::new($workPath, $false, $u8)
@@ -29051,6 +29097,10 @@ function script:Invoke-PaxKeyedAdditiveMerge {
 							if ($null -eq $row) { break }
 							$targetDataRows++
 							$vals = & $projectFields $row $tmap
+							if ($replaceDates.Count -gt 0) {
+								$rowDate = & $dateKey $vals[$replaceDateIdx]
+								if ($replaceDates.Contains($rowDate)) { $replacedRows++; [void]$replacedDateSet.Add($rowDate); continue }
+							}
 							$k = & $makeKey $vals
 							$fields = New-Object System.Collections.Generic.List[string]
 							$fields.Add($k); $fields.Add($seq.ToString('D19', $inv)); $fields.Add('0')
@@ -29195,6 +29245,8 @@ function script:Invoke-PaxKeyedAdditiveMerge {
 		New      = $newCount
 		Updated  = $updated
 		Union    = $union
+		Replaced = $replacedRows
+		ReplacedDates = $replacedDateSet.Count
 	}
 }
 
@@ -29205,7 +29257,9 @@ function Merge-M365RollupCsv {
 
 	.DESCRIPTION
 		Post-Python helper for -AppendFile in M365Bundle mode. Performs a 9-tuple-keyed
-		union-merge with additive counter semantics:
+		union-merge with additive counter semantics. Every stored day that the current
+		run also carries is replaced by the current run's rows, so re-collecting a day
+		never counts it twice; the additive rules below apply to the remaining keys:
 
 		  Composite key      : (lower(UserId), CreationDate, Operation, Workload,
 		                        lower(SourceFileExtension), AppHost, AgentId,
@@ -29266,7 +29320,20 @@ function Merge-M365RollupCsv {
 			-SumColumns @('EventCount', 'ItemsAccessedCount') `
 			-MinColumns @('CreationTime') -MaxColumns @('MaxCreationTime') -OrColumns @('IsAgentInteraction') `
 			-Defaults @{ IsAgentInteraction = 'FALSE' } `
-			-MemoryBudgetBytes $MemoryBudgetBytes -Label 'Merge-M365RollupCsv' -OnMissingColumns $onMissing)
+			-MemoryBudgetBytes $MemoryBudgetBytes -Label 'Merge-M365RollupCsv' -OnMissingColumns $onMissing `
+			-ReplaceDateColumn 'CreationDate')
+}
+
+function script:Get-PaxM365SessionStatsHistoryLeaves {
+	# SessionStats leaves that can hold the history for an M365 Rollup -AppendFile anchor, most
+	# authoritative first: the anchored leaf an earlier append wrote, then the timestamped sibling
+	# a first run wrote next to a timestamped '<stem>_Rollup_<YYYYMMDD_HHMMSS>.csv' anchor.
+	param([Parameter(Mandatory)][string]$AppendLeaf)
+	$stem = $AppendLeaf -replace '_Rollup(?:_\d{8}_\d{6})?\.csv$', ''
+	$leaves = [System.Collections.Generic.List[string]]::new()
+	$leaves.Add(("{0}_SessionStats.csv" -f $stem))
+	if ($AppendLeaf -match '_Rollup_(?<stamp>\d{8}_\d{6})\.csv$') { $leaves.Add(("{0}_SessionStats_{1}.csv" -f $stem, $Matches.stamp)) }
+	return , $leaves.ToArray()
 }
 
 function Merge-M365SessionStatsCsv {
@@ -29276,7 +29343,9 @@ function Merge-M365SessionStatsCsv {
 
 	.DESCRIPTION
 		Post-Python helper for -AppendFile in M365Bundle mode. Performs a 3-tuple-keyed
-		union-merge with additive counter semantics on the SessionStats sidecar:
+		union-merge with additive counter semantics on the SessionStats sidecar.
+		Every stored day that the current run also carries is replaced by the current
+		run's rows, so re-collecting a day never counts it twice:
 
 		  Composite key      : (lower(UserId), CreationDate, AppHost)
 		  SessionCount       : target + current
@@ -29335,7 +29404,8 @@ function Merge-M365SessionStatsCsv {
 			-SumColumns @('SessionCount', 'PromptCount', 'AgentPromptCount', 'ResponseCount', 'AgentSessionCount') `
 			-MinColumns @() -MaxColumns @() -OrColumns @() `
 			-Defaults @{} `
-			-MemoryBudgetBytes $MemoryBudgetBytes -Label 'Merge-M365SessionStatsCsv' -OnMissingColumns $onMissing)
+			-MemoryBudgetBytes $MemoryBudgetBytes -Label 'Merge-M365SessionStatsCsv' -OnMissingColumns $onMissing `
+			-ReplaceDateColumn 'CreationDate')
 }
 
 function script:Test-PaxM365OutputManifest {
@@ -58401,6 +58471,21 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 					Write-LogHost ("Remote AppendFile downloaded to scratch: {0}" -f $appendLocalPath) -ForegroundColor Cyan
 					$script:AppendRemoteOriginal = $true
 					$AppendFile = $appendLocalPath
+					# An M365 Rollup anchor carries its SessionStats history in a sibling file; pull the first
+					# one that exists so the append merges onto it rather than starting SessionStats afresh.
+					if ($script:RollupProcessorMode -eq 'M365Bundle' -and $appendName -match '_Rollup(?:_\d{8}_\d{6})?\.csv$') {
+						foreach ($m365RemoteSsLeaf in (script:Get-PaxM365SessionStatsHistoryLeaves -AppendLeaf $appendName)) {
+							if ($null -eq (Get-RemoteAppendTargetSize -Tier $script:RemoteOutputMode -RelativeName $m365RemoteSsLeaf)) { continue }
+							$m365RemoteSsLocal = Join-Path $OutputPath $m365RemoteSsLeaf
+							if ($script:RemoteOutputMode -eq 'SharePoint') {
+								Get-RemoteFile-SharePoint -RelativeName $m365RemoteSsLeaf -DestinationPath $m365RemoteSsLocal -ErrorAction Stop
+							} else {
+								Get-RemoteFile-OneLake    -RelativeName $m365RemoteSsLeaf -DestinationPath $m365RemoteSsLocal -ErrorAction Stop
+							}
+							Write-LogHost ("Remote M365 SessionStats history downloaded to scratch: {0}" -f $m365RemoteSsLocal) -ForegroundColor Cyan
+							break
+						}
+					}
 				} catch {
 					Write-LogHost ("ERROR: Failed to download remote AppendFile '{0}': {1}" -f $AppendFile, (Get-GraphErrorDetail -ErrorRecord $_)) -ForegroundColor Red
 					throw
@@ -69356,6 +69441,21 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 						$m365AnchorUserStats = Join-Path $m365AnchorDir ("{0}_UserStats.csv" -f $m365AnchorStem)
 						$m365AnchorSession = Join-Path $m365AnchorDir ("{0}_SessionCohort.csv" -f $m365AnchorStem)
 						$m365AnchorSessionStats = Join-Path $m365AnchorDir ("{0}_SessionStats.csv" -f $m365AnchorStem)
+						# Existing SessionStats history: the anchored leaf written by an earlier append, or the
+						# timestamped sibling a first run produced next to a timestamped Rollup anchor.
+						$m365SessionStatsHistory = $null
+						foreach ($m365SsLeaf in (script:Get-PaxM365SessionStatsHistoryLeaves -AppendLeaf $m365AnchorLeaf)) {
+							$m365SsCandidate = Join-Path $m365AnchorDir $m365SsLeaf
+							if (Test-Path -LiteralPath $m365SsCandidate -PathType Leaf) { $m365SessionStatsHistory = $m365SsCandidate; break }
+						}
+						if (-not $m365SessionStatsHistory) {
+							# A first run with no Rollup history starts SessionStats fresh; existing Rollup history
+							# without its SessionStats would silently drop earlier days, so that stops instead.
+							if (Test-Path -LiteralPath $m365AnchorRollup -PathType Leaf) {
+								throw ("Existing M365 SessionStats history was not found next to the -AppendFile target (looked for: {0}). The append stopped so earlier SessionStats days are not lost; place the SessionStats file that belongs to this Rollup beside it under one of those names, then run again." -f ((script:Get-PaxM365SessionStatsHistoryLeaves -AppendLeaf $m365AnchorLeaf) -join ', '))
+							}
+							$m365SessionStatsHistory = $m365AnchorSessionStats
+						}
 						$m365FinalPaths = @{
 							Rollup = $m365AnchorRollup
 							UserStats = $m365AnchorUserStats
@@ -69388,11 +69488,14 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 
 						$m365MergeStats = Merge-M365RollupCsv -TargetRollupCsv $m365AnchorRollup -CurrentRollupCsv $m365CurRollupPath -OutputPath $m365CandidatePaths.Rollup
 						$m365SsMergeStats = Merge-M365SessionStatsCsv `
-							-TargetSessionStatsCsv $m365AnchorSessionStats `
+							-TargetSessionStatsCsv $m365SessionStatsHistory `
 							-CurrentSessionStatsCsv $m365CurSessionStatsPath `
 							-OutputPath $m365CandidatePaths.SessionStats
 						Write-LogHost ("Rollup: -AppendFile M365 candidate merge: Retained={0:N0}  New={1:N0}  Updated={2:N0}  Union={3:N0}" -f $m365MergeStats.Retained, $m365MergeStats.New, $m365MergeStats.Updated, $m365MergeStats.Union) -ForegroundColor Gray
-						Write-LogHost ("Rollup: -AppendFile M365 SessionStats candidate merge: Retained={0:N0}  New={1:N0}  Updated={2:N0}  Union={3:N0}" -f $m365SsMergeStats.Retained, $m365SsMergeStats.New, $m365SsMergeStats.Updated, $m365SsMergeStats.Union) -ForegroundColor Gray
+						Write-LogHost ("Rollup: -AppendFile M365 SessionStats candidate merge (history: {4}): Retained={0:N0}  New={1:N0}  Updated={2:N0}  Union={3:N0}" -f $m365SsMergeStats.Retained, $m365SsMergeStats.New, $m365SsMergeStats.Updated, $m365SsMergeStats.Union, [System.IO.Path]::GetFileName($m365SessionStatsHistory)) -ForegroundColor Gray
+						if ($m365MergeStats.Replaced -gt 0 -or $m365SsMergeStats.Replaced -gt 0) {
+							Write-LogHost ("Rollup: -AppendFile M365: {0:N0} day(s) collected again this run replaced their stored rows (Rollup rows replaced={1:N0}; SessionStats rows replaced={2:N0}) instead of being added twice." -f [Math]::Max([int64]$m365MergeStats.ReplacedDates, [int64]$m365SsMergeStats.ReplacedDates), $m365MergeStats.Replaced, $m365SsMergeStats.Replaced) -ForegroundColor Gray
+						}
 
 						$m365SidecarArgs = @('--rebuild-sidecars-from-rollup', $m365CandidatePaths.Rollup, '--output-dir', $m365RebuildDir, '--quiet', '--session-stats-for-rebuild', $m365CandidatePaths.SessionStats)
 						$m365SidecarExit = Invoke-EmbeddedProcessor `

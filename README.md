@@ -32,7 +32,7 @@ A prerelease build is **not** the released product. The current released version
 
 <sub>⬇️ Click the file name above to download this exact build.</sub>
 
-<sub>**SHA256:** `6A2D96C56C95D2FBB241F59140B1D4C9B709A9DBAB5FAED2C077F1C479C84321`</sub>
+<sub>**SHA256:** `974D57F7743AD4A8F940196D62E001CA164B4A8E8AA245A5230E024007A815BB`</sub>
 
 <sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261001-08.ps1 -Algorithm SHA256`</sub>
 
@@ -122,6 +122,8 @@ This preview is the **v2.0.0** line. Everything below is new or changed compared
 <a id="protection"></a>
 
 ### 🛡️ Protecting the data you already have
+
+**🆕 📈 Adding to Microsoft 365 usage history keeps every day, and counts each day once.** An append now carries forward all of your earlier SessionStats days, including the first time you append onto a newly generated set and when the files live in SharePoint or Fabric, so session counts and the Copilot percentile columns reflect your full history. A day you collect again replaces that day's stored figures instead of being added to them, so overlapping date ranges never double-count. If the SessionStats file that belongs to your Rollup cannot be found, the run stops and leaves your files untouched rather than dropping earlier days.
 
 **🆕 📄 Microsoft 365 usage files keep their headers when there is no activity.** When a Microsoft 365 usage collection finds no activity, the Rollup, UserStats, SessionCohort and SessionStats files are still written with their expected columns. An empty result still never replaces history you already have.
 
