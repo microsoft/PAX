@@ -32,7 +32,7 @@ A prerelease build is **not** the released product. The current released version
 
 <sub>⬇️ Click the file name above to download this exact build.</sub>
 
-<sub>**SHA256:** `974D57F7743AD4A8F940196D62E001CA164B4A8E8AA245A5230E024007A815BB`</sub>
+<sub>**SHA256:** `DDE080E5226F4C2DAD10B478425D759997D1ED637F0ABCB5F6DA356604BD06FD`</sub>
 
 <sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261001-08.ps1 -Algorithm SHA256`</sub>
 
@@ -208,6 +208,8 @@ This preview is the **v2.0.0** line. Everything below is new or changed compared
 <a id="agents"></a>
 
 ### 🤖 Agent 365 catalog
+
+**🆕 👥 "Availability" shows who an agent is shared with.** For an agent shared with specific people or groups, the Availability column lists each one's ID and whether it is a user or a group, as compact JSON such as `[{"resourceId":"…","resourceType":"group"}]`. The text is identical whether the details were just retrieved or reused from an earlier run.
 
 **🆕 🧭 "Created in" is filled from the catalog.** The Agent 365 "Created in" column now carries the platform the catalog reports for each agent, such as Copilot Studio, Microsoft 365 Copilot Agent Builder or Foundry, so agent-type filters in AI-in-One have values to work with.
 

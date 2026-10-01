@@ -53058,6 +53058,50 @@ function ConvertTo-Agent365Row {
 	)
 	function _g { param($obj, [string[]]$names) foreach ($n in $names) { try { if ($null -ne $obj.$n -and -not [string]::IsNullOrWhiteSpace("$($obj.$n)")) { return $obj.$n } } catch {} } return '' }
 	function _join { param($v, [string]$sep) if ($null -eq $v) { return '' }; if ($v -is [System.Collections.IEnumerable] -and -not ($v -is [string])) { return (@($v) -join $sep) } else { return [string]$v } }
+	# Structured values (for example allowedUsersAndGroups entries) become compact JSON with sorted keys,
+	# so live listings and cached details (hashtables) serialize identically; plain strings pass through.
+	function _jsonNormalize {
+		param($v)
+		if ($null -eq $v -or $v -is [string] -or $v -is [ValueType]) { return $v }
+		if ($v -is [System.Collections.IDictionary]) {
+			$o = [ordered]@{}
+			foreach ($key in @($v.Keys | ForEach-Object { [string]$_ } | Sort-Object)) { $o[$key] = _jsonNormalize $v[$key] }
+			return $o
+		}
+		if ($v -is [System.Management.Automation.PSCustomObject]) {
+			$o = [ordered]@{}
+			foreach ($prop in @($v.PSObject.Properties | Sort-Object Name)) { $o[$prop.Name] = _jsonNormalize $prop.Value }
+			return $o
+		}
+		if ($v -is [System.Collections.IEnumerable]) { return , @(foreach ($item in $v) { _jsonNormalize $item }) }
+		return [string]$v
+	}
+	function _jsonCell {
+		param($v)
+		if ($null -eq $v) { return '' }
+		if ($v -is [string]) { return $v }
+		if ($v -is [System.Collections.IEnumerable] -and -not ($v -is [System.Collections.IDictionary])) {
+			$items = @($v)
+			if ($items.Count -eq 0) { return '' }
+			return (ConvertTo-Json -InputObject @(foreach ($item in $items) { _jsonNormalize $item }) -Compress -Depth 8)
+		}
+		return (ConvertTo-Json -InputObject (_jsonNormalize $v) -Compress -Depth 8)
+	}
+	# Availability is read directly from each tier (detail first) so a one-entry list is not unrolled by
+	# a function return and an object list is never mistaken for blank text.
+	function _pickAvailability {
+		foreach ($tier in @($a365DetailTier, $a365ListTier)) {
+			foreach ($name in @('availability', 'allowedUsersAndGroups')) {
+				$v = $null
+				try { $v = $tier.$name } catch {}
+				if ($null -eq $v) { continue }
+				if ($v -is [string]) { if (-not [string]::IsNullOrWhiteSpace($v)) { return $v }; continue }
+				if ($v -is [System.Collections.IEnumerable] -and -not ($v -is [System.Collections.IDictionary]) -and @($v).Count -eq 0) { continue }
+				return (_jsonCell $v)
+			}
+		}
+		return ''
+	}
 	function _fmtDate { param($v) if (-not $v) { return '' }; try { return ([datetime]$v).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ssZ') } catch { return [string]$v } }
 
 	# Detail is consulted first and the listing is the fallback, never the other way round. When no
@@ -53181,7 +53225,7 @@ function ConvertTo-Agent365Row {
 		'Developer Name'                        = $developer
 		'Type'                                  = (_pick @('agentType','type'))
 		'Version'                               = (_pick @('version'))
-		'Availability'                          = (_pick @('availability','allowedUsersAndGroups'))
+		'Availability'                          = (_pickAvailability)
 		'Created by'                            = $createdBy
 		'Description'                           = (_pick @('description'))
 		'Created in'                            = (_pick @('platform','source','origin','createdIn'))
