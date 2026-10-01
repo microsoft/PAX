@@ -11987,7 +11987,8 @@ if ($script:RemoteOutputMode -ne 'None') {
 		Write-Host ("ERROR: {0}" -f $_.Exception.Message) -ForegroundColor Red
 		exit 1
 	}
-	$script:RemoteScratchDir = Join-Path $baseTemp ("PAX_" + (Get-Date -Format 'yyyyMMdd_HHmmss'))
+	# The process id keeps two runs started in the same second from sharing one scratch folder.
+	$script:RemoteScratchDir = Join-Path $baseTemp ("PAX_" + (Get-Date -Format 'yyyyMMdd_HHmmss') + "_" + $PID)
 	try {
 		New-Item -Path $script:RemoteScratchDir -ItemType Directory -Force | Out-Null
 	} catch {
@@ -13001,6 +13002,17 @@ def normalized(value):
     return str(value or "").strip().lower()
 
 
+def directory_copilot_license(source):
+    for key, value in source.items():
+        if normalized(key) in ("haslicense", "hascopilotlicense", "copilotlicense"):
+            flag = normalized(value)
+            if flag in ("true", "yes", "1"):
+                return "Yes"
+            if flag in ("false", "no", "0"):
+                return "No"
+    return None
+
+
 def timestamp(value):
     raw = str(value or "").strip()
     if not raw:
@@ -13170,6 +13182,9 @@ class Store:
             identified = json.dumps(source)
             for field, kind in (("userPrincipalName", "upn"), ("displayName", "name"), ("id", "guid"), ("manager_displayName", "name")):
                 source[field] = protect(source.get(field), kind, self.deidentify)
+            license_flag = directory_copilot_license(source)
+            if license_flag:
+                source["CopilotLicense"] = license_flag
             userkey = self.user(source["userPrincipalName"], source)
             self.connection.execute("INSERT OR REPLACE INTO identified_users VALUES (?,?)", (userkey, identified))
         self.connection.commit()
@@ -13551,6 +13566,9 @@ def verify_users(reference_path, candidate_path, entra_path, purview_path, histo
                 identity = normalized(protect(source.get("userPrincipalName"), "upn", True))
                 if not identity or None in source or any(value is None for value in source.values()):
                     raise ValueError("Invalid Cowork directory verification source")
+                license_flag = directory_copilot_license(source)
+                if license_flag:
+                    source["CopilotLicense"] = license_flag
                 connection.execute("INSERT OR REPLACE INTO current_users VALUES (?,?,1)", (identity, json.dumps(source)))
             if licensing:
                 for source in rows(licensing):
@@ -53632,11 +53650,29 @@ function Invoke-Agent365Phase {
 	# batches, before the first row is built. Every unique application id that would
 	# otherwise have been looked up one row at a time is requested, and the cache is
 	# populated for every one of them, so row conversion below makes no service call.
+	# Each package is read with the row builder's own precedence (detail first, then the
+	# listing entry), so an id or developer name that only the listing carries is still
+	# pre-resolved here instead of falling through to a per-row request.
 	$a365SuccessDetails = New-Object System.Collections.Generic.List[object]
 	foreach ($pkgId in $a365Ordered) {
-		if (-not $a365Details.ContainsKey($pkgId)) { continue }
-		$a365SuccessProbe = $a365Details[$pkgId]
-		if ($a365SuccessProbe -and $a365SuccessProbe.Outcome -eq 'Success' -and $a365SuccessProbe.Detail) { [void]$a365SuccessDetails.Add($a365SuccessProbe.Detail) }
+		$a365ListProbe = $a365ListByRawId[$pkgId]
+		$a365DetailProbe = $null
+		if ($a365Details.ContainsKey($pkgId)) {
+			$a365SuccessProbe = $a365Details[$pkgId]
+			if ($a365SuccessProbe -and $a365SuccessProbe.Outcome -eq 'Success' -and $a365SuccessProbe.Detail) { $a365DetailProbe = $a365SuccessProbe.Detail }
+		}
+		$a365ProbeTiers = @($a365DetailProbe, $a365ListProbe) | Where-Object { $null -ne $_ }
+		$a365ProbeDeveloper = ''
+		$a365ProbeAppId = ''
+		foreach ($a365ProbeTier in $a365ProbeTiers) {
+			if (-not $a365ProbeDeveloper) { try { if (-not [string]::IsNullOrWhiteSpace("$($a365ProbeTier.'developer.name')")) { $a365ProbeDeveloper = [string]$a365ProbeTier.'developer.name' } } catch {} }
+			if (-not $a365ProbeAppId) {
+				foreach ($a365ProbeName in @('appId', 'applicationId')) {
+					try { if (-not [string]::IsNullOrWhiteSpace("$($a365ProbeTier.$a365ProbeName)")) { $a365ProbeAppId = [string]$a365ProbeTier.$a365ProbeName; break } } catch {}
+				}
+			}
+		}
+		[void]$a365SuccessDetails.Add([PSCustomObject]@{ 'developer.name' = $a365ProbeDeveloper; appId = $a365ProbeAppId })
 	}
 	$a365DevResult = Initialize-Agent365DeveloperCache -Packages $a365SuccessDetails.ToArray() -BatchSize $a365BatchSize
 	Write-LogFile ("Agent 365 developer pre-resolution: applicationIds={0} resolved={1} applicationBatches={2} ownerBatches={3}" -f $a365DevResult.Requested, $a365DevResult.Resolved, @($a365DevResult.AppBatchSizes).Count, @($a365DevResult.OwnerBatchSizes).Count) -Level 'INFO'
