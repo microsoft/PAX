@@ -30,9 +30,9 @@ A prerelease build is **not** the released product. The current released version
 <tr>
 <td>
 
-### [PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261004-09.ps1](./PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261004-09.ps1)
+### [PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261004-09.ps1](https://github.com/microsoft/PAX/releases/download/purview-v2.0.0-prerelease-20261004-09/PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261004-09.ps1)
 
-<sub>The file name opens the script in this branch. Use **Download raw file** to save it, or download the script from the matching [GitHub prerelease asset](https://github.com/microsoft/PAX/releases/download/purview-v2.0.0-prerelease-20261004-09/PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261004-09.ps1). See the [prerelease page](https://github.com/microsoft/PAX/releases/tag/purview-v2.0.0-prerelease-20261004-09) for release details.</sub>
+<sub>Click the file name above to download the script directly. See the [prerelease page](https://github.com/microsoft/PAX/releases/tag/purview-v2.0.0-prerelease-20261004-09) for release details.</sub>
 
 <sub>**SHA256:** `FD1FBB5C82627ADFD5F52D81FD3D8FD80B12BA0CEF4200EF82C7F0C36FCB98A4`</sub>
 
