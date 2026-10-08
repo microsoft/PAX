@@ -15,7 +15,7 @@ jobs:
     steps:
       - name: Determine PR category
         id: categorize
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -112,7 +112,7 @@ jobs:
             return { category: 'external', label: 'External-Contribution' };
       
       - name: Create labels if they don't exist
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -144,7 +144,7 @@ jobs:
       
       - name: Apply label
         if: fromJson(steps.categorize.outputs.result).label != null
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -161,7 +161,7 @@ jobs:
       
       - name: Handle external contribution
         if: fromJson(steps.categorize.outputs.result).category == 'external'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -188,7 +188,7 @@ jobs:
       
       - name: Handle internal Microsoft contribution
         if: fromJson(steps.categorize.outputs.result).category == 'internal'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -215,7 +215,7 @@ jobs:
       
       - name: Comment on team contribution
         if: fromJson(steps.categorize.outputs.result).category == 'team'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
