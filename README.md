@@ -1,10 +1,10 @@
-<div align="center">
+﻿<div align="center">
 
 # PAX — Prerelease Preview
 
 **Portable Audit eXporter (PAX) · Purview Audit Log Processor**
 
-**v2.0.0 prerelease 20261004-09**
+**v2.0.0 prerelease 20261009-10**
 
 **Preview build — not a production release.**
 
@@ -30,13 +30,13 @@ A prerelease build is **not** the released product. The current released version
 <tr>
 <td>
 
-### [PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261004-09.ps1](https://github.com/microsoft/PAX/releases/download/purview-v2.0.0-prerelease-20261004-09/PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261004-09.ps1)
+### [PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261009-10.ps1](https://github.com/microsoft/PAX/releases/download/purview-v2.0.0-prerelease-20261009-10/PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261009-10.ps1)
 
-<sub>Click the file name above to download the script directly. See the [prerelease page](https://github.com/microsoft/PAX/releases/tag/purview-v2.0.0-prerelease-20261004-09) for release details.</sub>
+<sub>Click the file name above to download the script directly. See the [prerelease page](https://github.com/microsoft/PAX/releases/tag/purview-v2.0.0-prerelease-20261009-10) for release details.</sub>
 
-<sub>**SHA256:** `FD1FBB5C82627ADFD5F52D81FD3D8FD80B12BA0CEF4200EF82C7F0C36FCB98A4`</sub>
+<sub>**SHA256:** `B9E064E3862F5B94561520B3987C5702F6F5405021060D9D84D35503624BD178`</sub>
 
-<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261004-09.ps1 -Algorithm SHA256`</sub>
+<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261009-10.ps1 -Algorithm SHA256`</sub>
 
 </td>
 </tr>
@@ -85,7 +85,7 @@ These are the net changes from the current production release to this **v2.0.0 p
 <details open>
 <summary><strong>At a glance</strong></summary>
 
-One collection can produce multiple dashboard data sets, including the new Cowork Adoption inputs. `-Watermark` adds incremental catch-up for CSV histories, and `-UserHistory` retains observed licensing states. The preview also expands Agent 365 metadata, accelerates large processing jobs, protects retained outputs under de-identification, and verifies collection, append and publication results.
+One collection can produce multiple dashboard data sets, including the new Cowork Adoption inputs. `-Watermark` adds incremental catch-up for CSV histories, `-UserHistory` retains observed licensing states, and `-CopilotAccessGroups` limits licensed status to members of Copilot access groups. The preview also expands Agent 365 metadata, accelerates large processing jobs, protects retained outputs under de-identification, and verifies collection, append and publication results.
 
 </details>
 
@@ -101,15 +101,19 @@ One collection can produce multiple dashboard data sets, including the new Cowor
 
 ### New capabilities
 
-**Choose the dashboard before processing.** A fresh `-Rollup` or `-RollupPlusRaw` run without `-Dashboard` asks you to choose **AIO, ValueLens, M365, CoworkAdoption**, or **raw exports only**, in that order. Enter selects AIO; `-Force` selects AIO without prompting. Raw-only selection disables both rollup switches. Explicit dashboard selections, raw-only and directory/Agent-only runs are unchanged; Resume keeps its checkpoint's dashboard and output mode, including CoworkAdoption. Existing compatibility checks still apply: use `-Dashboard M365` with `-IncludeM365Usage` rollups, and supplied audit files still require rollup processing. Unattended rollup runs need an explicit dashboard or `-Force`.
+**Choose the dashboard before processing.** A fresh `-Rollup` or `-RollupPlusRaw` run without `-Dashboard` asks you to choose **AIO, ValueLens, M365, CoworkAdoption**, or **raw exports only**, in that order. Enter several, separated by commas, to produce more than one from a single collection (for example `1,2` or `AIO, ValueLens`); spaces are ignored and duplicates are removed. Raw exports only can't be combined with a dashboard. Enter selects AIO; `-Force` selects AIO without prompting. Raw-only selection disables both rollup switches. Explicit dashboard selections, raw-only and directory/Agent-only runs are unchanged; Resume keeps its checkpoint's dashboard and output mode, including CoworkAdoption. Existing compatibility checks still apply: use `-Dashboard M365` with `-IncludeM365Usage` rollups, and supplied audit files still require rollup processing. Unattended rollup runs need an explicit dashboard or `-Force`.
 
-**Multiple dashboards from one collection.** `-Dashboard AIO,M365,ValueLens,CoworkAdoption` generates the requested data sets from one collection. Including M365 includes its usage activities. Each dashboard's files go beneath its own folder on Local, SharePoint and Fabric Files; a single-dashboard run keeps the supplied folder. Tables/Delta uses distinct dashboard-prefixed tables, with shared raw and Agent 365 outputs written once. Each required member must verify before the set is accepted. This is not an atomic cross-table or cross-service transaction.
+**Multiple dashboards from one collection.** `-Dashboard AIO,M365,ValueLens,CoworkAdoption` generates the requested data sets from one collection. Including M365 includes its usage activities. Each dashboard's files go beneath its own folder on Local, SharePoint and Fabric Files; a single-dashboard run keeps the supplied folder. Tables/Delta uses distinct dashboard-prefixed tables, with shared raw and Agent 365 outputs written once. Each required member must verify before the set is accepted. This is not an atomic cross-table or cross-service transaction. `-FillerLabel` is accepted when M365 is one of several dashboards: it applies to the AI-in-One and ValueLens Users output and is ignored for M365. A single-dashboard M365 run still refuses it.
 
 **Append to multiple dashboard histories.** The existing `-AppendFile`, `-AppendUserInfo` and `-AppendAgent365Info` selectors resolve the corresponding histories for each dashboard. AIO and ValueLens retain their own user, message and conversation keys. Missing, incomplete or ambiguous histories are refused rather than guessed. If an added dashboard lacks history, PAX stops before collection and provides a separate backfill command. Resume cannot change dashboard membership; start a new combined run after preparing compatible histories.
 
 **Cowork Adoption inputs.** `-Dashboard CoworkAdoption` enables rollup and user collection and produces a Purview CSV and a Users CSV, alone or with other dashboards. Supply each file's full path to its matching template input. The Users input uses the collected PAX Copilot license evidence. Scheduled counts describe prompt setup, not independently observed executions; unavailable record-level credits stay blank. These files are not an admin-center usage import or a billing report. See [Good to know](#good-to-know) for qualification limits.
 
 **Incremental catch-up.** `-Watermark` collects missing whole UTC days into a Local, SharePoint or Fabric Files CSV `-AppendFile` target; it does not support Tables/Delta. Supply `-WatermarkStartDate` only for the first run, and do not supply manual start/end dates. The marker advances only after every required output publishes and verifies. A current target finishes without service calls. Resume restores the saved window: do not repeat watermark switches. Supplied audit files, `-UseEOM`, directory-only and Agent-only runs do not support watermark mode.
+
+**Copilot access groups.** `-CopilotAccessGroups "Copilot Access - Wave 1","Copilot Access - Wave 2"` names the Entra group(s) that permit Microsoft 365 Copilot use. Use it when a license bundle such as Microsoft 365 E7 assigns the Copilot license to more people than are allowed to use it. `hasLicense` is then TRUE only for users with an enabled Copilot license **and** membership (direct or nested) in at least one listed group. Licensed users outside the groups, and group members without a Copilot license, are FALSE; Unknown stays Unknown. It changes no rows and filters nothing; every dashboard Users input uses the adjusted value. It needs Graph API mode, `GroupMember.Read.All` and the Entra users output, and stops before changing anything if a group can't be resolved. `-Resume` restores the checkpoint's groups; `-Watermark` schedules may add or change them.
+
+**Complete parameter snapshot.** The Parameter Snapshot printed at the start of a run, and saved in the metrics JSON, now includes every customer-facing setting: watermark mode, supplied input files, `-CopilotAccessGroups`, `-ExportProgressInterval` and Graph completeness options. On `-Resume` it shows the restored scope, filters and inputs rather than the resume command's defaults.
 
 **Observed user history.** `-UserHistory On` records effective-dated licensing observations for AIO and ValueLens. It retains stable state keys and audit-only Unknown rows without adding duplicate states on unchanged appends. `EffectiveDate` identifies the collection window in which a state was first recorded, not a proven license-assignment date. History is **Off by default**; neither mode reconstructs unobserved past licenses. M365 usage rollup refuses history mode. A compatible history-aware model is required; see [Good to know](#good-to-know).
 
@@ -167,7 +171,7 @@ One collection can produce multiple dashboard data sets, including the new Cowor
 
 ### SharePoint, OneDrive and Fabric destinations
 
-**Predictable filenames and tables.** Generated dashboard-owned filenames begin with `AIO_`, `ValueLens_`, `M365_` or `CoworkAdoption_`; raw inputs, Agent 365 files and logs remain unprefixed. Explicit filenames and append targets keep their names. Entra raw and processed outputs stay distinct, as do all four M365 companions, including when a requested name already ends in `_Rollup`. Supplied-input Facts are published under their produced name even if they carry an older timestamp. Update automation that relies on generated names.
+**Predictable filenames and tables.** Generated dashboard-owned filenames begin with `AIO_`, `ValueLens_`, `M365_` or `CoworkAdoption_`; raw inputs, Agent 365 files and logs remain unprefixed. Explicit filenames and append targets keep their names. Entra raw and processed outputs stay distinct, as do all four M365 companions, including when a requested name already ends in `_Rollup`. Supplied-input Facts are published under their produced name even if they carry an older timestamp. Update automation that relies on generated names. M365 outputs carry one timestamp, the run's (for example `M365_Purview_Audit_UsageActivity_CombinedActivityTypes_Rollup_20261007_095129.csv`), and the M365 folder's copy of the Entra users export is named `M365_EntraUsers_MAClicensing_<timestamp>.csv`. Histories written with the earlier names are still found by append and watermark runs.
 
 **Stable Fabric dataset names.** Table names omit run timestamps: for example `AIO_CopilotInteractions`, `AIO_Users`, `ValueLens_Users` and `M365_Rollup`. Shared names are `CopilotInteractions_Raw`, `Entra_Users_Raw`, `Audit_Raw`, `Agent365` and `Agent365_Status`; M365's dashboard Users table is separately `M365_Entra_Users_Raw`. Old tables are not renamed or deleted. Update Power BI connections and notebooks.
 
@@ -187,11 +191,13 @@ One collection can produce multiple dashboard data sets, including the new Cowor
 
 **Availability, sharing and status mean different things.** `Availability` contains Graph's `availableTo` access policy. `Groups shared` and `Users shared` contain explicitly shared resource IDs as compact JSON, not allowed/acquired audiences or expanded membership. `Status` is `Blocked` or `Not blocked`, not a deployment or activity assertion. Zero, false, empty, null and unavailable values are distinguished rather than guessed.
 
+**Developer and creator are filled in.** `Developer Name` uses the developer declared in the agent's definition, otherwise the package publisher. Generic default text (`Agent Developer`, `Published by your Org`, `Your developer name`) names no developer, so `Developer Name` is left blank for it; `Publisher` keeps the catalog's text unchanged. `Creator Id` is the catalog owner, and `Created by` is that owner's user principal name. When the catalog states no owner, an in-house agent (any type other than Microsoft/`firstParty` or third-party/`thirdParty` store agents, including `lob`, `shared` and `sideloaded`) uses the owner of its Entra agent identity, its app, or the bot app in its definition. Each of those identifier kinds is checked on a spread sample of 40 first, and the rest of that kind is looked up only when the sample finds an owner, so a large catalog is not walked for nothing. A creation audit event within the run's dates takes precedence when one matches. Store agents have no tenant creator and leave `Created by` blank. The log counts owner IDs that no longer match a user (for example, deleted accounts); `Creator Id` still shows them. In the Zava demo tenant (14,888 agents, measured 2026-10-08) the catalog `appId` and bot app IDs of Agent Builder, Copilot Studio and Foundry agents were not registered in the tenant, so most of those agents have no creator the directory can supply and `Created by` stays blank for them. `-AppendAgent365Info` keeps a creator the existing catalog already holds when this run can't resolve one. Owner names need `User.Read.All`; app owners need `Application.Read.All`; either missing leaves those cells blank with a note in the log. Nothing is guessed from who used the agent.
+
 **Usage is fresh and has its own window.** Every run requests package details in bounded parallel batches, preserving listing order and using the selected Graph module version. Cached package modification dates do not establish usage freshness; detail reuse is disabled, so repeat runs incur fresh requests. `Active Users` and `Total sessions` cover the last 30 days at retrieval, not the audit date range. `Exception rate` retains the service value without an invented percentage; `Last Activity Date` uses its last-used timestamp.
 
 **Agent identities are not interchangeable.** `Entra Agent ID` uses the true `agentIdentityId`, not an application or bot ID. Catalog titles and activity titles use a common bare form; supported compound IDs recognize `P_` or `T_` title segments before a trailing GUID. Ambiguous or malformed identities remain unresolved, and raw Agent IDs are retained. Creator/developer values require explicit evidence, not publisher, display-name or application-owner guesses.
 
-**Retrieval and field coverage are separate.** The status file tracks listing, detail retrieval and row construction; logs report population and source states for every column. A complete listing can publish listing-only rows when details fail, with a gaps result. Incomplete listings or failed row construction withhold the canonical catalog and retain recovery material. Append retains target-only historical rows and supports compatible legacy identifiers. GA Graph reads are preferred with a compatibility fallback; structured throttling retries honor network tolerance and service waits, while genuine permission failures remain explicit.
+**Retrieval and field coverage are separate.** The status file tracks listing, detail retrieval and row construction; logs report population and source states for every column. Every agent retrieved is written. A refused catalog page is retried in place with short backoff (the listing is not restarted), and agents whose details fail are requested again right away; if a first small retry recovers nothing, PAX stops retrying instead of slowing the run, and writes those agents from their catalog fields alone. Agents that still could not be fully retrieved are listed in an **Agent 365 Summary** at the end of the run; they do not change the exit code. Only a run that produces no Agent 365 catalog at all reports exit 40. Append retains target-only historical rows and supports compatible legacy identifiers. GA Graph reads are preferred with a compatibility fallback; structured throttling retries honor network tolerance and service waits, while genuine permission failures remain explicit.
 
 **Agent privacy protection.** Under `-Deidentify`, names and supported personal creator/sharing IDs are pseudonymized; free-form descriptions, instructions, actions and resource details are withheld. Application join IDs remain usable. Raw detail caches are not written, and logs distinguish privacy withholding from absent, malformed or unretrieved data.
 
@@ -216,6 +222,8 @@ One collection can produce multiple dashboard data sets, including the new Cowor
 **Generation is not publication.** Final messages name accepted physical Delta destinations or identify local processing copies, rather than inventing remote CSVs. Append targets are labeled before work and outcomes afterward. `Departed` means absent from the current window, not deleted from retained history. Current-run distinct identifier counts are separate from all-run reserved counts; `Message_Id_Raw` preserves the original identifier behind the rollup's sequential `Message_Id`.
 
 **Logs and help remain useful across runs.** Logs keep timestamps even with fixed output names. Interruptions are not attributed to Ctrl+C without evidence. Append examples use the full existing-file path without a conflicting output folder. Power BI, permission, retention and Fabric guidance covers the supported input and history options.
+
+**Messages say what happened to the data.** The console and the log carry the same wording. A page that hits a temporary service error shows when its retry starts and when it recovers, and collection ends with one line stating whether every affected partition completed. Dashboard processing lists every group of input records (other activity, Security Copilot, Copilot records without a user prompt, service accounts, records with prompts, unreadable records) and confirms they add up to the input. Combining rows into dashboard rows, skipping repeat copies of the same audit record, and adding Users rows for people missing from the Entra export are described as such, not as loss. Multi-dashboard runs name the dashboard folders that receive the Agent 365 file. Warnings remain for anything actually missing. Upload lines show sizes in bytes, KB, MB or GB, so a small file never reads as 0.00 MB, and a SharePoint upload that resent chunks says how many, why, and that the complete file was received. The closing summary names the full build, including the prerelease label and date, matching the opening banner.
 
 <a id="retired"></a>
 
