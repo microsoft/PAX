@@ -45,9 +45,7 @@ A prerelease build is **not** the released product. The current released version
 Earlier preview builds are kept in [`prerelease_archive`](./prerelease_archive) for reference only.
 
 > [!NOTE]
-> **What's new in prerelease 11:** audit searches are created just in time, in the background, one for each free download slot, instead of all at once at the start of collection. A slow search request holds up only its own partition while the others keep creating and downloading. If a request drops on the network and Purview doesn't list the search within 5 minutes, PAX requests it again on its own (up to 3 times, then through the normal retry passes), first checking Purview for the earlier request so no duplicate is created. No manual step or resume is needed. Large collections no longer spend hours or days creating searches before downloading, and a throttled search request while other partitions are downloading is retried later instead of counting as a partition failure. It also accepts -UserHistory On in any multi-dashboard run that includes M365; prerelease 10 refused it when AIO was not in the list. Nothing else changed from prerelease 10.
->
-> **Have a prerelease 10 collection still running?** Stop it and run the same command with prerelease 11, adding `-Resume`. The resume keeps completed partitions, downloads searches that were already created, and creates the remaining searches as slots free. Searches that the earlier run could not confirm are checked and requested again automatically.
+> **What's new in prerelease 11:** audit searches are created just in time, in the background, one for each free download slot, instead of all at once at the start of collection. A slow search request holds up only its own partition while the others keep creating and downloading. If a request drops on the network and Purview doesn't list the search within 5 minutes, PAX requests it again on its own (up to 3 times, then through the normal retry passes), first checking Purview for the earlier request so no duplicate is created. No manual step or resume is needed. Downloading starts with the first completed search, and a throttled search request while other partitions are downloading is retried later instead of counting as a partition failure. It also accepts -UserHistory On in any multi-dashboard run that includes M365; prerelease 10 refused it when AIO was not in the list. Nothing else changed from prerelease 10.
 
 ---
 
@@ -64,7 +62,7 @@ Earlier preview builds are kept in [`prerelease_archive`](./prerelease_archive) 
 - **Recovery is not de-identified output.** With `-Deidentify`, preserve the checkpoint's owner-only local recovery directory alongside its saved data. Recovery stops if private permissions cannot be enforced. Fabric's existing resume mirror contains identified recovery data too; local private permissions do not establish remote access protection.
 - **Treat pending restoration as potentially changed data.** A failure after replacement begins can leave a partially updated destination. Preserve the checkpoint, candidates, originals and recovery markers. An unrelated fresh run does not depend on finishing an older checkpoint; an older resume cannot overwrite newer unrelated destination changes.
 - **Choose append to retain activity history.** A non-append Delta run publishes the requested snapshot, not a union with the existing table, and a valid snapshot may contain fewer rows.
-- **Keep preview outputs separate from production.** Behavior and file names may change before release. Do not assume checkpoints or histories can be opened by another version, except where this page says so (a prerelease 10 checkpoint can be resumed with prerelease 11).
+- **Keep preview outputs separate from production.** Behavior and file names may change before release. Do not assume checkpoints or histories can be opened by another version.
 - **Preview builds are tagged as pre-release, never as the latest release**, and are not linked from the main README.
 
 ---
@@ -94,7 +92,7 @@ These are the net changes from the current production release to this **v2.0.0 p
 - **Update automation and reports that use generated names.** Dashboard files now start with `AIO_`, `ValueLens_`, `M365_` or `CoworkAdoption_`, and Fabric table names no longer carry run timestamps. Point Power BI connections and notebooks at the new names.
 - **Check prerequisites.** Accelerated append needs Python 3.10+ and SQLite 3.24+ (checked before collection). PAX uses Microsoft Graph PowerShell v2.25.0–v2.40.0. `-CopilotAccessGroups` needs `GroupMember.Read.All`.
 - **For `-Watermark`,** supply `-WatermarkStartDate` only on the first run, and use a CSV append target.
-- **In-progress collections:** finish a Microsoft 365 usage collection started on v1.11.15 or earlier on that version, or start fresh. A collection still running on prerelease 10 can be stopped and continued with this build using the same command plus `-Resume`.
+- **In-progress collections:** finish a Microsoft 365 usage collection started on v1.11.15 or earlier on that version, or start fresh.
 
 ### Details by area
 
@@ -121,7 +119,7 @@ These are the net changes from the current production release to this **v2.0.0 p
 
 **Full Microsoft 365 historical collection.** A single command queues the entire requested usage range rather than capping it part-way through. Concurrency limits active work, not the total range.
 
-> **Upgrading an in-progress Microsoft 365 usage collection started on v1.11.15 or earlier:** finish it on the version that started it, or start a fresh collection. The new partition layout can cause an old resume to stop or re-collect the requested range. Completed collections and ongoing append histories are unaffected. A collection started on v2.0.0 prerelease 10 uses the same layout and can be resumed with this build.
+> **Upgrading an in-progress Microsoft 365 usage collection:** finish it on the version that started it, or start a fresh collection. The new partition layout can cause an old resume to stop or re-collect the requested range. Completed collections and ongoing append histories are unaffected.
 
 </details>
 
