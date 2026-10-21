@@ -4,11 +4,11 @@
 
 **Portable Audit eXporter (PAX) · Purview Audit Log Processor**
 
-**v2.0.0 prerelease 20261009-10**
+**v2.0.0 prerelease 20261021-11**
 
 **Preview build — not a production release.**
 
-[Download](#download) · [Before you run it](#before-you-run-it) · [Report a problem](#report-a-problem) · [What's changed](#whats-changed) · [Good to know](#good-to-know)
+[Download](#download) · [Before you run it](#before-you-run-it) · [What's changed](#whats-changed) · [Upgrade checklist](#upgrade-checklist) · [Known limits](#good-to-know) · [Report a problem](#report-a-problem)
 
 </div>
 
@@ -30,19 +30,24 @@ A prerelease build is **not** the released product. The current released version
 <tr>
 <td>
 
-### [PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261009-10.ps1](https://github.com/microsoft/PAX/releases/download/purview-v2.0.0-prerelease-20261009-10/PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261009-10.ps1)
+### [PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261021-11.ps1](https://github.com/microsoft/PAX/releases/download/purview-v2.0.0-prerelease-20261021-11/PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261021-11.ps1)
 
-<sub>Click the file name above to download the script directly. See the [prerelease page](https://github.com/microsoft/PAX/releases/tag/purview-v2.0.0-prerelease-20261009-10) for release details.</sub>
+<sub>Click the file name above to download the script directly. See the [prerelease page](https://github.com/microsoft/PAX/releases/tag/purview-v2.0.0-prerelease-20261021-11) for release details.</sub>
 
-<sub>**SHA256:** `B9E064E3862F5B94561520B3987C5702F6F5405021060D9D84D35503624BD178`</sub>
+<sub>**SHA256:** `33D6BB87AF9926768FD3FA397DE9A6ECB9670B24A8C46C2CAB809A443C256422`</sub>
 
-<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261009-10.ps1 -Algorithm SHA256`</sub>
+<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261021-11.ps1 -Algorithm SHA256`</sub>
 
 </td>
 </tr>
 </table>
 
 Earlier preview builds are kept in [`prerelease_archive`](./prerelease_archive) for reference only.
+
+> [!NOTE]
+> **What's new in prerelease 11:** audit searches are created just in time, in the background, one for each free download slot, instead of all at once at the start of collection. A slow search request holds up only its own partition while the others keep creating and downloading. If a request drops on the network and Purview doesn't list the search within 5 minutes, PAX requests it again on its own (up to 3 times, then through the normal retry passes), first checking Purview for the earlier request so no duplicate is created. No manual step or resume is needed. Large collections no longer spend hours or days creating searches before downloading, and a throttled search request while other partitions are downloading is retried later instead of counting as a partition failure. It also accepts -UserHistory On in any multi-dashboard run that includes M365; prerelease 10 refused it when AIO was not in the list. Nothing else changed from prerelease 10.
+>
+> **Have a prerelease 10 collection still running?** Stop it and run the same command with prerelease 11, adding `-Resume`. The resume keeps completed partitions, downloads searches that were already created, and creates the remaining searches as slots free. Searches that the earlier run could not confirm are checked and requested again automatically.
 
 ---
 
@@ -59,20 +64,8 @@ Earlier preview builds are kept in [`prerelease_archive`](./prerelease_archive) 
 - **Recovery is not de-identified output.** With `-Deidentify`, preserve the checkpoint's owner-only local recovery directory alongside its saved data. Recovery stops if private permissions cannot be enforced. Fabric's existing resume mirror contains identified recovery data too; local private permissions do not establish remote access protection.
 - **Treat pending restoration as potentially changed data.** A failure after replacement begins can leave a partially updated destination. Preserve the checkpoint, candidates, originals and recovery markers. An unrelated fresh run does not depend on finishing an older checkpoint; an older resume cannot overwrite newer unrelated destination changes.
 - **Choose append to retain activity history.** A non-append Delta run publishes the requested snapshot, not a union with the existing table, and a valid snapshot may contain fewer rows.
-- **Keep preview outputs separate from production.** Behavior and file names may change before release. Do not assume checkpoints or histories can be opened by another version.
+- **Keep preview outputs separate from production.** Behavior and file names may change before release. Do not assume checkpoints or histories can be opened by another version, except where this page says so (a prerelease 10 checkpoint can be resumed with prerelease 11).
 - **Preview builds are tagged as pre-release, never as the latest release**, and are not linked from the main README.
-
----
-
-<a id="report-a-problem"></a>
-
-## Found a problem? Something look wrong?
-
-Please reach out — feedback is the point of a preview.
-
-**[pax@microsoft.com](mailto:pax@microsoft.com)**
-
-Include the command, the run log produced beside your output, and a short description of expected versus actual behavior. Please don't send audit data or user details.
 
 ---
 
@@ -80,26 +73,35 @@ Include the command, the run log produced beside your output, and a short descri
 
 ## What's changed since v1.11.15
 
-These are the net changes from the current production release to this **v2.0.0 preview**, grouped by capability rather than by preview build.
+These are the net changes from the current production release to this **v2.0.0 preview**, grouped by capability rather than by preview build. Start with the highlights and the upgrade checklist; expand any area below for the full detail.
 
-<details open>
-<summary><strong>At a glance</strong></summary>
+### Highlights
 
-One collection can produce multiple dashboard data sets, including the new Cowork Adoption inputs. `-Watermark` adds incremental catch-up for CSV histories, `-UserHistory` retains observed licensing states, and `-CopilotAccessGroups` limits licensed status to members of Copilot access groups. The preview also expands Agent 365 metadata, accelerates large processing jobs, protects retained outputs under de-identification, and verifies collection, append and publication results.
+- **Several dashboards from one collection.** `-Dashboard AIO,M365,ValueLens,CoworkAdoption` produces every requested data set from one collection, including the new **Cowork Adoption** inputs, and append works across those histories.
+- **Incremental catch-up.** `-Watermark` adds only the missing whole days to a CSV history on Local, SharePoint or Fabric Files.
+- **Licensing that reflects access.** `-CopilotAccessGroups` counts a user as licensed only when they also belong to a Copilot access group; `-UserHistory On` keeps observed licensing states over time (off by default).
+- **A richer Agent 365 catalog.** 44 template-compatible columns, with developer and creator filled in from explicit evidence.
+- **Faster large jobs.** Memory-aware rollup and accelerated directory and append processing.
+- **Safer outputs.** Candidates are verified before and after publication, and restoration is attempted if a later step fails; `-Deidentify` also covers retained raw files.
+- **Collection that keeps moving.** A full Microsoft 365 history queues in one command, and searches are created as download slots free, so data starts arriving from the first completed search.
 
-</details>
+<a id="upgrade-checklist"></a>
 
-| | |
-|---|---|
-| [New capabilities](#new-capabilities) | [Speed and visible progress](#speed) |
-| [Protecting existing data](#protection) | [Collection, resume and run results](#collection) |
-| [SharePoint, OneDrive and Fabric destinations](#destinations) | [Agent 365 catalog](#agents) |
-| [Classification and reporting accuracy](#accuracy) | [Messages, logs and guidance](#messages) |
-| [Retired options](#retired) | [Good to know](#good-to-know) |
+### Upgrade checklist
+
+- **Remove retired switches** from scheduled jobs and saved commands: `-ExplodeArrays`, `-ExplodeDeep`, `-ExportWorkbook` and `-RAWInputCSV` are refused before sign-in.
+- **Unattended rollup runs** need an explicit `-Dashboard` or `-Force`; otherwise PAX asks which dashboard to build.
+- **Update automation and reports that use generated names.** Dashboard files now start with `AIO_`, `ValueLens_`, `M365_` or `CoworkAdoption_`, and Fabric table names no longer carry run timestamps. Point Power BI connections and notebooks at the new names.
+- **Check prerequisites.** Accelerated append needs Python 3.10+ and SQLite 3.24+ (checked before collection). PAX uses Microsoft Graph PowerShell v2.25.0–v2.40.0. `-CopilotAccessGroups` needs `GroupMember.Read.All`.
+- **For `-Watermark`,** supply `-WatermarkStartDate` only on the first run, and use a CSV append target.
+- **In-progress collections:** finish a Microsoft 365 usage collection started on v1.11.15 or earlier on that version, or start fresh. A collection still running on prerelease 10 can be stopped and continued with this build using the same command plus `-Resume`.
+
+### Details by area
 
 <a id="new-capabilities"></a>
 
-### New capabilities
+<details>
+<summary><strong>New capabilities</strong></summary>
 
 **Choose the dashboard before processing.** A fresh `-Rollup` or `-RollupPlusRaw` run without `-Dashboard` asks you to choose **AIO, ValueLens, M365, CoworkAdoption**, or **raw exports only**, in that order. Enter several, separated by commas, to produce more than one from a single collection (for example `1,2` or `AIO, ValueLens`); spaces are ignored and duplicates are removed. Raw exports only can't be combined with a dashboard. Enter selects AIO; `-Force` selects AIO without prompting. Raw-only selection disables both rollup switches. Explicit dashboard selections, raw-only and directory/Agent-only runs are unchanged; Resume keeps its checkpoint's dashboard and output mode, including CoworkAdoption. Existing compatibility checks still apply: use `-Dashboard M365` with `-IncludeM365Usage` rollups, and supplied audit files still require rollup processing. Unattended rollup runs need an explicit dashboard or `-Force`.
 
@@ -107,7 +109,7 @@ One collection can produce multiple dashboard data sets, including the new Cowor
 
 **Append to multiple dashboard histories.** The existing `-AppendFile`, `-AppendUserInfo` and `-AppendAgent365Info` selectors resolve the corresponding histories for each dashboard. AIO and ValueLens retain their own user, message and conversation keys. Missing, incomplete or ambiguous histories are refused rather than guessed. If an added dashboard lacks history, PAX stops before collection and provides a separate backfill command. Resume cannot change dashboard membership; start a new combined run after preparing compatible histories.
 
-**Cowork Adoption inputs.** `-Dashboard CoworkAdoption` enables rollup and user collection and produces a Purview CSV and a Users CSV, alone or with other dashboards. Supply each file's full path to its matching template input. The Users input uses the collected PAX Copilot license evidence. Scheduled counts describe prompt setup, not independently observed executions; unavailable record-level credits stay blank. These files are not an admin-center usage import or a billing report. See [Good to know](#good-to-know) for qualification limits.
+**Cowork Adoption inputs.** `-Dashboard CoworkAdoption` enables rollup and user collection and produces a Purview CSV and a Users CSV, alone or with other dashboards. Supply each file's full path to its matching template input. The Users input uses the collected PAX Copilot license evidence. Scheduled counts describe prompt setup, not independently observed executions; unavailable record-level credits stay blank. These files are not an admin-center usage import or a billing report. See [Known limits](#good-to-know) for qualification limits.
 
 **Incremental catch-up.** `-Watermark` collects missing whole UTC days into a Local, SharePoint or Fabric Files CSV `-AppendFile` target; it does not support Tables/Delta. Supply `-WatermarkStartDate` only for the first run, and do not supply manual start/end dates. The marker advances only after every required output publishes and verifies. A current target finishes without service calls. Resume restores the saved window: do not repeat watermark switches. Supplied audit files, `-UseEOM`, directory-only and Agent-only runs do not support watermark mode.
 
@@ -115,15 +117,18 @@ One collection can produce multiple dashboard data sets, including the new Cowor
 
 **Complete parameter snapshot.** The Parameter Snapshot printed at the start of a run, and saved in the metrics JSON, now includes every customer-facing setting: watermark mode, supplied input files, `-CopilotAccessGroups`, `-ExportProgressInterval` and Graph completeness options. On `-Resume` it shows the restored scope, filters and inputs rather than the resume command's defaults.
 
-**Observed user history.** `-UserHistory On` records effective-dated licensing observations for AIO and ValueLens. It retains stable state keys and audit-only Unknown rows without adding duplicate states on unchanged appends. `EffectiveDate` identifies the collection window in which a state was first recorded, not a proven license-assignment date. History is **Off by default**; neither mode reconstructs unobserved past licenses. M365 usage rollup refuses history mode. A compatible history-aware model is required; see [Good to know](#good-to-know).
+**Observed user history.** `-UserHistory On` records effective-dated licensing observations for AIO and ValueLens. It retains stable state keys and audit-only Unknown rows without adding duplicate states on unchanged appends. `EffectiveDate` identifies the collection window in which a state was first recorded, not a proven license-assignment date. History is **Off by default**; neither mode reconstructs unobserved past licenses. An M365-only run refuses history mode; when M365 is one of several dashboards, history applies to the other dashboards' Users output. A compatible history-aware model is required; see [Known limits](#good-to-know).
 
 **Full Microsoft 365 historical collection.** A single command queues the entire requested usage range rather than capping it part-way through. Concurrency limits active work, not the total range.
 
-> **Upgrading an in-progress Microsoft 365 usage collection:** finish it on the version that started it, or start a fresh collection. The new partition layout can cause an old resume to stop or re-collect the requested range. Completed collections and ongoing append histories are unaffected.
+> **Upgrading an in-progress Microsoft 365 usage collection started on v1.11.15 or earlier:** finish it on the version that started it, or start a fresh collection. The new partition layout can cause an old resume to stop or re-collect the requested range. Completed collections and ongoing append histories are unaffected. A collection started on v2.0.0 prerelease 10 uses the same layout and can be resumed with this build.
+
+</details>
 
 <a id="speed"></a>
 
-### Speed and visible progress
+<details>
+<summary><strong>Speed and visible progress</strong></summary>
 
 **Memory-aware rollup.** Jobs that fit the estimated budget use the in-memory Copilot rollup; larger jobs use disk-backed processing with the same output contract. The log identifies the path and budget. This bounds working buffers, not all process memory.
 
@@ -133,9 +138,12 @@ One collection can produce multiple dashboard data sets, including the new Cowor
 
 **Prerequisites and progress before expensive work.** Accelerated append requires Python 3.10+ and SQLite 3.24+, checked before collection. Allow working-disk space comfortably larger than the histories plus new output. Narrowing audit dates does not avoid reading retained history for key continuity. Long stages report aggregate progress and integrity counts without printing audit rows or personal identifiers; sign-in validity is checked again after directory preparation.
 
+</details>
+
 <a id="protection"></a>
 
-### Protecting existing data
+<details>
+<summary><strong>Protecting existing data</strong></summary>
 
 **Verified publication and independent recovery.** Candidates are checked before replacement and read back afterward. A refusal before publication leaves the affected targets unchanged. A later failure triggers restoration where possible; an unverified restoration is reported as potentially modified data, with recovery material retained and no affected watermark advance. Failed sets are not retried by the final upload sweep. Logs, raw recovery files or successfully generated local files are not proof of a completed remote dataset.
 
@@ -149,9 +157,12 @@ One collection can produce multiple dashboard data sets, including the new Cowor
 
 **De-identification covers retained raw outputs.** `-Deidentify` protects designated identity fields in retained Purview and Entra Users files as well as dashboard outputs, including `-RollupPlusRaw`. Protected Users CSVs add `PAX_DeidentifyPolicy` and `PAX_DeidentifyDigest` to verify append compatibility. The digest checks logical content consistency, not authenticity against someone replacing both data and digest; it does not make all remaining data anonymous. Older protected histories without valid metadata require regeneration from original identified sources, not manual rehashing.
 
+</details>
+
 <a id="collection"></a>
 
-### Collection, resume and run results
+<details>
+<summary><strong>Collection, resume and run results</strong></summary>
 
 **Source-preserving recovery.** Dictionary and object responses retain source identities and audit payloads. All requested operations, record types and service filters survive retries and recovery, including intentionally omitted M365 filters. Snapshots belong to their complete query contract, not just a partition number. Resume and export validate their exact filename, digest and record count.
 
@@ -165,11 +176,16 @@ One collection can produce multiple dashboard data sets, including the new Cowor
 
 **Scope and dates are explicit.** `pwsh -File` accepts comma-separated `-UserIds "a@contoso.com,b@contoso.com"` and quoted `-GroupNames "Engineering Managers","Product Leads"`. Empty or unresolved effective audit scopes stop rather than widening to the tenant. An intentionally empty directory scope produces a header-only Users file. Date-only live windows use inclusive UTC midnight through exclusive UTC midnight; an empty or reversed range is refused before sign-in.
 
+**Search creation keeps pace with downloads.** Purview runs up to 10 audit searches at once per account. PAX creates each partition's search in the background only when a download slot is free, so a large collection starts downloading from the first completed search instead of waiting for every search to be created, and a slow search request holds up only its own partition. A request that drops on the network is confirmed against Purview for up to 5 minutes and then requested again automatically, with a check for the earlier request first, so it never stalls the run or needs a manual resume. A throttled search request while other partitions are downloading is retried later and does not count as a partition failure.
+
 **Supplied inputs avoid unnecessary audit sign-in.** A fully local run with supplied audit and complete Users files does not contact services. Fabric output still authenticates to Fabric, but needs no audit sign-in when no live directory or Agent collection is required. Resume retains supplied input references and accepts `GRAPH_CLIENT_SECRET` for App Registration. `-StartDate` and `-EndDate` do not filter a supplied audit CSV.
+
+</details>
 
 <a id="destinations"></a>
 
-### SharePoint, OneDrive and Fabric destinations
+<details>
+<summary><strong>SharePoint, OneDrive and Fabric destinations</strong></summary>
 
 **Predictable filenames and tables.** Generated dashboard-owned filenames begin with `AIO_`, `ValueLens_`, `M365_` or `CoworkAdoption_`; raw inputs, Agent 365 files and logs remain unprefixed. Explicit filenames and append targets keep their names. Entra raw and processed outputs stay distinct, as do all four M365 companions, including when a requested name already ends in `_Rollup`. Supplied-input Facts are published under their produced name even if they carry an older timestamp. Update automation that relies on generated names. M365 outputs carry one timestamp, the run's (for example `M365_Purview_Audit_UsageActivity_CombinedActivityTypes_Rollup_20261007_095129.csv`), and the M365 folder's copy of the Entra users export is named `M365_EntraUsers_MAClicensing_<timestamp>.csv`. Histories written with the earlier names are still found by append and watermark runs.
 
@@ -183,9 +199,12 @@ One collection can produce multiple dashboard data sets, including the new Cowor
 
 **Expected responses are not failures.** Optional missing recovery markers and OneLake directories (`GET 404` with exact `PathNotFound`), and already-existing directories during idempotent creation (`PUT directory 409` with exact `PathAlreadyExists`), do not print misleading errors. Required paths, access refusals and immutable-file conflicts remain errors. Local watermark replacement retries brief file locks and keeps the previous marker if saving fails.
 
+</details>
+
 <a id="agents"></a>
 
-### Agent 365 catalog
+<details>
+<summary><strong>Agent 365 catalog</strong></summary>
 
 **Expanded, template-compatible metadata.** The catalog has 44 columns, with existing names/order retained and 16 ValueLens fields added after `Uploaded files`; the retrieval-status file keeps its four-column contract. Descriptions use Graph's long/short descriptions, and `Created in` uses its platform. Supported nested definitions supply instructions, actions, unique bot IDs and declared capabilities. Manifest JSON is data, never executed, and referenced URLs are not fetched. Capabilities describe declarations, not verified permissions or a discovered file inventory.
 
@@ -201,9 +220,12 @@ One collection can produce multiple dashboard data sets, including the new Cowor
 
 **Agent privacy protection.** Under `-Deidentify`, names and supported personal creator/sharing IDs are pseudonymized; free-form descriptions, instructions, actions and resource details are withheld. Application join IDs remain usable. Raw detail caches are not written, and logs distinguish privacy withholding from absent, malformed or unretrieved data.
 
+</details>
+
 <a id="accuracy"></a>
 
-### Classification and reporting accuracy
+<details>
+<summary><strong>Classification and reporting accuracy</strong></summary>
 
 **Security Copilot records are trimmed during dashboard preprocessing.** AIO, ValueLens, M365 and Cowork Adoption skip explicit Security Copilot product activity before expansion, activity-key allocation and aggregation. The match includes the bare `SecurityCopilot` host, its `SecurityCopilot-` family, explicit product names and the documented `Copilot.Security.SecurityCopilot` application identity, case-insensitively. That application identity does not depend on a SecurityCopilot-prefixed host. It does not use user names, "General Chat", license status or prompt text. Retained raw exports and the existing directory/licensing population are unchanged.
 
@@ -213,9 +235,12 @@ One collection can produce multiple dashboard data sets, including the new Cowor
 
 **Dashboard labels remain compatible.** Published labels, including Email Summarising, Meeting Prep and Presentation Summarising, stay unchanged. Classification improves modeled Human Equivalent Hours for templates consuming producer values; templates calculating their own values are unaffected. These remain assumptions, not measured time savings or a guaranteed tenant uplift. Append preserves existing classifications; use original inputs to rebuild a consistently classified history.
 
+</details>
+
 <a id="messages"></a>
 
-### Messages, logs and guidance
+<details>
+<summary><strong>Messages, logs and guidance</strong></summary>
 
 **Failures explain the next step.** Audit refusal logs include the returned error, request identifier, service diagnostics and policy challenge. Permanent permission/policy refusals stop promptly; transient failures retain retry behavior. Remote read errors identify the requested destination. SharePoint guidance distinguishes delegated site access, tenant-wide app-only `Sites.ReadWrite.All`, and app-only `Sites.Selected` with a write grant.
 
@@ -225,15 +250,20 @@ One collection can produce multiple dashboard data sets, including the new Cowor
 
 **Messages say what happened to the data.** The console and the log carry the same wording. A page that hits a temporary service error shows when its retry starts and when it recovers, and collection ends with one line stating whether every affected partition completed. Dashboard processing lists every group of input records (other activity, Security Copilot, Copilot records without a user prompt, service accounts, records with prompts, unreadable records) and confirms they add up to the input. Combining rows into dashboard rows, skipping repeat copies of the same audit record, and adding Users rows for people missing from the Entra export are described as such, not as loss. Multi-dashboard runs name the dashboard folders that receive the Agent 365 file. Warnings remain for anything actually missing. Upload lines show sizes in bytes, KB, MB or GB, so a small file never reads as 0.00 MB, and a SharePoint upload that resent chunks says how many, why, and that the complete file was received. The closing summary names the full build, including the prerelease label and date, matching the opening banner.
 
+</details>
+
 <a id="retired"></a>
 
-### Retired options
+<details>
+<summary><strong>Retired options</strong></summary>
 
 `-ExplodeArrays`, `-ExplodeDeep`, `-ExportWorkbook` and `-RAWInputCSV` are refused before sign-in with a message naming the switch. Remove them from scheduled jobs and saved commands. Excel workbook output is removed; CSV and Fabric output remain supported. Supplied-input processing with `-PurviewInputFile` is a separate feature and remains supported.
 
+</details>
+
 <a id="good-to-know"></a>
 
-### Good to know
+## Known limits
 
 - **Graph SDK compatibility:** PAX uses installed Microsoft Graph PowerShell v2.25.0–v2.40.0, or installs v2.40.0 for the current user if none is available. It does not automatically upgrade the SDK; newer installations remain but are not selected. An incompatible version already loaded requires a fresh PowerShell window.
 - **Cowork Adoption qualification:** Local output is available to try. Remaining end-to-end coverage gaps concern PAX delivery of CoworkAdoption outputs to SharePoint/OneDrive or Fabric, including existing-history append, de-identified Users, interrupted publication/Resume and dashboard combinations. These are qualification gaps, not newly confirmed defects or restrictions introduced by Security Copilot trimming.
@@ -241,6 +271,18 @@ One collection can produce multiple dashboard data sets, including the new Cowor
 - **History is not reconstructed license truth:** Unknown users/activity remain in outputs, but current dashboard licensed/unlicensed populations may exclude them. The current AI-in-One rollup template expects one row per normalized person, not multi-state history; `-UserHistory On` does not upgrade that template.
 - **Long raw audit JSON:** The Lakehouse SQL endpoint exposes Delta strings as `varchar(8000)`, which can truncate long `AuditData` when read through SQL. Complete JSON remains in Delta for Spark or direct Delta readers. Processed AIO tables do not contain raw `AuditData`; this preview does not change the SQL limit.
 - **Catalog limits:** Creator, channel, environment, risk and other fields are not universally available. An empty sharing collection differs from unavailable data. A complete catalog listing does not establish active-agent status or a match for every audit Agent ID.
+
+---
+
+<a id="report-a-problem"></a>
+
+## Found a problem? Something look wrong?
+
+Please reach out — feedback is the point of a preview.
+
+**[pax@microsoft.com](mailto:pax@microsoft.com)**
+
+Include the command, the run log produced beside your output, and a short description of expected versus actual behavior. Please don't send audit data or user details.
 
 ---
 

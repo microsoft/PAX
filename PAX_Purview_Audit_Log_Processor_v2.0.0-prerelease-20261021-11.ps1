@@ -1,5 +1,5 @@
 ﻿# Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Script Version: v2.0.0 - Prerelease - 2026-10-04-09
+# Script Version: v2.0.0 - Prerelease - 2026-10-21-11
 # Requirements: PowerShell 7+ for default Graph API mode; PowerShell 5.1 supported ONLY with -UseEOM (serial Exchange Online Management mode, no parallel query/explosion).
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 <#
@@ -106,6 +106,16 @@
 			• When both are specified, the script combines and deduplicates the user lists
 			• Example: -UserIds "ceo@contoso.com" -GroupNames "Board of Directors"
 			  Pulls records for the CEO plus all expanded board members (duplicates removed)
+
+		-CopilotAccessGroups <string[]> : Entra group(s) that grant permission to use Microsoft 365 Copilot
+			Adjusts the hasLicense column of the Entra users output; it does NOT filter records or users.
+			hasLicense = TRUE only when the user holds an enabled Copilot license AND is a member
+			(direct or nested) of at least one listed group. Licensed non-members become FALSE.
+			Group members without a Copilot license stay FALSE; Unknown stays Unknown.
+			Graph API mode only (requires GroupMember.Read.All). Needs the Entra users output.
+			Examples:
+				-CopilotAccessGroups "Copilot Access"
+				-CopilotAccessGroups "Copilot Access - Wave 1","Copilot Access - Wave 2"
 
 	COMBINING FILTERS - Powerful Use Cases:
         
@@ -483,7 +493,7 @@
 			[App-only / Delegated]  User.Read.All                  (read /users)
 			[App-only / Delegated]  Organization.Read.All          (read /subscribedSkus)
 
-		Group expansion (only when -GroupNames is set):
+		Group expansion (only when -GroupNames or -CopilotAccessGroups is set):
 			[App-only / Delegated]  GroupMember.Read.All           (read /groups + /groups/{id}/transitiveMembers)
 
 		AISID dashboard - Defender / AI Solutions hunting (only when -Dashboard AISID is set):
@@ -946,6 +956,32 @@
 	In a legacy shell, keep separators adjacent: "Group One","Group Two".
 	Use group object IDs if a comma-containing name makes that legacy form ambiguous.
 
+.PARAMETER CopilotAccessGroups
+	Entra group(s) whose members are permitted to use Microsoft 365 Copilot. Use this when a
+	license bundle (for example Microsoft 365 E7) assigns the Copilot license broadly but access
+	is granted to a subset of users through Entra group membership.
+
+	Effect on the Entra users output (EntraUsers CSV, workbook tab and every dashboard Users
+	input built from it):
+	  • hasLicense = TRUE  only when the user has an enabled Copilot service plan AND is a member
+	                       of at least one listed group. Nested (transitive) membership counts.
+	  • hasLicense = FALSE for licensed users outside every listed group, and for group members
+	                       without an enabled Copilot license (they cannot use licensed Copilot).
+	  • Unknown license evidence stays Unknown. assignedLicenses is not changed.
+	It does not filter audit records or directory rows; combine with -GroupNames for that.
+
+	Quote each name separately: -CopilotAccessGroups "Copilot Access - Wave 1","Copilot Access - Wave 2".
+	Display names, group mail addresses, mail nicknames and object IDs are accepted, with the
+	same native-shell handling as -GroupNames. Resolution fails closed: a group that is not
+	found, matches more than one group, has no user members or cannot be read stops the run
+	before any license value is changed.
+
+	Requirements: Graph API mode (not -UseEOM); Microsoft Graph GroupMember.Read.All (delegated
+	or application); the Entra users output (-IncludeUserInfo, -OnlyUserInfo, -AppendUserInfo,
+	-UserInfoFile or a -Dashboard that collects users). With -UserInfoFile the same rule is
+	applied to the file's final hasLicense values. -Resume restores the checkpoint's groups.
+	-Watermark runs may add, change or remove it between runs.
+
 .PARAMETER Help
 	Display script help information.
 
@@ -1095,8 +1131,10 @@
 	  RepeatManager    Repeat the person's manager in their deeper levels.
 	  Fixed            Show a fixed label of your choice (supply it with -FillerLabelText).
 
-	Requires -Rollup or -RollupPlusRaw. It is not available for the M365 Usage dashboard
-	(-IncludeM365Usage / -Dashboard M365), which does not include an org hierarchy.
+	Requires -Rollup or -RollupPlusRaw. It is not available for a single-dashboard M365 Usage run
+	(-IncludeM365Usage / -Dashboard M365), which does not include an org hierarchy. In a
+	multi-dashboard run that includes M365 (for example -Dashboard M365,ValueLens), it is accepted,
+	applies to the AI-in-One / ValueLens Users output, and is ignored for M365.
 
 .PARAMETER FillerLabelText
 	The label to show in the deeper hierarchy levels when -FillerLabel Fixed is chosen, for
@@ -1254,7 +1292,10 @@
 	
 	**M365 Rollup Anchoring (-IncludeM365Usage + -Rollup / -RollupPlusRaw):**
 	  The embedded M365 Bundle Explosion Processor emits FOUR files into a single output
-	  directory, each sharing the same stem:
+	  directory, each sharing the same stem. When the input is this run's own raw export, the
+	  stem drops the input's run timestamp so each name carries ONE timestamp (the run's), for
+	  example 'M365_Purview_Audit_UsageActivity_CombinedActivityTypes_Rollup_20261007_095129.csv';
+	  a supplied input keeps its full stem plus the processing timestamp:
 	    • '<stem>_Rollup_<YYYYMMDD_HHMMSS>.csv'        — the 14-column aggregated rollup
 	                                                     (UserId, CreationDate, Operation,
 	                                                     Workload, SourceFileExtension, AppHost,
@@ -1679,8 +1720,8 @@
 	  • Tenant enrolled in the Microsoft Agent 365 program (and holding a Microsoft Agent 365 license)
 	  • App-only auth (-Auth AppRegistration certificate/secret, or -Auth ManagedIdentity): the app
 	    registration / managed-identity service principal must be granted + admin-consented the
-	    APPLICATION permissions CopilotPackages.Read.All (and Application.Read.All for developer-name
-	    resolution). No interactive sign-in is performed; the Agent 365 phase reuses the app-only context.
+	    APPLICATION permissions CopilotPackages.Read.All (plus the optional Application.Read.All and
+	    User.Read.All, which resolve the agent's creator). No interactive sign-in is performed; the Agent 365 phase reuses the app-only context.
 	  • Delegated auth (-Auth WebLogin / DeviceCode / Credential / Silent): the signed-in caller must
 	    hold AI Administrator or Global Administrator; the Agent 365 scopes are consented at sign-in.
 	  • Requires a destination — supply -OutputPathAgent365Info or -AppendAgent365Info
@@ -1956,6 +1997,12 @@ param(
 	[Parameter(Mandatory = $false)]
 	[string[]]$GroupNames,
 
+	# Entra group(s) whose members are permitted to use Microsoft 365 Copilot. When supplied,
+	# hasLicense is TRUE only for users who hold an enabled Copilot license AND belong to at
+	# least one of these groups (nested membership included).
+	[Parameter(Mandatory = $false)]
+	[string[]]$CopilotAccessGroups,
+
 	[Parameter(Mandatory = $false)]
 	[switch]$Help,
 
@@ -2229,7 +2276,7 @@ if ($currentLanguageMode -ne 'FullLanguage') {
 # surplus arguments before they can bind to destination/auth parameters, normalize
 # only the GroupNames span, then use the original binder for any other positionals.
 function script:ConvertFrom-PaxGroupNameTokens {
-	param([Parameter(Mandatory)][string[]]$Tokens)
+	param([Parameter(Mandatory)][string[]]$Tokens, [string]$ParameterName = 'GroupNames')
 	$names = New-Object System.Collections.Generic.List[string]
 	$field = New-Object System.Text.StringBuilder
 	$quoted = $false
@@ -2244,7 +2291,7 @@ function script:ConvertFrom-PaxGroupNameTokens {
 		if (-not $quoted -and -not $closed -and $field.Length -eq 0 -and -not $token.TrimStart().StartsWith('"')) {
 			$value = $token.Trim()
 			$expectValue = $false
-			if (-not $value) { throw 'GroupNames contains an empty group name.' }
+			if (-not $value) { throw "$ParameterName contains an empty group name." }
 			$names.Add($value)
 			continue
 		}
@@ -2257,25 +2304,26 @@ function script:ConvertFrom-PaxGroupNameTokens {
 				} else { [void]$field.Append($c) }
 			}
 			elseif ($c -eq ',') {
-				if (-not $field.ToString().Trim()) { throw 'GroupNames contains an empty group name.' }
+				if (-not $field.ToString().Trim()) { throw "$ParameterName contains an empty group name." }
 				$names.Add($field.ToString().Trim()); [void]$field.Clear()
 				$closed = $false; $expectValue = $true
 			}
 			elseif ([char]::IsWhiteSpace($c) -and ($closed -or $field.Length -eq 0)) { continue }
 			elseif ($c -eq '"' -and $field.Length -eq 0 -and -not $closed) { $quoted = $true; $expectValue = $false }
-			elseif ($closed) { throw 'GroupNames has unexpected text after a quoted group name.' }
+			elseif ($closed) { throw "$ParameterName has unexpected text after a quoted group name." }
 			else { [void]$field.Append($c); $expectValue = $false }
 		}
 	}
-	if ($quoted -or $expectValue) { throw 'GroupNames has an incomplete quoted list or a trailing comma.' }
+	if ($quoted -or $expectValue) { throw "$ParameterName has an incomplete quoted list or a trailing comma." }
 	if ($field.Length -gt 0 -or $closed) { $names.Add($field.ToString().Trim()) }
 	if ($names.Count -eq 0 -or @($names | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count) {
-		throw 'GroupNames must contain at least one nonempty group name.'
+		throw "$ParameterName must contain at least one nonempty group name."
 	}
 	return ,$names.ToArray()
 }
 
 $script:PaxNativeGroupNamesCommaInput = $null
+$script:PaxNativeCopilotAccessGroupsCommaInput = $null
 try {
 	$paxLaunchRemaining = @($RemainingArgs)
 	$paxLaunchBound = @{}
@@ -2336,6 +2384,55 @@ try {
 				# Legacy native passing loses the original commas' quoting. Preserve a
 				# literal comma-containing directory identity before trying it as a list.
 				$script:PaxNativeGroupNamesCommaInput = $GroupNames[0]
+			}
+		}
+	}
+	if ($paxNativeFileIndex -ge 0 -and $PSBoundParameters.ContainsKey('CopilotAccessGroups')) {
+		# Same native -File handling as -GroupNames: rebuild the quoted, comma-separated list from
+		# the raw tokens and remove its surplus tokens from RemainingArgs.
+		$paxAccessTokens = New-Object System.Collections.Generic.List[string]
+		$paxAccessFound = $false
+		for ($paxArgIndex = $paxNativeFileIndex + 1; $paxArgIndex -lt $paxNativeArgs.Length; $paxArgIndex++) {
+			$paxArgToken = $paxNativeArgs[$paxArgIndex]
+			if ($paxArgToken -match '^-(?<name>[A-Za-z]+)(?::(?<value>.*))?$' -and $Matches['name'].Length -ge 3 -and
+				'CopilotAccessGroups'.StartsWith($Matches['name'], [StringComparison]::OrdinalIgnoreCase)) {
+				if ($paxAccessFound) { throw 'CopilotAccessGroups was specified more than once.' }
+				$paxAccessFound = $true
+				if ($paxArgToken.Contains(':')) { $paxAccessTokens.Add($Matches['value']) }
+				while ($paxArgIndex + 1 -lt $paxNativeArgs.Length -and $paxNativeArgs[$paxArgIndex + 1] -notmatch '^--?[A-Za-z]') {
+					$paxArgIndex++
+					$paxAccessTokens.Add($paxNativeArgs[$paxArgIndex])
+				}
+			}
+		}
+		if ($paxAccessFound) {
+			if ($paxAccessTokens.Count -eq 0) { throw 'CopilotAccessGroups has no value.' }
+			$paxAccessTail = @($paxAccessTokens.ToArray() | Select-Object -Skip 1)
+			if ($paxAccessTail.Count -gt 0) {
+				$paxTailMatches = New-Object System.Collections.Generic.List[int]
+				for ($paxTailIndex = 0; $paxTailIndex -le $paxLaunchRemaining.Count - $paxAccessTail.Count; $paxTailIndex++) {
+					$paxTailEqual = $true
+					for ($paxTailPart = 0; $paxTailPart -lt $paxAccessTail.Count; $paxTailPart++) {
+						if ([string]$paxLaunchRemaining[$paxTailIndex + $paxTailPart] -cne [string]$paxAccessTail[$paxTailPart]) { $paxTailEqual = $false; break }
+					}
+					if ($paxTailEqual) { $paxTailMatches.Add($paxTailIndex) }
+				}
+				if ($paxTailMatches.Count -ne 1) { throw 'CopilotAccessGroups argument boundaries are ambiguous; no other parameter was changed.' }
+				$paxTailStart = $paxTailMatches[0]
+				$paxLaunchRemaining = @(
+					for ($paxTailIndex = 0; $paxTailIndex -lt $paxLaunchRemaining.Count; $paxTailIndex++) {
+						if ($paxTailIndex -lt $paxTailStart -or $paxTailIndex -ge $paxTailStart + $paxAccessTail.Count) { $paxLaunchRemaining[$paxTailIndex] }
+					}
+				)
+			}
+			$CopilotAccessGroups = script:ConvertFrom-PaxGroupNameTokens -Tokens $paxAccessTokens.ToArray() -ParameterName 'CopilotAccessGroups'
+			# cmd.exe and Task Scheduler pass "A", "B" as the unquoted tokens 'A,' and 'B'; drop the separator.
+			$CopilotAccessGroups = @($CopilotAccessGroups | ForEach-Object { $_.TrimEnd(',').Trim() } | Where-Object { $_ })
+			if ($CopilotAccessGroups.Count -eq 0) { throw 'CopilotAccessGroups must contain at least one nonempty group name.' }
+			$paxLaunchBound['CopilotAccessGroups'] = $CopilotAccessGroups
+			if ($paxAccessTokens.Count -eq 1 -and $CopilotAccessGroups.Count -eq 1 -and $CopilotAccessGroups[0].Contains(',') -and -not $paxAccessTokens[0].TrimStart().StartsWith('"')) {
+				# Legacy native passing loses the original quoting; try the literal name first.
+				$script:PaxNativeCopilotAccessGroupsCommaInput = $CopilotAccessGroups[0]
 			}
 		}
 	}
@@ -2405,7 +2502,7 @@ catch {
 	exit 1
 }
 # Do not retain a second copy of command-line values, which can include credentials.
-Remove-Variable -Name paxNativeArgs, paxLaunchBound, paxLaunchRemaining, paxPositionals, paxOriginalBinder, paxParameterText, paxArgToken, paxGroupTokens, paxGroupTail, paxUserTokens, paxUserTail -ErrorAction SilentlyContinue
+Remove-Variable -Name paxNativeArgs, paxLaunchBound, paxLaunchRemaining, paxPositionals, paxOriginalBinder, paxParameterText, paxArgToken, paxGroupTokens, paxGroupTail, paxUserTokens, paxUserTail, paxAccessTokens, paxAccessTail, paxAccessFound -ErrorAction SilentlyContinue
 # PAX-GROUPNAMES-NATIVE-END
 
 # -UserIds entries may hold comma-separated lists (UPNs cannot contain commas). Expand them so
@@ -4819,13 +4916,15 @@ if (-not $PSBoundParameters.ContainsKey('Dashboard') -and -not $paxDashboardResu
 	if ($Force) {
 		Microsoft.PowerShell.Utility\Write-Host 'INFO: -Dashboard was omitted; -Force selected AIO for rollup exports.' -ForegroundColor Cyan
 	} else {
-		Microsoft.PowerShell.Utility\Write-Host 'Choose a dashboard for rollup exports, or continue with raw exports only:' -ForegroundColor Cyan
+		Microsoft.PowerShell.Utility\Write-Host 'Choose one or more dashboards for rollup exports, or continue with raw exports only:' -ForegroundColor Cyan
 		Microsoft.PowerShell.Utility\Write-Host '  1. AIO (default)'
 		Microsoft.PowerShell.Utility\Write-Host '  2. ValueLens'
 		Microsoft.PowerShell.Utility\Write-Host '  3. M365'
 		Microsoft.PowerShell.Utility\Write-Host '  4. CoworkAdoption'
 		Microsoft.PowerShell.Utility\Write-Host '  5. Raw exports only (no rollups)'
+		Microsoft.PowerShell.Utility\Write-Host '  For several dashboards from one collection, separate them with commas, for example 1,2 or AIO,ValueLens.'
 		$paxDashboardChoices = @{ '1' = 'AIO'; 'AIO' = 'AIO'; '2' = 'ValueLens'; 'ValueLens' = 'ValueLens'; '3' = 'M365'; 'M365' = 'M365'; '4' = 'CoworkAdoption'; 'CoworkAdoption' = 'CoworkAdoption'; '5' = 'Raw'; 'Raw' = 'Raw' }
+		$paxDashboardPrompt = 'Dashboard(s) [1-5 or names, comma-separated; Enter = AIO]'
 		while ($true) {
 			try {
 				if (@([Environment]::GetCommandLineArgs() | Where-Object { $_ -match '^-(?i)noni' }).Count -gt 0) {
@@ -4834,25 +4933,46 @@ if (-not $PSBoundParameters.ContainsKey('Dashboard') -and -not $paxDashboardResu
 				# ConsoleHost returns an empty string for both Enter and redirected EOF through
 				# Read-Host. ReadLine preserves null at EOF so unattended runs cannot silently accept AIO.
 				if ($Host.Name -eq 'ConsoleHost' -and [Console]::IsInputRedirected) {
-					Microsoft.PowerShell.Utility\Write-Host 'Dashboard [1-5 or name, Enter = AIO]: ' -NoNewline
+					Microsoft.PowerShell.Utility\Write-Host ($paxDashboardPrompt + ': ') -NoNewline
 					$paxDashboardAnswer = [Console]::ReadLine()
 				} else {
-					$paxDashboardAnswer = Read-Host 'Dashboard [1-5 or name, Enter = AIO]'
+					$paxDashboardAnswer = Read-Host $paxDashboardPrompt
 				}
 				if ($null -eq $paxDashboardAnswer) { throw 'No dashboard selection was received (end of input).' }
 			} catch {
 				Microsoft.PowerShell.Utility\Write-Host ("ERROR: Cannot select a dashboard: {0}" -f $_.Exception.Message) -ForegroundColor Red
-				Microsoft.PowerShell.Utility\Write-Host 'Specify -Dashboard AIO|ValueLens|M365|CoworkAdoption, use -Force for AIO, or remove -Rollup/-RollupPlusRaw for raw exports only.' -ForegroundColor Yellow
+				Microsoft.PowerShell.Utility\Write-Host 'Specify -Dashboard AIO|ValueLens|M365|CoworkAdoption (comma-separate several), use -Force for AIO, or remove -Rollup/-RollupPlusRaw for raw exports only.' -ForegroundColor Yellow
 				exit 1
 			}
 			$paxDashboardAnswer = $paxDashboardAnswer.Trim()
 			if ($paxDashboardAnswer -eq '') { break }
-			if ($paxDashboardChoices.ContainsKey($paxDashboardAnswer)) {
-				$paxDashboardChoice = $paxDashboardChoices[$paxDashboardAnswer]
-				break
+			# Comma-separated selections: spaces around names are ignored, as are empty entries
+			# from a stray or trailing comma. Duplicates collapse; order is normalized later.
+			$paxDashboardPicked = [System.Collections.Generic.List[string]]::new()
+			$paxDashboardInvalid = [System.Collections.Generic.List[string]]::new()
+			foreach ($paxDashboardPart in ($paxDashboardAnswer -split ',')) {
+				$paxDashboardPart = $paxDashboardPart.Trim()
+				if ($paxDashboardPart -eq '') { continue }
+				if ($paxDashboardChoices.ContainsKey($paxDashboardPart)) {
+					$paxDashboardValue = [string]$paxDashboardChoices[$paxDashboardPart]
+					if (-not $paxDashboardPicked.Contains($paxDashboardValue)) { [void]$paxDashboardPicked.Add($paxDashboardValue) }
+				} else {
+					[void]$paxDashboardInvalid.Add($paxDashboardPart)
+				}
 			}
-			Microsoft.PowerShell.Utility\Write-Host 'Invalid selection. Enter 1-5, AIO, ValueLens, M365, CoworkAdoption, or Raw.' -ForegroundColor Yellow
+			if ($paxDashboardInvalid.Count -gt 0) {
+				Microsoft.PowerShell.Utility\Write-Host ("Invalid selection: {0}. Enter 1-5 or AIO, ValueLens, M365, CoworkAdoption, Raw; separate several with commas." -f ($paxDashboardInvalid -join ', ')) -ForegroundColor Yellow
+				continue
+			}
+			if ($paxDashboardPicked.Count -eq 0) { break }
+			if ($paxDashboardPicked.Contains('Raw') -and $paxDashboardPicked.Count -gt 1) {
+				Microsoft.PowerShell.Utility\Write-Host 'Raw exports only (5) cannot be combined with a dashboard. Choose dashboards, or 5 on its own.' -ForegroundColor Yellow
+				continue
+			}
+			$paxDashboardChoice = if ($paxDashboardPicked.Count -eq 1) { $paxDashboardPicked[0] } else { $paxDashboardPicked.ToArray() }
+			break
 		}
+		Remove-Variable -Name paxDashboardPicked, paxDashboardInvalid, paxDashboardPart, paxDashboardValue, paxDashboardPrompt -ErrorAction SilentlyContinue
 	}
 	if ($paxDashboardChoice -eq 'Raw') {
 		$Rollup = [System.Management.Automation.SwitchParameter]::new($false)
@@ -4862,7 +4982,7 @@ if (-not $PSBoundParameters.ContainsKey('Dashboard') -and -not $paxDashboardResu
 		$Dashboard = @($paxDashboardChoice)
 		$script:PaxDashboardSelectedAtStartup = $true
 		if (-not $Force) {
-			Microsoft.PowerShell.Utility\Write-Host ("INFO: Selected dashboard {0} for rollup exports." -f $paxDashboardChoice) -ForegroundColor Cyan
+			Microsoft.PowerShell.Utility\Write-Host ("INFO: Selected {0} {1} for rollup exports." -f $(if (@($paxDashboardChoice).Count -gt 1) { 'dashboards' } else { 'dashboard' }), (@($paxDashboardChoice) -join ', ')) -ForegroundColor Cyan
 		}
 	}
 }
@@ -8809,7 +8929,7 @@ $m365UsageActivityBundle = @(
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
 $ScriptVersion = '2.0.0'
 $ScriptReleaseType = 'Prerelease'
-$ScriptReleaseDate = '2026-10-04-09'
+$ScriptReleaseDate = '2026-10-21-11'
 
 function Invoke-PaxVersionCheck {
 	# Informational, non-blocking, failure-isolated version check against the public PAX repo.
@@ -11923,6 +12043,39 @@ if ($Rollup -or $RollupPlusRaw) {
 	}
 }
 
+# PAX-COPILOT-ACCESS-GROUPS-GUARD-BEGIN
+# -CopilotAccessGroups narrows the directory hasLicense column to licensed users who are also
+# members of the named Entra group(s). Validated here, after every -IncludeUserInfo auto-enable
+# (-OnlyUserInfo, -UserInfoFile, -UserInfoSupplement, -AppendUserInfo, -Dashboard) and before
+# authentication, so an unusable request stops before any work. -Resume restores the value from
+# the checkpoint instead and is validated by the resume parameter gate.
+if ($PSBoundParameters.ContainsKey('CopilotAccessGroups') -and -not $ResumeSpecified) {
+	$paxAccessSeen = New-Object System.Collections.Generic.HashSet[string] ([System.StringComparer]::OrdinalIgnoreCase)
+	$CopilotAccessGroups = @(foreach ($paxAccessName in @($CopilotAccessGroups)) {
+		$paxAccessTrimmed = ([string]$paxAccessName).Trim()
+		if ($paxAccessTrimmed -and $paxAccessSeen.Add($paxAccessTrimmed)) { $paxAccessTrimmed }
+	})
+	Remove-Variable -Name paxAccessSeen, paxAccessName, paxAccessTrimmed -ErrorAction SilentlyContinue
+	if ($CopilotAccessGroups.Count -eq 0) {
+		Write-Host "ERROR: -CopilotAccessGroups was supplied but contains no group names." -ForegroundColor Red
+		Write-Host '  Example: -CopilotAccessGroups "Copilot Access - Wave 1","Copilot Access - Wave 2"' -ForegroundColor Yellow
+		exit 1
+	}
+	if ($UseEOM) {
+		Write-Host "ERROR: -CopilotAccessGroups requires Graph API mode and is not supported with -UseEOM." -ForegroundColor Red
+		Write-Host "  It adjusts the Entra users output, which -UseEOM does not produce." -ForegroundColor Yellow
+		exit 1
+	}
+	if (-not $IncludeUserInfo) {
+		Write-Host "ERROR: -CopilotAccessGroups needs the Entra users output, which this run does not produce." -ForegroundColor Red
+		Write-Host "  It sets the hasLicense column of that output from Copilot licensing AND group membership." -ForegroundColor Yellow
+		Write-Host "  Add -IncludeUserInfo, -OnlyUserInfo, -AppendUserInfo, or a -Dashboard that collects users (AIO, ValueLens, CoworkAdoption)." -ForegroundColor Yellow
+		exit 1
+	}
+	$PSBoundParameters['CopilotAccessGroups'] = $CopilotAccessGroups
+}
+# PAX-COPILOT-ACCESS-GROUPS-GUARD-END
+
 # ============================================================================
 # PURVIEW SOURCE-STATE RESOLUTION AND BRING-YOUR-OWN-DATA DECISION GATE
 # ============================================================================
@@ -12458,7 +12611,7 @@ if (($IncludeAgent365Info -or $OnlyAgent365Info)) {
 # Agent 365 + app-only auth (AppRegistration certificate, AppRegistration client secret,
 # ManagedIdentity): The Microsoft Graph Agent Package
 # Management API exposes an APPLICATION permission (CopilotPackages.Read.All app-role; plus
-# Application.Read.All for developer-name resolution) per Microsoft Learn "List Copilot packages"
+# optional Application.Read.All / User.Read.All for creator resolution) per Microsoft Learn "List Copilot packages"
 # (https://learn.microsoft.com/en-us/microsoft-agent-365/admin/graph-api). The app-only token
 # already carries these app-roles when they are granted + admin-consented on the app / managed-
 # identity service principal, so the Agent 365 phase runs on the EXISTING application context
@@ -12688,8 +12841,10 @@ if ($UserHistory -eq 'On' -and -not $Resume) {
 		Write-Host "ERROR: -UserHistory On cannot append historical Fact data without the paired -AppendUserInfo history target." -ForegroundColor Red
 		exit 1
 	}
-	# The M365 rollup builds no Users dimension, so it has nowhere to record history.
-	if ($script:RollupProcessorMode -eq 'M365Bundle') {
+	# The M365 rollup builds no Users dimension, so it has nowhere to record history. Refuse only
+	# an M365-only run: in a multi-dashboard run every pass applies history to its own Users output,
+	# whichever dashboard is primary (M365 is primary whenever AIO is not requested).
+	if (-not $script:PaxMultiDashboardEnabled -and $script:RollupProcessorMode -eq 'M365Bundle') {
 		Write-Host "ERROR: -UserHistory On is not available for the M365 usage rollup." -ForegroundColor Red
 		Write-Host "  The M365 rollup does not build a Users table, so there is no user history for it to record." -ForegroundColor Yellow
 		Write-Host "  Drop -UserHistory, or run the Copilot interaction rollup instead (-Dashboard AIO or -Dashboard ValueLens)." -ForegroundColor Yellow
@@ -12727,11 +12882,28 @@ if ($fillerLabelBound) {
 		Write-Host "  -FillerLabel only affects the rolled-up AI-in-One / ValueLens Users output." -ForegroundColor Yellow
 		exit 1
 	}
-	if ($script:RollupProcessorMode -eq 'M365Bundle') {
+	# PAX-FILLERLABEL-MULTI-DASHBOARD-BEGIN
+	# A single-dashboard M365 run has no org hierarchy, so -FillerLabel is refused there.
+	# In a multi-dashboard run that includes M365, -FillerLabel is accepted and applies only to
+	# the AI-in-One / ValueLens passes; the M365 pass never receives it. The decision uses the
+	# requested dashboard set, not $script:RollupProcessorMode, because a multi-dashboard run
+	# takes its mode from the first canonical dashboard (M365 precedes ValueLens/CoworkAdoption).
+	if (-not $script:PaxMultiDashboardEnabled -and $script:RollupProcessorMode -eq 'M365Bundle') {
 		Write-Host "ERROR: -FillerLabel is not valid with the M365 dashboard (-IncludeM365Usage / -Dashboard M365)." -ForegroundColor Red
 		Write-Host "  The org / manager hierarchy is produced only for the AI-in-One and ValueLens dashboards." -ForegroundColor Yellow
 		exit 1
 	}
+	if ($script:PaxMultiDashboardEnabled -and @($script:PaxRequestedDashboards) -contains 'M365') {
+		$paxFillerUsers = @(@($script:PaxRequestedDashboards) | Where-Object { $_ -in @('AIO', 'ValueLens') })
+		if ($paxFillerUsers.Count -gt 0) {
+			Write-Host ("INFO: -FillerLabel applies to the {0} Users output; it is ignored for the M365 dashboard in this run." -f (($paxFillerUsers | ForEach-Object { if ($_ -eq 'AIO') { 'AI-in-One' } else { $_ } }) -join ' and ')) -ForegroundColor Cyan
+		}
+		else {
+			Write-Host "INFO: -FillerLabel is ignored in this run: it applies only to the AI-in-One and ValueLens Users output, and neither dashboard is selected." -ForegroundColor Cyan
+		}
+		Remove-Variable -Name paxFillerUsers -ErrorAction SilentlyContinue
+	}
+	# PAX-FILLERLABEL-MULTI-DASHBOARD-END
 	$fillMode = ([string]$FillerLabel).Trim()
 	switch ($fillMode.ToLowerInvariant()) {
 		'null'          { $script:HierarchyFillMode = 'none' }
@@ -13816,7 +13988,19 @@ def main():
         return
     counts = produce(args.purview, args.entra, args.out_dir, args.history_purview, args.history_users, args.seed_userkey_map, args.seed_mid_map, args.seed_thread_map, args.deidentify, args.licensing)
     if not args.quiet:
-        print(json.dumps(counts), flush=True)
+        entities = counts.get("entities") or {}
+        print(f"  Input records: {counts.get('read', 0):,}", flush=True)
+        if counts.get("cowork", 0):
+            print(f"    Cowork records loaded: {counts.get('cowork', 0):,}", flush=True)
+        else:
+            print("    Cowork records loaded: 0 (no Cowork activity in this period; the other records feed other dashboards)", flush=True)
+        if counts.get("duplicates", 0):
+            print(f"    Repeat copies of Cowork records already loaded (kept once): {counts.get('duplicates', 0):,}", flush=True)
+        if counts.get("excluded_security_copilot", 0):
+            print(f"    Security Copilot records (not part of this dashboard): {counts.get('excluded_security_copilot', 0):,}", flush=True)
+        print(f"  Conversations updated: {counts.get('touched_threads', 0):,}; user-days updated: {counts.get('touched_userdays', 0):,}", flush=True)
+        if entities:
+            print("  Tables written: " + ", ".join(f"{name} {count:,} rows" for name, count in sorted(entities.items())), flush=True)
 
 
 if __name__ == "__main__":
@@ -16806,6 +16990,13 @@ def _select_rollup_path(input_path, profile, quiet):
     print(f"[PAX-ROLLUP-PATH] path={selected} input_bytes={input_bytes} "
           f"predicted_bytes={predicted} budget_bytes={budget} reason={reason}",
           file=sys.stderr if quiet else sys.stdout, flush=True)
+    if not quiet:
+        gib = 1024 ** 3
+        if selected == "bounded":
+            print(f"  Processing path: disk-backed, to stay within memory (estimated {predicted / gib:,.1f} GB "
+                  f"needed in memory vs {budget / gib:,.1f} GB available). Results are the same either way.", flush=True)
+        else:
+            print(f"  Processing path: in memory (estimated {predicted / gib:,.1f} GB of {budget / gib:,.1f} GB available).", flush=True)
     return selected
 
 
@@ -17632,6 +17823,9 @@ def run_processor(
         "input_records": 0,
         "skipped_non_copilot": 0,
         "excluded_security_copilot": 0,
+        "no_user_prompt": 0,
+        "non_person_identity": 0,
+        "no_rows_other": 0,
         "output_rows": 0,
         "errors": 0,
         "reject_manifest_path": None,
@@ -17758,6 +17952,19 @@ def run_processor(
                     )
                     continue
 
+                if not rows:
+                    # Account for every Copilot record that yields no prompt row, so the summary
+                    # lines add up to the input instead of leaving an unexplained gap.
+                    no_row_ced = audit_data.get("CopilotEventData")
+                    if not isinstance(no_row_ced, dict) or not prompt_messages(no_row_ced):
+                        stats["no_user_prompt"] += 1
+                    elif not _is_human_upn(to_text(audit_data.get("UserId"))):
+                        stats["non_person_identity"] += 1
+                    else:
+                        stats["no_rows_other"] += 1
+                    continue
+
+                stats["records_with_prompts"] = stats.get("records_with_prompts", 0) + 1
                 for grain_key, message_id_str, nongrain, in_entra, audit_user_norm in rows:
                     stats["output_rows"] += 1
                     if not in_entra and audit_user_norm:
@@ -17773,11 +17980,23 @@ def run_processor(
             stats["reject_manifest_path"] = reject_manifest.path
 
         if not quiet:
+            with_prompts = stats.get("records_with_prompts", 0)
             print(f"  Input records:         {stats['input_records']:,}")
-            print(f"  Skipped (non-Copilot): {stats['skipped_non_copilot']:,}")
-            print(f"  Excluded Security Copilot: {stats['excluded_security_copilot']:,}")
-            print(f"  Raw prompt rows:       {stats['output_rows']:,}")
-            print(f"  Errors:                {stats['errors']:,}")
+            print(f"    Other Microsoft 365 activity (not Copilot prompts; used by other dashboards): {stats['skipped_non_copilot']:,}")
+            print(f"    Security Copilot (not part of this dashboard): {stats['excluded_security_copilot']:,}")
+            print(f"    Copilot records without a user prompt (for example agent runs in Teams; not counted as prompts): {stats['no_user_prompt']:,}")
+            if stats["non_person_identity"]:
+                print(f"    Copilot records from service or non-person accounts: {stats['non_person_identity']:,}")
+            if stats["no_rows_other"]:
+                print(f"    Copilot records with prompts that produced no row: {stats['no_rows_other']:,}")
+            print(f"    Copilot records with user prompts: {with_prompts:,}  ({stats['output_rows']:,} prompt rows)")
+            print(f"    Unreadable records: {stats['errors']:,}")
+            accounted = (stats["skipped_non_copilot"] + stats["excluded_security_copilot"] + stats["no_user_prompt"]
+                         + stats["non_person_identity"] + stats["no_rows_other"] + with_prompts + stats["errors"])
+            if accounted == stats["input_records"]:
+                print(f"  All {stats['input_records']:,} input records are accounted for above.")
+            else:
+                print(f"  WARNING: {stats['input_records'] - accounted:,} input record(s) are not accounted for above.")
             if reject_manifest.count > 0:
                 print(f"  Reject manifest:       {reject_manifest.path}")
             print()
@@ -17832,8 +18051,7 @@ def run_processor(
             compute_and_write_aggregates(rollup, agg_paths, quiet=quiet)
         elapsed = time.perf_counter() - start_time
         if not quiet:
-            reduction_pct = (1 - len(rollup) / stats["output_rows"]) * 100 if stats["output_rows"] else 0
-            print(f"  Rollup rows:           {len(rollup):,}  ({reduction_pct:.1f}% reduction)")
+            print(f"  Dashboard rows:        {len(rollup):,}  ({stats['output_rows']:,} prompt rows combined where they share the same attributes; nothing removed)")
             print(f"  Distinct Message_Ids this run:  {stats['current_run_distinct_message_ids']:,}")
             print(f"  Distinct ThreadIds this run:    {stats['current_run_distinct_thread_ids']:,}")
             print(f"  Reserved Message_Id mappings:   {stats['reserved_message_id_mappings']:,}")
@@ -17841,7 +18059,10 @@ def run_processor(
             fact_user_count = rollup.distinct_count(lambda k, a: k[0][0])
             print(f"  Users in dimension:        {len(user_key_map):,}")
             print(f"  Users represented in fact: {fact_user_count:,}")
-            print(f"  Unmatched users:       {stats['unmatched_users']:,}")
+            if stats["unmatched_users"]:
+                print(f"  People not in the Entra export: {stats['unmatched_users']:,}  (each gets a Users row with license Unknown; their activity is kept)")
+            else:
+                print("  People not in the Entra export: 0")
             print(f"  Elapsed:               {elapsed:.2f}s")
 
         return stats
@@ -20014,6 +20235,9 @@ def run_rollup(
         # and deliberately kept out of the exit decision.
         "empty_auditdata_records": 0,
         "excluded_security_copilot": 0,
+        "non_person_records": 0,
+        "prompt_filtered_records": 0,
+        "processed_records": 0,
         "reject_manifest_path": None,
         "session_rows": 0,
         "session_threads": 0,
@@ -20087,7 +20311,13 @@ def run_rollup(
                 # Extract rollup keys (lightweight — no row dict built)
                 result = _extract_rollup_keys(record, audit_data, ced, prompt_filter)
                 if result is None:
-                    continue  # filtered out by prompt_filter or non-human UPN
+                    # Filtered by the prompt filter or a non-person identity; counted, not dropped silently.
+                    if _is_human_upn(_norm_key_str(safe_get(audit_data, "UserId") or record.get("UserId", ""))):
+                        stats["prompt_filtered_records"] += 1
+                    else:
+                        stats["non_person_records"] += 1
+                    continue
+                stats["processed_records"] += 1
 
                 (group_key, event_count, items_accessed_count,
                  creation_time, original_uid, is_agent) = result
@@ -20212,15 +20442,25 @@ def run_rollup(
         print()
         print("=== ROLLUP SUMMARY ===")
         print(f"  Input records:              {stats['input_records']:>14,}")
-        print(f"  Excluded Security Copilot:  {stats['excluded_security_copilot']:>14,}")
-        print(f"  Virtual exploded events:    {stats['virtual_exploded_event_count']:>14,}")
-        print(f"  Rollup output rows:         {stats['output_rows']:>14,}")
-        print(f"  Row reduction:              {pct:>13.1f}%"
-              f"  ({stats['virtual_exploded_event_count']:,} -> {stats['output_rows']:,})")
+        print(f"    Security Copilot (not part of this dashboard): {stats['excluded_security_copilot']:,}")
+        print(f"    Service or non-person accounts (not counted as people): {stats['non_person_records']:,}")
+        if stats["prompt_filtered_records"] > 0:
+            print(f"    Excluded by the prompt filter: {stats['prompt_filtered_records']:,}")
         if stats["empty_auditdata_records"] > 0:
-            print(f"  Records with no AuditData:  {stats['empty_auditdata_records']:>14,}")
+            print(f"    Records with no AuditData:  {stats['empty_auditdata_records']:,}")
         if stats["rejected_records"] > 0:
-            print(f"  Rejected records:           {stats['rejected_records']:>14,}")
+            print(f"    Unreadable records:         {stats['rejected_records']:,}")
+        print(f"    Records processed:          {stats['processed_records']:,}")
+        accounted = (stats["excluded_security_copilot"] + stats["non_person_records"] + stats["prompt_filtered_records"]
+                     + stats["empty_auditdata_records"] + stats["rejected_records"] + stats["processed_records"])
+        if accounted == stats["input_records"]:
+            print(f"  All {stats['input_records']:,} input records are accounted for above.")
+        else:
+            print(f"  WARNING: {stats['input_records'] - accounted:,} input record(s) are not accounted for above.")
+        print(f"  Activity events counted:    {stats['virtual_exploded_event_count']:>14,}")
+        print(f"  Dashboard rows:             {stats['output_rows']:>14,}"
+              f"  ({stats['virtual_exploded_event_count']:,} events combined by user, day and activity; nothing removed)")
+        if stats["rejected_records"] > 0:
             print(f"  Reject manifest:            {stats['reject_manifest_path']}")
         print(f"  Columns:                    {len(ROLLUP_HEADER):>14}")
         print(f"  Elapsed:                    {t_elapsed:>13.2f}s")
@@ -21328,6 +21568,12 @@ ADVANCED
     os.makedirs(output_dir, exist_ok=True)
 
     run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # When PAX names the input after this run (its stem already ends in the run timestamp),
+    # reuse that timestamp instead of adding a second one: <base>_Rollup_<run timestamp>.csv.
+    run_stamp_env = os.environ.get("PAX_RUN_TIMESTAMP", "")
+    stem_stamp = re.match(r"^(.+)_(\d{8}_\d{6})$", stem)
+    if stem_stamp and run_stamp_env and stem_stamp.group(2) == run_stamp_env:
+        stem, run_ts = stem_stamp.group(1), stem_stamp.group(2)
     event_level = args.debug_events
 
     if not event_level:
@@ -30064,12 +30310,16 @@ function script:Test-PaxM365OutputManifest {
 		return (& $fail ("manifest output leaf '{0}' does not carry a run timestamp" -f $stampedLeaf))
 	}
 	$runStamp = $stampMatch.Groups[1].Value
+	# A run-named input keeps one timestamp: <base>_<type>_<run timestamp>.csv, where the
+	# input stem was <base>_<run timestamp>. Older outputs carry the input stem in full.
+	$expectedBase = $ExpectedStem
+	if ($ExpectedStem -match ('^(?<base>.+)_' + [regex]::Escape($runStamp) + '$')) { $expectedBase = $Matches.base }
 
 	for ($i = 0; $i -lt $outputs.Count; $i++) {
 		$e = $outputs[$i]
 		$type = [string]$e.type
 		$declaredPath = [string]$e.path
-		$expectedPath = Join-Path $ExpectedOutputDir ("{0}_{1}_{2}.csv" -f $ExpectedStem, $type, $runStamp)
+		$expectedPath = Join-Path $ExpectedOutputDir ("{0}_{1}_{2}.csv" -f $expectedBase, $type, $runStamp)
 
 		if (-not [System.IO.Path]::IsPathRooted($declaredPath)) {
 			return (& $fail ("{0}: manifest path '{1}' is not absolute" -f $type, $declaredPath))
@@ -33404,6 +33654,7 @@ function script:Invoke-PaxResumableUpload {
 	$offset = [long]0
 	$chunkCount = 0
 	$retryTotal = 0
+	$retryReasons = [ordered]@{}
 	$sessionRestarts = 0
 	$completed = $false
 	$outageStart = $null
@@ -33587,6 +33838,8 @@ function script:Invoke-PaxResumableUpload {
 			}
 
 			$retryTotal++
+			$retryReasonKey = if ($status -eq 0) { 'connection dropped' } else { 'HTTP ' + $status }
+			$retryReasons[$retryReasonKey] = 1 + [int]$retryReasons[$retryReasonKey]
 			$attemptSinceProgress++
 			$wait = if ($retryAfter -gt 0) { $retryAfter } else { [double][Math]::Min(60, [Math]::Pow(2, [Math]::Min($attemptSinceProgress, 6))) }
 			& $delayOp $wait
@@ -33661,7 +33914,8 @@ function script:Invoke-PaxResumableUpload {
 	if (-not $completed) { throw 'Resumable upload ended without a verified completion.' }
 	$completedItemId = ''
 	try { $completedItemId = [string]$completedItem.id } catch { $completedItemId = '' }
-	return [PSCustomObject]@{ Completed = $true; BytesSent = $offset; ChunkCount = $chunkCount; RetryCount = $retryTotal; SessionRestarts = $sessionRestarts; CompletedItemId = $completedItemId }
+	$retryReasonText = (@($retryReasons.Keys | ForEach-Object { '{0} x{1}' -f $_, $retryReasons[$_] }) -join ', ')
+	return [PSCustomObject]@{ Completed = $true; BytesSent = $offset; ChunkCount = $chunkCount; RetryCount = $retryTotal; RetryReasons = $retryReasonText; SessionRestarts = $sessionRestarts; CompletedItemId = $completedItemId }
 }
 
 function Send-FileToSharePoint {
@@ -33780,8 +34034,12 @@ function Send-FileToSharePoint {
 		if ($uploadResult.SessionRestarts -gt 0) {
 			Write-LogHost ("    upload session was recreated {0:N0} time(s) during recovery." -f $uploadResult.SessionRestarts) -ForegroundColor DarkGray
 		}
+		if ([int]$uploadResult.RetryCount -gt 0) {
+			$retryWhy = if ($uploadResult.RetryReasons) { " ($($uploadResult.RetryReasons))" } else { '' }
+			Write-LogHost ("    {0:N0} chunk send(s) hit a temporary error{1} and were resent from the point SharePoint confirmed; the complete file was received." -f [int]$uploadResult.RetryCount, $retryWhy) -ForegroundColor DarkGray
+		}
 	}
-	Write-LogHost ("  -> SharePoint upload OK: {0} ({1:N2} MB)" -f $relPath, $sizeMb) -ForegroundColor DarkGray
+	Write-LogHost ("  -> SharePoint upload OK: {0} ({1})" -f $relPath, $(if ($fileInfo.Length -lt 1KB) { '{0:N0} bytes' -f $fileInfo.Length } elseif ($fileInfo.Length -lt 1MB) { '{0:N1} KB' -f ($fileInfo.Length / 1KB) } elseif ($fileInfo.Length -lt 1GB) { '{0:N2} MB' -f ($fileInfo.Length / 1MB) } else { '{0:N2} GB' -f ($fileInfo.Length / 1GB) })) -ForegroundColor DarkGray
 }
 
 function Send-FileToOneLake {
@@ -33955,7 +34213,7 @@ function Send-FileToOneLake {
 	$flushUri = "$dfsPath`?action=flush&position=$($fileInfo.Length)"
 	$null = Invoke-FabricWebRequest -Uri $flushUri -Method PATCH
 
-	Write-LogHost ("  -> OneLake upload OK: {0} ({1:N2} MB)" -f $relInItem, $sizeMb) -ForegroundColor DarkGray
+	Write-LogHost ("  -> OneLake upload OK: {0} ({1})" -f $relInItem, $(if ($fileInfo.Length -lt 1KB) { '{0:N0} bytes' -f $fileInfo.Length } elseif ($fileInfo.Length -lt 1MB) { '{0:N1} KB' -f ($fileInfo.Length / 1KB) } elseif ($fileInfo.Length -lt 1GB) { '{0:N2} MB' -f ($fileInfo.Length / 1MB) } else { '{0:N2} GB' -f ($fileInfo.Length / 1GB) })) -ForegroundColor DarkGray
 	}
 	catch {
 		$originalFailure = $_
@@ -36897,11 +37155,20 @@ function script:Get-PaxMultiDashboardAppendFamily {
 			elseif ($DashboardName -ne 'M365' -and -not $stem.EndsWith('_Users', [StringComparison]::OrdinalIgnoreCase)) {
 				[void]$families.Add(@{ Users = $stem + '_Users.csv' })
 			}
+			if ($DashboardName -eq 'M365') {
+				# Current naming prefixes the M365 folder copy of the raw Users export with M365_.
+				$m365RawUsersStem = if ($stem.EndsWith('_Users', [StringComparison]::OrdinalIgnoreCase)) { $stem.Substring(0, $stem.Length - 6) } else { $stem }
+				if (-not $m365RawUsersStem.StartsWith('M365_', [StringComparison]::OrdinalIgnoreCase)) { [void]$families.Add(@{ Users = 'M365_' + $m365RawUsersStem + '.csv' }) }
+			}
 		}
 	}
 	elseif ($DashboardName -ne 'M365') {
 		[void]$families.Add(@{ Fact = $SelectorLeaf })
-		if ($stem -match '^(?<base>.+)_Rollup_\d{8}_\d{6}$') { [void]$families.Add(@{ Fact = $Matches.base + '_Interactions.csv' }) }
+		if ($stem -match '^(?<base>.+)_Rollup_(?<stamp>\d{8}_\d{6})$') {
+			[void]$families.Add(@{ Fact = $Matches.base + '_Interactions.csv' })
+			# Current single-timestamp M365 naming: <base>_Rollup_<stamp> pairs with <base>_<stamp>_Interactions.
+			[void]$families.Add(@{ Fact = $Matches.base + '_' + $Matches.stamp + '_Interactions.csv' })
+		}
 	}
 	else {
 		# Explicit X.csv always owns X_UserStats.csv, even when X itself ends in _Rollup.
@@ -36912,6 +37179,17 @@ function script:Get-PaxMultiDashboardAppendFamily {
 			$nativeBase = [string]$Matches.base
 			$nativePattern = '^' + [regex]::Escape($Matches.base) + '_Rollup_\d{8}_\d{6}\.csv$'
 			$nativePrimaries = @($AvailableLeaves | Where-Object { $_ -match $nativePattern })
+			# Current naming keeps one timestamp: an Interactions stem <base>_<stamp> pairs with
+			# <base>_Rollup_<stamp>.csv. The older <base>_<stamp>_Rollup_<stamp2>.csv shape above still resolves.
+			if ($nativeBase -match '^(?<plain>.+)_(?<own>\d{8}_\d{6})$') {
+				$singleStampPrimary = $Matches.plain + '_Rollup_' + $Matches.own + '.csv'
+				$nativePrimaries += @($AvailableLeaves | Where-Object { $_ -ieq $singleStampPrimary })
+				if ($Inspect) {
+					$singleSatellitePattern = '^' + [regex]::Escape($Matches.plain) + '_(UserStats|SessionCohort|SessionStats)_' + [regex]::Escape($Matches.own) + '\.csv$'
+					if (@($AvailableLeaves | Where-Object { $_ -match $singleSatellitePattern }).Count -gt 0) { $nativePrimaries += $singleStampPrimary }
+				}
+				$nativePrimaries = @($nativePrimaries | Select-Object -Unique)
+			}
 			if ($Inspect) {
 				# A native satellite without its primary is incomplete, not absent. Build the
 				# same family below; this inspection never selects an unobserved primary.
@@ -43235,6 +43513,64 @@ function Get-PartitionFailureCategory {
 	}
 }
 
+function Test-PaxNetworkMessageNew {
+	<#
+	.SYNOPSIS
+		Decides whether a worker [NETWORK] message is shown, and records retry outcomes per page.
+	.DESCRIPTION
+		Each page's retry start and recovery are shown once each, as they happen, so a recovery is
+		never hidden behind the start message. Repeated "Retry attempt" heartbeats are not shown.
+		Returns $true when the caller should display the message (console and log alike).
+	#>
+	param([string]$Message)
+	if ($null -eq $script:PaxNetworkRetryPages) { $script:PaxNetworkRetryPages = @{} }
+	if ($null -eq $script:PaxNetworkMessagesShown) { $script:PaxNetworkMessagesShown = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::Ordinal) }
+	$match = [regex]::Match([string]$Message, 'Partition (\d+)/(\d+)(?: Page (\d+))?', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+	if (-not $match.Success) { return $script:PaxNetworkMessagesShown.Add([string]$Message) }
+	$state = if ($Message -match 'Recovered after') { 'RECOVERED' }
+		elseif ($Message -match 'Retry attempt') { 'ATTEMPT' }
+		elseif ($Message -match 'Starting retry window') { 'START' }
+		else { 'OTHER:' + ($Message -replace '\d+(\.\d+)?\s*(s|m|min)\b', '#') }
+	$partitionKey = '{0}/{1}' -f $match.Groups[1].Value, $match.Groups[2].Value
+	if ($match.Groups[3].Success) {
+		$pageKey = '{0}|{1}' -f $partitionKey, $match.Groups[3].Value
+		if ($state -eq 'START' -and -not $script:PaxNetworkRetryPages.ContainsKey($pageKey)) { $script:PaxNetworkRetryPages[$pageKey] = 'Retrying' }
+		elseif ($state -eq 'RECOVERED') { $script:PaxNetworkRetryPages[$pageKey] = 'Recovered' }
+	}
+	if ($state -eq 'ATTEMPT') { return $false }
+	return $script:PaxNetworkMessagesShown.Add(('{0}|{1}|{2}' -f $partitionKey, $match.Groups[3].Value, $state))
+}
+
+function Write-PaxNetworkRetrySummary {
+	<#
+	.SYNOPSIS
+		One line stating what the transient page errors during collection meant for the data.
+	#>
+	param([hashtable]$PartitionStatus)
+	if ($null -eq $script:PaxNetworkRetryPages -or $script:PaxNetworkRetryPages.Count -eq 0) { return }
+	$pages = @($script:PaxNetworkRetryPages.Keys)
+	$unfinished = 0
+	foreach ($pageKey in $pages) {
+		$indexText = ($pageKey -split '/')[0]
+		$index = 0
+		[void][int]::TryParse($indexText, [ref]$index)
+		$status = $null
+		if ($PartitionStatus) {
+			if ($PartitionStatus.ContainsKey($index)) { $status = $PartitionStatus[$index] }
+			elseif ($PartitionStatus.ContainsKey($indexText)) { $status = $PartitionStatus[$indexText] }
+			else { $status = @($PartitionStatus.Values | Where-Object { $_.Partition -and [string]$_.Partition.Index -eq $indexText }) | Select-Object -First 1 }
+		}
+		if ($null -eq $status -or $status.Status -ne 'Complete') { $unfinished++ }
+	}
+	if ($unfinished -eq 0) {
+		Write-LogHost ("  Network: {0:N0} page request(s) hit temporary service errors (such as 504) and were retried; every affected partition completed, so no records were lost." -f $pages.Count) -ForegroundColor Green
+	}
+	else {
+		Write-LogHost ("  Network: {0:N0} page request(s) hit temporary service errors and were retried; {1:N0} of them belong to partition(s) that did not complete, listed below." -f $pages.Count, $unfinished) -ForegroundColor Yellow
+	}
+	$script:PaxNetworkRetryPages = @{}
+}
+
 function Set-PartitionFailure {
 	<#
 	.SYNOPSIS
@@ -43370,6 +43706,12 @@ $script:metrics = @{
 	FilteringExcludeAgents     = 0
 	FilteringUserIds           = 0
 	FilteringGroupNames        = 0
+	CopilotAccessGroups        = 0
+	CopilotAccessGroupMembers  = 0
+	CopilotAccessLicensedBefore = 0
+	CopilotAccessPermitted     = 0
+	CopilotAccessRevoked       = 0
+	CopilotAccessMembersWithoutLicense = 0
 	ScopeResolvedGroups        = 0
 	ScopeFailedGroups          = 0
 	ScopeExpandedMembers       = 0
@@ -43437,11 +43779,14 @@ $script:circuitBreakerOpenUntil = $null
 $script:HadTerminalFailures = $false
 $script:HadSubdivisionLimit = $false
 $script:AISIDHadGaps = $false
-# Set true when requested Agent 365 catalog output is incomplete: an incomplete catalog
-# listing, a package whose detail could not be retrieved, a row that could not be built, or
-# a listed entry without a usable identifier. Drives exit code 40 at the same lowest
-# precedence as the other completed-with-gaps signals.
+# Set true only when requested Agent 365 output could not be produced at all: the phase could
+# not start, the catalog could not be read, no agent row could be built, or the catalog write
+# failed. A partial catalog (an incomplete listing, missing detail, unbuilt rows) is published
+# and reported through Agent365Shortfall in the run summary without affecting the exit code.
+# Drives exit code 40 at the same lowest precedence as the other completed-with-gaps signals.
 $script:Agent365HadGaps = $false
+$script:Agent365Shortfall = $null
+$script:Agent365ListShortfall = $null
 # Set true only when a complete, reconciled catalog was actually written this run. An
 # Agent 365 run that produced no publish-ready catalog (an aborted phase as well as an
 # incomplete one) must leave the existing remote catalog exactly as it is, so this is what
@@ -45176,7 +45521,10 @@ function Invoke-PaxBoundedCreatePool {
 		[Parameter()][int]$MaxNetworkOutageMinutes = 30,
 		[Parameter()][int]$HeartbeatIntervalSeconds = 60,
 		[Parameter()][scriptblock]$NowProvider = $null,
-		[Parameter()][scriptblock]$HeartbeatEmit = $null
+		[Parameter()][scriptblock]$HeartbeatEmit = $null,
+		# Start the create job(s) and return their handles without waiting, for the
+		# just-in-time launch loops that collect each create as it finishes.
+		[Parameter()][switch]$NoWait
 	)
 	[void](Assert-PaxConcurrencyInvariant -Value $ThrottleLimit -Name 'create-pool ThrottleLimit')
 	# Injectable clock + emit sink for the create-pool progress heartbeat. Production uses the
@@ -45248,6 +45596,9 @@ function Invoke-PaxBoundedCreatePool {
 	foreach ($item in $Items) {
 		$poolJobs += Start-ThreadJob -ThrottleLimit $ThrottleLimit -ScriptBlock $poolWorker -ArgumentList $item, $FunctionTexts, $InjectVariables, $TransportText, $ListTransportText, $FetchTransportText, $MaxNetworkOutageMinutes, $phaseMap
 		$poolJobIndex += $item.Index
+	}
+	if ($NoWait) {
+		return [pscustomobject]@{ Jobs = $poolJobs; JobIndex = $poolJobIndex; PhaseMap = $phaseMap }
 	}
 	# Token monitoring during a prolonged create pass: while any create job is still
 	# running, invoke the token refresher periodically instead of blocking on a single
@@ -45366,7 +45717,8 @@ function Invoke-PaxParentQueryCreation {
 		[Parameter(Mandatory)][int]$ThrottleLimit,
 		[Parameter()]$Activities = @(),
 		[Parameter()][int]$MaxNetworkOutageMinutes = 30,
-		[Parameter()][scriptblock]$Runner = $null
+		[Parameter()][scriptblock]$Runner = $null,
+		[Parameter()][switch]$NoWait
 	)
 	$items = @()
 	foreach ($p in $Partitions) {
@@ -45382,7 +45734,7 @@ function Invoke-PaxParentQueryCreation {
 	}
 	if (-not $Runner) {
 		$Runner = {
-			param($RunnerItems, $RunnerThrottle, $RunnerOutage)
+			param($RunnerItems, $RunnerThrottle, $RunnerOutage, $RunnerNoWait)
 			$fnTexts = @(
 				"function New-GraphAuditQueryFingerprint {`n$(${function:New-GraphAuditQueryFingerprint})`n}",
 				"function New-GraphAuditPartitionDisplayName {`n$(${function:New-GraphAuditPartitionDisplayName})`n}",
@@ -45457,9 +45809,10 @@ try {
 			# outcome (including an interactive 'Quit' or a thrown error) is propagated so
 			# the pool can fail closed instead of discarding a quit decision.
 			$tokenRefresh = { Refresh-GraphTokenIfNeeded -BufferMinutes 5 }
-			Invoke-PaxBoundedCreatePool -Items $RunnerItems -ThrottleLimit $RunnerThrottle -TransportText $transportText -FunctionTexts $fnTexts -InjectVariables $vars -ListTransportText $listTransportText -FetchTransportText $fetchTransportText -TokenRefresh $tokenRefresh -MaxNetworkOutageMinutes $RunnerOutage
+			Invoke-PaxBoundedCreatePool -Items $RunnerItems -ThrottleLimit $RunnerThrottle -TransportText $transportText -FunctionTexts $fnTexts -InjectVariables $vars -ListTransportText $listTransportText -FetchTransportText $fetchTransportText -TokenRefresh $tokenRefresh -MaxNetworkOutageMinutes $RunnerOutage -NoWait:([bool]$RunnerNoWait)
 		}
 	}
+	if ($NoWait) { return (& $Runner $items $ThrottleLimit $MaxNetworkOutageMinutes $true) }
 	$results = @(& $Runner $items $ThrottleLimit $MaxNetworkOutageMinutes)
 	$map = @{}
 	foreach ($r in $results) {
@@ -45477,6 +45830,183 @@ try {
 		}
 	}
 	return $map
+}
+
+# Just-in-time create recovery settings: how long a dropped create request is confirmed against
+# Purview's search list, and how many times PAX requests an unconfirmed search again on its own.
+$script:PaxCreateConfirmMinutes = 5
+$script:PaxCreateAutoRetries = 3
+$script:PaxJitRecreateCounts = @{}
+
+function Start-PaxAsyncPartitionCreate {
+	<#
+	.SYNOPSIS
+		Starts ONE partition's audit-query creation in the background, just in time.
+	.DESCRIPTION
+		Purview runs at most 10 audit searches at once per account. The launch loops call
+		this only when a slot is free (running downloads + creates in progress + created
+		queries waiting to launch < the phase's worker bound), so PAX never holds more
+		Purview searches than it has download slots. It uses the existing parent-side create
+		pool unchanged (Invoke-PaxParentQueryCreation -NoWait): the same hardened create,
+		exact-name reconcile, never-re-POST and token rules. The launch loop never waits on
+		it, so a slow or unconfirmed create holds only its own slot while the other
+		partitions keep creating and downloading.
+	#>
+	param(
+		[Parameter(Mandatory)]$Partition,
+		[Parameter()]$Activities = @(),
+		[Parameter()][int]$MaxNetworkOutageMinutes = 30,
+		[Parameter(Mandatory)][ValidateSet('initial', 'retry')][string]$Phase,
+		# The phase's worker bound. ThreadJob's throttle is session-wide, so the create job
+		# uses the same bound as the download workers.
+		[Parameter(Mandatory)][int]$ThrottleLimit
+	)
+	$startRefresh = Refresh-GraphTokenIfNeeded -BufferMinutes 5
+	if ($startRefresh -is [string] -and $startRefresh -eq 'Quit') {
+		if ($script:CheckpointEnabled) { Save-Checkpoint -Force }
+		Show-CheckpointExitMessage
+		exit 0
+	}
+	$requested = New-Object System.Collections.Generic.List[object]
+	[void]$requested.Add($Partition)
+	# A dropped create request is confirmed against Purview's search list for a few minutes,
+	# not the full network-outage tolerance: a search Purview accepted is listed within seconds.
+	$createConfirmMinutes = [Math]::Min([Math]::Max(1, $MaxNetworkOutageMinutes), $script:PaxCreateConfirmMinutes)
+	$handle = Invoke-PaxParentQueryCreation -Partitions $requested.ToArray() -ThrottleLimit $ThrottleLimit -Activities $Activities -MaxNetworkOutageMinutes $createConfirmMinutes -NoWait
+	return [pscustomobject]@{
+		Partition  = $Partition
+		Job        = @($handle.Jobs)[0]
+		PhaseMap   = $handle.PhaseMap
+		Phase      = $Phase
+		Activities = $Activities
+		StartedAt  = Get-Date
+	}
+}
+
+function Receive-PaxAsyncPartitionCreate {
+	<#
+	.SYNOPSIS
+		Collects a finished background create the same way the create pool does.
+	#>
+	param([Parameter(Mandatory)]$Handle)
+	$row = $null
+	$job = $Handle.Job
+	if ($job) {
+		try { foreach ($o in @(Receive-Job -Job $job -ErrorAction SilentlyContinue)) { if ($null -ne $o -and $null -ne $o.Index) { $row = $o } } } catch {}
+		# R02 non-terminal: query creation, not partition harvest, so it observes without settling.
+		if ($null -ne $row -and $script:PaxStage2BRunActive) {
+			[void](script:Add-PaxStage2BObservation -SiteId 'R02' -PartitionKey ([string]$row.Index) -AttemptId 1)
+		}
+		try { Remove-Job -Job $job -Force -ErrorAction SilentlyContinue } catch {}
+	}
+	return $row
+}
+
+function Complete-PaxJitPartitionCreate {
+	<#
+	.SYNOPSIS
+		Records the outcome of one just-in-time create exactly as the create pass does.
+	.DESCRIPTION
+		A created query is stored and checkpointed QueryCreated before its worker launches.
+		An unconfirmed create is requested again automatically (the create's exact-name
+		pre-check adopts the earlier search if it did reach Purview). HTTP 429 throttling while this run's own downloads or creates are active
+		is back-pressure, not a partition failure: the partition is deferred to the next pass
+		and is NOT counted toward the consecutive-failure terminal limit. Any other failure,
+		or a 429 abort while nothing of this run is active, is recorded as a failure as before.
+	.OUTPUTS
+		'Created', 'Recreate', 'Deferred' or 'Failed'.
+	#>
+	param(
+		[Parameter(Mandatory)]$Partition,
+		[Parameter()]$Result = $null,
+		[Parameter()]$Activities = @(),
+		[Parameter(Mandatory)][ValidateSet('initial', 'retry')][string]$Phase,
+		[Parameter()][int]$OwnActiveJobs = 0,
+		[Parameter()]$CreatedIndexes = $null
+	)
+	$cp = $Partition
+	$cr = $Result
+	$workerWord = if ($Phase -eq 'retry') { 'retry worker' } else { 'worker' }
+	if ($cr -and $cr.QueryId) {
+		$cp | Add-Member -NotePropertyName 'StoredQueryId' -NotePropertyValue ([string]$cr.QueryId) -Force
+		if ($null -ne $CreatedIndexes) { [void]$CreatedIndexes.Add([int]$cp.Index) }
+		$script:partitionStatus[$cp.Index].QueryId = [string]$cr.QueryId
+		$script:partitionStatus[$cp.Index].QueryApiVersion = $cr.Version
+		$script:partitionStatus[$cp.Index].LifecycleOperation = 'Create'
+		if ($script:CheckpointEnabled) {
+			Save-Checkpoint -PartitionIndex $cp.Index -QueryId ([string]$cr.QueryId) -State 'QueryCreated' -LifecycleState $script:partitionStatus[$cp.Index]
+		}
+		Write-LogHost "  [PARENT-CREATE] Partition $($cp.Index)/$($cp.Total) query created just in time (QueryId: $($cr.QueryId))" -ForegroundColor DarkCyan
+		return 'Created'
+	}
+	$cat = if ($cr) { [string]$cr.FailureCategory } else { 'NotCreated' }
+	if ($cat -eq 'UncertainCreateUnresolved') {
+		# The create request dropped and the search was not listed in Purview within the
+		# confirmation window. Request it again automatically: every create first looks up the
+		# search by its exact name and adopts it if the earlier request did reach Purview, so
+		# the new request does not create a duplicate. After the automatic attempts the
+		# partition joins the normal retry passes.
+		$recreateCount = 1
+		if ($script:PaxJitRecreateCounts.ContainsKey([int]$cp.Index)) { $recreateCount = [int]$script:PaxJitRecreateCounts[[int]$cp.Index] + 1 }
+		$script:PaxJitRecreateCounts[[int]$cp.Index] = $recreateCount
+		if ($recreateCount -le $script:PaxCreateAutoRetries) {
+			$script:partitionStatus[$cp.Index].LastError = "Query creation not confirmed (category: $cat) - requested again automatically (attempt $recreateCount of $($script:PaxCreateAutoRetries))"
+			Write-LogHost "  [PARENT-CREATE] Partition $($cp.Index)/$($cp.Total) search request not confirmed by Purview (network interruption) - requesting it again automatically (attempt $recreateCount of $($script:PaxCreateAutoRetries)); PAX checks Purview for the earlier request first, so no duplicate is created" -ForegroundColor Yellow
+			return 'Recreate'
+		}
+		Set-PartitionFailure -Index $cp.Index -Stage 'CREATE' -Reason $cat
+		$script:partitionStatus[$cp.Index].LastError = "Query creation not confirmed after $($script:PaxCreateAutoRetries) automatic attempts (category: $cat)"
+		Write-LogHost "  [PARENT-CREATE] Partition $($cp.Index)/$($cp.Total) search request still not confirmed after $($script:PaxCreateAutoRetries) automatic attempts - queued for the retry pass" -ForegroundColor Yellow
+		return 'Failed'
+	}
+	$diag = "HTTP $($cr.HttpStatus) | client-request-id: $($cr.ClientRequestId) | request-id: $($cr.RequestId)"
+	if ($cat -eq 'ThrottleAbort' -and $OwnActiveJobs -gt 0) {
+		$script:partitionStatus[$cp.Index].LastError = "Query creation throttled by Purview while $OwnActiveJobs PAX download(s) or create(s) were active - deferred (category: $cat)"
+		Write-LogHost "  [PARENT-CREATE] Partition $($cp.Index)/$($cp.Total) creation throttled (category: $cat; $diag) while $OwnActiveJobs PAX download(s) or create(s) active - deferred to the next pass, not counted as a failure" -ForegroundColor Yellow
+		return 'Deferred'
+	}
+	Set-PartitionFailure -Index $cp.Index -Stage 'CREATE' -Reason $cat
+	$script:partitionStatus[$cp.Index].LastError = "Parent-side query creation failed (category: $cat)"
+	Write-LogHost "  [PARENT-CREATE] Partition $($cp.Index)/$($cp.Total) creation failed (category: $cat; $diag) - $workerWord not launched this pass" -ForegroundColor Yellow
+	if ($cr -and $cr.ResponseBody) { Write-LogHost "    Graph response: $($cr.ResponseBody)" -ForegroundColor DarkYellow }
+	return 'Failed'
+}
+
+function Save-PaxAsyncCreatesOnExit {
+	<#
+	.SYNOPSIS
+		On a checkpoint-and-exit while just-in-time creates are still in progress, persists
+		them exactly as the create pool does on an interrupt.
+	.DESCRIPTION
+		A created query is saved QueryCreated; a create whose POST may have been sent is saved
+		as durable uncertain (read-only reconcile on resume, never re-POSTed); a create that
+		never started is left for a fresh create. Delegates to Save-PaxInterruptedCreatePool.
+	#>
+	$inflight = $script:PaxAsyncCreatesInFlight
+	$script:PaxAsyncCreatesInFlight = $null
+	if (-not $inflight -or $inflight.Count -eq 0) { return }
+	foreach ($h in $inflight.ToArray()) {
+		$job = $h.Job
+		$row = $null
+		if ($job -and $job.State -in 'Running', 'NotStarted') {
+			try { Stop-Job -Job $job -ErrorAction SilentlyContinue } catch {}
+		} elseif ($job) {
+			try { foreach ($o in @(Receive-Job -Job $job -ErrorAction SilentlyContinue)) { if ($null -ne $o -and $null -ne $o.Index) { $row = $o } } } catch {}
+		}
+		if ($null -eq $row) {
+			$ph = $null
+			if ($h.PhaseMap -and $h.PhaseMap.ContainsKey($h.Partition.Index)) { $ph = [string]$h.PhaseMap[$h.Partition.Index] }
+			$exec = if ($ph -eq 'PostInFlight' -or $ph -eq 'PostReturned') { 'StartedOutcomeUnknown' } else { 'NeverStarted' }
+			$row = [pscustomobject]@{ Index = $h.Partition.Index; QueryId = $null; Version = $null; FailureCategory = 'Interrupted'; HttpStatus = $null; ExecutionState = $exec }
+		}
+		$exitMap = @{}
+		$exitMap[[int]$h.Partition.Index] = $row
+		$exitRequested = New-Object System.Collections.Generic.List[object]
+		[void]$exitRequested.Add($h.Partition)
+		Save-PaxInterruptedCreatePool -CreateMap $exitMap -Requested $exitRequested -Activities $h.Activities -Phase $h.Phase
+		if ($job) { try { Remove-Job -Job $job -Force -ErrorAction SilentlyContinue } catch {} }
+	}
+	if ($script:CheckpointEnabled) { Save-Checkpoint -Force }
 }
 
 function Save-PaxInterruptedCreatePool {
@@ -46585,6 +47115,10 @@ function Connect-PurviewAudit {
 		if ($GroupNames -and $GroupNames.Count -gt 0) {
 			if ($RequiredScopes -notcontains 'GroupMember.Read.All') { [void]$RequiredScopes.Add('GroupMember.Read.All') }
 		}
+		#   -CopilotAccessGroups (Graph API mode only): same group read as -GroupNames.
+		if ($CopilotAccessGroups -and @($CopilotAccessGroups).Count -gt 0) {
+			if ($RequiredScopes -notcontains 'GroupMember.Read.All') { [void]$RequiredScopes.Add('GroupMember.Read.All') }
+		}
 		# Microsoft Agent 365 enrichment scopes - DELEGATED auth modes only.
 		# Delegated modes (WebLogin / DeviceCode / Credential / Silent) request
 		# CopilotPackages.Read.All (+ Application.Read.All) as DELEGATED scopes here at sign-in.
@@ -46596,6 +47130,8 @@ function Connect-PurviewAudit {
 		if (($IncludeAgent365Info -or $OnlyAgent365Info) -and $AuthMethod -notin @('AppRegistration','ManagedIdentity')) {
 			if ($RequiredScopes -notcontains 'CopilotPackages.Read.All') { [void]$RequiredScopes.Add('CopilotPackages.Read.All') }
 			if ($RequiredScopes -notcontains 'Application.Read.All')    { [void]$RequiredScopes.Add('Application.Read.All') }
+			# Agent 365 'Created by' resolves the catalog owner to a user principal name.
+			if ($RequiredScopes -notcontains 'User.Read.All')           { [void]$RequiredScopes.Add('User.Read.All') }
 		}
 		# AISID (Defender / AI Solutions) hunting scope - DELEGATED auth modes only.
 		# -Dashboard AISID pulls Defender data via the Graph advanced-hunting endpoint
@@ -47550,6 +48086,7 @@ function Initialize-CheckpointForNewRun {
 			serviceTypes = if ($AllParameters.ServiceTypes) { @($AllParameters.ServiceTypes) } else { @() }
 			userIds = if ($AllParameters.UserIds) { @($AllParameters.UserIds) } else { @() }
 			groupNames = if ($AllParameters.GroupNames) { @($AllParameters.GroupNames) } else { @() }
+			copilotAccessGroups = if ($AllParameters.CopilotAccessGroups) { @($AllParameters.CopilotAccessGroups) } else { @() }
 			
 			# Agent filtering
 			agentId = if ($AllParameters.AgentId) { @($AllParameters.AgentId) } else { @() }
@@ -51363,7 +51900,7 @@ function Merge-IncrementalSaves-Streaming {
 	Write-LogHost "  [MERGE-STREAM]   Time: $([Math]::Round($totalElapsed.TotalSeconds, 1))s | Rate: $finalRate rec/sec" -ForegroundColor DarkGray
 	if ($duplicatesSkipped -gt 0 -or $script:StreamingMergeDuplicatesSkipped -gt 0) {
 		$totalDupes = $duplicatesSkipped + $script:StreamingMergeDuplicatesSkipped
-		Write-LogHost "  [MERGE-STREAM]   Duplicates skipped: $totalDupes" -ForegroundColor DarkGray
+		Write-LogHost "  [MERGE-STREAM]   Repeat copies skipped: $totalDupes (the same audit record returned more than once; each record is kept once)" -ForegroundColor DarkGray
 	}
 	
 	# Clear the HashSet to free memory
@@ -51380,6 +51917,7 @@ function Show-CheckpointExitMessage {
 		Displays checkpoint save confirmation and resume instructions.
 	#>
 	
+	if ($script:PaxAsyncCreatesInFlight -and $script:PaxAsyncCreatesInFlight.Count -gt 0) { Save-PaxAsyncCreatesOnExit }
 	if (-not $script:CheckpointData -or -not $script:CheckpointPath) {
 		return
 	}
@@ -53074,7 +53612,7 @@ function Test-Agent365AppOnlyRoles {
 	.SYNOPSIS
 		Whether the active app-only token carries the application role the Agent 365
 		catalog read requires, and separately whether it carries the optional
-		developer/owner enrichment permission.
+		creator enrichment permission.
 	.DESCRIPTION
 		CopilotPackages.Read.All is what reading the catalog requires. Application.Read.All
 		only enriches rows with developer and owner names; its absence is reported on its
@@ -53131,7 +53669,7 @@ function Get-Agent365ForbiddenGuidance {
 		[void]$a365Lines.Add(('Microsoft Graph {0} both returned HTTP 403. Verify the CopilotPackages.Read.All permission on the caller and this tenant''s documented Microsoft Agent 365 license and service access.' -f $a365Versions))
 	}
 	if ($a365RoleEvaluated -and -not $RoleStatus.EnrichmentRolePresent) {
-		[void]$a365Lines.Add('Application.Read.All is optional and only adds developer and owner names to catalog rows. It is not required to read the catalog and is not the reason this read did not succeed.')
+		[void]$a365Lines.Add('Application.Read.All is optional and only adds the creator of custom agents (the owner of the agent''s app) to catalog rows. It is not required to read the catalog and is not the reason this read did not succeed.')
 	}
 	return [PSCustomObject]@{
 		Lines                   = $a365Lines.ToArray()
@@ -53206,7 +53744,7 @@ function Connect-Agent365InteractiveContext {
 		App-only auth modes (AppRegistration certificate, AppRegistration client secret,
 		ManagedIdentity) reuse the EXISTING application Graph context. The app-only token must
 		already carry the APPLICATION app-role CopilotPackages.Read.All (plus Application.Read.All
-		for developer-name resolution via /applications), granted and admin-consented on the app
+		for creator resolution via app owners), granted and admin-consented on the app
 		registration / managed-identity service principal. NO interactive sign-in and NO
 		Connect-MgGraph -Scopes call is performed - the catalog GET runs directly on the active
 		app-only context. Idempotent: safe to call multiple times.
@@ -53222,7 +53760,8 @@ function Connect-Agent365InteractiveContext {
 	Write-LogHost ("  Reusing the existing app-only Graph context ({0})." -f $appOnlyLabel) -ForegroundColor Gray
 	Write-LogHost "  Required APPLICATION permissions (granted + admin-consented on the SP):" -ForegroundColor White
 	Write-LogHost "    [App-only] CopilotPackages.Read.All   (read /copilot/admin/catalog/packages)" -ForegroundColor Yellow
-	Write-LogHost "    [App-only] Application.Read.All        (optional: developer/owner names via /applications)" -ForegroundColor Yellow
+	Write-LogHost "    [App-only] Application.Read.All        (optional: Created by for in-house agents via app owners)" -ForegroundColor Yellow
+	Write-LogHost "    [App-only] User.Read.All               (optional: Created by via the catalog owner)" -ForegroundColor Yellow
 	Write-LogHost "  Note: the catalog API is documented on Microsoft Graph v1.0 and beta; v1.0 is" -ForegroundColor Gray
 	Write-LogHost "        tried first and beta is the single compatibility fallback." -ForegroundColor Gray
 	Write-LogHost ""
@@ -53337,12 +53876,12 @@ function Get-Agent365Packages {
 		The walk follows every @odata.nextLink the service supplies and ends only when
 		the service stops supplying one. There is no page, package, or row cap.
 
-		Completeness fails closed. A repeated next link (a paging cycle), a page that
-		carries no value collection, a page request that fails, or a paging link that
-		would move the walk onto a different Microsoft Graph version all end the walk with
-		Complete = $false and a reason, instead of silently returning a partial array.
-		Callers must refuse to publish the canonical catalog from an incomplete listing:
-		with an unknown universe, departed-agent classification cannot be trusted.
+		Completeness is reported, never hidden. A repeated next link (a paging cycle), a page
+		that carries no value collection, a page request that still fails after its bounded
+		retries, or a paging link that would move the walk onto a different Microsoft Graph
+		version all end the walk with Complete = $false and a reason, instead of silently
+		returning a partial array. The caller publishes every agent it did retrieve and reports
+		the shortfall in the run summary.
 
 		The Graph version is chosen once, on the first page: the documented primary is
 		tried first and the compatibility fallback exactly once after it. Whichever answers
@@ -53414,12 +53953,30 @@ function Get-Agent365Packages {
 		}
 		$pageNum++
 		if ($null -eq $resp) {
-			try { $null = Refresh-GraphTokenIfNeeded -ErrorAction SilentlyContinue } catch {}
-			try {
-				$resp = & $a365RequestOp $uri
-			} catch {
+			# The service intermittently refuses one page mid-walk (403/424) after earlier pages
+			# succeeded on the same token, so each page is retried with backoff before the walk
+			# is declared incomplete.
+			$a365PageDelays = if ($null -ne $script:Agent365ListPageRetryDelaysSeconds) { @($script:Agent365ListPageRetryDelaysSeconds) } else { @(2, 5, 10, 20) }
+			$a365PageError = $null
+			for ($a365PageAttempt = 0; $a365PageAttempt -le $a365PageDelays.Count; $a365PageAttempt++) {
+				if ($a365PageAttempt -gt 0) {
+					$a365Wait = [double]$a365PageDelays[$a365PageAttempt - 1]
+					Write-LogFile ("Agent 365: catalog page {0} attempt {1} failed ({2}); retrying in {3}s." -f $pageNum, $a365PageAttempt, $a365PageError, $a365Wait) -Level 'WARNING'
+					if ($a365Wait -gt 0) { Start-Sleep -Seconds $a365Wait }
+				}
+				try { $null = Refresh-GraphTokenIfNeeded -ErrorAction SilentlyContinue } catch {}
+				try {
+					$resp = & $a365RequestOp $uri
+					$a365PageError = $null
+					break
+				} catch {
+					$resp = $null
+					$a365PageError = [string]$_.Exception.Message
+				}
+			}
+			if ($null -ne $a365PageError) {
 				$complete = $false
-				$reason = ("catalog page {0} could not be retrieved: {1}" -f $pageNum, $_.Exception.Message)
+				$reason = ("catalog page {0} could not be retrieved after {1} attempt(s): {2}" -f $pageNum, ($a365PageDelays.Count + 1), $a365PageError)
 				break
 			}
 		}
@@ -54196,6 +54753,318 @@ function Initialize-Agent365DeveloperCache {
 	}
 }
 
+function Initialize-Agent365CreatorCache {
+	<#
+	.SYNOPSIS
+		Resolves who created each agent, in bounded JSON batches, before any row is built.
+	.DESCRIPTION
+		Tier 1: the catalog's ownerId for the package is resolved to a user principal name through
+		/users. Tier 2, for in-house agents that tier 1 did not resolve: the first owner with a
+		user principal name on the agent's service principal (by appId, then by Entra agent identity,
+		then by the bot app ID its manifest declares). Microsoft and third-party store agents
+		(type microsoft/firstParty or external/thirdParty) have no tenant creator and are not looked up.
+		Each identifier kind (agent identity, catalog appId, bot app ID) is probed with an evenly spread
+		sample of ProbeSize keys; the rest of that kind is looked up only when the sample resolved an
+		owner. Measured in a 14,888-agent tenant (2026-10-08): no catalog appId or bot app ID was
+		registered in the tenant, and agent identities had no owners.
+
+		Nothing is guessed. An agent that resolves through neither tier stays blank here; the row
+		builder then uses a matched creation audit event, and an append run keeps the value the
+		existing catalog already holds.
+
+		Sub-requests the service throttles (429/503/504) are retried up to twice, honoring Retry-After.
+		A permission refusal (403) is reported once per tier and leaves those agents blank.
+	.OUTPUTS
+		PSCustomObject: ByPackage (raw package id -> @{ Upn; Source; OwnerId }), OwnerIdCount,
+		OwnerResolved, OwnerNotFound, OwnerFailed, ServicePrincipalCandidates, ServicePrincipalResolved,
+		ProbeSkipped (identifier kind -> lookups skipped), LookupsSkipped, StoreAgents, Forbidden (string[]).
+	#>
+	param(
+		[Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$PackageIds,
+		[Parameter(Mandatory = $true)][hashtable]$ListEntries,
+		[Parameter(Mandatory = $false)][hashtable]$Details = @{},
+		[Parameter(Mandatory = $false)][int]$BatchSize = 20,
+		[Parameter(Mandatory = $false)][int]$ProbeSize = 40,
+		# Supplied only by tests. Production leaves this unset and the real Graph call is used.
+		[Parameter(Mandatory = $false)][scriptblock]$Transport
+	)
+	if ($BatchSize -lt 1 -or $BatchSize -gt 20) { throw [System.ArgumentOutOfRangeException]::new('BatchSize', ('Agent 365 batch size must be 1 to 20. Received {0}.' -f $BatchSize)) }
+	if ($ProbeSize -lt 1) { throw [System.ArgumentOutOfRangeException]::new('ProbeSize', ('Agent 365 creator probe size must be at least 1. Received {0}.' -f $ProbeSize)) }
+	$guidPattern = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+	$field = {
+		param($obj, [string[]]$names)
+		if ($null -eq $obj) { return '' }
+		foreach ($name in $names) {
+			$value = $null
+			if ($obj -is [System.Collections.IDictionary]) { if ($obj.Contains($name)) { $value = $obj[$name] } }
+			else { $property = $obj.PSObject.Properties[$name]; if ($property) { $value = $property.Value } }
+			if ($null -ne $value -and $value -is [string] -and -not [string]::IsNullOrWhiteSpace($value)) { return $value.Trim() }
+		}
+		return ''
+	}
+	$send = {
+		param($requests)
+		$batchBody = @{ requests = @($requests) }
+		if ($Transport) { return (& $Transport $batchBody) }
+		return (Invoke-MgGraphRequest -Method POST -Uri 'https://graph.microsoft.com/v1.0/$batch' -Body $batchBody -ErrorAction Stop)
+	}
+	# Runs every key through bounded batches and returns key -> @{ Status; Body }. Throttled
+	# sub-requests are retried; anything else is returned as the service answered it.
+	$runBatches = {
+		param([string[]]$Keys, [scriptblock]$UrlFor)
+		$results = @{}
+		$all = @($Keys)
+		for ($pos = 0; $pos -lt $all.Count; $pos += $BatchSize) {
+			$pending = @($all[$pos..([Math]::Min($pos + $BatchSize, $all.Count) - 1)])
+			for ($attempt = 1; $attempt -le 3 -and $pending.Count -gt 0; $attempt++) {
+				$slotToKey = @{}
+				$requests = New-Object System.Collections.Generic.List[object]
+				$slot = 0
+				foreach ($key in $pending) {
+					$slot++
+					$slotToKey[[string]$slot] = $key
+					[void]$requests.Add(@{ id = [string]$slot; method = 'GET'; url = (& $UrlFor $key) })
+				}
+				$response = $null
+				try { $response = & $send $requests.ToArray() } catch { $response = $null }
+				$retry = New-Object System.Collections.Generic.List[string]
+				$waitSeconds = [Math]::Pow(2, $attempt)
+				if ($null -eq $response -or $null -eq $response.responses) {
+					foreach ($key in $pending) { [void]$retry.Add($key) }
+				}
+				else {
+					foreach ($sub in @($response.responses)) {
+						$key = $slotToKey[[string]$sub.id]
+						if ($null -eq $key) { continue }
+						$code = 0
+						try { $code = [int]$sub.status } catch { $code = 0 }
+						if ($code -in @(429, 503, 504)) {
+							[void]$retry.Add($key)
+							$retryAfter = 0
+							try { $retryAfter = [int]("$($sub.headers.'Retry-After')") } catch { $retryAfter = 0 }
+							if ($retryAfter -gt $waitSeconds) { $waitSeconds = $retryAfter }
+							continue
+						}
+						$results[$key] = @{ Status = $code; Body = $sub.body }
+					}
+					foreach ($key in $pending) { if (-not $results.ContainsKey($key) -and -not $retry.Contains($key)) { [void]$retry.Add($key) } }
+				}
+				$pending = @($retry.ToArray())
+				if ($pending.Count -gt 0 -and $attempt -lt 3 -and -not $Transport) { Start-Sleep -Seconds ([Math]::Min(30, $waitSeconds)) }
+			}
+			foreach ($key in $pending) { if (-not $results.ContainsKey($key)) { $results[$key] = @{ Status = 0; Body = $null } } }
+		}
+		return $results
+	}
+
+	$byPackage = @{}
+	$forbidden = New-Object System.Collections.Generic.List[string]
+	$ownerByPackage = @{}
+	$typeByPackage = @{}
+	$appByPackage = @{}
+	$identityByPackage = @{}
+	$botByPackage = @{}
+	# The live catalog reports firstParty/thirdParty; the documented names are microsoft/external.
+	$storeTypes = @('microsoft','external','firstparty','thirdparty')
+	$botElementTypes = @('bot','bots','customengineagent','customengineagents','customenginecopilot','customenginecopilots')
+	$readBotIds = {
+		param($obj)
+		$found = New-Object System.Collections.Generic.List[string]
+		if ($null -eq $obj) { return ,$found }
+		$groups = $null
+		if ($obj -is [System.Collections.IDictionary]) { if ($obj.Contains('elementDetails')) { $groups = $obj['elementDetails'] } }
+		else { $property = $obj.PSObject.Properties['elementDetails']; if ($property) { $groups = $property.Value } }
+		$parsed = 0
+		foreach ($group in @($groups)) {
+			if ($null -eq $group -or $group -is [string]) { continue }
+			$kind = [string](& $field $group @('elementType'))
+			if ($kind.ToLowerInvariant() -notin $botElementTypes) { continue }
+			$elements = $null
+			if ($group -is [System.Collections.IDictionary]) { if ($group.Contains('elements')) { $elements = $group['elements'] } }
+			else { $property = $group.PSObject.Properties['elements']; if ($property) { $elements = $property.Value } }
+			foreach ($element in @($elements)) {
+				$definition = & $field $element @('definition')
+				if (-not $definition -or $definition.Length -gt 4194304 -or ++$parsed -gt 64) { continue }
+				try { $document = ConvertFrom-Json -InputObject $definition -AsHashtable -Depth 64 -ErrorAction Stop } catch { continue }
+				if ($document -isnot [System.Collections.IDictionary]) { continue }
+				$candidate = [string]$document['botId']
+				if ($candidate -match $guidPattern -and -not $found.Contains($candidate.ToLowerInvariant())) { [void]$found.Add($candidate.ToLowerInvariant()) }
+			}
+		}
+		return ,$found
+	}
+	foreach ($rawId in @($PackageIds)) {
+		if ([string]::IsNullOrWhiteSpace($rawId)) { continue }
+		$list = $ListEntries[$rawId]
+		$detail = $null
+		$result = $Details[$rawId]
+		if ($null -ne $result -and $result.Outcome -eq 'Success') { $detail = $result.Detail }
+		$ownerId = & $field $detail @('ownerId','ownerUserId')
+		if (-not $ownerId) { $ownerId = & $field $list @('ownerId','ownerUserId') }
+		if ($ownerId) { $ownerByPackage[$rawId] = $ownerId }
+		$type = & $field $detail @('type','agentType')
+		if (-not $type) { $type = & $field $list @('type','agentType') }
+		$typeByPackage[$rawId] = $type.ToLowerInvariant()
+		$appId = & $field $list @('appId','applicationId')
+		if (-not $appId) { $appId = & $field $detail @('appId','applicationId') }
+		if ($appId -match $guidPattern) { $appByPackage[$rawId] = $appId.ToLowerInvariant() }
+		$identity = & $field $detail @('agentIdentityId')
+		if (-not $identity) { $identity = & $field $list @('agentIdentityId') }
+		if ($identity -match $guidPattern) { $identityByPackage[$rawId] = $identity.ToLowerInvariant() }
+		if ($typeByPackage[$rawId] -notin $storeTypes) {
+			$bots = & $readBotIds $detail
+			if ($bots.Count -eq 0) { $bots = & $readBotIds $list }
+			if ($bots.Count -gt 0) { $botByPackage[$rawId] = @($bots.ToArray()) }
+		}
+	}
+
+	# Tier 1: catalog owner -> user principal name.
+	$ownerUpn = @{}
+	$ownerNotFoundIds = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+	$ownerFailedIds = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+	$ownerGuids = New-Object System.Collections.Generic.List[string]
+	$seenOwners = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+	foreach ($ownerId in @($ownerByPackage.Values)) {
+		if ($ownerId.Contains('@')) { $ownerUpn[$ownerId] = $ownerId.ToLowerInvariant(); continue }
+		if ($ownerId -match $guidPattern -and $seenOwners.Add($ownerId)) { [void]$ownerGuids.Add($ownerId) }
+	}
+	if ($ownerGuids.Count -gt 0) {
+		$userResults = & $runBatches $ownerGuids.ToArray() { param($k) "/users/$k`?`$select=id,userPrincipalName" }
+		foreach ($key in @($userResults.Keys)) {
+			$answer = $userResults[$key]
+			if ($answer.Status -eq 403 -and -not $forbidden.Contains('User.Read.All')) { [void]$forbidden.Add('User.Read.All') }
+			if ($answer.Status -eq 404) { [void]$ownerNotFoundIds.Add($key); continue }
+			if ($answer.Status -lt 200 -or $answer.Status -ge 300) { if ($answer.Status -ne 403) { [void]$ownerFailedIds.Add($key) }; continue }
+			$upn = & $field $answer.Body @('userPrincipalName')
+			if ($upn) { $ownerUpn[$key] = $upn.ToLowerInvariant() }
+		}
+	}
+	$ownerResolved = 0
+	$ownerNotFound = 0
+	$ownerFailed = 0
+	foreach ($rawId in @($ownerByPackage.Keys)) {
+		$ownerId = $ownerByPackage[$rawId]
+		if ($ownerUpn.ContainsKey($ownerId)) {
+			$byPackage[$rawId] = @{ Upn = $ownerUpn[$ownerId]; Source = 'CatalogOwner'; OwnerId = $ownerId }
+			$ownerResolved++
+		}
+		elseif ($ownerNotFoundIds.Contains($ownerId)) { $ownerNotFound++ }
+		elseif ($ownerFailedIds.Contains($ownerId)) { $ownerFailed++ }
+	}
+
+	# Tier 2: service-principal owners, in-house agents only.
+	$storeAgents = @(@($PackageIds) | Where-Object { $_ -and $typeByPackage[$_] -in $storeTypes }).Count
+	$spCandidates = @(@($PackageIds) | Where-Object {
+			$_ -and -not $byPackage.ContainsKey($_) -and $typeByPackage[$_] -notin $storeTypes -and
+			($appByPackage.ContainsKey($_) -or $identityByPackage.ContainsKey($_) -or $botByPackage.ContainsKey($_))
+		})
+	$spResolved = 0
+	$probeSkipped = @{}
+	$lookupsSkipped = 0
+	$upnByLookup = @{}
+	if ($spCandidates.Count -gt 0) {
+		# Lookups are grouped by identifier kind. In the tenants measured so far the catalog appId and
+		# the bot app ID are usually not registered in the customer tenant, and an agent identity
+		# usually has no owner, so each group is probed with an evenly spread sample first and the rest
+		# of that group is looked up only when the sample resolved at least one owner.
+		$groups = [ordered]@{ identity = (New-Object System.Collections.Generic.List[string]); app = (New-Object System.Collections.Generic.List[string]); bot = (New-Object System.Collections.Generic.List[string]) }
+		$seenLookups = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+		foreach ($rawId in $spCandidates) {
+			if ($identityByPackage.ContainsKey($rawId) -and $seenLookups.Add('sp:' + $identityByPackage[$rawId])) { [void]$groups.identity.Add('sp:' + $identityByPackage[$rawId]) }
+			if ($appByPackage.ContainsKey($rawId) -and $seenLookups.Add('app:' + $appByPackage[$rawId])) { [void]$groups.app.Add('app:' + $appByPackage[$rawId]) }
+			if ($botByPackage.ContainsKey($rawId)) {
+				foreach ($bot in @($botByPackage[$rawId])) { if ($seenLookups.Add('app:' + $bot)) { [void]$groups.bot.Add('app:' + $bot) } }
+			}
+		}
+		$principalUrl = {
+			param($k)
+			if ($k.StartsWith('app:')) { "/servicePrincipals(appId='$($k.Substring(4))')?`$select=id" } else { "/servicePrincipals/$($k.Substring(3))?`$select=id" }
+		}
+		# Resolves lookup keys to the first owner UPN on the service principal they name.
+		$resolveOwners = {
+			param([string[]]$Keys)
+			$resolved = @{}
+			if (@($Keys).Count -eq 0) { return $resolved }
+			$principalResults = & $runBatches $Keys $principalUrl
+			$principalByLookup = @{}
+			foreach ($key in @($principalResults.Keys)) {
+				$answer = $principalResults[$key]
+				if ($answer.Status -eq 403 -and -not $forbidden.Contains('Application.Read.All')) { [void]$forbidden.Add('Application.Read.All') }
+				if ($answer.Status -lt 200 -or $answer.Status -ge 300) { continue }
+				$principalId = & $field $answer.Body @('id')
+				if ($principalId -match $guidPattern) { $principalByLookup[$key] = $principalId }
+			}
+			$principalIds = @($principalByLookup.Values | Sort-Object -Unique)
+			if ($principalIds.Count -eq 0) { return $resolved }
+			$ownerOfPrincipal = @{}
+			$ownerResults = & $runBatches $principalIds { param($k) "/servicePrincipals/$k/owners?`$select=id,userPrincipalName" }
+			foreach ($key in @($ownerResults.Keys)) {
+				$answer = $ownerResults[$key]
+				if ($answer.Status -eq 403 -and -not $forbidden.Contains('Application.Read.All')) { [void]$forbidden.Add('Application.Read.All') }
+				if ($answer.Status -lt 200 -or $answer.Status -ge 300 -or $null -eq $answer.Body) { continue }
+				$owners = $null
+				if ($answer.Body -is [System.Collections.IDictionary]) { $owners = $answer.Body['value'] } else { try { $owners = $answer.Body.value } catch { $owners = $null } }
+				foreach ($owner in @($owners)) {
+					$upn = & $field $owner @('userPrincipalName')
+					if ($upn) { $ownerOfPrincipal[$key] = $upn.ToLowerInvariant(); break }
+				}
+			}
+			foreach ($key in @($principalByLookup.Keys)) {
+				if ($ownerOfPrincipal.ContainsKey($principalByLookup[$key])) { $resolved[$key] = $ownerOfPrincipal[$principalByLookup[$key]] }
+			}
+			return $resolved
+		}
+		foreach ($groupName in @($groups.Keys)) {
+			$keys = @($groups[$groupName].ToArray())
+			if ($keys.Count -eq 0) { continue }
+			$probeCount = [Math]::Min($ProbeSize, $keys.Count)
+			$probeIndexes = New-Object 'System.Collections.Generic.SortedSet[int]'
+			for ($n = 0; $n -lt $probeCount; $n++) { [void]$probeIndexes.Add([int][Math]::Floor($n * $keys.Count / $probeCount)) }
+			$probeKeys = @(foreach ($index in $probeIndexes) { $keys[$index] })
+			$found = & $resolveOwners $probeKeys
+			foreach ($key in @($found.Keys)) { $upnByLookup[$key] = $found[$key] }
+			$restKeys = @(for ($index = 0; $index -lt $keys.Count; $index++) { if (-not $probeIndexes.Contains($index)) { $keys[$index] } })
+			if ($restKeys.Count -eq 0) { continue }
+			if ($found.Count -gt 0) {
+				$found = & $resolveOwners $restKeys
+				foreach ($key in @($found.Keys)) { $upnByLookup[$key] = $found[$key] }
+			}
+			else {
+				$probeSkipped[$groupName] = $restKeys.Count
+				$lookupsSkipped += $restKeys.Count
+			}
+		}
+		foreach ($rawId in $spCandidates) {
+			$upn = ''
+			$lookups = New-Object System.Collections.Generic.List[string]
+			if ($identityByPackage.ContainsKey($rawId)) { [void]$lookups.Add('sp:' + $identityByPackage[$rawId]) }
+			if ($appByPackage.ContainsKey($rawId)) { [void]$lookups.Add('app:' + $appByPackage[$rawId]) }
+			if ($botByPackage.ContainsKey($rawId)) { foreach ($bot in @($botByPackage[$rawId])) { [void]$lookups.Add('app:' + $bot) } }
+			foreach ($lookup in $lookups) {
+				if ($upnByLookup.ContainsKey($lookup)) { $upn = $upnByLookup[$lookup]; break }
+			}
+			if ($upn) {
+				$byPackage[$rawId] = @{ Upn = $upn; Source = 'AppOwner'; OwnerId = $(if ($ownerByPackage.ContainsKey($rawId)) { $ownerByPackage[$rawId] } else { '' }) }
+				$spResolved++
+			}
+		}
+	}
+
+	return [PSCustomObject]@{
+		ByPackage                  = $byPackage
+		OwnerIdCount               = $ownerByPackage.Count
+		OwnerResolved              = $ownerResolved
+		OwnerNotFound              = $ownerNotFound
+		OwnerFailed                = $ownerFailed
+		ServicePrincipalCandidates = $spCandidates.Count
+		ServicePrincipalResolved   = $spResolved
+		ProbeSkipped               = $probeSkipped
+		LookupsSkipped             = $lookupsSkipped
+		StoreAgents                = $storeAgents
+		Forbidden                  = $forbidden.ToArray()
+	}
+}
+
 function Get-Agent365AuditEnrichment {
 	<#
 	.SYNOPSIS
@@ -54283,7 +55152,10 @@ function Get-Agent365AuditEnrichment {
 		return $enrichment
 	}
 	$records = @($fetch.Records)
-	if (-not $records -or $records.Count -eq 0) { return $enrichment }
+	if (-not $records -or $records.Count -eq 0) {
+		Write-LogHost '  Agent 365 creation events in this run''s dates: 0 (agents created before these dates rely on the catalog owner or the app owner instead).' -ForegroundColor DarkGray
+		return $enrichment
+	}
 
 	foreach ($rec in $records) {
 		try {
@@ -54314,7 +55186,7 @@ function Get-Agent365AuditEnrichment {
 			}
 		} catch { continue }
 	}
-	Write-LogHost ("  Audit enrichment matched {0} agent identifier key(s)." -f $enrichment.Keys.Count) -ForegroundColor DarkGray
+	Write-LogHost ("  Agent 365 creation events in this run's dates: {0:N0} returned, {1:N0} agent identifier(s) matched." -f $records.Count, $enrichment.Keys.Count) -ForegroundColor DarkGray
 	return $enrichment
 }
 
@@ -54870,7 +55742,7 @@ function ConvertTo-Agent365Row {
 	$status = (_join (_pick @('status','packageStatus','lifecycleStatus','state')) ';')
 	$publisher = (_join (_pick @('publisher','publisherName')) ';')
 	$channel = (_join (_pick @('channel','deploymentChannel','distributionChannel')) ';')
-	$creatorId = (_join (_pick @('creatorId','createdById','createdByUserId')) ';')
+	$creatorId = (_join (_pick @('ownerId','creatorId','createdById','createdByUserId')) ';')
 	if ([string]::IsNullOrWhiteSpace($creatorId)) { $creatorId = (_join (_pickNested @('createdBy','creator') @('id')) ';') }
 	$environmentId = (_join (_pick @('environmentId','deploymentEnvironmentId')) ';')
 	$botId = (_join (_pick @('botId','botApplicationId')) ';')
@@ -55190,6 +56062,25 @@ function ConvertTo-Agent365Row {
 	if ($manifestCells.ContainsKey('Bot Id') -and -not $botId) { $botId = $manifestCells['Bot Id'] }
 	if ($manifestCells.ContainsKey('Custom action list') -and -not $customActionsList) { $customActionsList = $manifestCells['Custom action list'] }
 	if ($manifestCells.ContainsKey('Developer Name') -and -not $developer) { $developer = $manifestCells['Developer Name'] }
+	# Authoring tools stamp generic text into these fields when the maker leaves the default. That
+	# text names no developer, so it is not shown as one. Publisher keeps the catalog's value as-is.
+	$placeholderDevelopers = @('Agent Developer','Published by your Org','Your developer name')
+	if ($developer -and ([string]$developer).Trim() -in $placeholderDevelopers) {
+		$developer = ''
+		$placeholderSource = if ($fieldSources.ContainsKey('Developer Name') -and $fieldSources['Developer Name'].Source) { [string]$fieldSources['Developer Name'].Source } else { 'developer.name' }
+		$fieldSources['Developer Name'] = @{ Source = $placeholderSource; State = 'Placeholder' }
+	}
+	# The catalog has no developer field. A declared manifest developer wins; otherwise the
+	# package publisher (the organization that published the agent) is the developer.
+	if (-not $developer -and -not [string]::IsNullOrWhiteSpace([string]$publisher)) {
+		if (([string]$publisher).Trim() -in $placeholderDevelopers) {
+			$fieldSources['Developer Name'] = @{ Source = 'Package.publisher'; State = 'Placeholder' }
+		}
+		else {
+			$developer = [string]$publisher
+			$fieldSources['Developer Name'] = @{ Source = 'Package.publisher'; State = 'Present' }
+		}
+	}
 
 	$blockedSource = _source @('isBlocked')
 	if ($blockedSource.Value -is [bool]) {
@@ -55202,6 +56093,15 @@ function ConvertTo-Agent365Row {
 	if (-not $createdByValue) { $createdByValue = _g (_g $createdByObject @('user')) @('userPrincipalName','displayName') }
 	if (-not $creatorId) { $creatorId = [string](_g (_g $createdByObject @('user')) @('id')) }
 	if ($createdByValue) { $createdBy = [string]$createdByValue }
+	# Precedence: a creator the catalog states, then a matched creation audit event (set above),
+	# then the catalog owner, then the owner of an in-house agent's app. Never the first user to chat.
+	if (-not $createdBy -and $script:Agent365CreatorCache -and $titleIdRaw -and $script:Agent365CreatorCache.ContainsKey([string]$titleIdRaw)) {
+		$creatorAttribution = $script:Agent365CreatorCache[[string]$titleIdRaw]
+		if ($creatorAttribution -and $creatorAttribution.Upn) {
+			$createdBy = [string]$creatorAttribution.Upn
+			$fieldSources['Created by'] = @{ Source = [string]$creatorAttribution.Source; State = 'Present' }
+		}
+	}
 	$usersShared = ''
 	$sharing = _source @('sharedWithUsersAndGroups')
 	if ($sharing.Value -is [array]) {
@@ -55314,14 +56214,14 @@ function ConvertTo-Agent365Row {
 		'Created in' = @('platform','source','origin','createdIn'); 'Last updated' = @('lastModifiedDateTime','lastUpdatedDateTime')
 		'Title ID' = @('id','titleId','packageId'); Sensitivity = @('sensitivity')
 		Status = @('isBlocked','status','packageStatus','lifecycleStatus','state'); Publisher = @('publisher','publisherName')
-		Channel = @('channel','deploymentChannel','distributionChannel'); 'Creator Id' = @('creatorId','createdById','createdByUserId','createdBy')
+		Channel = @('channel','deploymentChannel','distributionChannel'); 'Creator Id' = @('ownerId','creatorId','createdById','createdByUserId','createdBy')
 		'Environment Id' = @('environmentId','deploymentEnvironmentId'); 'Bot Id' = @('botId','botApplicationId')
 		'Custom action list' = @('customActionsList','customActions'); Instructions = @('instructions','systemInstructions','systemPrompt')
 		'Groups shared' = @('sharedWithUsersAndGroups','groupsShared','sharedWithGroups')
 		'Users shared' = @('sharedWithUsersAndGroups'); Risks = @('risks','securityRisks','complianceFlags')
 		'Last Activity Date' = @('lastUsedDateTime'); 'Entra Agent ID' = @('agentIdentityId','Entra Agent ID','EntraAgentId')
 	}
-	$unsupported = @('Channel','Created by','Creator Id','Environment Id','Risks')
+	$unsupported = @('Channel','Environment Id','Risks')
 	foreach ($property in $row.PSObject.Properties) {
 		$column = $property.Name
 		if ($fieldSources.ContainsKey($column)) { continue }
@@ -55439,18 +56339,20 @@ function Write-Agent365ColumnAvailabilityReport {
 		Write-LogHost '  Agent 365 column availability:' -ForegroundColor DarkGray
 		foreach ($entry in $availability) {
 			Write-LogHost ('    {0}: {1}' -f $entry.Column, $entry.Reason) -ForegroundColor DarkGray
-			Write-LogFile ('Agent 365 field coverage: {0}: {1}' -f $entry.Column, $entry.Reason) -Level 'INFO'
 		}
 		if ($PSBoundParameters.ContainsKey('Provenance')) {
-			Write-LogHost '    Retrieval completeness is separate from field coverage. Active Users/Total sessions cover the last 30 days at detail retrieval. The phase refreshes every package detail each run; package modification stamps do not date usage. Directly mapped legacy cache values remain ReusedSnapshot, not fresh usage. Exception rate is the raw service value, not a percentage. Capabilities are declarations, not verified effective permissions. Shared resource IDs do not expand group membership.' -ForegroundColor DarkGray
+			Write-LogHost '    Retrieval completeness is separate from field coverage. Active Users/Total sessions cover the last 30 days at detail retrieval. The phase refreshes every package detail each run; package modification stamps do not date usage. Directly mapped legacy cache values remain ReusedSnapshot, not fresh usage. Exception rate is the raw service value, not a percentage. Capabilities are declarations, not verified effective permissions. Shared resource IDs do not expand group membership. Developer Name state Placeholder means the catalog held generic default text (Agent Developer, Published by your Org, or Your developer name) rather than a name; the Publisher column keeps that text unchanged.' -ForegroundColor DarkGray
 			$manifestTotals = @{ Parsed = 0; Malformed = 0; Missing = 0; Unsupported = 0; Bounded = 0 }
+			$malformedAgents = 0
+			$unsupportedAgents = 0
 			foreach ($record in $Provenance) {
 				foreach ($key in @($manifestTotals.Keys)) { $manifestTotals[$key] += [int]$record.Manifest[$key] }
+				if ([int]$record.Manifest['Malformed'] -gt 0 -or [int]$record.Manifest['Missing'] -gt 0 -or [int]$record.Manifest['Bounded'] -gt 0) { $malformedAgents++ }
+				if ([int]$record.Manifest['Unsupported'] -gt 0) { $unsupportedAgents++ }
 			}
-			$manifestSummary = 'Agent 365 definition coverage: parsed={0}; malformed={1}; missing={2}; unsupported types={3}; parse limits exceeded={4}. No definition URLs were fetched.' -f $manifestTotals.Parsed, $manifestTotals.Malformed, $manifestTotals.Missing, $manifestTotals.Unsupported, $manifestTotals.Bounded
+			$manifestSummary = 'Agent 365 definitions: {0:N0} read. {1:N0} could not be read and {2:N0} were missing or over size limits ({3:N0} agent(s); their instructions and capability columns stay blank). {4:N0} use definition types PAX does not interpret ({5:N0} agent(s)). No definition URLs were fetched. Every listed agent is still written.' -f $manifestTotals.Parsed, $manifestTotals.Malformed, ($manifestTotals.Missing + $manifestTotals.Bounded), $malformedAgents, $manifestTotals.Unsupported, $unsupportedAgents
 			$manifestWarning = ($manifestTotals.Malformed + $manifestTotals.Missing + $manifestTotals.Bounded) -gt 0
 			Write-LogHost ("    $manifestSummary") -ForegroundColor $(if ($manifestWarning) { 'Yellow' } else { 'DarkGray' })
-			Write-LogFile $manifestSummary -Level $(if ($manifestWarning) { 'WARNING' } else { 'INFO' })
 		}
 	}
 	catch { Write-LogHost '  WARNING: Agent 365 field coverage could not be reported; retrieval status is not field completeness.' -ForegroundColor Yellow }
@@ -55509,9 +56411,29 @@ function Export-Agent365Csv {
 			$targetRows = @(Import-Csv -LiteralPath $a365AppendTarget -Encoding UTF8)
 			$a365TargetCount = $targetRows.Count
 			$carried = 0
+			# A creator the existing catalog already holds is kept when this run could not
+			# resolve one (for example, the creation event fell outside this run's window).
+			$a365CurrentById = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([System.StringComparer]::OrdinalIgnoreCase)
+			foreach ($r in $Rows) {
+				$aid = if ($null -ne $r.PSObject.Properties['Title ID']) { [string]$r.'Title ID' } else { & $a365RowKey $r }
+				if ($aid -and -not $a365CurrentById.ContainsKey($aid)) { $a365CurrentById[$aid] = $r }
+			}
+			$a365CreatorCarried = 0
 			foreach ($tr in $targetRows) {
 				$aid = & $a365RowKey $tr
 				if (-not $aid -and [string]::IsNullOrWhiteSpace([string]$tr.'Title ID') -and [string]::IsNullOrWhiteSpace([string]$tr.AgentId)) { continue }
+				if ($aid -and $a365CurrentById.ContainsKey($aid)) {
+					$currentRow = $a365CurrentById[$aid]
+					$filled = $false
+					foreach ($creatorColumn in @('Created by', 'Creator Id')) {
+						if ($null -eq $currentRow.PSObject.Properties[$creatorColumn] -or $null -eq $tr.PSObject.Properties[$creatorColumn]) { continue }
+						if ([string]::IsNullOrWhiteSpace([string]$currentRow.$creatorColumn) -and -not [string]::IsNullOrWhiteSpace([string]$tr.$creatorColumn)) {
+							$currentRow.$creatorColumn = [string]$tr.$creatorColumn
+							$filled = $true
+						}
+					}
+					if ($filled) { $a365CreatorCarried++ }
+				}
 				if (-not $aid -or -not $currentAgentIds.Contains($aid)) {
 					# Normalize the emitted key as well as the lookup without changing other cells.
 					$departedRow = $tr.PSObject.Copy()
@@ -55521,6 +56443,7 @@ function Export-Agent365Csv {
 				}
 			}
 			if (-not $SuppressSuccessLog) { Write-LogHost ("  -AppendAgent365Info: carried {0:N0} departed agent(s) from '{1}'; current run contributed {2:N0}." -f $carried, (Get-DisplayPath -LocalPath $a365AppendTarget), $Rows.Count) -ForegroundColor DarkCyan }
+			if (-not $SuppressSuccessLog -and $a365CreatorCarried -gt 0) { Write-LogHost ("  -AppendAgent365Info: kept 'Created by' from the existing catalog for {0:N0} agent(s) this run could not attribute." -f $a365CreatorCarried) -ForegroundColor DarkCyan }
 		}
 		catch {
 			# Writing current-run rows only would silently drop every departed agent the target
@@ -55569,6 +56492,10 @@ function Export-Agent365Csv {
 		# by the end-of-run artifact sweep; say so, rather than implying it is already at the
 		# displayed remote destination.
 		if ($SuppressSuccessLog) { }
+		elseif ($script:PaxMultiDashboardEnabled -and @($script:PaxRequestedDashboards | Where-Object { $_ -in @('AIO','ValueLens') }).Count -gt 0) {
+			# Multi-dashboard runs publish the catalog only inside each consuming dashboard folder.
+			Write-LogHost ("  Agent 365 CSV prepared ({0} rows); it is published in each dashboard folder that uses it: {1}." -f $rowsToWrite.Count, (@($script:PaxRequestedDashboards | Where-Object { $_ -in @('AIO','ValueLens') }) -join ', ')) -ForegroundColor Green
+		}
 		elseif ($script:RemoteOutputMode -ne 'None') {
 			Write-LogHost ("  Agent 365 CSV written to scratch, queued for upload: {0} ({1} rows)" -f (Get-DisplayPath -LocalPath $outFile), $rowsToWrite.Count) -ForegroundColor Green
 		} else {
@@ -55579,6 +56506,40 @@ function Export-Agent365Csv {
 		Write-LogHost ("  ERROR: Failed to write Agent 365 CSV: {0}" -f $_.Exception.Message) -ForegroundColor Red
 		return $null
 	}
+}
+
+function script:Write-Agent365ShortfallSummary {
+	<#
+	.SYNOPSIS
+		Names, in the end-of-run summary, every Agent 365 record this run could not fully
+		retrieve. Informational only: it never changes the exit code.
+	#>
+	$a365Summary = $script:Agent365Shortfall
+	if ($null -eq $a365Summary) { return }
+	$a365NoDetail = @($a365Summary.MissingDetailIds | Where-Object { $_ })
+	$a365NoRow = @($a365Summary.RowBuildFailedIds | Where-Object { $_ })
+	$a365NoId = [int]$a365Summary.SkippedNoId
+	if ($null -eq $a365Summary.List -and $a365NoDetail.Count -eq 0 -and $a365NoRow.Count -eq 0 -and $a365NoId -eq 0) { return }
+	$a365ShowLimit = 50
+	$a365StatusNote = 'the run log'
+	Write-LogHost ''
+	Write-LogHost '=== Agent 365 Summary ===' -ForegroundColor Cyan
+	Write-LogHost ("  Agents written: {0:N0}" -f [int]$a365Summary.Written) -ForegroundColor White
+	if ($a365Summary.List) {
+		Write-LogHost ("  Catalog listing stopped at page {0:N0}; agents after that point could not be listed this run. Reason: {1}" -f $a365Summary.List.PageCount, $a365Summary.List.Reason) -ForegroundColor Yellow
+	}
+	foreach ($a365Group in @(
+			@{ Ids = $a365NoDetail; Label = 'Agents written with catalog fields only (detail unavailable after retries)' },
+			@{ Ids = $a365NoRow; Label = 'Agents listed but not written (row could not be built)' })) {
+		$a365Ids = @($a365Group.Ids)
+		if ($a365Ids.Count -eq 0) { continue }
+		Write-LogHost ("  {0}: {1:N0}" -f $a365Group.Label, $a365Ids.Count) -ForegroundColor Yellow
+		foreach ($a365Id in @($a365Ids | Select-Object -First $a365ShowLimit)) { Write-LogHost ("    {0}" -f $a365Id) -ForegroundColor Gray }
+		if ($a365Ids.Count -gt $a365ShowLimit) { Write-LogHost ("    ... and {0:N0} more (all are listed in {1})" -f ($a365Ids.Count - $a365ShowLimit), $a365StatusNote) -ForegroundColor Gray }
+		Write-LogFile ("Agent 365 summary - {0}: {1}" -f $a365Group.Label, ($a365Ids -join ', ')) -Level 'INFO'
+	}
+	if ($a365NoId -gt 0) { Write-LogHost ("  Catalog entries without an identifier (not written): {0:N0}" -f $a365NoId) -ForegroundColor Yellow }
+	Write-LogHost '  These Agent 365 shortfalls are informational and do not change the exit code.' -ForegroundColor DarkGray
 }
 
 function Save-Agent365RecoveryCsv {
@@ -55676,11 +56637,16 @@ function Invoke-Agent365Phase {
 	# List + per-package detail
 	Write-LogHost "  Listing Agent 365 packages..." -ForegroundColor DarkGray
 	$listResult = Get-Agent365Packages
+	# A refused page is retried in place (Get-Agent365Packages). The listing is not re-walked:
+	# re-reading every earlier page would cost a full listing for each shortfall, and refusals are
+	# common enough that the cost would land on most runs.
 	$listed = @($listResult.Packages)
 	$a365ListComplete = [bool]$listResult.Complete
+	$script:Agent365ListShortfall = $null
 	if (-not $a365ListComplete) {
-		Write-LogHost ("  WARNING: Agent 365 catalog listing is INCOMPLETE after {0:N0} page(s): {1}" -f $listResult.PageCount, $listResult.Reason) -ForegroundColor Yellow
-		Write-LogFile ("Agent 365 catalog listing incomplete after {0} page(s): {1}" -f $listResult.PageCount, $listResult.Reason) -Level 'ERROR'
+		$script:Agent365ListShortfall = [PSCustomObject]@{ PageCount = [int]$listResult.PageCount; Reason = [string]$listResult.Reason; Retrieved = $listed.Count }
+		Write-LogHost ("  Agent 365: catalog listing stopped at page {0:N0}; continuing with the {1:N0} agent(s) retrieved." -f $listResult.PageCount, $listed.Count) -ForegroundColor Yellow
+		Write-LogFile ("Agent 365 catalog listing incomplete at page {0}: {1}" -f $listResult.PageCount, $listResult.Reason) -Level 'WARNING'
 	}
 	if (-not $listed -or $listed.Count -eq 0) {
 		if (-not $a365ListComplete) {
@@ -55750,12 +56716,70 @@ function Invoke-Agent365Phase {
 		# Batching is the supported path. Quietly reverting to a package-at-a-time walk
 		# would turn a large catalog back into an hours-long run, so retrieval stops and
 		# everything already retrieved is kept as recovery material.
-		Write-LogHost ("  Agent 365: batched detail retrieval could not be completed: {0}" -f $a365BatchResult.Reason) -ForegroundColor Red
-		Write-LogFile ("Agent 365: batched detail retrieval failed: {0}" -f $a365BatchResult.Reason) -Level 'ERROR'
+		Write-LogHost ("  Agent 365: batched detail retrieval could not be completed on the first pass: {0}" -f $a365BatchResult.Reason) -ForegroundColor Yellow
+		Write-LogFile ("Agent 365: batched detail retrieval first pass incomplete: {0}" -f $a365BatchResult.Reason) -Level 'WARNING'
 	}
 
-	# Catalog/manifest developer metadata is authoritative here. Application owners and
-	# publisher domains are not agent developers or original creators; no secondary lookup.
+	# Second-chance detail: every package still without detail is requested again right away (the
+	# first pass already spanned minutes, so no extra wait is added). A one-batch probe goes first;
+	# when the probe recovers nothing the rest is not re-requested, so a run where the failures are
+	# persistent pays one request, not a second full pass. A further pass runs only when the
+	# previous one recovered something. Whatever still fails is written from its listing tier and
+	# named in the run summary.
+	$a365DetailPassDelays = if ($null -ne $script:Agent365DetailRetryPassDelaysSeconds) { @($script:Agent365DetailRetryPassDelaysSeconds) } else { @(0, 10) }
+	foreach ($a365PassDelay in $a365DetailPassDelays) {
+		$a365Pending = @($a365ChangedIds | Where-Object { -not ($a365Details.ContainsKey($_) -and $a365Details[$_] -and $a365Details[$_].Outcome -eq 'Success') })
+		if ($a365Pending.Count -eq 0) { break }
+		if ([double]$a365PassDelay -gt 0) { Start-Sleep -Seconds ([double]$a365PassDelay) }
+		Write-LogHost ("  Agent 365: retrying detail for {0:N0} agent(s)..." -f $a365Pending.Count) -ForegroundColor DarkGray
+		$a365Recovered = 0
+		$a365ProbeEmpty = $false
+		foreach ($a365Slice in @(
+				@{ Probe = $true; Ids = @($a365Pending | Select-Object -First $a365BatchSize) },
+				@{ Probe = $false; Ids = @($a365Pending | Select-Object -Skip $a365BatchSize) })) {
+			if ($a365Slice.Ids.Count -eq 0) { continue }
+			$a365Retry = Invoke-Agent365DetailBatches -PackageIds $a365Slice.Ids -BatchSize $a365BatchSize -MaxParallel $a365MaxParallel
+			$a365BatchCount += [int]$a365Retry.BatchCount
+			$a365SliceRecovered = 0
+			foreach ($a365RetryId in @($a365Retry.Details.Keys)) {
+				$a365RetryResult = $a365Retry.Details[$a365RetryId]
+				if ($a365RetryResult -and $a365RetryResult.Outcome -eq 'Success') { $a365Details[$a365RetryId] = $a365RetryResult; $a365SliceRecovered++ }
+				elseif (-not $a365Details.ContainsKey($a365RetryId)) { $a365Details[$a365RetryId] = $a365RetryResult }
+			}
+			$a365Recovered += $a365SliceRecovered
+			if ($a365Slice.Probe -and $a365SliceRecovered -eq 0) { $a365ProbeEmpty = $true; break }
+		}
+		Write-LogFile ("Agent 365 detail retry pass: pending={0} recovered={1} probeRecoveredNone={2}" -f $a365Pending.Count, $a365Recovered, $a365ProbeEmpty) -Level 'INFO'
+		if ($a365Recovered -eq 0) { break }
+	}
+	$a365BatchFailed = [bool](@($a365ChangedIds | Where-Object { -not $a365Details.ContainsKey($_) }).Count -gt 0)
+
+	# Creator attribution is resolved once, in bounded batches, before rows are built: the
+	# catalog owner first, then the owner of an in-house (not store) agent's app.
+	$script:Agent365CreatorCache = @{}
+	try {
+		$a365CreatorClock = [System.Diagnostics.Stopwatch]::StartNew()
+		$a365CreatorResult = Initialize-Agent365CreatorCache -PackageIds $a365Ordered.ToArray() -ListEntries $a365ListByRawId -Details $a365Details -BatchSize $a365BatchSize
+		$a365CreatorClock.Stop()
+		if ($a365CreatorResult -and $a365CreatorResult.ByPackage -is [hashtable]) { $script:Agent365CreatorCache = $a365CreatorResult.ByPackage }
+		$a365ProbeText = if (@($a365CreatorResult.ProbeSkipped.Keys).Count) { (@($a365CreatorResult.ProbeSkipped.Keys | ForEach-Object { '{0}={1}' -f $_, $a365CreatorResult.ProbeSkipped[$_] }) -join ', ') } else { 'none' }
+		Write-LogFile ("Agent 365 creator lookup: catalog owners on {0} agent(s), {1} resolved, {2} not found in the directory, {3} lookup failure(s); app-owner lookups for {4} in-house agent(s), {5} resolved; lookups skipped after a sample found no owner: {6}; {7:N1}s." -f $a365CreatorResult.OwnerIdCount, $a365CreatorResult.OwnerResolved, $a365CreatorResult.OwnerNotFound, $a365CreatorResult.OwnerFailed, $a365CreatorResult.ServicePrincipalCandidates, $a365CreatorResult.ServicePrincipalResolved, $a365ProbeText, $a365CreatorClock.Elapsed.TotalSeconds) -Level 'INFO'
+		if ([int]$a365CreatorResult.OwnerNotFound -gt 0) {
+			Write-LogHost ("  Agent 365: {0:N0} agent(s) list an owner ID that no longer matches a user in Microsoft Entra ID (for example, a deleted account). 'Created by' stays blank for them unless another source supplies it; 'Creator Id' still shows the owner ID." -f [int]$a365CreatorResult.OwnerNotFound) -ForegroundColor DarkGray
+		}
+		if ([int]$a365CreatorResult.OwnerFailed -gt 0) {
+			Write-LogHost ("  Agent 365: the owner lookup did not complete for {0:N0} agent(s) after retries; 'Created by' stays blank for them this run." -f [int]$a365CreatorResult.OwnerFailed) -ForegroundColor Yellow
+		}
+		if ([int]$a365CreatorResult.LookupsSkipped -gt 0) {
+			Write-LogFile ("Agent 365 creator lookup: a spread sample of each identifier kind found no app owner in this tenant, so {0} remaining lookup(s) were skipped ({1})." -f $a365CreatorResult.LookupsSkipped, $a365ProbeText) -Level 'INFO'
+		}
+		foreach ($a365CreatorScope in @($a365CreatorResult.Forbidden)) {
+			Write-LogHost ("  Agent 365: 'Created by' could not be looked up for some agents because {0} was not granted; those cells stay blank unless a creation audit event or the previous catalog supplies them." -f $a365CreatorScope) -ForegroundColor Yellow
+		}
+	} catch {
+		$script:Agent365CreatorCache = @{}
+		Write-LogHost ("  Agent 365: creator lookup could not be completed ({0}); 'Created by' uses creation audit events and the previous catalog only." -f $_.Exception.Message) -ForegroundColor Yellow
+	}
 
 	# Rows are built strictly in the original listing order, one row per listed package. The
 	# listing entry is always the base tier, so a package whose detail failed still produces its
@@ -55766,6 +56790,8 @@ function Invoke-Agent365Phase {
 	foreach ($a365ReusedId in $a365ReusedIds) { [void]$a365ReusedLookup.Add([string]$a365ReusedId) }
 	$a365AuthorizationRestricted = $false
 	$a365FieldProvenance = New-Object System.Collections.Generic.List[object]
+	$a365MissingDetailIds = New-Object System.Collections.Generic.List[string]
+	$a365RowBuildFailedIds = New-Object System.Collections.Generic.List[string]
 	foreach ($pkgId in $a365Ordered) {
 		$listEntry = $a365ListByRawId[$pkgId]
 		$detailResult = if ($a365Details.ContainsKey($pkgId)) { $a365Details[$pkgId] } else { $null }
@@ -55778,6 +56804,7 @@ function Invoke-Agent365Phase {
 		}
 		else {
 			$a365DetailFailed++
+			[void]$a365MissingDetailIds.Add((script:Get-Agent365CanonicalTitleId -Value $pkgId))
 			if ($detailResult -and $detailResult.Outcome -eq 'FailedDependency') { $a365FailedDependency++; $a365DetailLabel = 'FailedDependency' }
 			elseif ($detailResult) { $a365DetailLabel = 'DetailFailed' }
 			if ($detailResult -and $detailResult.Reason) {
@@ -55795,6 +56822,7 @@ function Invoke-Agent365Phase {
 		} catch {
 			$a365RowBuildFailed++
 			$a365RowLabel = 'BuildFailed'
+			[void]$a365RowBuildFailedIds.Add((script:Get-Agent365CanonicalTitleId -Value $pkgId))
 			Write-LogFile ("Agent 365: row build failed for package '{0}': {1}" -f $pkgId, $_.Exception.Message) -Level 'ERROR'
 		}
 		[void]$a365StatusEntries.Add([PSCustomObject]@{
@@ -55816,11 +56844,28 @@ function Invoke-Agent365Phase {
 	$a365DetailComplete = ((-not $a365BatchFailed) -and ($a365DetailFailed -eq 0))
 	# One concise completion summary. Per-package diagnostics stay in the run log.
 	Write-LogHost ("  Agent 365: {0:N0} listed, {1:N0} emitted, {2:N0} failed, {3:N0} skipped." -f $listed.Count, $a365Emitted, $a365Failed, $a365SkippedNoId) -ForegroundColor $(if ($a365Failed -gt 0 -or $a365SkippedNoId -gt 0) { 'Yellow' } else { 'Green' })
-	Write-LogFile ("Agent 365 accounting: listed={0} emitted={1} detailFailed={2} (FailedDependency={3}) rowBuildFailed={4} skippedNoId={5} reconciled={6} listComplete={7} detailComplete={8}" -f $listed.Count, $a365Emitted, $a365DetailFailed, $a365FailedDependency, $a365RowBuildFailed, $a365SkippedNoId, $a365Reconciled, $a365ListComplete, $a365DetailComplete) -Level $(if ($a365Failed -gt 0 -or $a365SkippedNoId -gt 0 -or -not $a365Reconciled -or -not $a365DetailComplete) { 'ERROR' } else { 'INFO' })
+	Write-LogFile ("Agent 365 accounting: listed={0} emitted={1} detailFailed={2} (FailedDependency={3}) rowBuildFailed={4} skippedNoId={5} reconciled={6} listComplete={7} detailComplete={8}" -f $listed.Count, $a365Emitted, $a365DetailFailed, $a365FailedDependency, $a365RowBuildFailed, $a365SkippedNoId, $a365Reconciled, $a365ListComplete, $a365DetailComplete) 	-Level $(if (-not $a365Reconciled) { 'ERROR' } elseif ($a365Failed -gt 0 -or $a365SkippedNoId -gt 0 -or -not $a365DetailComplete -or -not $a365ListComplete) { 'WARNING' } else { 'INFO' })
 	if (-not $a365Reconciled) {
 		Write-LogFile ("Agent 365 accounting did not reconcile: {0} listed vs {1} accounted." -f $listed.Count, $a365Accounted) -Level 'ERROR'
 	}
 	Write-Agent365ColumnAvailabilityReport -Rows $rows.ToArray() -AuthorizationRestricted:$a365AuthorizationRestricted -AuditEnrichmentCollected:(-not $OnlyAgent365Info) -Provenance $a365FieldProvenance.ToArray()
+	$a365CreatorTally = @{ CatalogOwner = 0; AppOwner = 0; Audit = 0; Catalog = 0; StoreOrMicrosoft = 0; Unavailable = 0 }
+	for ($a365Ci = 0; $a365Ci -lt $rows.Count; $a365Ci++) {
+		$a365CreatorField = $null
+		if ($a365Ci -lt $a365FieldProvenance.Count -and $a365FieldProvenance[$a365Ci].Fields) { $a365CreatorField = $a365FieldProvenance[$a365Ci].Fields['Created by'] }
+		if (-not [string]::IsNullOrWhiteSpace([string]$rows[$a365Ci].'Created by')) {
+			$a365CreatorSourceName = if ($a365CreatorField) { [string]$a365CreatorField.Source } else { '' }
+			switch -Wildcard ($a365CreatorSourceName) {
+				'CatalogOwner' { $a365CreatorTally.CatalogOwner++ }
+				'AppOwner' { $a365CreatorTally.AppOwner++ }
+				'MatchedCreationAudit' { $a365CreatorTally.Audit++ }
+				default { $a365CreatorTally.Catalog++ }
+			}
+		}
+		elseif ([string]$rows[$a365Ci].Type -in @('microsoft','external','firstParty','thirdParty')) { $a365CreatorTally.StoreOrMicrosoft++ }
+		else { $a365CreatorTally.Unavailable++ }
+	}
+	Write-LogHost ("  Agent 365 'Created by': {0:N0} from the catalog owner, {1:N0} from the agent's app owner, {2:N0} from creation audit events, {3:N0} stated by the catalog; {4:N0} Microsoft or third-party store agent(s) have no tenant creator; {5:N0} in-house agent(s) had no creator the catalog, directory, or audit log could supply this run." -f $a365CreatorTally.CatalogOwner, $a365CreatorTally.AppOwner, $a365CreatorTally.Audit, $a365CreatorTally.Catalog, $a365CreatorTally.StoreOrMicrosoft, $a365CreatorTally.Unavailable) -ForegroundColor DarkGray
 
 	# The companion status file is written whether or not the catalog publishes, because the run
 	# where publication is withheld is exactly the run where the per-package states matter most.
@@ -55830,25 +56875,26 @@ function Invoke-Agent365Phase {
 	$a365StatusLeaf = "Agent365_Status_${a365StatusStamp}.csv"
 	$a365StatusPath = Save-Agent365StatusCsv -Entries $a365StatusEntries.ToArray() -Directory ([string]$OutputPath) -Leaf $a365StatusLeaf
 
-	# Requested Agent 365 output is incomplete whenever any listed package produced no row, the
-	# listing did not complete, or any detail could not be retrieved.
-	if ($a365Failed -gt 0 -or $a365SkippedNoId -gt 0 -or -not $a365Reconciled -or -not $a365ListComplete -or -not $a365DetailComplete) {
-		$script:Agent365HadGaps = $true
-		Write-LogHost "  Agent 365: requested catalog output is INCOMPLETE (completed with gaps, exit 40)." -ForegroundColor Yellow
+	# Agent 365 shortfalls are reported, never escalated. Every agent retrieved is published,
+	# the run summary names what could not be retrieved, and the exit code is unaffected. Only a
+	# run that could build no agent row at all is a gap.
+	$script:Agent365Shortfall = [PSCustomObject]@{
+		Written           = $rows.Count
+		List              = $script:Agent365ListShortfall
+		MissingDetailIds  = $a365MissingDetailIds.ToArray()
+		RowBuildFailedIds = $a365RowBuildFailedIds.ToArray()
+		SkippedNoId       = $a365SkippedNoId
+		StatusLeaf        = $a365StatusLeaf
 	}
-	# The catalog is published when the universe is known and every listed package produced its
-	# row. Missing DETAIL does not withhold it: the listing tier is already the canonical row, and
-	# suppressing it would discard everything the listing did state.
-	$a365PublishReady = ($a365ListComplete -and $a365Reconciled -and $a365RowBuildFailed -eq 0 -and $a365SkippedNoId -eq 0)
+	if (-not $a365ListComplete -or $a365DetailFailed -gt 0 -or $a365RowBuildFailed -gt 0 -or $a365SkippedNoId -gt 0) {
+		Write-LogHost "  Agent 365: some agents could not be fully retrieved; they are listed in the run summary. All retrieved agents are written." -ForegroundColor Yellow
+	}
+	$a365PublishReady = ($rows.Count -gt 0)
 
 	if (-not $a365PublishReady) {
-		# The catalog universe is not fully known, so departed-agent classification cannot be
-		# trusted. Never publish or overwrite the canonical catalog target from an incomplete
-		# listing: leave any existing target byte-for-byte unchanged and keep every row this run
-		# did build as recovery material.
-		Write-LogHost "  Agent 365: the catalog file is NOT written or overwritten this run because the listing is incomplete; any existing target is left unchanged." -ForegroundColor Red
-		$a365RecoveryLabel = if (-not $a365ListComplete) { 'IncompleteListing' } else { 'IncompleteRowBuild' }
-		$a365RecoveryPath = Save-Agent365RecoveryCsv -Rows $rows.ToArray() -Label $a365RecoveryLabel
+		# Nothing was built, so there is nothing to publish; any existing target is left unchanged.
+		$script:Agent365HadGaps = $true
+		Write-LogHost "  Agent 365: no agent rows could be built; no catalog is written and any existing target is left unchanged (completed with gaps, exit 40)." -ForegroundColor Red
 		return @{
 			CsvPath          = $null
 			Rows             = @()
@@ -55865,7 +56911,7 @@ function Invoke-Agent365Phase {
 			DetailRequested  = @($a365ChangedIds).Count
 			BatchCount       = $a365BatchCount
 			StatusPath       = $a365StatusPath
-			RecoveryPath     = $a365RecoveryPath
+			RecoveryPath     = $null
 			FieldProvenance  = $a365FieldProvenance.ToArray()
 		}
 	}
@@ -55908,7 +56954,7 @@ function Invoke-Agent365Phase {
 		RowBuildFailed   = $a365RowBuildFailed
 		SkippedNoId      = $a365SkippedNoId
 		Reconciled       = $a365Reconciled
-		ListComplete     = $true
+		ListComplete     = $a365ListComplete
 		DetailComplete   = $a365DetailComplete
 		DetailReused     = @($a365ReusedIds).Count
 		DetailRequested  = @($a365ChangedIds).Count
@@ -56296,6 +57342,161 @@ function Expand-GroupToUsers {
 	}
 	return @($resolved.FinalTargetUsers)
 }
+
+# PAX-COPILOT-ACCESS-GROUPS-FUNCTIONS-BEGIN
+function script:Resolve-PaxCopilotAccessGroupMembers {
+	<#
+	.SYNOPSIS
+		Resolves -CopilotAccessGroups into the set of permitted user object IDs and UPNs.
+	.DESCRIPTION
+		Uses the same group identity rules as Resolve-PaxUserScope (object ID, display name, then
+		mail or mail nickname) and reads transitive user membership through Graph REST. Fails
+		closed: any group that is not found, ambiguous, empty or unreadable marks the result
+		Failed, so callers never apply a partial permission set.
+	#>
+	param(
+		[string[]]$GroupNames = @(),
+		[scriptblock]$GraphRequest = { param($Uri) Invoke-MgGraphRequest -Method GET -Uri $Uri -OutputType PSObject -ErrorAction Stop },
+		[AllowNull()][string]$NativeCommaInput = $null
+	)
+	$seen = New-Object System.Collections.Generic.HashSet[string] ([System.StringComparer]::OrdinalIgnoreCase)
+	$requested = New-Object System.Collections.Generic.List[string]
+	foreach ($g in @($GroupNames)) {
+		if ($null -eq $g) { continue }
+		$t = ([string]$g).Trim()
+		if ($t.Length -gt 0 -and $seen.Add($t)) { [void]$requested.Add($t) }
+	}
+	$memberIds  = New-Object System.Collections.Generic.HashSet[string] ([System.StringComparer]::OrdinalIgnoreCase)
+	$memberUpns = New-Object System.Collections.Generic.HashSet[string] ([System.StringComparer]::OrdinalIgnoreCase)
+	$resolved = New-Object System.Collections.Generic.List[object]
+	$failures = New-Object System.Collections.Generic.List[object]
+	$guidPattern = '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
+	for ($i = 0; $i -lt $requested.Count; $i++) {
+		$g = $requested[$i]
+		try {
+			$groupId = $null; $groupDisplay = $null
+			if ($g -match $guidPattern) {
+				$resp = & $GraphRequest ("/v1.0/groups/{0}?`$select=id,displayName" -f $g)
+				if ($resp -and $resp.id) { $groupId = [string]$resp.id; $groupDisplay = [string]$resp.displayName }
+			}
+			else {
+				$escaped = ($g -replace "'", "''")
+				$hits = @()
+				$r1 = & $GraphRequest ("/v1.0/groups?`$filter=displayName eq '{0}'&`$select=id,displayName" -f $escaped)
+				if ($r1 -and $r1.value) { $hits += @($r1.value) }
+				if ($hits.Count -eq 0) {
+					$r2 = & $GraphRequest ("/v1.0/groups?`$filter=mail eq '{0}' or mailNickname eq '{0}'&`$select=id,displayName" -f $escaped)
+					if ($r2 -and $r2.value) { $hits += @($r2.value) }
+				}
+				if ($hits.Count -gt 1) { [void]$failures.Add([pscustomobject]@{ Group = $g; Stage = 'GroupAmbiguous' }); continue }
+				if ($hits.Count -eq 1) { $groupId = [string]$hits[0].id; $groupDisplay = [string]$hits[0].displayName }
+			}
+			if (-not $groupId) {
+				# A legacy native shell can merge a quoted list into one comma-containing value. Only a
+				# not-found literal name may be split into its parts, mirroring -GroupNames.
+				if ($NativeCommaInput -and $g -ceq $NativeCommaInput) {
+					$parts = @($g.Split(',') | ForEach-Object { $_.Trim() })
+					if ($parts.Count -ge 2 -and -not @($parts | Where-Object { -not $_ }).Count) {
+						$requested.RemoveAt($i)
+						$insertAt = $i
+						foreach ($p in $parts) { if ($seen.Add($p)) { $requested.Insert($insertAt, $p); $insertAt++ } }
+						$i--
+						continue
+					}
+				}
+				[void]$failures.Add([pscustomobject]@{ Group = $g; Stage = 'GroupNotFound' }); continue
+			}
+			$count = 0
+			$groupIds = New-Object System.Collections.Generic.HashSet[string] ([System.StringComparer]::OrdinalIgnoreCase)
+			$uri = ("/v1.0/groups/{0}/transitiveMembers/microsoft.graph.user?`$select=id,userPrincipalName&`$top=999" -f $groupId)
+			while ($uri) {
+				$page = & $GraphRequest $uri
+				if ($page -and $page.value) {
+					foreach ($m in @($page.value)) {
+						$id  = if ($null -ne $m.id) { ([string]$m.id).Trim() } else { '' }
+						$upn = if ($null -ne $m.userPrincipalName) { ([string]$m.userPrincipalName).Trim() } else { '' }
+						$key = if ($id) { $id } else { $upn }
+						if (-not $key -or -not $groupIds.Add($key)) { continue }
+						$count++
+						if ($id)  { [void]$memberIds.Add($id) }
+						if ($upn) { [void]$memberUpns.Add($upn) }
+					}
+				}
+				$uri = if ($page -and $page.'@odata.nextLink') { [string]$page.'@odata.nextLink' } else { $null }
+			}
+			if ($count -eq 0) { [void]$failures.Add([pscustomobject]@{ Group = $g; Stage = 'GroupZeroMembers' }); continue }
+			[void]$resolved.Add([pscustomobject]@{ Requested = $g; Id = $groupId; DisplayName = $groupDisplay; Members = $count })
+		}
+		catch {
+			$ex = $_.Exception
+			$sc = $null
+			try {
+				if ($ex.Response -and $ex.Response.StatusCode) { $sc = [int]$ex.Response.StatusCode }
+				elseif ($ex.PSObject.Properties['StatusCode'] -and $null -ne $ex.StatusCode) { $sc = [int]$ex.StatusCode }
+			} catch { $sc = $null }
+			$emsg = [string]$ex.Message
+			$stage = if ($sc -eq 401 -or $sc -eq 403 -or $emsg -match '(?i)Authorization_RequestDenied|Forbidden|Unauthorized|Access is denied|Insufficient privileges|\b40[13]\b') { 'GroupAuthorizationError' }
+				elseif (($null -ne $sc -and ($sc -ge 500 -or $sc -eq 408 -or $sc -eq 429)) -or $emsg -match '(?i)timed out|timeout|connection|network|remote server|temporarily unavailable|ServiceUnavailable|Gateway|throttl') { 'GroupTransportError' }
+				else { 'GroupResolutionError' }
+			[void]$failures.Add([pscustomobject]@{ Group = $g; Stage = $stage })
+		}
+	}
+	if ($requested.Count -eq 0) { [void]$failures.Add([pscustomobject]@{ Group = ''; Stage = 'NoGroupsRequested' }) }
+	return [pscustomobject]@{
+		RequestedGroups = $requested.ToArray()
+		ResolvedGroups  = $resolved.ToArray()
+		Failures        = $failures.ToArray()
+		MemberIds       = $memberIds
+		MemberUpns      = $memberUpns
+		Outcome         = if ($failures.Count -eq 0) { 'Succeeded' } else { 'Failed' }
+	}
+}
+
+function script:Set-PaxCopilotAccessLicenseGate {
+	<#
+	.SYNOPSIS
+		Applies -CopilotAccessGroups to directory rows: hasLicense stays TRUE only for licensed
+		group members. Licensed non-members become FALSE; FALSE and Unknown are unchanged.
+	.DESCRIPTION
+		Rows match the permitted set by Entra object id first, then by user principal name.
+		assignedLicenses and every other column are left untouched. Returns counts only.
+	#>
+	param(
+		[AllowEmptyCollection()][AllowNull()][object[]]$Users,
+		[Parameter(Mandatory)]$MemberIds,
+		[Parameter(Mandatory)]$MemberUpns
+	)
+	$truthy = @('TRUE', 'YES', 'Y', '1')
+	$falsy  = @('FALSE', 'NO', 'N', '0')
+	$stats = [ordered]@{ Rows = 0; LicensedBefore = 0; Permitted = 0; Revoked = 0; Unlicensed = 0; Unknown = 0; MembersWithoutLicense = 0; MembersInRoster = 0 }
+	foreach ($u in @($Users)) {
+		if ($null -eq $u) { continue }
+		$stats.Rows++
+		$id  = if ($u.PSObject.Properties['id'] -and $null -ne $u.id) { ([string]$u.id).Trim() } else { '' }
+		$upn = if ($u.PSObject.Properties['userPrincipalName'] -and $null -ne $u.userPrincipalName) { ([string]$u.userPrincipalName).Trim() } else { '' }
+		$isMember = (($id -and $MemberIds.Contains($id)) -or ($upn -and $MemberUpns.Contains($upn)))
+		if ($isMember) { $stats.MembersInRoster++ }
+		$raw = if ($u.PSObject.Properties['hasLicense']) { $u.hasLicense } else { $null }
+		$text = if ($raw -is [bool]) { if ($raw) { 'TRUE' } else { 'FALSE' } } else { ([string]$raw).Trim().ToUpperInvariant() }
+		if ($truthy -contains $text) {
+			$stats.LicensedBefore++
+			if ($isMember) { $stats.Permitted++ }
+			else {
+				$u.hasLicense = $false
+				$stats.Revoked++
+			}
+		}
+		elseif ($falsy -contains $text) {
+			$stats.Unlicensed++
+			if ($isMember) { $stats.MembersWithoutLicense++ }
+		}
+		else { $stats.Unknown++ }
+	}
+	$memberTotal = if ($MemberIds.Count -gt 0) { $MemberIds.Count } else { $MemberUpns.Count }
+	$stats['MembersNotInRoster'] = [Math]::Max(0, $memberTotal - $stats.MembersInRoster)
+	return [pscustomobject]$stats
+}
+# PAX-COPILOT-ACCESS-GROUPS-FUNCTIONS-END
 
 # ==============================================
 # DUAL-MODE QUERY EXECUTION WRAPPER
@@ -57800,6 +59001,8 @@ elseif ($script:CheckpointEnabled) {
 		AutoCompleteness = $AutoCompleteness.IsPresent
 		IncludeTelemetry = $IncludeTelemetry.IsPresent
 		VerifyPartitionStability = $VerifyPartitionStability.IsPresent
+		# -CopilotAccessGroups: restored on -Resume so licensing uses the same access groups.
+		CopilotAccessGroups = $CopilotAccessGroups
 		# Hybrid directory enrichment source (path/URL only; no supplemental data VALUES are ever
 		# persisted). Restored on -Resume so the original supplemental input is reused.
 		UserInfoSupplement = $UserInfoSupplement
@@ -58062,13 +59265,16 @@ else {
 	}
 
 	# Group expansion (audit context)
-	if ($GroupNames -and $GroupNames.Count -gt 0) {
+	if (($GroupNames -and $GroupNames.Count -gt 0) -or ($CopilotAccessGroups -and @($CopilotAccessGroups).Count -gt 0)) {
+		$groupReason = @()
+		if ($GroupNames -and $GroupNames.Count -gt 0) { $groupReason += '-GroupNames' }
+		if ($CopilotAccessGroups -and @($CopilotAccessGroups).Count -gt 0) { $groupReason += '-CopilotAccessGroups' }
 		Write-LogHost "" -ForegroundColor White
-		Write-LogHost "                    Group expansion (REQUIRED - because -GroupNames is set):" -ForegroundColor White
+		Write-LogHost ("                    Group expansion (REQUIRED - because {0} is set):" -f ($groupReason -join ' and ')) -ForegroundColor White
 		Write-LogHost ("                      {0} GroupMember.Read.All           (read /groups + /groups/{{id}}/transitiveMembers)" -f $auditTag) -ForegroundColor Yellow
 	} else {
 		Write-LogHost "" -ForegroundColor White
-		Write-LogHost "                    Group expansion (only required with -GroupNames):" -ForegroundColor White
+		Write-LogHost "                    Group expansion (only required with -GroupNames or -CopilotAccessGroups):" -ForegroundColor White
 		Write-LogHost ("                      {0} GroupMember.Read.All           (read /groups + /groups/{{id}}/transitiveMembers)" -f $auditTag) -ForegroundColor DarkGray
 	}
 
@@ -58137,7 +59343,8 @@ else {
 			Write-LogHost "                          Your app registration is NOT used for these scopes." -ForegroundColor Gray
 		}
 		Write-LogHost "                      [Delegated] CopilotPackages.Read.All     (read /copilot/admin/catalog/packages)" -ForegroundColor Yellow
-		Write-LogHost "                      [Delegated] Application.Read.All         (resolve developer/owner via /applications)" -ForegroundColor Yellow
+		Write-LogHost "                      [Delegated] Application.Read.All         (Created by for in-house agents via app owners)" -ForegroundColor Yellow
+		Write-LogHost "                      [Delegated] User.Read.All                (Created by via the catalog owner)" -ForegroundColor Yellow
 		Write-LogHost "                      [Role]      AI Administrator              (preferred - least privilege)" -ForegroundColor Yellow
 		Write-LogHost "                                  -- OR --" -ForegroundColor Gray
 		Write-LogHost "                      [Role]      Global Administrator          (alternative)" -ForegroundColor Yellow
@@ -58147,7 +59354,8 @@ else {
 		Write-LogHost "" -ForegroundColor White
 		Write-LogHost "                    Agent 365 enrichment (only required with -IncludeAgent365Info or -OnlyAgent365Info):" -ForegroundColor White
 		Write-LogHost "                      [Delegated] CopilotPackages.Read.All     (read /copilot/admin/catalog/packages)" -ForegroundColor DarkGray
-		Write-LogHost "                      [Delegated] Application.Read.All         (resolve developer/owner via /applications)" -ForegroundColor DarkGray
+		Write-LogHost "                      [Delegated] Application.Read.All         (Created by for in-house agents via app owners)" -ForegroundColor DarkGray
+		Write-LogHost "                      [Delegated] User.Read.All                (Created by via the catalog owner)" -ForegroundColor DarkGray
 		Write-LogHost "                      [Role]      AI Administrator OR Global Administrator (signed-in user)" -ForegroundColor DarkGray
 	}
 	#>
@@ -58939,6 +60147,16 @@ if ($script:memoryFlushEnabled) {
 		'StartDate (inclusive)' = $StartDate
 		'EndDate (exclusive)'   = $EndDate
 	}
+	# Incremental catch-up: the dates above are the resolved watermark window.
+	if ($Watermark -or $script:PaxWatermarkEnabled) {
+		$paramSnapshot['Watermark'] = $true
+		if ($PSBoundParameters.ContainsKey('WatermarkStartDate') -and $WatermarkStartDate) { $paramSnapshot['WatermarkStartDate'] = $WatermarkStartDate }
+	}
+
+	# ── Supplied inputs (Bring Your Own Data; paths/URLs only, never contents) ──
+	if ($PurviewInputFile)   { $paramSnapshot['PurviewInputFile']   = $PurviewInputFile }
+	if ($UserInfoFile)       { $paramSnapshot['UserInfoFile']       = $UserInfoFile }
+	if ($UserInfoSupplement) { $paramSnapshot['UserInfoSupplement'] = $UserInfoSupplement }
 
 	# ── Output destinations cluster ──────────────────────────────────────
 	# Show an explicit append target instead of the unused output destination.
@@ -59029,6 +60247,7 @@ if ($script:memoryFlushEnabled) {
 		$paramSnapshot['IncludeUserInfo'] = $IncludeUserInfo.IsPresent
 		$paramSnapshot['OnlyUserInfo'] = $OnlyUserInfo.IsPresent
 		$paramSnapshot['IncludeTelemetry'] = $IncludeTelemetry.IsPresent
+		$paramSnapshot['AutoCompleteness'] = $AutoCompleteness.IsPresent
 	}
 
 	# AISID (Defender / AI Solutions Intelligence Dashboard) parameters — surfaced only for
@@ -59060,6 +60279,9 @@ if ($script:memoryFlushEnabled) {
 	$paramSnapshot['Force'] = $Force.IsPresent
 	$paramSnapshot['SkipDiagnostics'] = $SkipDiagnostics.IsPresent
 	$paramSnapshot['SkipVersionCheck'] = $SkipVersionCheck.IsPresent
+	# Operator-only recovery selections for uncertain Graph query state (resume only).
+	if ($PSBoundParameters.ContainsKey('ClearUncertainCreate') -and $ClearUncertainCreate)     { $paramSnapshot['ClearUncertainCreate']   = (@($ClearUncertainCreate) -join ';') }
+	if ($PSBoundParameters.ContainsKey('ClearUncertainContract') -and $ClearUncertainContract) { $paramSnapshot['ClearUncertainContract'] = (@($ClearUncertainContract) -join ';') }
 	$paramSnapshot['Rollup'] = $Rollup.IsPresent
 	$paramSnapshot['RollupPlusRaw'] = $RollupPlusRaw.IsPresent
 	$paramSnapshot['Dashboard'] = $(if ($Rollup -or $RollupPlusRaw) { $script:PaxRequestedDashboards -join ', ' } else { 'None (raw exports)' })
@@ -59067,6 +60289,7 @@ if ($script:memoryFlushEnabled) {
 	$paramSnapshot['MetricsPath'] = $(if ($MetricsPath) { $MetricsPath } else { '' })
 	$paramSnapshot['StreamingSchemaSample'] = $StreamingSchemaSample
 	$paramSnapshot['StreamingChunkSize'] = $StreamingChunkSize
+	$paramSnapshot['ExportProgressInterval'] = $ExportProgressInterval
 	
 	# Common parameters (work in both modes)
 	$paramSnapshot['ActivityTypes'] = ($ActivityTypes -join ';')
@@ -59088,6 +60311,9 @@ if ($script:memoryFlushEnabled) {
 	# GroupNames only works in live mode (requires auth for expansion)
 	if (-not $UseEOM -and $GroupNames) {
 		$paramSnapshot['GroupName'] = ($GroupNames -join ';')
+	}
+	if (-not $UseEOM -and $CopilotAccessGroups) {
+		$paramSnapshot['CopilotAccessGroups'] = (@($CopilotAccessGroups) -join ';')
 	}
 	
 	$paramSnapshot['PromptFilter'] = $(if ($PromptFilter) { $PromptFilter } else { '' })
@@ -59826,6 +61052,7 @@ try {
 		if ($cp.serviceTypes -and $cp.serviceTypes.Count -gt 0) { $ServiceTypes = $cp.serviceTypes }
 		if (-not $PSBoundParameters.ContainsKey('UserIds') -and $cp.userIds -and $cp.userIds.Count -gt 0) { $UserIds = $cp.userIds }
 		if (-not $PSBoundParameters.ContainsKey('GroupNames') -and $cp.groupNames -and $cp.groupNames.Count -gt 0) { $GroupNames = $cp.groupNames }
+		if ($cp.Contains('copilotAccessGroups') -and $cp.copilotAccessGroups -and @($cp.copilotAccessGroups).Count -gt 0) { $CopilotAccessGroups = @($cp.copilotAccessGroups) }
 		
 		# Agent filtering
 		if ($cp.agentId -and $cp.agentId.Count -gt 0) { $AgentId = $cp.agentId }
@@ -60579,7 +61806,8 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 			Write-LogHost "|                                                                      |" -ForegroundColor Cyan
 			Write-LogHost "|  Required APPLICATION permissions (granted + admin-consented):       |" -ForegroundColor Cyan
 			Write-LogHost "|    - CopilotPackages.Read.All  (read the Agent 365 catalog)          |" -ForegroundColor Cyan
-			Write-LogHost "|    - Application.Read.All      (optional: developer/owner names)     |" -ForegroundColor Cyan
+			Write-LogHost "|    - Application.Read.All      (optional: in-house agent creators)   |" -ForegroundColor Cyan
+			Write-LogHost "|    - User.Read.All             (optional: agent creator names)       |" -ForegroundColor Cyan
 			Write-LogHost "|                                                                      |" -ForegroundColor Cyan
 			Write-LogHost "|  Caveats:                                                            |" -ForegroundColor Cyan
 			Write-LogHost "|    - Documented on Graph v1.0 and beta; v1.0 first, beta as fallback.|" -ForegroundColor Cyan
@@ -60624,7 +61852,8 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		        ($script:RemoteOutputMode -eq 'None' -or
 		            ($script:RemoteOutputMode -eq 'Fabric' -and (script:Test-PaxSuppliedDirectoryOffline -Path $UserInfoFile))) -and
 		        -not $script:PurviewLiveEntraDirectoryRequired -and
-		        -not $script:PurviewAgent365Requested)
+		        -not $script:PurviewAgent365Requested -and
+		        -not ($CopilotAccessGroups -and @($CopilotAccessGroups).Count -gt 0))
 		if ($script:PaxSignInSkipped) {
 			Write-LogHost "Bring Your Own Data: supplied inputs require no audit sign-in; any destination authentication is handled separately." -ForegroundColor Cyan
 		}
@@ -60936,6 +62165,41 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		$script:EntraUsersFetchFailed = $false
 		$script:EntraUsersFetchError = $null
 		$script:EntraUsersPartial = $false
+		# PAX-COPILOT-ACCESS-GROUPS-RESOLVE-BEGIN
+		# Resolve the access groups before the directory pull so an unusable group stops the run
+		# early, before any license value is changed or any output is written.
+		$script:PaxCopilotAccessResolution = $null
+		if ($IncludeUserInfo -and -not $UseEOM -and $CopilotAccessGroups -and @($CopilotAccessGroups).Count -gt 0) {
+			Write-LogHost ("Resolving -CopilotAccessGroups ({0} group(s))..." -f @($CopilotAccessGroups).Count) -ForegroundColor Cyan
+			$accessResolution = script:Resolve-PaxCopilotAccessGroupMembers -GroupNames @($CopilotAccessGroups) -NativeCommaInput $script:PaxNativeCopilotAccessGroupsCommaInput
+			foreach ($ag in @($accessResolution.ResolvedGroups)) {
+				Write-LogHost ("  Access group '{0}' -> {1:N0} user member(s), nested groups included" -f $ag.DisplayName, $ag.Members) -ForegroundColor DarkCyan
+			}
+			if ($accessResolution.Outcome -ne 'Succeeded') {
+				$script:GenericFatal = $true
+				$script:EarlyExit = 'PreFlightFailure'
+				Write-LogHost "" -ForegroundColor Red
+				Write-LogHost "ERROR: -CopilotAccessGroups could not be fully resolved; no license values were changed." -ForegroundColor Red
+				$stageText = @{
+					GroupNotFound           = 'not found'
+					GroupAmbiguous          = 'matches more than one group (use the group object ID)'
+					GroupZeroMembers        = 'has no user members'
+					GroupAuthorizationError = 'not accessible (authorization denied)'
+					GroupTransportError     = 'not resolved (transient/transport error)'
+					GroupResolutionError    = 'not resolved (unexpected error)'
+					NoGroupsRequested       = 'no group names were supplied'
+				}
+				foreach ($fail in @($accessResolution.Failures)) {
+					Write-LogHost ("  '{0}': {1}" -f $fail.Group, $stageText[[string]$fail.Stage]) -ForegroundColor Yellow
+				}
+				Write-LogHost "  Verify the group name(s) and that the sign-in has GroupMember.Read.All, then retry." -ForegroundColor Cyan
+				Write-LogHost "" -ForegroundColor Red
+				exit 1
+			}
+			Write-LogHost ("  {0:N0} distinct permitted user(s) across {1} access group(s)." -f $accessResolution.MemberIds.Count, @($accessResolution.ResolvedGroups).Count) -ForegroundColor DarkCyan
+			$script:PaxCopilotAccessResolution = $accessResolution
+		}
+		# PAX-COPILOT-ACCESS-GROUPS-RESOLVE-END
 		if ($IncludeUserInfo -and -not $UseEOM) {
 			Write-LogHost "Fetching Entra user directory and license data..." -ForegroundColor Cyan
 			$uiFileMode = ($PSBoundParameters.ContainsKey('UserInfoFile') -and -not [string]::IsNullOrWhiteSpace($UserInfoFile))
@@ -61044,6 +62308,27 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 				}
 				# PAX-UIS-MERGE-END
 			}
+			# PAX-COPILOT-ACCESS-GROUPS-APPLY-BEGIN
+			# Narrow hasLicense to licensed members of -CopilotAccessGroups. Runs on the final
+			# directory rows (live, -UserInfoFile and -UserInfoSupplement paths) before any scope,
+			# CSV, workbook, rollup, history or append consumer reads them.
+			if ($script:PaxCopilotAccessResolution -and $script:EntraUsersData) {
+				$accessGate = script:Set-PaxCopilotAccessLicenseGate -Users @($script:EntraUsersData) -MemberIds $script:PaxCopilotAccessResolution.MemberIds -MemberUpns $script:PaxCopilotAccessResolution.MemberUpns
+				Write-LogHost ("-CopilotAccessGroups: {0:N0} user(s) had an enabled Copilot license; {1:N0} are in an access group and stay licensed; {2:N0} are not and were set to hasLicense FALSE." -f $accessGate.LicensedBefore, $accessGate.Permitted, $accessGate.Revoked) -ForegroundColor Green
+				Write-LogHost ("  Access-group members without an enabled Copilot license (left FALSE): {0:N0}. Unknown license status (unchanged): {1:N0}. Access-group members not in this directory export: {2:N0}." -f $accessGate.MembersWithoutLicense, $accessGate.Unknown, $accessGate.MembersNotInRoster) -ForegroundColor DarkCyan
+				try {
+					$script:metrics.CopilotAccessGroups              = @($script:PaxCopilotAccessResolution.ResolvedGroups).Count
+					$script:metrics.CopilotAccessGroupMembers        = $script:PaxCopilotAccessResolution.MemberIds.Count
+					$script:metrics.CopilotAccessLicensedBefore      = $accessGate.LicensedBefore
+					$script:metrics.CopilotAccessPermitted           = $accessGate.Permitted
+					$script:metrics.CopilotAccessRevoked             = $accessGate.Revoked
+					$script:metrics.CopilotAccessMembersWithoutLicense = $accessGate.MembersWithoutLicense
+				} catch {}
+			}
+			elseif ($script:PaxCopilotAccessResolution) {
+				Write-LogHost "-CopilotAccessGroups: no directory rows were collected, so no license values were changed." -ForegroundColor Yellow
+			}
+			# PAX-COPILOT-ACCESS-GROUPS-APPLY-END
 		}
 		elseif ($IncludeUserInfo -and $UseEOM) {
 			Write-LogHost "WARNING: -IncludeUserInfo requires Graph API mode (not supported with -UseEOM)" -ForegroundColor Yellow
@@ -61418,6 +62703,27 @@ $(if (-not $logFileExisted) { "=== Portable Audit eXporter (PAX) - Purview Audit
 		if ($paramSnapshot.Contains('RollupPlusRaw'))       { $paramSnapshot['RollupPlusRaw']       = $RollupPlusRaw.IsPresent }
 		if ($paramSnapshot.Contains('Dashboard'))           { $paramSnapshot['Dashboard']           = $(if ($Rollup -or $RollupPlusRaw) { $script:PaxRequestedDashboards -join ', ' } else { 'None (raw exports)' }) }
 		if ($UserHistory -eq 'On' -or $paramSnapshot.Contains('UserHistory')) { $paramSnapshot['UserHistory'] = $UserHistory }
+		# Collection scope and processing options restored from the checkpoint after the
+		# parse-time snapshot was built.
+		if ($paramSnapshot.Contains('RecordTypes'))   { $paramSnapshot['RecordTypes']   = $(if ($RecordTypes) { ($RecordTypes -join ';') } else { '' }) }
+		if ($paramSnapshot.Contains('ServiceTypes'))  { $paramSnapshot['ServiceTypes']  = $(if ($ServiceTypes) { ($ServiceTypes -join ';') } else { '' }) }
+		if ($paramSnapshot.Contains('AgentsOnly'))    { $paramSnapshot['AgentsOnly']    = $AgentsOnly.IsPresent }
+		if ($paramSnapshot.Contains('AgentId'))       { $paramSnapshot['AgentId']       = $(if ($AgentId) { ($AgentId -join ';') } else { '' }) }
+		if ($paramSnapshot.Contains('ExcludeAgents')) { $paramSnapshot['ExcludeAgents'] = $ExcludeAgents.IsPresent }
+		if ($paramSnapshot.Contains('UserId'))        { $paramSnapshot['UserId']        = $(if ($UserIds) { ($UserIds -join ';') } else { '' }) }
+		if (-not $UseEOM -and $GroupNames)            { $paramSnapshot['GroupName']     = ($GroupNames -join ';') }
+		if (-not $UseEOM -and $CopilotAccessGroups)   { $paramSnapshot['CopilotAccessGroups'] = (@($CopilotAccessGroups) -join ';') }
+		if ($paramSnapshot.Contains('PromptFilter'))  { $paramSnapshot['PromptFilter']  = $(if ($PromptFilter) { $PromptFilter } else { '' }) }
+		if ($paramSnapshot.Contains('IncludeAgent365Info')) { $paramSnapshot['IncludeAgent365Info'] = $IncludeAgent365Info.IsPresent }
+		if ($paramSnapshot.Contains('IncludeTelemetry'))    { $paramSnapshot['IncludeTelemetry']    = $IncludeTelemetry.IsPresent }
+		if ($paramSnapshot.Contains('AutoCompleteness'))    { $paramSnapshot['AutoCompleteness']    = $AutoCompleteness.IsPresent }
+		if ($paramSnapshot.Contains('StreamingSchemaSample')) { $paramSnapshot['StreamingSchemaSample'] = $StreamingSchemaSample }
+		if ($paramSnapshot.Contains('StreamingChunkSize'))    { $paramSnapshot['StreamingChunkSize']    = $StreamingChunkSize }
+		if ($paramSnapshot.Contains('ExplosionThreads'))      { $paramSnapshot['ExplosionThreads']      = $(if ($ExplosionThreads -eq 0) { 'auto' } else { $ExplosionThreads }) }
+		if ($script:PaxWatermarkEnabled)                      { $paramSnapshot['Watermark']             = $true }
+		if ($UserInfoSupplement)                              { $paramSnapshot['UserInfoSupplement']    = $UserInfoSupplement }
+		if ($UserInfoFile)                                    { $paramSnapshot['UserInfoFile']          = $UserInfoFile }
+		if ($PurviewInputFile)                                { $paramSnapshot['PurviewInputFile']      = $PurviewInputFile }
 		# Deidentify / FillerLabel / FillerLabelText are checkpoint-driven on resume (the
 		# resume allow-list blocks them on the CLI and the restore block re-arms $Deidentify /
 		# $script:HierarchyFillMode / $script:HierarchyFillLabel). The parse-time snapshot
@@ -61739,7 +63045,10 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 						$_aiPath4 = if ($_aiDt4 -and $_aiDt4.IsBound -and $_aiDt4.Tier -eq 'Local') { Join-Path $_aiDt4.EffectiveDir $_aiDt4.Basename }
 							elseif ($_aiDt4 -and $_aiDt4.IsBound) { $_aiDt4.EffectiveDir.TrimEnd('/') + '/' + $_aiDt4.Basename }
 							else { Join-Path $OutputDir (& $script:GetEffectiveAgent365Basename) }
-						if ($_aiDt4 -and $_aiDt4.IsBound -and $_aiDt4.Tier -ne 'Local') { Write-LogHost "Agent 365 file (separate): $_aiPath4" -ForegroundColor Gray }
+						if ($script:PaxMultiDashboardEnabled -and @($script:PaxRequestedDashboards | Where-Object { $_ -in @('AIO','ValueLens') }).Count -gt 0) {
+							Write-LogHost ("Agent 365 file (separate): {0}, published in each dashboard folder that uses it ({1})" -f (& $script:GetEffectiveAgent365Basename), (@($script:PaxRequestedDashboards | Where-Object { $_ -in @('AIO','ValueLens') }) -join ', ')) -ForegroundColor Gray
+						}
+						elseif ($_aiDt4 -and $_aiDt4.IsBound -and $_aiDt4.Tier -ne 'Local') { Write-LogHost "Agent 365 file (separate): $_aiPath4" -ForegroundColor Gray }
 						else { Write-LogHost "Agent 365 file (separate): $(Get-DisplayPath -LocalPath $_aiPath4)" -ForegroundColor Gray }
 					}
 				}
@@ -62101,6 +63410,17 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 					# visible partition never reaches here (it was adopted above, or fails closed on
 					# multiple matches), so a visible query is never cleared into a duplicate POST.
 					$operatorCleared = 0
+					# Automatic recovery: every not-visible unconfirmed create is selected for a fresh create
+					# (no -ClearUncertainCreate needed). The read-only lookup above found no search, and the
+					# fresh create checks Purview by exact name once more before it sends a request.
+					if ($null -eq $script:ClearUncertainSelection) { $script:ClearUncertainSelection = [System.Collections.Generic.HashSet[int]]::new() }
+					if ($null -eq $script:ClearUncertainContractSelection) { $script:ClearUncertainContractSelection = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal) }
+					foreach ($autoPart in @($reconcileOutcome.Unresolved)) {
+						$autoFp = $null
+						try { $autoFp = New-GraphAuditQueryFingerprint -PStart $autoPart.PStart -PEnd $autoPart.PEnd -Activities $autoPart.Activities -RecordTypes $autoPart.RecordTypes -ServiceFilter $autoPart.ServiceFilter } catch { $autoFp = $null }
+						if ($autoFp) { [void]$script:ClearUncertainContractSelection.Add("$([int]$autoPart.Index):$autoFp") }
+						else { [void]$script:ClearUncertainSelection.Add([int]$autoPart.Index) }
+					}
 					foreach ($uncertainPart in @($reconcileOutcome.Unresolved)) {
 						# Derive this partition's contract fingerprint so an explicit
 						# -ClearUncertainContract "<index>:<fingerprint>" selection can match EXACTLY
@@ -62115,11 +63435,11 @@ Write-LogHost ""	# Output mode display with format-specific defaults
 						}
 					}
 					if ($operatorCleared -gt 0) {
-						Write-LogHost "  [RESUME] -ClearUncertainCreate: cleared $operatorCleared not-visible partition(s) for a fresh create this run (durable state persisted before any create)." -ForegroundColor Yellow
+						Write-LogHost "  [RESUME] $operatorCleared partition(s) with an unconfirmed earlier search request will be requested again automatically this run." -ForegroundColor Yellow
 					}
 					$heldCount = @($reconcileOutcome.Unresolved).Count + @($reconcileOutcome.FailedClosed).Count - $operatorCleared
 					if ($heldCount -gt 0) {
-						Write-LogHost "  [RESUME] $heldCount partition(s) remain uncertain (no proven create) - NOT launching a worker; re-run with -ClearUncertainCreate <partition index> to force a fresh create for a specific partition" -ForegroundColor Yellow
+						Write-LogHost "  [RESUME] $heldCount partition(s) match more than one existing search in Purview - not launched; review those searches in the Purview portal" -ForegroundColor Yellow
 					}
 				}
 				$partitions += $partitionCategories.ToCreateAndFetch
@@ -63270,7 +64590,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 										# Reset network error tracking on success
 										if ($fetchNetworkErrorStart) {
 											$outageSeconds = [Math]::Round(((Get-Date) - $fetchNetworkErrorStart).TotalSeconds, 1)
-											Write-Output "[NETWORK] Partition $idx/$tot Page $($telemetry.PageCount + 1) - Recovered after network error (${outageSeconds}s outage)"
+											Write-Output "[NETWORK] Partition $idx/$tot Page $($telemetry.PageCount + 1) - Recovered after network error (${outageSeconds}s); the page was retrieved, no records lost"
 										}
 										$fetchNetworkErrorStart = $null
 									}
@@ -63451,7 +64771,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 											if (-not $fetchNetworkErrorStart) {
 												$fetchNetworkErrorStart = Get-Date
 								# Log to file only (no terminal spam)
-								Write-Output "[NETWORK] Partition $idx/$tot Page $($telemetry.PageCount + 1) - $fetchErrorSummary - Starting retry window (max ${maxOutageMinutes}m)"
+								Write-Output "[NETWORK] Partition $idx/$tot Page $($telemetry.PageCount + 1) - $fetchErrorSummary - Starting retry window: retrying this page for up to ${maxOutageMinutes}m"
 							}
 										
 										# Calculate elapsed outage time
@@ -63983,6 +65303,8 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 			# launched for it this pass.
 			$createFailedThisPass = [System.Collections.Generic.HashSet[int]]::new()
 			$createdQueryIndexesThisPass = [System.Collections.Generic.HashSet[int]]::new()
+			# Partitions whose query is created just in time, in the background, when a slot frees.
+			$jitCreateIndexes = [System.Collections.Generic.HashSet[int]]::new()
 			$needCreate = New-Object System.Collections.Generic.List[object]
 			$needReconcile = New-Object System.Collections.Generic.List[object]
 			foreach ($cp in $pendingPartitions) {
@@ -64018,110 +65340,91 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 					$script:partitionStatus[$adopted.Index].UncertainCreate = $false
 					Write-LogHost "  [PARENT-RECONCILE] Partition $($adopted.Index)/$($adopted.Total) adopted by exact name (no POST) - fetching data only" -ForegroundColor Green
 				}
-				foreach ($held in (@($inlineReconcile.Unresolved) + @($inlineReconcile.FailedClosed))) {
+				# Automatic recovery for not-visible unconfirmed creates: clear the durable marker and
+				# create the search again just in time (the create checks Purview by exact name first).
+				$autoInlineCleared = 0
+				if ($null -eq $script:ClearUncertainSelection) { $script:ClearUncertainSelection = [System.Collections.Generic.HashSet[int]]::new() }
+				if ($null -eq $script:ClearUncertainContractSelection) { $script:ClearUncertainContractSelection = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal) }
+				$autoInlineUnresolved = @($inlineReconcile.Unresolved)
+				foreach ($autoHeld in $autoInlineUnresolved) {
+					$autoHeldFp = $null
+					try { $autoHeldFp = New-GraphAuditQueryFingerprint -PStart $autoHeld.PStart -PEnd $autoHeld.PEnd -Activities $activities -RecordTypes $autoHeld.RecordTypes -ServiceFilter $autoHeld.ServiceFilter } catch { $autoHeldFp = $null }
+					if ($autoHeldFp) { [void]$script:ClearUncertainContractSelection.Add("$([int]$autoHeld.Index):$autoHeldFp") } else { [void]$script:ClearUncertainSelection.Add([int]$autoHeld.Index) }
+					if (Resolve-PaxOperatorClearedUncertain -Index ([int]$autoHeld.Index) -Fingerprint $autoHeldFp) {
+						$script:partitionStatus[[int]$autoHeld.Index].UncertainCreate = $false
+						[void]$jitCreateIndexes.Add([int]$autoHeld.Index)
+						$autoInlineCleared++
+					}
+				}
+				if ($autoInlineCleared -gt 0) {
+					Write-LogHost "  [PARENT-RECONCILE] $autoInlineCleared partition(s) with an unconfirmed search request will be requested again automatically" -ForegroundColor Yellow
+				}
+				foreach ($held in (@($inlineReconcile.Unresolved | Where-Object { -not $jitCreateIndexes.Contains([int]$_.Index) }) + @($inlineReconcile.FailedClosed))) {
 					# Held: no proven create. Never re-POSTed, no worker launched this pass, and
 					# added to the run-scoped held set so the pending selector excludes it and the
 					# outer create loop terminates instead of re-dispatching forever.
 					[void]$createFailedThisPass.Add([int]$held.Index)
 					[void]$script:uncertainReconcileHeld.Add([int]$held.Index)
 				}
-				$heldInline = @($inlineReconcile.Unresolved).Count + @($inlineReconcile.FailedClosed).Count
+				$heldInline = @($inlineReconcile.Unresolved).Count + @($inlineReconcile.FailedClosed).Count - $autoInlineCleared
 				if ($heldInline -gt 0) {
-					Write-LogHost "  [PARENT-RECONCILE] $heldInline partition(s) remain uncertain (no proven create) - held, not launched; re-run with -ClearUncertainCreate <partition index> to force a fresh create for a specific partition" -ForegroundColor Yellow
+					Write-LogHost "  [PARENT-RECONCILE] $heldInline partition(s) match more than one existing search in Purview - held, not launched; review those searches in the Purview portal" -ForegroundColor Yellow
 				}
 			}
 			if ($needCreate.Count -gt 0) {
-				$createBound = Assert-PaxConcurrencyInvariant -Value ([int]$maxConcurrentPartitions) -Name 'parent create-pool concurrency'
-				Write-LogHost "  [PARENT-CREATE] Creating $($needCreate.Count) partition query(ies) in bounded parallel (limit $createBound)..." -ForegroundColor DarkCyan
-				# Refresh the token before the create pre-pass so every queued and retrying
-				# create job reads a current token from the shared auth state.
-				$createRefresh = Refresh-GraphTokenIfNeeded -BufferMinutes 5
-				if ($createRefresh -is [string] -and $createRefresh -eq 'Quit') {
-					if ($script:CheckpointEnabled) { Save-Checkpoint -Force }
-					Show-CheckpointExitMessage
-					exit 0
-				}
-				$createMap = Invoke-PaxParentQueryCreation -Partitions $needCreate.ToArray() -ThrottleLimit $createBound -Activities $activities -MaxNetworkOutageMinutes $MaxNetworkOutageMinutes
-				# A token quit or refresh error during creation fails the pass closed before any
-				# partition is persisted: enter the graceful authentication-exit path so nothing
-				# is recorded as created off a quit/error decision (resume re-runs the pre-create
-				# reconcile, which adopts an already-created query without a duplicate POST).
-				if ($createMap['__AuthQuit']) {
-					# Persist any query the pool actually created before the quit AND mark the
-					# still-in-flight partitions durable-uncertain, so a known QueryId is never
-					# discarded and a possibly-accepted in-flight POST is reconciled read-only on
-					# resume. A user-driven quit stays a graceful (exit 0) checkpoint-and-resume.
-					Save-PaxInterruptedCreatePool -CreateMap $createMap -Requested $needCreate -Activities $activities -Phase 'initial'
-					Write-LogHost "  [PARENT-CREATE] Authentication quit requested during query creation - completed persisted, in-flight marked uncertain, saving checkpoint and exiting (use -Resume to continue)" -ForegroundColor Yellow
-					if ($script:CheckpointEnabled) { Save-Checkpoint -Force }
-					Show-CheckpointExitMessage
-					exit 0
-				}
-				if ($createMap['__RefresherError']) {
-					# Same durable persistence as the quit path, but a token-refresh EXCEPTION is a
-					# failure, not a user decision: after persisting completed + in-flight-uncertain
-					# it terminates NONZERO through the established fatal-exit machinery
-					# ($script:GenericFatal -> exit 1) so automation sees the run did not succeed.
-					Save-PaxInterruptedCreatePool -CreateMap $createMap -Requested $needCreate -Activities $activities -Phase 'initial'
-					Write-LogHost "  [PARENT-CREATE] Token refresh error during query creation ($($createMap['__RefresherError'])) - completed persisted, in-flight marked uncertain, saving checkpoint and exiting NONZERO (use -Resume to continue)" -ForegroundColor Red
-					$script:GenericFatal = $true
-					if ($script:CheckpointEnabled) { Save-Checkpoint -Force }
-					Show-CheckpointExitMessage
-					exit 1
-				}
-				foreach ($cp in $needCreate) {
-					$cr = $createMap[[int]$cp.Index]
-					if ($cr -and $cr.QueryId) {
-						$cp | Add-Member -NotePropertyName 'StoredQueryId' -NotePropertyValue ([string]$cr.QueryId) -Force
-						[void]$createdQueryIndexesThisPass.Add([int]$cp.Index)
-						$script:partitionStatus[$cp.Index].QueryId = [string]$cr.QueryId
-						$script:partitionStatus[$cp.Index].QueryApiVersion = $cr.Version
-						$script:partitionStatus[$cp.Index].LifecycleOperation = 'Create'
-						if ($script:CheckpointEnabled) {
-							Save-Checkpoint -PartitionIndex $cp.Index -QueryId ([string]$cr.QueryId) -State 'QueryCreated' -LifecycleState $script:partitionStatus[$cp.Index]
-						}
-						Write-LogHost "  [PARENT-CREATE] Partition $($cp.Index)/$($cp.Total) query created (QueryId: $($cr.QueryId))" -ForegroundColor DarkCyan
-					} else {
-						$cat = if ($cr) { [string]$cr.FailureCategory } else { 'NotCreated' }
-						[void]$createFailedThisPass.Add([int]$cp.Index)
-						if ($cat -eq 'UncertainCreateUnresolved') {
-							# A first POST whose acceptance could not be proven (collection miss / 5xx
-							# that cannot prove rejection) is NEVER re-POSTed. Persist durable
-							# uncertain-create state so a resume routes this partition to a READ-ONLY
-							# reconcile (adopt one exact match, fail closed on many, stay uncertain on
-							# none) instead of a duplicate create. Deliberately NOT Set-PartitionFailure:
-							# the partition is not marked Failed and is never requeued for a re-create.
-							$script:partitionStatus[$cp.Index].UncertainCreate = $true
-							$script:partitionStatus[$cp.Index].UncertainCreateInfo = @{
-								displayName = New-GraphAuditPartitionDisplayName -PStart $cp.PStart -PEnd $cp.PEnd -Index $cp.Index -Total $cp.Total -Activities $activities -RecordTypes $cp.RecordTypes -ServiceFilter $cp.ServiceFilter
-								fingerprint = New-GraphAuditQueryFingerprint -PStart $cp.PStart -PEnd $cp.PEnd -Activities $activities -RecordTypes $cp.RecordTypes -ServiceFilter $cp.ServiceFilter
-								pStart      = $cp.PStart.ToString('o')
-								pEnd        = $cp.PEnd.ToString('o')
-								attempt     = [int]$script:partitionStatus[$cp.Index].AttemptNumber
-								phase       = 'initial'
-							}
-							$script:partitionStatus[$cp.Index].LastError = "Parent-side query creation uncertain - durable reconcile pending (category: $cat)"
-							if ($script:CheckpointEnabled) {
-								Save-Checkpoint -PartitionIndex $cp.Index -State 'UncertainCreate' -LifecycleState $script:partitionStatus[$cp.Index]
-							}
-							Write-LogHost "  [PARENT-CREATE] Partition $($cp.Index)/$($cp.Total) create uncertain (category: $cat) - persisted for read-only reconcile, no re-POST, worker not launched this pass" -ForegroundColor Yellow
-						} else {
-							Set-PartitionFailure -Index $cp.Index -Stage 'CREATE' -Reason $cat
-							$script:partitionStatus[$cp.Index].LastError = "Parent-side query creation failed (category: $cat)"
-							$diag = "HTTP $($cr.HttpStatus) | client-request-id: $($cr.ClientRequestId) | request-id: $($cr.RequestId)"
-							Write-LogHost "  [PARENT-CREATE] Partition $($cp.Index)/$($cp.Total) creation failed (category: $cat; $diag) - worker not launched this pass" -ForegroundColor Yellow
-							if ($cr.ResponseBody) { Write-LogHost "    Graph response: $($cr.ResponseBody)" -ForegroundColor DarkYellow }
-						}
-					}
-				}
+				# Just-in-time creation: no query is created up front. The launch loop below creates
+				# each partition's query in the background only when a slot is free, so PAX never
+				# holds more Purview searches than it has workers, and one slow create never holds
+				# up the others (Purview allows 10 concurrent searches per account).
+				foreach ($cp in $needCreate) { [void]$jitCreateIndexes.Add([int]$cp.Index) }
+				Write-LogHost "  [PARENT-CREATE] $($needCreate.Count) partition query(ies) will be created just in time, as each of the $maxConcurrentPartitions slots frees" -ForegroundColor DarkCyan
 			}
 
-		# Create initial jobs for all PENDING partitions with backpressure
-		foreach ($pt in $pendingPartitions) {
+		# Create initial jobs for all PENDING partitions with backpressure.
+		# Just-in-time, non-blocking creation: a partition's query is created in the background
+		# only when a slot is free (running downloads + creates in progress + created queries
+		# waiting to launch < the worker bound). Each worker launches as soon as its own query
+		# exists, in whatever order creates finish, so a slow or unconfirmed create holds only
+		# its own slot.
+		$launchQueue = [System.Collections.Generic.Queue[object]]::new()
+		$createQueue = [System.Collections.Generic.Queue[object]]::new()
+		foreach ($qp in $pendingPartitions) {
+			if ($createFailedThisPass.Contains([int]$qp.Index)) { continue }
+			if ($jitCreateIndexes.Contains([int]$qp.Index)) { $createQueue.Enqueue($qp) } else { $launchQueue.Enqueue($qp) }
+		}
+		$asyncCreates = New-Object System.Collections.Generic.List[object]
+		$script:PaxAsyncCreatesInFlight = $asyncCreates
+		$jitHeartbeatAt = Get-Date
+		$pt = $null
+		$jitStep = {
+			foreach ($ac in $asyncCreates.ToArray()) {
+				if ($ac.Job -and $ac.Job.State -in 'Running', 'NotStarted') { continue }
+				[void]$asyncCreates.Remove($ac)
+				$acRow = Receive-PaxAsyncPartitionCreate -Handle $ac
+				$acOwn = @($jobs | Where-Object { $_.State -in 'Running', 'NotStarted' }).Count + $asyncCreates.Count
+				$acOutcome = Complete-PaxJitPartitionCreate -Partition $ac.Partition -Result $acRow -Activities $activities -Phase 'initial' -OwnActiveJobs $acOwn -CreatedIndexes $createdQueryIndexesThisPass
+				if ($acOutcome -eq 'Created') { $launchQueue.Enqueue($ac.Partition) }
+				elseif ($acOutcome -eq 'Recreate') { $createQueue.Enqueue($ac.Partition) }
+				else { [void]$createFailedThisPass.Add([int]$ac.Partition.Index) }
+			}
+			$jitHeld = if ($null -ne $pt) { 1 } else { 0 }
+			while ($createQueue.Count -gt 0 -and (@($jobs | Where-Object { $_.State -in 'Running', 'NotStarted' }).Count + $asyncCreates.Count + $launchQueue.Count + $jitHeld) -lt $maxConcurrentPartitions) {
+				$asyncCreates.Add((Start-PaxAsyncPartitionCreate -Partition $createQueue.Dequeue() -Activities $activities -MaxNetworkOutageMinutes $MaxNetworkOutageMinutes -Phase 'initial' -ThrottleLimit ([int]$maxConcurrentPartitions)))
+			}
+			if ($asyncCreates.Count -gt 0 -and ((Get-Date) - $jitHeartbeatAt).TotalSeconds -ge 60) {
+				$jitOldest = [int][Math]::Floor(((Get-Date) - @($asyncCreates | Sort-Object StartedAt)[0].StartedAt).TotalMinutes)
+				Write-LogHost "  [PARENT-CREATE] $($asyncCreates.Count) query creation(s) in progress (oldest ${jitOldest}m); $($createQueue.Count) waiting for a free slot; downloads continue" -ForegroundColor DarkCyan
+				$jitHeartbeatAt = Get-Date
+			}
+		}
+		while ($launchQueue.Count -gt 0 -or $createQueue.Count -gt 0 -or $asyncCreates.Count -gt 0) {
+			$pt = $null
+			. $jitStep
+			if ($launchQueue.Count -gt 0) { $pt = $launchQueue.Dequeue() }
 			# Skip launching a worker for any partition whose parent-side creation
 			# failed this pass; it has no query id and is already marked Failed for
 			# a future pass.
-			if ($createFailedThisPass.Contains([int]$pt.Index)) { continue }
+			if ($null -ne $pt -and $createFailedThisPass.Contains([int]$pt.Index)) { continue }
 			# ============================================================
 			# PROACTIVE TOKEN REFRESH: Check before each job creation
 			# Job launch phase can take 20-35+ minutes with 60 partitions
@@ -64176,7 +65479,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 			# Backpressure: Wait for a slot if we've reached MaxConcurrency
 			# Count only non-completed jobs (Running or NotStarted)
 			$activeJobs = @($jobs | Where-Object { $_.State -in 'Running','NotStarted' })
-			while ($activeJobs.Count -ge $MaxConcurrency) {
+			while ($activeJobs.Count -ge $MaxConcurrency -or $null -eq $pt) {
 				Write-Verbose "[BACKPRESSURE] Waiting for job slot (active: $($activeJobs.Count)/$MaxConcurrency)..." -Verbose:$VerbosePreference
 				
 				# PROACTIVE TOKEN REFRESH: Check while waiting for job slots
@@ -64210,7 +65513,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 				if (-not $script:serverSlotWarningShown) {
 					$backpressureDuration = ((Get-Date) - $script:backpressureStartTime).TotalMinutes
 					$sentToServerCount = @($script:partitionStatus.Values | Where-Object { $_.QueryId }).Count
-					if ($backpressureDuration -ge 3 -and $sentToServerCount -lt $MaxConcurrency) {
+					if ($backpressureDuration -ge 3 -and $sentToServerCount -lt $MaxConcurrency -and $activeJobs.Count -ge $MaxConcurrency) {
 						$missingSlots = $MaxConcurrency - $sentToServerCount
 						$ts = Get-Date -Format 'HH:mm:ss'
 						Write-LogHost "" -ForegroundColor Cyan
@@ -64491,7 +65794,13 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 				
 				# Recount active jobs
 				$activeJobs = @($jobs | Where-Object { $_.State -in 'Running','NotStarted' })
+				# Keep just-in-time creation moving while waiting, and pick up the next partition
+				# whose query is ready to launch.
+				. $jitStep
+				if ($null -eq $pt -and $launchQueue.Count -gt 0) { $pt = $launchQueue.Dequeue() }
+				if ($null -eq $pt -and $createQueue.Count -eq 0 -and $asyncCreates.Count -eq 0) { break }
 			}
+			if ($null -eq $pt) { continue }
 			
 		# Create the job now that we have a slot
 			# Graph API: MaxRecords=0 (unlimited) - 10K limit only applies to EOM mode
@@ -64825,10 +66134,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 														$script:partitionPageCounts[$pIdx] = $pg
 													}
 												}
-												if (-not $script:shownJobMessages.ContainsKey($msgKey)) {
+												if (Test-PaxNetworkMessageNew -Message $output) {
 													Write-LogHost $output -ForegroundColor DarkYellow
-													$script:shownJobMessages[$msgKey] = $true
 												}
+												$script:shownJobMessages[$msgKey] = $true
 											}
 											elseif ($output -match '^\[SUCCESS\]') {
 												$msgKey = "$($existingJob.Id):SUCCESS"
@@ -64995,6 +66304,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 					}
 				}
 				
+				$script:PaxAsyncCreatesInFlight = $null
 				# All ThreadJobs now launched (note: this only means threads are running, not that queries were created on server)
 				$launchElapsed = [Math]::Round(((Get-Date) - $launchStartTime).TotalSeconds, 1)
 				Write-LogHost "  All $($jobs.Count) ThreadJobs launched (${launchElapsed}s), monitoring query progress..." -ForegroundColor DarkCyan
@@ -65118,15 +66428,9 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 												$msgKey = "$($job.Id):$output"
 											}
 											elseif ($output -match '^\[NETWORK\]') {
-												# NETWORK messages include changing elapsed time - deduplicate by partition/page only
-												# Extract partition and page info for stable key
-												if ($output -match 'Partition (\d+/\d+).*Page (\d+)') {
-													$msgKey = "$($job.Id):NETWORK:$($matches[1]):Page$($matches[2])"
-												} elseif ($output -match 'Partition (\d+/\d+)') {
-													$msgKey = "$($job.Id):NETWORK:$($matches[1])"
-												} else {
-													$msgKey = "$($job.Id):NETWORK"
-												}
+												# Retry start and recovery for each page are shown once each, as they happen;
+												# Test-PaxNetworkMessageNew decides (a page-only key used to hide the recovery).
+												$msgKey = "$($job.Id):NETWORK:" + [guid]::NewGuid().ToString('N')
 											}
 											if (-not $script:shownJobMessages.ContainsKey($msgKey)) {
 												$script:shownJobMessages[$msgKey] = $true
@@ -65184,7 +66488,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 														$script:partitionPageCounts[$pIdx] = $pg
 													}
 												}
-												Write-LogHost $output -ForegroundColor Yellow
+												if (Test-PaxNetworkMessageNew -Message $output) { Write-LogHost $output -ForegroundColor Yellow }
 											}
 											elseif ($output -match '^\[STATUS\] Query running') {
 												Write-LogHost ($output -replace '^\[STATUS\]\s*','') -ForegroundColor Yellow
@@ -65534,7 +66838,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 								
 								$debugTimestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
 
-								if ($debugMsg -match '^\[GRAPH-(WARN|ERROR)\]' -or $debugMsg -like 'Graph API Query Body*' -or $debugMsg -like 'API Stored Query Details*' -or $debugMsg -match '^\[NETWORK\]' -or $debugMsg -match '^\[ERROR\]') {
+								if ($debugMsg -match '^\[NETWORK\]') {
+									if (Test-PaxNetworkMessageNew -Message $debugMsg) { Write-LogHost $debugMsg -ForegroundColor DarkGray }
+								}
+								elseif ($debugMsg -match '^\[GRAPH-(WARN|ERROR)\]' -or $debugMsg -like 'Graph API Query Body*' -or $debugMsg -like 'API Stored Query Details*' -or $debugMsg -match '^\[ERROR\]') {
 									Write-LogHost $debugMsg -ForegroundColor DarkGray
 								}
 							}
@@ -66037,7 +67344,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 
 										$debugTimestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
 
-										if ($msg -match '^[\[]?(GRAPH-(WARN|ERROR)|ERROR|NETWORK|ATTEMPT|SENT)') {
+										if ($msg -match '^\[NETWORK\]') {
+											if (Test-PaxNetworkMessageNew -Message $msg) { Write-LogHost $msg -ForegroundColor DarkGray }
+										}
+										elseif ($msg -match '^[\[]?(GRAPH-(WARN|ERROR)|ERROR|NETWORK|ATTEMPT|SENT)') {
 											Write-LogHost $msg -ForegroundColor DarkGray
 										}
 										elseif ($msg -like 'Graph API Query Body*' -or $msg -like 'API Stored Query Details*') {
@@ -66291,91 +67601,53 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 								[void]$retryNeedCreate.Add($cp)
 							}
 						}
+						# Just-in-time creation (retry phase): each missing query is created in the background
+						# only when fewer than $retryMaxConcurrency retry downloads and creates are active.
+						$retryJitIndexes = [System.Collections.Generic.HashSet[int]]::new()
+						foreach ($cp in $retryNeedCreate) { [void]$retryJitIndexes.Add([int]$cp.Index) }
 						if ($retryNeedCreate.Count -gt 0) {
-							$retryCreateBound = Assert-PaxConcurrencyInvariant -Value ([int]$retryMaxConcurrency) -Name 'retry parent create-pool concurrency'
-							Write-LogHost "  [PARENT-CREATE] Creating $($retryNeedCreate.Count) retry partition query(ies) in bounded parallel (limit $retryCreateBound)..." -ForegroundColor DarkCyan
-							# Refresh the token before the retry create pre-pass so every queued and
-							# retrying create job reads a current token from the shared auth state.
-							$retryCreateRefresh = Refresh-GraphTokenIfNeeded -BufferMinutes 5
-							if ($retryCreateRefresh -is [string] -and $retryCreateRefresh -eq 'Quit') {
-								if ($script:CheckpointEnabled) { Save-Checkpoint -Force }
-								Show-CheckpointExitMessage
-								exit 0
-							}
-							$retryCreateMap = Invoke-PaxParentQueryCreation -Partitions $retryNeedCreate.ToArray() -ThrottleLimit $retryCreateBound -Activities $activities -MaxNetworkOutageMinutes $MaxNetworkOutageMinutes
-							# A token quit or refresh error during creation fails the pass closed before
-							# any partition is persisted: enter the graceful authentication-exit path so
-							# nothing is recorded as created off a quit/error decision (resume re-runs the
-							# pre-create reconcile, which adopts an already-created query without a
-							# duplicate POST).
-							if ($retryCreateMap['__AuthQuit']) {
-								# Persist any query the pool actually created before the quit AND mark the
-								# still-in-flight partitions durable-uncertain, so a known QueryId is never
-								# discarded and a possibly-accepted in-flight POST is reconciled read-only on
-								# resume. A user-driven quit stays a graceful (exit 0) checkpoint-and-resume.
-								Save-PaxInterruptedCreatePool -CreateMap $retryCreateMap -Requested $retryNeedCreate -Activities $activities -Phase 'retry'
-								Write-LogHost "  [PARENT-CREATE] Authentication quit requested during query creation - completed persisted, in-flight marked uncertain, saving checkpoint and exiting (use -Resume to continue)" -ForegroundColor Yellow
-								if ($script:CheckpointEnabled) { Save-Checkpoint -Force }
-								Show-CheckpointExitMessage
-								exit 0
-							}
-							if ($retryCreateMap['__RefresherError']) {
-								# Same durable persistence as the quit path, but a token-refresh EXCEPTION is a
-								# failure, not a user decision: after persisting completed + in-flight-uncertain
-								# it terminates NONZERO through the established fatal-exit machinery
-								# ($script:GenericFatal -> exit 1) so automation sees the run did not succeed.
-								Save-PaxInterruptedCreatePool -CreateMap $retryCreateMap -Requested $retryNeedCreate -Activities $activities -Phase 'retry'
-								Write-LogHost "  [PARENT-CREATE] Token refresh error during query creation ($($retryCreateMap['__RefresherError'])) - completed persisted, in-flight marked uncertain, saving checkpoint and exiting NONZERO (use -Resume to continue)" -ForegroundColor Red
-								$script:GenericFatal = $true
-								if ($script:CheckpointEnabled) { Save-Checkpoint -Force }
-								Show-CheckpointExitMessage
-								exit 1
-							}
-							foreach ($cp in $retryNeedCreate) {
-								$cr = $retryCreateMap[[int]$cp.Index]
-								if ($cr -and $cr.QueryId) {
-									$cp | Add-Member -NotePropertyName 'StoredQueryId' -NotePropertyValue ([string]$cr.QueryId) -Force
-									$script:partitionStatus[$cp.Index].QueryId = [string]$cr.QueryId
-									$script:partitionStatus[$cp.Index].QueryApiVersion = $cr.Version
-									$script:partitionStatus[$cp.Index].LifecycleOperation = 'Create'
-									if ($script:CheckpointEnabled) {
-										Save-Checkpoint -PartitionIndex $cp.Index -QueryId ([string]$cr.QueryId) -State 'QueryCreated' -LifecycleState $script:partitionStatus[$cp.Index]
-									}
-									Write-LogHost "  [PARENT-CREATE] Partition $($cp.Index)/$($cp.Total) query created (QueryId: $($cr.QueryId))" -ForegroundColor DarkCyan
-								} else {
-									$cat = if ($cr) { [string]$cr.FailureCategory } else { 'NotCreated' }
-									[void]$retryCreateFailed.Add([int]$cp.Index)
-									if ($cat -eq 'UncertainCreateUnresolved') {
-										# A first POST whose acceptance could not be proven is NEVER re-POSTed.
-										# Persist durable uncertain-create state so a resume routes this
-										# partition to a READ-ONLY reconcile instead of a duplicate create.
-										# Deliberately NOT Set-PartitionFailure: not marked Failed, never requeued.
-										$script:partitionStatus[$cp.Index].UncertainCreate = $true
-										$script:partitionStatus[$cp.Index].UncertainCreateInfo = @{
-											displayName = New-GraphAuditPartitionDisplayName -PStart $cp.PStart -PEnd $cp.PEnd -Index $cp.Index -Total $cp.Total -Activities $activities -RecordTypes $cp.RecordTypes -ServiceFilter $cp.ServiceFilter
-											fingerprint = New-GraphAuditQueryFingerprint -PStart $cp.PStart -PEnd $cp.PEnd -Activities $activities -RecordTypes $cp.RecordTypes -ServiceFilter $cp.ServiceFilter
-											pStart      = $cp.PStart.ToString('o')
-											pEnd        = $cp.PEnd.ToString('o')
-											attempt     = [int]$script:partitionStatus[$cp.Index].AttemptNumber
-											phase       = 'retry'
-										}
-										$script:partitionStatus[$cp.Index].LastError = "Parent-side query creation uncertain - durable reconcile pending (category: $cat)"
-										if ($script:CheckpointEnabled) {
-											Save-Checkpoint -PartitionIndex $cp.Index -State 'UncertainCreate' -LifecycleState $script:partitionStatus[$cp.Index]
-										}
-										Write-LogHost "  [PARENT-CREATE] Partition $($cp.Index)/$($cp.Total) create uncertain (category: $cat) - persisted for read-only reconcile, no re-POST, retry worker not launched this pass" -ForegroundColor Yellow
-									} else {
-										Set-PartitionFailure -Index $cp.Index -Stage 'CREATE' -Reason $cat
-										$script:partitionStatus[$cp.Index].LastError = "Parent-side query creation failed (category: $cat)"
-										$diag = "HTTP $($cr.HttpStatus) | client-request-id: $($cr.ClientRequestId) | request-id: $($cr.RequestId)"
-										Write-LogHost "  [PARENT-CREATE] Partition $($cp.Index)/$($cp.Total) creation failed (category: $cat; $diag) - retry worker not launched this pass" -ForegroundColor Yellow
-										if ($cr.ResponseBody) { Write-LogHost "    Graph response: $($cr.ResponseBody)" -ForegroundColor DarkYellow }
-									}
-								}
-							}
+							Write-LogHost "  [PARENT-CREATE] $($retryNeedCreate.Count) retry partition query(ies) will be created just in time, as each of the $retryMaxConcurrency retry slots frees" -ForegroundColor DarkCyan
 						}
 
-						foreach ($pt in $partitionsToRetry) {
+						$retryLaunchQueue = [System.Collections.Generic.Queue[object]]::new()
+						$retryCreateQueue = [System.Collections.Generic.Queue[object]]::new()
+						foreach ($rq in $partitionsToRetry) {
+							if ($retryCreateFailed.Contains([int]$rq.Index)) { continue }
+							if ($retryJitIndexes.Contains([int]$rq.Index)) { $retryCreateQueue.Enqueue($rq) } else { $retryLaunchQueue.Enqueue($rq) }
+						}
+						$retryAsyncCreates = New-Object System.Collections.Generic.List[object]
+						$script:PaxAsyncCreatesInFlight = $retryAsyncCreates
+						$retryJitHeartbeatAt = Get-Date
+						while ($retryLaunchQueue.Count -gt 0 -or $retryCreateQueue.Count -gt 0 -or $retryAsyncCreates.Count -gt 0) {
+							foreach ($ac in $retryAsyncCreates.ToArray()) {
+								if ($ac.Job -and $ac.Job.State -in 'Running', 'NotStarted') { continue }
+								[void]$retryAsyncCreates.Remove($ac)
+								$acRow = Receive-PaxAsyncPartitionCreate -Handle $ac
+								$acOwn = @($retryJobs | Where-Object { $_.State -in 'Running', 'NotStarted' }).Count + $retryAsyncCreates.Count
+								$acOutcome = Complete-PaxJitPartitionCreate -Partition $ac.Partition -Result $acRow -Activities $activities -Phase 'retry' -OwnActiveJobs $acOwn
+								if ($acOutcome -eq 'Created') { $retryLaunchQueue.Enqueue($ac.Partition) }
+								elseif ($acOutcome -eq 'Recreate') { $retryCreateQueue.Enqueue($ac.Partition) }
+								else { [void]$retryCreateFailed.Add([int]$ac.Partition.Index) }
+							}
+							while ($retryCreateQueue.Count -gt 0 -and (@($retryJobs | Where-Object { $_.State -in 'Running', 'NotStarted' }).Count + $retryAsyncCreates.Count + $retryLaunchQueue.Count) -lt $retryMaxConcurrency) {
+								$retryAsyncCreates.Add((Start-PaxAsyncPartitionCreate -Partition $retryCreateQueue.Dequeue() -Activities $activities -MaxNetworkOutageMinutes $MaxNetworkOutageMinutes -Phase 'retry' -ThrottleLimit ([int]$retryMaxConcurrency)))
+							}
+							if ($retryAsyncCreates.Count -gt 0 -and ((Get-Date) - $retryJitHeartbeatAt).TotalSeconds -ge 60) {
+								$retryJitOldest = [int][Math]::Floor(((Get-Date) - @($retryAsyncCreates | Sort-Object StartedAt)[0].StartedAt).TotalMinutes)
+								Write-LogHost "  [PARENT-CREATE] $($retryAsyncCreates.Count) retry query creation(s) in progress (oldest ${retryJitOldest}m); $($retryCreateQueue.Count) waiting for a free slot; retry downloads continue" -ForegroundColor DarkCyan
+								$retryJitHeartbeatAt = Get-Date
+							}
+							if ($retryLaunchQueue.Count -eq 0) {
+								$retryWaitRefresh = Refresh-GraphTokenIfNeeded -BufferMinutes 5
+								if ($retryWaitRefresh -is [string] -and $retryWaitRefresh -eq 'Quit') {
+									if ($script:CheckpointEnabled) { Save-Checkpoint -Force }
+									Show-CheckpointExitMessage
+									exit 0
+								}
+								Start-Sleep -Seconds 2
+								continue
+							}
+							$pt = $retryLaunchQueue.Dequeue()
 							# Skip launching a retry worker for any partition whose parent-side
 							# creation failed this pass; it has no query id to reuse.
 							if ($retryCreateFailed.Contains([int]$pt.Index)) { continue }
@@ -66395,7 +67667,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 							# and eventual consistency can briefly 404 a freshly-created query. Reusing
 							# the QueryId lets the pinned proven-lifecycle version re-poll and fetch the
 							# already-completed server-side query instead of creating a duplicate. The
-							# parent pre-pass creates any missing query before this retry launch, so a
+							# just-in-time create above makes any missing query before this retry launch, so a
 							# partition that reaches launch always carries a QueryId to reuse. Partitions
 							# that stay unretrievable are bounded by the consecutive-failure terminal guard
 							# ($script:MaxConsecutiveIdenticalFailures), not by clearing the ID, so no
@@ -66413,6 +67685,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 							Write-LogHost "  [RETRY-QUEUE] Partition $($pt.Index)/$($pt.Total) marked as Failed for retry - retry attempt $($script:partitionStatus[$pt.Index].AttemptNumber) scheduled" -ForegroundColor Yellow
 						}
 						
+						$script:PaxAsyncCreatesInFlight = $null
 						while (($retryJobs | Where-Object { $_.State -in 'Running','NotStarted' }).Count -gt 0) {
 							foreach ($job in $retryJobs) {
 								try {
@@ -66650,6 +67923,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 					
 					Write-LogHost "  Total Partitions: $totalPartitions" -ForegroundColor White
 					Write-LogHost "  Sent and Complete: $($completedPartitions.Count)" -ForegroundColor Green
+					Write-PaxNetworkRetrySummary -PartitionStatus $script:partitionStatus
 					
 					if ($sentButIncomplete.Count -gt 0) {
 						Write-LogHost "  [!] Sent but Incomplete: $($sentButIncomplete.Count)" -ForegroundColor Yellow
@@ -68825,7 +70099,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 		Write-LogHost "  Exported:  $totalExported rows" -ForegroundColor White
 		# Show duplicate removal count in Pipeline Summary when streaming merge deduplicated records
 		if ($script:StreamingMergeDuplicatesSkipped -gt 0) {
-			Write-LogHost "  Deduped:   $($script:StreamingMergeDuplicatesSkipped) duplicate records removed" -ForegroundColor DarkGray
+			Write-LogHost "  Deduped:   $($script:StreamingMergeDuplicatesSkipped) repeat copies of the same audit records (each record is kept once)" -ForegroundColor DarkGray
 		}
 		# Show date-range trim count in Pipeline Summary
 		if ($script:DateTrimCount -gt 0) {
@@ -69991,6 +71265,8 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 					else {
 						$multiManifest = Join-Path $multiIncDir ("PAX_M365_OutputManifest_{0}.json" -f $global:ScriptRunTimestamp)
 						$multiArgs = @('--input', $multiPurviewCsv, '--output-dir', $multiPassStageDir, '--output-manifest', $multiManifest)
+						# Lets the processor keep one timestamp in its output names (see main()).
+						$env:PAX_RUN_TIMESTAMP = [string]$global:ScriptRunTimestamp
 						if ($script:PaxDeidEnabled) { $multiArgs += '--deidentify' }
 						$multiExit = Invoke-EmbeddedProcessor -ProcessorMode $script:RollupProcessorMode -PythonExe $multiPython.Path -LauncherArgs $multiPython.Args -ProcessorArgs $multiArgs -IncrementalDir $multiIncDir
 						if ($multiExit -ne 0) { throw "processor exited with code $multiExit" }
@@ -70064,7 +71340,12 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 							[void](script:Assert-PaxUsersProtectionOutput -Path $multiM365UsersCurrent)
 						}
 						$multiM365UsersCandidate = $multiM365UsersCurrent
-						$multiM365UsersLeaf = if ($multiUserExplicitFileLeaf) { $multiUserExplicitFileLeaf } else { [IO.Path]::GetFileName($multiEntraCsv) }
+						$multiM365UsersLeaf = if ($multiUserExplicitFileLeaf) { $multiUserExplicitFileLeaf } else {
+							# The dashboard folder copy carries the dashboard prefix, like every other dashboard's
+							# Users file, so it is not mistaken for the shared raw export beside the folders.
+							$multiM365RawLeaf = [IO.Path]::GetFileName($multiEntraCsv)
+							if ($multiM365RawLeaf.StartsWith('M365_', [StringComparison]::OrdinalIgnoreCase)) { $multiM365RawLeaf } else { 'M365_' + $multiM365RawLeaf }
+						}
 						$multiM365UsersFinal = Join-Path (Join-Path $multiUserBaseDir 'M365') $multiM365UsersLeaf
 						$multiM365UsersTarget = $multiRoster.M365.Users
 						if ($AppendUserInfo) {
@@ -70334,6 +71615,8 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 				# is never swept, converted, appended, de-identified, or published.
 				$rollupM365ManifestPath = Join-Path $rollupIncDir "PAX_M365_OutputManifest_${global:ScriptRunTimestamp}.json"
 				$rollupArgs = @('--input', $rollupPurviewCsv, '--output-dir', $rollupOutputDir, '--output-manifest', $rollupM365ManifestPath)
+				# Lets the processor keep one timestamp in its output names (see main()).
+				$env:PAX_RUN_TIMESTAMP = [string]$global:ScriptRunTimestamp
 				$rollupRawCsvList.Add($rollupPurviewCsv)
 				# The M365Bundle processor does NOT consume the Entra users CSV. When
 				# -IncludeUserInfo produced one, it is always retained — surface it in
@@ -71822,6 +73105,11 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 						}
 						[void][System.IO.Directory]::CreateDirectory($m365RebuildDir)
 						$m365PurviewStem = [System.IO.Path]::GetFileNameWithoutExtension($rollupPurviewCsv)
+						# A run-named input yields <base>_<type>_<run timestamp>.csv (one timestamp).
+						if ($global:ScriptRunTimestamp -and $m365PurviewStem -match ('^(?<base>.+)_' + [regex]::Escape([string]$global:ScriptRunTimestamp) + '$') -and
+							(Test-Path -LiteralPath (Join-Path $rollupOutputDir ('{0}_Rollup_{1}.csv' -f $Matches.base, $global:ScriptRunTimestamp)) -PathType Leaf)) {
+							$m365PurviewStem = $Matches.base
+						}
 						# Glob-resolve the 4 current-run timestamped outputs.
 						$m365CurRollupInfo       = @(Get-ChildItem -LiteralPath $rollupOutputDir -Filter ("{0}_Rollup_*.csv"        -f $m365PurviewStem) -File -ErrorAction Stop | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
 						$m365CurUserStatsInfo    = @(Get-ChildItem -LiteralPath $rollupOutputDir -Filter ("{0}_UserStats_*.csv"     -f $m365PurviewStem) -File -ErrorAction Stop | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
@@ -73183,10 +74471,11 @@ finally {
 	}
 	
 	$endUtc = (Get-Date).ToUniversalTime()
+	try { script:Write-Agent365ShortfallSummary } catch {}
 	if (-not $script:summaryWritten) {
 		try { if ($script:metrics -and $script:metrics.StartTime) { $startTail = $script:metrics.StartTime.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss'); Write-Log "Script execution started at $startTail UTC" } } catch {}
 		Write-Log "Script execution completed at $($endUtc.ToString('yyyy-MM-dd HH:mm:ss')) UTC"
-		Write-Log "Script version: v$ScriptVersion"
+		Write-Log "Script version: v$ScriptVersion$(if ($ScriptReleaseType -eq 'Prerelease') { " - $ScriptReleaseType - $ScriptReleaseDate" })"
 		try { if ($script:metrics -and $script:metrics.StartTime) { $elapsed = $endUtc - $script:metrics.StartTime; $totalHours = [math]::Floor($elapsed.TotalHours); $remainder = $elapsed - [TimeSpan]::FromHours($totalHours); $elapsedFormatted = ("{0}:{1:00}:{2:00}.{3:000}" -f $totalHours, $remainder.Minutes, $remainder.Seconds, $remainder.Milliseconds); Write-Log ("Total elapsed time: {0} (hours:minutes:seconds.milliseconds)" -f $elapsedFormatted) } } catch {}
 		$script:summaryWritten = $true
 	}
@@ -73256,7 +74545,7 @@ finally {
 	$prelimExitMeaning = switch ($prelimExit) { 1 {'fatal error'} 20 {'stopped - repeated failures'} 10 {'row-limit reached'} 30 {'user directory fetch failed'} 40 {'completed with gaps'} default {'success'} }
 	Write-Log ("Terminal exit result: {0} ({1})" -f $prelimExit, $prelimExitMeaning)
 	if ($script:RemoteScratchDir -and ($script:AnyUploadFailed -or $script:FactAppendFailed -or $script:GenericFatal)) { Write-Log ("Recovery location - local run files preserved for retry: {0}" -f $script:RemoteScratchDir) }
-	Write-Log "Note: lines written after this point (Microsoft Graph disconnect confirmation and any late upload-failure escalation) appear in the local log only, not in the uploaded remote copy."
+	Write-Log "Note: the uploaded copy of this log ends here. Later lines (the Microsoft Graph disconnect confirmation and, only if one occurs, a late upload failure) appear in the local log only, not in the uploaded remote copy."
 
 	# Remote-output: final upload of metrics JSON + log file (best-effort; runs on every
 	# exit path including error/Ctrl+C so operators can see the run output remotely).
