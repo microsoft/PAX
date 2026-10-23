@@ -4,7 +4,7 @@
 
 **Portable Audit eXporter (PAX) · Purview Audit Log Processor**
 
-**v2.0.0 prerelease 20261021-11**
+**v2.0.0 prerelease 20261023-12**
 
 **Preview build — not a production release.**
 
@@ -30,13 +30,13 @@ A prerelease build is **not** the released product. The current released version
 <tr>
 <td>
 
-### [PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261021-11.ps1](https://github.com/microsoft/PAX/releases/download/purview-v2.0.0-prerelease-20261021-11/PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261021-11.ps1)
+### [PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261023-12.ps1](https://github.com/microsoft/PAX/releases/download/purview-v2.0.0-prerelease-20261023-12/PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261023-12.ps1)
 
-<sub>Click the file name above to download the script directly. See the [prerelease page](https://github.com/microsoft/PAX/releases/tag/purview-v2.0.0-prerelease-20261021-11) for release details.</sub>
+<sub>Click the file name above to download the script directly. See the [prerelease page](https://github.com/microsoft/PAX/releases/tag/purview-v2.0.0-prerelease-20261023-12) for release details.</sub>
 
-<sub>**SHA256:** `33D6BB87AF9926768FD3FA397DE9A6ECB9670B24A8C46C2CAB809A443C256422`</sub>
+<sub>**SHA256:** `3D5CF3A6B39FD9245F6AAE2037C06A3AF5B236E70876719B3ED329C517B81E10`</sub>
 
-<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261021-11.ps1 -Algorithm SHA256`</sub>
+<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261023-12.ps1 -Algorithm SHA256`</sub>
 
 </td>
 </tr>
@@ -45,7 +45,9 @@ A prerelease build is **not** the released product. The current released version
 Earlier preview builds are kept in [`prerelease_archive`](./prerelease_archive) for reference only.
 
 > [!NOTE]
-> **What's new in prerelease 11:** audit searches are created just in time, in the background, one for each free download slot, instead of all at once at the start of collection. A slow search request holds up only its own partition while the others keep creating and downloading. If a request drops on the network and Purview doesn't list the search within 5 minutes, PAX requests it again on its own (up to 3 times, then through the normal retry passes), first checking Purview for the earlier request so no duplicate is created. No manual step or resume is needed. Downloading starts with the first completed search, and a throttled search request while other partitions are downloading is retried later instead of counting as a partition failure. It also accepts -UserHistory On in any multi-dashboard run that includes M365; prerelease 10 refused it when AIO was not in the list. Nothing else changed from prerelease 10.
+> **What's new in prerelease 12:** Fabric Tables runs that include CoworkAdoption no longer stop at the Users check before any table is written. Prerelease 11 applied the AI-in-One and ValueLens Users identity check to the Cowork Adoption Users table, which uses a different layout, so the whole table set was refused. Cowork Adoption Users are still checked when they are produced. An existing empty Delta table can now be replaced by an empty result, for example for a dashboard with no activity yet; replacing a table that has rows with an empty result is still refused. The CoworkAdoption help text no longer lists qualification as outstanding. Nothing else changed from prerelease 11.
+>
+> **Carried forward from prerelease 11:** audit searches are created just in time, in the background, one for each free download slot, instead of all at once at the start of collection. A slow search request holds up only its own partition while the others keep creating and downloading. If a request drops on the network and Purview doesn't list the search within 5 minutes, PAX requests it again on its own (up to 3 times, then through the normal retry passes), first checking Purview for the earlier request so no duplicate is created. No manual step or resume is needed. Downloading starts with the first completed search, and a throttled search request while other partitions are downloading is retried later instead of counting as a partition failure. It also accepts -UserHistory On in any multi-dashboard run that includes M365; prerelease 10 refused it when AIO was not in the list.
 
 ---
 
@@ -107,7 +109,7 @@ These are the net changes from the current production release to this **v2.0.0 p
 
 **Append to multiple dashboard histories.** The existing `-AppendFile`, `-AppendUserInfo` and `-AppendAgent365Info` selectors resolve the corresponding histories for each dashboard. AIO and ValueLens retain their own user, message and conversation keys. Missing, incomplete or ambiguous histories are refused rather than guessed. If an added dashboard lacks history, PAX stops before collection and provides a separate backfill command. Resume cannot change dashboard membership; start a new combined run after preparing compatible histories.
 
-**Cowork Adoption inputs.** `-Dashboard CoworkAdoption` enables rollup and user collection and produces a Purview CSV and a Users CSV, alone or with other dashboards. Supply each file's full path to its matching template input. The Users input uses the collected PAX Copilot license evidence. Scheduled counts describe prompt setup, not independently observed executions; unavailable record-level credits stay blank. These files are not an admin-center usage import or a billing report. See [Known limits](#good-to-know) for qualification limits.
+**Cowork Adoption inputs.** `-Dashboard CoworkAdoption` enables rollup and user collection and produces a Purview CSV and a Users CSV, alone or with other dashboards. Supply each file's full path to its matching template input. The Users input uses the collected PAX Copilot license evidence. Scheduled counts describe prompt setup, not independently observed executions; unavailable record-level credits stay blank. These files are not an admin-center usage import or a billing report.
 
 **Incremental catch-up.** `-Watermark` collects missing whole UTC days into a Local, SharePoint or Fabric Files CSV `-AppendFile` target; it does not support Tables/Delta. Supply `-WatermarkStartDate` only for the first run, and do not supply manual start/end dates. The marker advances only after every required output publishes and verifies. A current target finishes without service calls. Resume restores the saved window: do not repeat watermark switches. Supplied audit files, `-UseEOM`, directory-only and Agent-only runs do not support watermark mode.
 
@@ -264,7 +266,6 @@ These are the net changes from the current production release to this **v2.0.0 p
 ## Known limits
 
 - **Graph SDK compatibility:** PAX uses installed Microsoft Graph PowerShell v2.25.0–v2.40.0, or installs v2.40.0 for the current user if none is available. It does not automatically upgrade the SDK; newer installations remain but are not selected. An incompatible version already loaded requires a fresh PowerShell window.
-- **Cowork Adoption qualification:** Local output is available to try. Remaining end-to-end coverage gaps concern PAX delivery of CoworkAdoption outputs to SharePoint/OneDrive or Fabric, including existing-history append, de-identified Users, interrupted publication/Resume and dashboard combinations. These are qualification gaps, not newly confirmed defects or restrictions introduced by Security Copilot trimming.
 - **Private recovery qualification:** Windows synthetic coverage includes Fabric mirror/restore using mocked transport. Live Fabric recovery and positive Unix owner-only recovery remain unqualified; a fail-closed permission refusal is not successful recovery.
 - **History is not reconstructed license truth:** Unknown users/activity remain in outputs, but current dashboard licensed/unlicensed populations may exclude them. The current AI-in-One rollup template expects one row per normalized person, not multi-state history; `-UserHistory On` does not upgrade that template.
 - **Long raw audit JSON:** The Lakehouse SQL endpoint exposes Delta strings as `varchar(8000)`, which can truncate long `AuditData` when read through SQL. Complete JSON remains in Delta for Spark or direct Delta readers. Processed AIO tables do not contain raw `AuditData`; this preview does not change the SQL limit.
