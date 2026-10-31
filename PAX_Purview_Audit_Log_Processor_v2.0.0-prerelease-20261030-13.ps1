@@ -1,6 +1,6 @@
 ﻿# Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Script Version: v2.0.0 - Prerelease - 2026-10-21-11
-# Requirements: PowerShell 7+ for default Graph API mode; PowerShell 5.1 supported ONLY with -UseEOM (serial Exchange Online Management mode, no parallel query/explosion).
+# Script Version: v2.0.0 - Prerelease - 2026-10-30-13
+# Requirements: PowerShell 7.0 or later for every mode, including -UseEOM (serial Exchange Online Management mode).
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 <#
 .SYNOPSIS
@@ -158,24 +158,24 @@
 				• PromptFilter removes responses and resource-only rows
 				• Result: Clean dataset of just sales team questions to the agent
 
-	PowerShell 7+ required for default Graph API mode. PowerShell 5.1 is supported ONLY when running in -UseEOM mode (serial Exchange Online Management cmdlets, no parallelism).
+	PowerShell 7.0 or later is required for every mode. -UseEOM remains available with serial Exchange Online Management cmdlets under PowerShell 7.
 
 .EXECUTIONPOLICY
 	No internal execution policy bypass. Use external host invocation if needed:
 		pwsh.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-		# PS 5.1 host (EOM mode only):
-		powershell.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -UseEOM -StartDate 2025-10-01 -EndDate 2025-10-02
+		# PowerShell 7 host with EOM mode:
+		pwsh.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -UseEOM -StartDate 2025-10-01 -EndDate 2025-10-02
 
 .POWERSHELLVERSIONS
-	PowerShell 7+ required (default Graph API mode; download: https://aka.ms/powershell).
-	PowerShell 5.1 supported ONLY with -UseEOM (serial EOM mode; no parallel query/explosion).
+	PowerShell 7.0 or later is required (download: https://aka.ms/powershell).
+	Windows PowerShell 5.1 is not supported. -UseEOM remains available under PowerShell 7.
 
 .EXAMPLE
 	# Basic export with auto-generated timestamped filename
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputPath C:\Temp\
 .EXAMPLE
-	# PowerShell 5.1 (EOM mode only — serial, no parallelization)
-	powershell -File .\PAX_Purview_Audit_Log_Processor.ps1 -UseEOM -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputPath C:\Temp\
+	# PowerShell 7 with serial Exchange Online Management mode
+	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -UseEOM -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputPath C:\Temp\
 .EXAMPLE
 	# Filter to only records with agents present
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -AgentsOnly -OutputPath C:\Temp\
@@ -1176,8 +1176,6 @@
 	files stay in the supplied output folder; multi-dashboard files use its CoworkAdoption child folder.
 	Generated filenames begin with CoworkAdoption_; no Cowork manifest is emitted. Use the generated
 	Purview and Users CSVs for Cowork Adoption Purview File and Cowork Adoption Users File respectively.
-	CoworkAdoption append safety and SharePoint/Fabric end-to-end qualification remain outstanding;
-	these output capabilities do not establish those guarantees.
 
 .PARAMETER Watermark
 	CURRENT AVAILABILITY: Available with a local, SharePoint, or Fabric Files .csv append target.
@@ -1594,8 +1592,8 @@
 	  If -EnableParallel or -ParallelMode is specified with -UseEOM, script will exit with error.
 
 	POWERSHELL VERSION:
-	  EOM mode is the only path supported on PowerShell 5.1. The default Graph API mode
-	  requires PowerShell 7+ (for ThreadJob-based parallel query execution).
+	PowerShell 7.0 or later is required for every mode, including -UseEOM.
+	Windows PowerShell 5.1 is not supported.
 
 
 .PARAMETER IncludeUserInfo
@@ -8929,7 +8927,7 @@ $m365UsageActivityBundle = @(
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
 $ScriptVersion = '2.0.0'
 $ScriptReleaseType = 'Prerelease'
-$ScriptReleaseDate = '2026-10-21-11'
+$ScriptReleaseDate = '2026-10-30-13'
 
 function Invoke-PaxVersionCheck {
 	# Informational, non-blocking, failure-isolated version check against the public PAX repo.
@@ -9918,7 +9916,9 @@ function script:New-PaxSourceVerifiedUsersRecord {
 		[Parameter(Mandatory)][string]$SourcePath,
 		[Parameter(Mandatory)][string]$CandidatePath,
 		[Parameter(Mandatory)][string]$SourceSha256,
-		[switch]$ProcessedUsers
+		[switch]$ProcessedUsers,
+		[string]$PythonExe,
+		[string[]]$LauncherArgs = @()
 	)
 	if (-not $script:PaxDeidEnabled) { throw 'Users protection issuance requires enabled de-identification.' }
 	$candidateBefore = (Get-FileHash -LiteralPath $CandidatePath -Algorithm SHA256 -ErrorAction Stop).Hash
@@ -9946,7 +9946,29 @@ function script:New-PaxSourceVerifiedUsersRecord {
 		$fields['Email'] = 'Upn'
 		for ($level = 0; $level -lt 15; $level++) { $fields["Level${level}_Name"] = 'Name' }
 	}
-	$verified = script:Test-PaxRawDeidCandidate -SourcePath $SourcePath -CandidatePath $CandidatePath -SourceSha256 $SourceSha256 -FieldKinds $fields -ProcessedHierarchy:$ProcessedUsers
+	if ($ProcessedUsers) {
+		if ([string]::IsNullOrWhiteSpace($PythonExe)) { throw 'Processed Users verification requires the actual processor interpreter.' }
+		$verificationWork = script:New-PaxPrivateDeidWorkDirectory
+		try {
+			$verificationScript = Join-Path $verificationWork 'processed-users-verifier.py'
+			[IO.File]::WriteAllText($verificationScript, $Script:EMBEDDED_PROCESSOR_COPILOT, [Text.UTF8Encoding]::new($false))
+			$verificationArgs = @($LauncherArgs) + @('-u', $verificationScript, '--purview', $SourcePath, '--entra', $SourcePath,
+				'--verify-users-reference', $SourcePath, '--verify-users-candidate', $CandidatePath,
+				'--verify-users-source-sha256', $SourceSha256, '--verify-users-salt-hex', [BitConverter]::ToString($script:PaxDeidSaltBytes).Replace('-', ''),
+				'--verify-users-domain', $script:PaxDeidDomain)
+			$verificationText = @(& $PythonExe @verificationArgs 2>&1)
+			$verificationExit = $LASTEXITCODE
+			$verified = ($verificationText -join "`n") | ConvertFrom-Json -ErrorAction Stop
+			if ($verificationExit -ne 0 -or $verified.Verified -isnot [bool] -or -not $verified.Verified) {
+				if ([string]$verified.Reason -cmatch '^De-identification verification failed at record [0-9]+, column [0-9]+\.$') { throw ([string]$verified.Reason) }
+				throw 'Independent processed Users protection verification failed; publication remains blocked.'
+			}
+		}
+		finally { Remove-Item -LiteralPath $verificationWork -Recurse -Force -ErrorAction Stop }
+	}
+	else {
+		$verified = script:Test-PaxRawDeidCandidate -SourcePath $SourcePath -CandidatePath $CandidatePath -SourceSha256 $SourceSha256 -FieldKinds $fields -ProcessedHierarchy:$ProcessedUsers
+	}
 	$measurement = script:Measure-PaxProtectedUsersArtifact -Path $CandidatePath -ProtectionPolicy $policy
 	if (-not $verified.Verified -or $verified.Sha256 -cne $candidateBefore -or $verified.Sha256 -cne $measurement.Sha256 -or $verified.DataRowCount -ne $measurement.DataRowCount) {
 		throw 'Complete source-to-Users protection verification did not match the candidate.'
@@ -10327,6 +10349,7 @@ function script:Hold-PaxDeidOutputPublication {
 	$protected = script:Get-PaxDeidProtectedInputPaths -AdditionalPaths $ProtectedPaths -IncludeAppendTargets
 	$files = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 	$held = [System.Collections.Generic.List[string]]::new()
+	$isolationComplete = $true
 	foreach ($leaf in $script:PaxRollupCandidateHeldLeafs) {
 		if ($leaf -and -not $held.Contains([string]$leaf)) { [void]$held.Add([string]$leaf) }
 	}
@@ -10338,6 +10361,7 @@ function script:Hold-PaxDeidOutputPublication {
 				foreach ($file in Get-ChildItem -LiteralPath $full -File -Recurse -ErrorAction Stop) { [void]$files.Add($file.FullName) }
 			}
 			catch {
+				$isolationComplete = $false
 				Write-LogHost ("ERROR: could not inventory unverified recovery files; Purview and Users publication remains blocked: {0}" -f $_.Exception.Message) -ForegroundColor Red
 			}
 		}
@@ -10357,11 +10381,15 @@ function script:Hold-PaxDeidOutputPublication {
 			Move-Item -LiteralPath $full -Destination $destination -ErrorAction Stop
 		}
 		catch {
+			$isolationComplete = $false
 			Write-LogHost ("ERROR: could not isolate an unverified output after de-identification failed: {0}" -f $_.Exception.Message) -ForegroundColor Red
 		}
 	}
-	if ($script:PaxDeidRecoveryDirectory) {
+	if ($isolationComplete -and $script:PaxDeidRecoveryDirectory) {
 		Write-LogHost ("Identified or unverified recovery files are private and withheld from publication: {0}" -f $script:PaxDeidRecoveryDirectory) -ForegroundColor Yellow
+	}
+	elseif (-not $isolationComplete) {
+		Write-LogHost 'ERROR: recovery isolation is incomplete; privacy of all unverified outputs was not established. Publication remains blocked. Preserve original inputs and recovery material; unverified files may remain at their original locations.' -ForegroundColor Red
 	}
 }
 
@@ -12790,12 +12818,11 @@ if ($OnlyAgent365Info) {
 # --- Early parameter validation & environment sanity checks ---
 
 # PowerShell version gate.
-# The entire script requires PowerShell 7+ (pwsh.exe). The ONLY exception is -UseEOM
-# (which uses Exchange Online Management and runs on Windows PowerShell 5.1 / powershell.exe).
-# All other supported modes — including -Resume — require pwsh.exe because they
+# The entire script requires PowerShell 7+ (pwsh.exe), including -UseEOM and -Resume.
+# All supported modes require pwsh.exe because they
 # depend on PS 7-only features (ThreadJob parallelism, ForEach-Object -Parallel, JSON
 # parsing performance).
-if ($PSVersionTable.PSVersion.Major -lt 7 -and -not $UseEOM) {
+if ($PSVersionTable.PSVersion.Major -lt 7) {
 	Write-Host "" -ForegroundColor Red
 	Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
 	Write-Host "  ERROR: PowerShell 7+ Required (pwsh.exe)" -ForegroundColor Red
@@ -12804,10 +12831,10 @@ if ($PSVersionTable.PSVersion.Major -lt 7 -and -not $UseEOM) {
 	Write-Host "  Detected: PowerShell $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))" -ForegroundColor Yellow
 	Write-Host "  Required: PowerShell 7.0 or later (pwsh.exe)" -ForegroundColor Yellow
 	Write-Host ""
-	Write-Host "  PAX requires PowerShell 7+ for Microsoft Graph API mode, parallel query" -ForegroundColor White
+	Write-Host "  PAX requires PowerShell 7+ for every mode, including -UseEOM, parallel query" -ForegroundColor White
 	Write-Host "  execution, JSON streaming performance, and post-processing features." -ForegroundColor White
-	Write-Host "  Windows PowerShell 5.1 (powershell.exe) is ONLY supported when running with" -ForegroundColor White
-	Write-Host "  the -UseEOM switch (Exchange Online Management mode)." -ForegroundColor White
+	Write-Host "  Windows PowerShell 5.1 (powershell.exe) is not supported." -ForegroundColor White
+	Write-Host "  The -UseEOM switch remains available under PowerShell 7." -ForegroundColor White
 	Write-Host ""
 	Write-Host "  SOLUTIONS:" -ForegroundColor Cyan
 	Write-Host ""
@@ -12815,8 +12842,8 @@ if ($PSVersionTable.PSVersion.Major -lt 7 -and -not $UseEOM) {
 	Write-Host "         https://aka.ms/powershell" -ForegroundColor Gray
 	Write-Host "         pwsh.exe -File .\PAX_Purview_Audit_Log_Processor.ps1 [your parameters]" -ForegroundColor Gray
 	Write-Host ""
-	Write-Host "    2. Or run in EOM mode on Windows PowerShell 5.1 by adding -UseEOM:" -ForegroundColor White
-	Write-Host "         .\PAX_Purview_Audit_Log_Processor.ps1 -UseEOM [your other parameters]" -ForegroundColor Gray
+	Write-Host "    2. For EOM mode, use PowerShell 7 and add -UseEOM:" -ForegroundColor White
+	Write-Host "         pwsh.exe -File .\PAX_Purview_Audit_Log_Processor.ps1 -UseEOM [your parameters]" -ForegroundColor Gray
 	Write-Host ""
 	Write-Host "  EOM MODE NOTES:" -ForegroundColor DarkCyan
 	Write-Host "    - Uses Search-UnifiedAuditLog cmdlet (serial processing)" -ForegroundColor Gray
@@ -14533,6 +14560,85 @@ def deid_proxy(value: str) -> str:
         else:
             out.append(deid_upn(entry))
     return ";".join(out)
+
+
+_PROCESSED_USERS_FIELD_KINDS = {
+    "userprincipalname": "upn", "personid": "upn", "personid_normalized": "upn",
+    "displayname": "name", "mail": "upn", "givenname": "name", "surname": "name",
+    "username": "upn", "employeeid": "token", "onpremisesimmutableid": "token",
+    "proxyaddresses_primary": "proxy", "proxyaddresses_all": "proxy",
+    "id": "guid", "manager_id": "guid", "manager_userprincipalname": "upn",
+    "manager_displayname": "name", "manager_mail": "upn", "managerid": "guid", "email": "upn",
+}
+_PROCESSED_USERS_FIELD_KINDS.update({"level%d_name" % level: "name" for level in range(15)})
+
+
+def _processed_users_digest(path):
+    result = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(65536), b""):
+            result.update(block)
+    return result.hexdigest().upper()
+
+
+def _processed_users_expected_token(value, kind, salt, domain):
+    if not value:
+        return value
+    if kind == "proxy":
+        entries = []
+        for entry in value.split(";"):
+            prefix, separator, address = entry.partition(":")
+            entries.append(prefix + separator + _processed_users_expected_token(address, "upn", salt, domain)
+                           if separator else _processed_users_expected_token(entry, "upn", salt, domain))
+        return ";".join(entries)
+    hexadecimal = hmac.new(salt, value.strip().lower().encode("utf-8"), hashlib.sha256).hexdigest()
+    if kind == "guid":
+        return "-".join((hexadecimal[:8], hexadecimal[8:12], hexadecimal[12:16], hexadecimal[16:20], hexadecimal[20:32]))
+    return hexadecimal[:12] + ("@" + domain if kind == "upn" else "")
+
+
+def verify_processed_users(source, candidate, source_sha256, salt, domain):
+    original_candidate = _processed_users_digest(candidate)
+    limit = sys.maxsize
+    while True:
+        try:
+            csv.field_size_limit(limit)
+            break
+        except OverflowError:
+            limit //= 10
+    count = 0
+    with open(source, encoding="utf-8-sig", newline="") as identified, open(candidate, encoding="utf-8-sig", newline="") as protected:
+        original_rows = csv.reader(identified, strict=True)
+        candidate_rows = csv.reader(protected, strict=True)
+        header = next(original_rows, None)
+        if header is None or next(candidate_rows, None) != header:
+            raise ValueError("Processed Users verification failed: CSV header changed.")
+        kinds = [_PROCESSED_USERS_FIELD_KINDS.get(name.lower()) for name in header]
+        reporting_keys = {}
+        for position, name in enumerate(header):
+            if re.fullmatch(r"Level[0-9]+_Name", name) and kinds[position]:
+                try:
+                    reporting_keys[position] = header.index(name[:-5] + "_UserKey")
+                except ValueError:
+                    raise ValueError("Processed Users hierarchy verification requires its reporting key column.") from None
+        for row in original_rows:
+            count += 1
+            other = next(candidate_rows, None)
+            if len(row) != len(header) or other is None or len(other) != len(header):
+                raise ValueError("Processed Users verification failed: record count or CSV shape changed.")
+            for position, value in enumerate(row):
+                kind = kinds[position]
+                fixed_label = position in reporting_keys and not row[reporting_keys[position]]
+                expected = _processed_users_expected_token(value, kind, salt, domain) if kind and not fixed_label else value
+                if expected != other[position]:
+                    raise ValueError("De-identification verification failed at record %d, column %d." % (count, position))
+        if next(candidate_rows, None) is not None:
+            raise ValueError("Processed Users verification failed: additional output records.")
+    if _processed_users_digest(source) != source_sha256.upper():
+        raise ValueError("The identified source changed during processed Users verification.")
+    if _processed_users_digest(candidate) != original_candidate:
+        raise ValueError("The protected candidate changed during processed Users verification.")
+    return {"Verified": True, "DataRowCount": count, "Sha256": original_candidate}
 
 
 # Non-human/system identities found in Purview audit logs (Teams Sync, SharePoint app,
@@ -18241,7 +18347,28 @@ def main() -> None:
         version=f"%(prog)s {SCRIPT_VERSION}",
     )
 
+    parser.add_argument("--verify-users-reference", help=argparse.SUPPRESS)
+    parser.add_argument("--verify-users-candidate", help=argparse.SUPPRESS)
+    parser.add_argument("--verify-users-source-sha256", help=argparse.SUPPRESS)
+    parser.add_argument("--verify-users-salt-hex", help=argparse.SUPPRESS)
+    parser.add_argument("--verify-users-domain", help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.verify_users_reference or args.verify_users_candidate:
+        try:
+            if not all((args.verify_users_reference, args.verify_users_candidate, args.verify_users_source_sha256,
+                        args.verify_users_salt_hex, args.verify_users_domain)):
+                raise ValueError("Processed Users verification requires complete source arguments.")
+            proof = verify_processed_users(args.verify_users_reference, args.verify_users_candidate,
+                                           args.verify_users_source_sha256, bytes.fromhex(args.verify_users_salt_hex),
+                                           args.verify_users_domain)
+        except Exception as error:
+            reason = str(error) if isinstance(error, ValueError) and str(error).startswith((
+                "Processed Users", "De-identification", "The identified", "The protected")) else "Processed Users verification could not complete."
+            print(json.dumps({"Verified": False, "Reason": reason}))
+            sys.exit(1)
+        print(json.dumps(proof))
+        return
 
     global _DEIDENTIFY
     _DEIDENTIFY = bool(args.deidentify)
@@ -26594,6 +26721,51 @@ def read_key_spec(path):
     return key_column, lines[1:], policy
 
 
+def io_failure_details(failure, phase, opts, key_spec_path):
+    phases = (PHASE_AUDIT_ONLY, PHASE_USERS_TARGET, PHASE_USERS_CURRENT,
+              PHASE_USERS_MERGE, PHASE_FACT_TARGET, PHASE_FACT_CURRENT,
+              PHASE_FACT_RECONCILE, PHASE_FACT_ORDER, PHASE_INTEGRITY,
+              PHASE_CANDIDATE)
+    stage = phase if phase in phases else 'append-prepare'
+    operation = 'file-io'
+    operations = {'read_key_spec': 'key-specification-read',
+                  'read_header': 'csv-header-read', 'next_record': 'csv-read',
+                  'write_record': 'csv-write', 'close': 'file-close',
+				  'build_fact': 'file-open',
+				  'build_users': 'file-open',
+				  'build_users_append_only': 'file-open'}
+    trace = failure.__traceback__
+    while trace is not None:
+        name = trace.tb_frame.f_code.co_name
+        if name in operations:
+            operation = operations[name]
+            if name == 'read_key_spec':
+                stage = 'key-specification'
+        trace = trace.tb_next
+    role = 'unclassified'
+    paths = [('key-specification', key_spec_path),
+             ('current-users', opts['current_users']),
+             ('current-fact', opts['current_fact']),
+             ('target-users', opts['target_users']),
+             ('target-fact', opts['target_fact']),
+             ('audit-only', opts['audit_only']),
+             ('users-candidate', opts['out_users']),
+             ('fact-candidate', opts['out_fact'])]
+    filename = getattr(failure, 'filename', None)
+    if filename is not None:
+        filename = os.path.normcase(os.path.abspath(os.fsdecode(filename)))
+        for label, path in paths:
+            if path and filename == os.path.normcase(os.path.abspath(path)):
+                role = label
+                break
+    code = getattr(failure, 'errno', None)
+    windows_code = getattr(failure, 'winerror', None)
+    return {'stage': stage, 'operation': operation, 'fileRole': role,
+            'exceptionType': type(failure).__name__,
+            'errno': code if isinstance(code, int) else None,
+            'winerror': windows_code if isinstance(windows_code, int) else None}
+
+
 def main(argv):
     if len(argv) != ARG_COUNT:
         return EXIT_FAILED
@@ -26660,8 +26832,10 @@ def main(argv):
         status, reason = STATUS_FAILED, 'database-error'
     except UnicodeDecodeError:
         status, reason = STATUS_FAILED, 'encoding-error'
-    except OSError:
+    except OSError as failure:
         status, reason = STATUS_FAILED, 'io-error'
+        counts['ioFailure'] = io_failure_details(failure, beat.phase, opts,
+                                               key_spec_path)
     except Exception:
         status, reason = STATUS_FAILED, 'unexpected-error'
 
@@ -26695,6 +26869,7 @@ def main(argv):
         'mismatchedFactRows': counts.get('mismatchedFactRows', 0),
         'integrityUsersRows': counts.get('integrityUsersRows', 0),
         'integrityFactRows': counts.get('integrityFactRows', 0),
+        'ioFailure': counts.get('ioFailure'),
     }
     try:
         with open(result_path, 'w', encoding='utf-8', newline='') as handle:
@@ -26893,6 +27068,23 @@ if __name__ == '__main__':
 			$rowsWritten = [int64]$payload.rowsWritten
 			$elapsedSeconds = [double]$payload.elapsedSeconds
 			$reason = [string]$payload.reason
+			if ($reason -ceq 'io-error' -and $payload.PSObject.Properties['ioFailure'] -and $payload.ioFailure) {
+				$ioSafe = $true
+				$ioValues = New-Object System.Collections.Generic.List[string]
+				foreach ($ioField in @('stage','operation','fileRole','exceptionType')) {
+					$ioProperty = $payload.ioFailure.PSObject.Properties[$ioField]
+					if ($null -eq $ioProperty -or [string]$ioProperty.Value -cnotmatch '^[A-Za-z0-9_-]{1,64}$') { $ioSafe = $false; break }
+					$ioValues.Add([string]$ioProperty.Value)
+				}
+				foreach ($ioField in @('errno','winerror')) {
+					$ioProperty = $payload.ioFailure.PSObject.Properties[$ioField]
+					if ($null -eq $ioProperty -or $null -eq $ioProperty.Value) { $ioValues.Add('unknown'); continue }
+					$ioCode = [long]0
+					if (-not [long]::TryParse([string]$ioProperty.Value, [ref]$ioCode) -or $ioCode -lt -2147483648 -or $ioCode -gt 2147483647) { $ioSafe = $false; break }
+					$ioValues.Add([string]$ioCode)
+				}
+				if ($ioSafe) { $reason = 'io-error [stage={0}; operation={1}; fileRole={2}; class={3}; errno={4}; winerror={5}]' -f @($ioValues) }
+			}
 			switch ([string]$payload.status) {
 				'success' {
 					$status = if ($exitCode -eq 0) { 'Success' } else { 'Failed' }
@@ -31393,7 +31585,9 @@ def run():
 			new_columns = {column[0]: column[1] for column in candidate["Schema"]}
 			if any(new_columns.get(name) != kind for name, kind in existing_columns.items()):
 				reject_candidate("The Delta candidate would remove or change an existing column.")
-			if candidate["DataRowCount"] == 0:
+			# An empty table may be replaced by an empty candidate (for example a dashboard
+			# with no activity yet); no existing row can be lost.
+			if candidate["DataRowCount"] == 0 and original["DataRowCount"] > 0:
 				reject_candidate("Refusing a zero-row replacement of an existing Delta table.")
 			if member["ProtectRowCount"] and candidate["DataRowCount"] < original["DataRowCount"]:
 				reject_candidate("Refusing a shrinking Delta append replacement.")
@@ -31794,6 +31988,9 @@ function script:Invoke-PaxProductionDeltaSet {
 		if ($script:PaxDeltaFailedTargets -and $script:PaxDeltaFailedTargets.Contains([string]$entry.TargetUri)) { throw 'A requested Delta set already failed this run; retain its recovery data and resolve that failure before retrying.' }
 	}
 	foreach ($users in @($Members | Where-Object { $_.DataType -eq 'UserInfo' })) {
+		# CoworkAdoption Users use the Cowork entity layout (_Entity/_RowId/UserKey, no
+		# PersonId_Normalized); its producer already refuses unresolved UserKeys.
+		if ($users.Dashboard -ceq 'CoworkAdoption') { continue }
 		$header = @(Get-Content -LiteralPath $users.CandidatePath -TotalCount 1 -ErrorAction Stop)
 		if ($header.Count -and 'UserKey' -in @($header[0] -split ',' | ForEach-Object { $_.Trim().Trim('"') })) {
 			$facts = @($Members | Where-Object { $_.Dashboard -eq $users.Dashboard -and ([string]$_.Name -split ':', 2)[-1] -eq 'Fact' })
@@ -34240,15 +34437,10 @@ function Get-RemoteFile-SharePoint {
 		if (-not $ResolvedInputItem.IsFile -or [string]::IsNullOrWhiteSpace([string]$ResolvedInputItem.DriveId) -or [string]::IsNullOrWhiteSpace([string]$ResolvedInputItem.ItemId)) {
 			throw 'SharePoint input download requires a resolved file identity.'
 		}
-		$inputUri = 'https://graph.microsoft.com/v1.0/drives/{0}/items/{1}/content' -f [Uri]::EscapeDataString($ResolvedInputItem.DriveId), [Uri]::EscapeDataString($ResolvedInputItem.ItemId)
 		$graphToken = Get-GraphAccessToken
 		if (-not $graphToken) { throw 'SharePoint input download requires a Microsoft Graph access token.' }
-		try {
-			Invoke-WebRequest -Uri $inputUri -Method GET -Headers @{ Authorization = "Bearer $graphToken" } -OutFile $DestinationPath -UseBasicParsing -ErrorAction Stop | Out-Null
-		}
-		catch {
-			throw 'SharePoint resolved input download failed. Verify file access; collection will not continue with an unverified input.'
-		}
+		$downloadTarget = script:New-PaxSharePointPublicationTarget -DriveId $ResolvedInputItem.DriveId -FolderPath '' -InputItemId $ResolvedInputItem.ItemId -InputItemName ([string]$ResolvedInputItem.Name)
+		script:Save-PaxSharePointVerifiedDownload -Target $downloadTarget -RelativePath $RelativeName -DestinationPath $DestinationPath
 		return
 	}
 	if ($ParentOverride) {
@@ -34273,7 +34465,9 @@ function Get-RemoteFile-SharePoint {
 	$graphToken = Get-GraphAccessToken
 	if (-not $graphToken) { throw "Get-RemoteFile-SharePoint: no Microsoft Graph access token available." }
 	try {
-		Invoke-WebRequest -Uri $dlUri -Method GET -Headers @{ Authorization = "Bearer $graphToken" } -OutFile $DestinationPath -UseBasicParsing -ErrorAction Stop | Out-Null
+		$downloadTarget = script:New-PaxSharePointPublicationTarget -DriveId $resolved.DriveId -FolderPath $resolved.FolderPath
+		$downloadPath = script:Get-PaxSharePointPublicationObjectPath -Target $downloadTarget -Leaf $RelativeName
+		script:Save-PaxSharePointVerifiedDownload -Target $downloadTarget -RelativePath $downloadPath -DestinationPath $DestinationPath
 	}
 	catch {
 		# Name what was actually requested, then re-throw the ORIGINAL exception unchanged so every
@@ -34289,6 +34483,233 @@ function Get-RemoteFile-SharePoint {
 			Write-LogHost ("  Leaf      : '{0}'" -f $RelativeName) -ForegroundColor Yellow
 		}
 		throw
+	}
+}
+
+function script:Throw-PaxSharePointTransferFailure {
+	param([int]$StatusCode, [string]$FailureKind)
+	if (-not ('PaxSharePointTransferException' -as [type])) {
+		Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Net;
+using System.Net.Http;
+public sealed class PaxSharePointTransferException : IOException {
+    public HttpResponseMessage Response { get; private set; }
+    public string FailureKind { get; private set; }
+    public PaxSharePointTransferException(int status,string kind) : base("SharePoint transfer refused: " + kind + " (HTTP " + status + "). No partial download was admitted.") {
+        FailureKind=kind;
+        if(status>=100) Response=new HttpResponseMessage((HttpStatusCode)status);
+    }
+}
+'@ -ErrorAction Stop
+	}
+	throw [PaxSharePointTransferException]::new($StatusCode, $FailureKind)
+}
+
+function script:Assert-PaxSharePointDownloadVersion {
+	param([psobject]$Opening, [psobject]$Observed)
+	if (-not $Observed.Observed) { script:Throw-PaxSharePointTransferFailure -StatusCode ([int]$Observed.StatusCode) -FailureKind 'MetadataUnverified' }
+	if ($Observed.ItemId -cne $Opening.ItemId -or $Observed.ParentId -cne $Opening.ParentId -or
+		[long]$Observed.Length -ne [long]$Opening.Length -or $Observed.ETag -cne $Opening.ETag -or $Observed.CTag -cne $Opening.CTag) {
+		script:Throw-PaxSharePointTransferFailure -StatusCode 409 -FailureKind 'RemoteVersionChanged'
+	}
+}
+
+function script:Initialize-PaxDownloadUnixSecurity {
+	if ('PaxDownloadUnixSecurity' -as [type]) { return }
+	Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+public sealed class PaxDownloadUnixSecurity {
+	[DllImport("libc",SetLastError=true,EntryPoint="fstat")] static extern int Stat(int fd,IntPtr data);
+	[DllImport("libc",SetLastError=true,EntryPoint="fstat64")] static extern int Stat64(int fd,IntPtr data);
+	[DllImport("libc",SetLastError=true,EntryPoint="fstat$INODE64")] static extern int DarwinStat(int fd,IntPtr data);
+	[DllImport("libc",SetLastError=true)] static extern int fchmod(int fd,uint mode);
+	[DllImport("libc",SetLastError=true)] static extern int fchown(int fd,uint owner,uint group);
+	[DllImport("libc",SetLastError=true,EntryPoint="flistxattr")] static extern IntPtr ListLinux(int fd,byte[] buffer,UIntPtr size);
+	[DllImport("libc",SetLastError=true,EntryPoint="fgetxattr")] static extern IntPtr GetLinux(int fd,string name,byte[] buffer,UIntPtr size);
+	[DllImport("libc",SetLastError=true,EntryPoint="fsetxattr")] static extern int SetLinux(int fd,string name,byte[] buffer,UIntPtr size,int flags);
+	[DllImport("libc",SetLastError=true,EntryPoint="fremovexattr")] static extern int RemoveLinux(int fd,string name);
+	[DllImport("libc",SetLastError=true,EntryPoint="flistxattr")] static extern IntPtr ListDarwin(int fd,byte[] buffer,UIntPtr size,int options);
+	[DllImport("libc",SetLastError=true,EntryPoint="fgetxattr")] static extern IntPtr GetDarwin(int fd,string name,byte[] buffer,UIntPtr size,uint position,int options);
+	[DllImport("libc",SetLastError=true,EntryPoint="fsetxattr")] static extern int SetDarwin(int fd,string name,byte[] buffer,UIntPtr size,uint position,int options);
+	[DllImport("libc",SetLastError=true,EntryPoint="fremovexattr")] static extern int RemoveDarwin(int fd,string name,int options);
+	[DllImport("libc",SetLastError=true)] static extern IntPtr acl_get_fd_np(int fd,int type);
+	[DllImport("libc",SetLastError=true)] static extern int acl_set_fd_np(int fd,IntPtr acl,int type);
+	[DllImport("libc",SetLastError=true)] static extern IntPtr acl_to_text(IntPtr acl,out IntPtr length);
+	[DllImport("libc",SetLastError=true)] static extern int acl_free(IntPtr value);
+	static readonly bool Darwin=RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
+	readonly uint owner,group,mode;
+	readonly SortedDictionary<string,byte[]> attributes;
+	readonly string aclText;
+	PaxDownloadUnixSecurity(uint uid,uint gid,uint permissions,SortedDictionary<string,byte[]> values,string acl) {owner=uid;group=gid;mode=permissions;attributes=values;aclText=acl;}
+	static IOException Failure(string operation) {return new IOException("Download security preparation failed: "+operation+".",new Win32Exception(Marshal.GetLastWin32Error()));}
+	static int Descriptor(FileStream stream) {return checked((int)stream.SafeFileHandle.DangerousGetHandle().ToInt64());}
+	static bool SecurityAttribute(string name) {return name=="system.posix_acl_access" || name.StartsWith("security.",StringComparison.Ordinal) || name=="com.apple.macl";}
+	static IntPtr List(int fd,byte[] data) {return Darwin?ListDarwin(fd,data,(UIntPtr)(ulong)(data==null?0:data.Length),0):ListLinux(fd,data,(UIntPtr)(ulong)(data==null?0:data.Length));}
+	static byte[] GetAttribute(int fd,string name) {
+		long length=(Darwin?GetDarwin(fd,name,null,UIntPtr.Zero,0,0):GetLinux(fd,name,null,UIntPtr.Zero)).ToInt64();
+		if(length<0)throw Failure("read access attribute");
+		byte[] data=new byte[checked((int)length)];
+		long read=(Darwin?GetDarwin(fd,name,data,(UIntPtr)(ulong)data.Length,0,0):GetLinux(fd,name,data,(UIntPtr)(ulong)data.Length)).ToInt64();
+		if(read!=length)throw Failure("verify access attribute length");
+		return data;
+	}
+	static SortedDictionary<string,byte[]> Attributes(int fd) {
+		var result=new SortedDictionary<string,byte[]>(StringComparer.Ordinal);
+		long length=List(fd,null).ToInt64();
+		if(length<0) {int error=Marshal.GetLastWin32Error();if(error==95 || error==45)return result;throw Failure("list access attributes");}
+		if(length==0)return result;
+		byte[] data=new byte[checked((int)length)];
+		if(List(fd,data).ToInt64()!=length)throw Failure("verify access attribute inventory");
+		foreach(string name in System.Text.Encoding.UTF8.GetString(data).Split('\0'))if(SecurityAttribute(name))result.Add(name,GetAttribute(fd,name));
+		return result;
+	}
+	static string DarwinAcl(int fd) {
+		if(!Darwin)return "";
+		IntPtr acl=acl_get_fd_np(fd,256);
+		if(acl==IntPtr.Zero)throw Failure("read access ACL");
+		try {IntPtr length;IntPtr text=acl_to_text(acl,out length);if(text==IntPtr.Zero)throw Failure("describe access ACL");try{return Marshal.PtrToStringAnsi(text,checked((int)length.ToInt64()));}finally{acl_free(text);}}
+		finally {acl_free(acl);}
+	}
+	public static PaxDownloadUnixSecurity Capture(string path) {
+		using(var stream=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete))return Capture(stream);
+	}
+	public static PaxDownloadUnixSecurity Capture(FileStream stream) {
+		int fd=Descriptor(stream);IntPtr data=Marshal.AllocHGlobal(512);
+		try {
+			int status=Darwin?DarwinStat(fd,data):(IntPtr.Size==4?Stat64(fd,data):Stat(fd,data));
+			if(status!=0)throw Failure("read owner group and mode");
+			int modeOffset=Darwin?4:(RuntimeInformation.ProcessArchitecture==Architecture.X64?24:16);
+			int ownerOffset=Darwin?16:(RuntimeInformation.ProcessArchitecture==Architecture.X64?28:24);
+			uint permissions=Darwin?(uint)(ushort)Marshal.ReadInt16(data,modeOffset):unchecked((uint)Marshal.ReadInt32(data,modeOffset));
+			uint uid=unchecked((uint)Marshal.ReadInt32(data,ownerOffset));uint gid=unchecked((uint)Marshal.ReadInt32(data,ownerOffset+4));
+			return new PaxDownloadUnixSecurity(uid,gid,permissions&4095,Attributes(fd),DarwinAcl(fd));
+		}finally{Marshal.FreeHGlobal(data);}
+	}
+	public string Fingerprint {
+		get {string value=owner+":"+group+":"+mode+":"+aclText;foreach(var entry in attributes)value+="|"+entry.Key+":"+Convert.ToBase64String(entry.Value);return value;}
+	}
+	public void Prepare(FileStream stream,string originalPath) {
+		int fd=Descriptor(stream);var current=Capture(stream);
+		if(fchmod(fd,0)!=0)throw Failure("restrict empty staging file");
+		if((current.owner!=owner || current.group!=group) && fchown(fd,owner,group)!=0)throw Failure("preserve staging owner and group");
+		if(fchmod(fd,mode)!=0)throw Failure("preserve staging mode");
+		var stagedAttributes=Attributes(fd);
+		foreach(var entry in stagedAttributes)if(!attributes.ContainsKey(entry.Key)) {
+			int status=Darwin?RemoveDarwin(fd,entry.Key,0):RemoveLinux(fd,entry.Key);
+			if(status!=0)throw Failure("remove unintended inherited access attribute");
+		}
+		foreach(var entry in attributes) {
+			byte[] existing;
+			if(stagedAttributes.TryGetValue(entry.Key,out existing) && Convert.ToBase64String(existing)==Convert.ToBase64String(entry.Value))continue;
+			int status=Darwin?SetDarwin(fd,entry.Key,entry.Value,(UIntPtr)(ulong)entry.Value.Length,0,0):SetLinux(fd,entry.Key,entry.Value,(UIntPtr)(ulong)entry.Value.Length,0);
+			if(status!=0)throw Failure("preserve staging access attribute");
+		}
+		if(Darwin)using(var original=new FileStream(originalPath,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete)) {
+			IntPtr acl=acl_get_fd_np(Descriptor(original),256);if(acl==IntPtr.Zero)throw Failure("read original access ACL");
+			try{if(acl_set_fd_np(fd,acl,256)!=0)throw Failure("preserve staging access ACL");}finally{acl_free(acl);}
+		}
+		if(Capture(stream).Fingerprint!=Fingerprint)throw new IOException("Download staging security did not match the existing destination.");
+	}
+}
+'@ -ErrorAction Stop
+}
+
+function script:Save-PaxSharePointVerifiedDownload {
+	param([Parameter(Mandatory)][psobject]$Target, [Parameter(Mandatory)][string]$RelativePath, [Parameter(Mandatory)][string]$DestinationPath)
+	$opening = script:Read-PaxSharePointPublicationMetadata -Target $Target -RelativePath $RelativePath
+	if (-not $opening.Observed) { script:Throw-PaxSharePointTransferFailure -StatusCode ([int]$opening.StatusCode) -FailureKind 'DownloadMetadataUnverified' }
+	$destination = [IO.Path]::GetFullPath($DestinationPath)
+	$destinationExisted = [IO.File]::Exists($destination)
+	$partial = $destination + '.paxdownload.' + [guid]::NewGuid().ToString('N') + '.tmp'
+	$stream = $null
+	$destinationSecurity = $null
+	$unixSecurity = $null
+	$retainVerifiedCandidate = $false
+	$sha = [Security.Cryptography.SHA256]::Create()
+	$position = [long]0
+	$capability = $opening
+	$lastProgress = [datetime]::UtcNow
+	try {
+		if ($IsWindows -and $destinationExisted) {
+			$sections = [Security.AccessControl.AccessControlSections]::Access -bor [Security.AccessControl.AccessControlSections]::Owner -bor [Security.AccessControl.AccessControlSections]::Group
+			$destinationSecurity = [IO.FileSystemAclExtensions]::GetAccessControl([IO.FileInfo]::new($destination), $sections)
+			$stream = [IO.FileSystemAclExtensions]::Create([IO.FileInfo]::new($partial), [IO.FileMode]::CreateNew, [Security.AccessControl.FileSystemRights]::Write, [IO.FileShare]::None, 4096, [IO.FileOptions]::None, $destinationSecurity)
+		}
+		else {
+			if (-not $IsWindows -and $destinationExisted) {
+				script:Initialize-PaxDownloadUnixSecurity
+				$unixSecurity = [PaxDownloadUnixSecurity]::Capture($destination)
+			}
+			$stream = [IO.File]::Open($partial, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+			if ($unixSecurity) { $unixSecurity.Prepare($stream, $destination) }
+		}
+		while ($position -lt [long]$opening.Length) {
+			$want = [int][Math]::Min([long]4194304, [long]$opening.Length - $position)
+			$chunk = $null
+			for ($refresh = 0; $refresh -le 2; $refresh++) {
+				$factory = if ($Target.PSObject.Properties['DownloadHttpClientFactory']) { $Target.DownloadHttpClientFactory } else { $null }
+				$chunk = script:Invoke-PaxSharePointAnonymousRange -DownloadUri $capability.DownloadUri -Offset $position -Count $want -TotalLength ([long]$opening.Length) -HttpClientFactory $factory
+				if ([int]$chunk.StatusCode -notin @(401,403) -or $refresh -eq 2) { break }
+				$capability = script:Read-PaxSharePointPublicationMetadata -Target $Target -RelativePath $RelativePath
+				script:Assert-PaxSharePointDownloadVersion -Opening $opening -Observed $capability
+			}
+			$expectedRange = 'bytes {0}-{1}/{2}' -f $position, ($position + $want - 1), $opening.Length
+			if ($null -eq $chunk -or [int]$chunk.StatusCode -ne 206 -or $chunk.ContentRange -cne $expectedRange -or
+				[long]$chunk.ContentLength -ne $want -or $chunk.Bytes.Length -ne $want) {
+				script:Throw-PaxSharePointTransferFailure -StatusCode ([int]$chunk.StatusCode) -FailureKind 'DownloadRangeUnverified'
+			}
+			$stream.Write($chunk.Bytes, 0, $want)
+			[void]$sha.TransformBlock($chunk.Bytes, 0, $want, $null, 0)
+			$position += [long]$want
+			if (([datetime]::UtcNow - $lastProgress).TotalSeconds -ge 30) {
+				Write-LogHost ("SharePoint history download verified {0:N0} of {1:N0} bytes." -f $position, $opening.Length) -ForegroundColor DarkGray
+				$lastProgress = [datetime]::UtcNow
+			}
+		}
+		$stream.Flush($true)
+		if ($unixSecurity) { $unixSecurity.Prepare($stream, $destination) }
+		$stream.Dispose(); $stream = $null
+		[void]$sha.TransformFinalBlock((New-Object byte[] 0), 0, 0)
+		$expectedHash = [BitConverter]::ToString($sha.Hash).Replace('-', '')
+		if ((Get-Item -LiteralPath $partial).Length -ne [long]$opening.Length -or (Get-FileHash -LiteralPath $partial -Algorithm SHA256).Hash -cne $expectedHash) {
+			script:Throw-PaxSharePointTransferFailure -StatusCode 0 -FailureKind 'LocalDownloadReadbackMismatch'
+		}
+		$closing = script:Read-PaxSharePointPublicationMetadata -Target $Target -RelativePath $RelativePath
+		script:Assert-PaxSharePointDownloadVersion -Opening $opening -Observed $closing
+		$retainVerifiedCandidate = $true
+		$backup = $partial + '.prior'
+		try {
+			if ($unixSecurity -and [PaxDownloadUnixSecurity]::Capture($destination).Fingerprint -cne $unixSecurity.Fingerprint) { throw [IO.IOException]::new('Download destination security changed before admission.') }
+			if ($destinationSecurity) {
+				$currentSecurity = [IO.FileSystemAclExtensions]::GetAccessControl([IO.FileInfo]::new($destination), $sections)
+				if ($currentSecurity.GetSecurityDescriptorSddlForm($sections) -cne $destinationSecurity.GetSecurityDescriptorSddlForm($sections)) { throw [IO.IOException]::new('Download destination security changed before admission.') }
+				[IO.File]::Replace($partial, $destination, $backup, $false)
+			}
+			elseif ($destinationExisted) { [IO.File]::Replace($partial, $destination, $backup, $false) }
+			else { [IO.File]::Move($partial, $destination) }
+			$retainVerifiedCandidate = $false
+		}
+		catch {
+			if (-not [IO.File]::Exists($destination) -and [IO.File]::Exists($backup)) { [IO.File]::Move($backup, $destination) }
+			Write-LogHost ('SharePoint download admission was not confirmed. Preserve the destination and verified recovery material: {0}' -f $partial) -ForegroundColor Red
+			throw
+		}
+		if ([IO.File]::Exists($backup)) {
+			try { [IO.File]::Delete($backup) }
+			catch { Write-LogHost ('Verified download admitted; the protected prior-file recovery copy remains: {0}' -f $backup) -ForegroundColor Yellow }
+		}
+		Write-LogHost ("SharePoint history download complete and verified: {0:N0} bytes." -f $position) -ForegroundColor DarkGray
+	}
+	finally {
+		if ($stream) { $stream.Dispose() }
+		$sha.Dispose()
+		if (-not $retainVerifiedCandidate -and [IO.File]::Exists($partial)) { [IO.File]::Delete($partial) }
 	}
 }
 
@@ -35174,7 +35595,7 @@ function Invoke-EmbeddedProcessor {
 				[void](script:Assert-PaxUsersProtectionOutput -Path $usersProtectedOutput)
 			}
 			else {
-			$usersProof = script:New-PaxSourceVerifiedUsersRecord -SourcePath $usersReferencePath -CandidatePath $usersProtectedOutput -SourceSha256 (Get-FileHash -LiteralPath $usersReferencePath -Algorithm SHA256 -ErrorAction Stop).Hash -ProcessedUsers
+			$usersProof = script:New-PaxSourceVerifiedUsersRecord -SourcePath $usersReferencePath -CandidatePath $usersProtectedOutput -SourceSha256 (Get-FileHash -LiteralPath $usersReferencePath -Algorithm SHA256 -ErrorAction Stop).Hash -ProcessedUsers -PythonExe $PythonExe -LauncherArgs $LauncherArgs
 			$usersFactOutput = Join-Path ([string]$ProcessorArgs[$outputArgument + 1]) ('{0}_Interactions.csv' -f [System.IO.Path]::GetFileNameWithoutExtension($usersActivityPath))
 			$usersIdentityEvidence | Add-Member -NotePropertyName FactSha256 -NotePropertyValue $(if (Test-Path -LiteralPath $usersFactOutput -PathType Leaf) { (Get-FileHash -LiteralPath $usersFactOutput -Algorithm SHA256 -ErrorAction Stop).Hash } else { $null })
 			if ($null -eq $script:PaxProcessedUsersIdentityEvidence) {
@@ -42446,7 +42867,9 @@ function script:New-PaxSharePointPublicationTarget {
 		[AllowNull()][scriptblock]$RequestOperation,
 		[int]$RetryBudgetSeconds = 900,
 		[AllowNull()][scriptblock]$SleepOperation,
-		[AllowNull()][scriptblock]$DownloadRequestOperation
+		[AllowNull()][scriptblock]$DownloadRequestOperation,
+		[string]$InputItemId,
+		[string]$InputItemName
 	)
 	if ([string]::IsNullOrWhiteSpace($DriveId)) { throw 'A SharePoint publication target requires a drive identity.' }
 	$graphOperation = if ($RequestOperation) { $RequestOperation } else {
@@ -42491,6 +42914,8 @@ function script:New-PaxSharePointPublicationTarget {
 		RetryBudgetSeconds = $RetryBudgetSeconds
 		SleepOperation     = $SleepOperation
 		DownloadRequestOperation = $DownloadRequestOperation
+		InputItemId        = $InputItemId
+		InputItemName      = $InputItemName
 	}
 }
 
@@ -42562,7 +42987,9 @@ function script:Read-PaxSharePointPublicationMetadata {
 		[Parameter(Mandatory)][string]$RelativePath
 	)
 	$result = [ordered]@{ Observed = $false; Missing = $false; StatusCode = 0; Reason = 'item metadata was not proven'; ItemId = ''; ParentId = ''; Length = [long]0; ETag = ''; CTag = ''; DownloadUri = '' }
-	$uri = (script:Get-PaxSharePointPublicationObjectUri -Target $Target -RelativePath $RelativePath).TrimEnd(':')
+	$inputItemId = if ($Target.PSObject.Properties['InputItemId']) { [string]$Target.InputItemId } else { '' }
+	$uri = if ($inputItemId) { 'https://graph.microsoft.com/v1.0/drives/{0}/items/{1}' -f [Uri]::EscapeDataString([string]$Target.DriveId), [Uri]::EscapeDataString($inputItemId) }
+		else { (script:Get-PaxSharePointPublicationObjectUri -Target $Target -RelativePath $RelativePath).TrimEnd(':') }
 	$response = script:Invoke-PaxWatermarkFabricFilesRequestWithRecovery -Transport $Target -Method 'GET' -Uri $uri -Headers $null -Body $null
 	$result.StatusCode = [int]$response.StatusCode
 	if ($result.StatusCode -eq 404) { $result.Missing = $true; $result.Reason = 'the exact item metadata is absent'; return [pscustomobject]$result }
@@ -42605,15 +43032,21 @@ function script:Read-PaxSharePointPublicationMetadata {
 			if (-not $parent.TryGetProperty($name, [ref]$value) -or $value.ValueKind -ne [System.Text.Json.JsonValueKind]::String -or [string]::IsNullOrWhiteSpace($value.GetString())) { throw 'invalid parent metadata' }
 			$parentValues[$name] = $value.GetString()
 		}
-		$normalized = script:Resolve-PaxWatermarkFabricFilesRelativePath -RemotePath $RelativePath
-		if (-not $normalized.Valid) { throw 'invalid intended path' }
-		$segments = @($normalized.Segments)
-		$expectedParent = if ($segments.Count -gt 1) { ($segments[0..($segments.Count - 2)] -join '/') } else { '' }
-		$parentMatch = [regex]::Match([string]$parentValues.path, '^/drive/root:(?<path>/.*)?$|^/drives/[^/]+/root:(?<path>/.*)?$')
-		if (-not $parentMatch.Success -or
-			$parentValues.driveId -cne [string]$Target.DriveId -or
-			$values.name -cne [string]$segments[-1] -or
-			[Uri]::UnescapeDataString($parentMatch.Groups['path'].Value).Trim('/') -cne $expectedParent) { throw 'item identity mismatch' }
+		if ($inputItemId) {
+			if ($values.id -cne $inputItemId -or $parentValues.driveId -cne [string]$Target.DriveId -or
+				($Target.InputItemName -and $values.name -cne [string]$Target.InputItemName)) { throw 'resolved item identity mismatch' }
+		}
+		else {
+			$normalized = script:Resolve-PaxWatermarkFabricFilesRelativePath -RemotePath $RelativePath
+			if (-not $normalized.Valid) { throw 'invalid intended path' }
+			$segments = @($normalized.Segments)
+			$expectedParent = if ($segments.Count -gt 1) { ($segments[0..($segments.Count - 2)] -join '/') } else { '' }
+			$parentMatch = [regex]::Match([string]$parentValues.path, '^/drive/root:(?<path>/.*)?$|^/drives/[^/]+/root:(?<path>/.*)?$')
+			if (-not $parentMatch.Success -or
+				$parentValues.driveId -cne [string]$Target.DriveId -or
+				$values.name -cne [string]$segments[-1] -or
+				[Uri]::UnescapeDataString($parentMatch.Groups['path'].Value).Trim('/') -cne $expectedParent) { throw 'item identity mismatch' }
+		}
 		$download = $null
 		if (-not [Uri]::TryCreate($values['@microsoft.graph.downloadUrl'], [UriKind]::Absolute, [ref]$download) -or
 			$download.Scheme -cne 'https' -or -not $download.IsDefaultPort -or $download.UserInfo -or $download.Fragment -or $download.IsLoopback -or
@@ -42631,16 +43064,18 @@ function script:Read-PaxSharePointPublicationMetadata {
 	return [pscustomobject]$result
 }
 
-function script:Invoke-PaxSharePointAnonymousRange {
+function script:Invoke-PaxSharePointAnonymousRangeOnce {
 	param(
 		[Parameter(Mandatory)][string]$DownloadUri,
 		[Parameter(Mandatory)][long]$Offset,
 		[Parameter(Mandatory)][ValidateRange(1,4194304)][int]$Count,
 		[Parameter(Mandatory)][long]$TotalLength,
-		[AllowNull()][scriptblock]$HttpClientFactory
+		[AllowNull()][scriptblock]$HttpClientFactory,
+		[ValidateRange(1,120)][int]$TimeoutSeconds = 60
 	)
-	$result = [ordered]@{ StatusCode = 0; ContentRange = ''; ContentLength = [long](-1); Bytes = [byte[]]@() }
+	$result = [ordered]@{ StatusCode = 0; ContentRange = ''; ContentLength = [long](-1); Bytes = [byte[]]@(); FailureKind = 'ResponseRejected'; RetryAfterSeconds = [long]0 }
 	$handler = $null; $client = $null; $request = $null; $response = $null; $stream = $null
+	$deadline = $null
 	try {
 		$uri = $null
 		if ($Offset -lt 0 -or $TotalLength -le 0 -or $Offset -gt ($TotalLength - $Count) -or
@@ -42661,32 +43096,68 @@ function script:Invoke-PaxSharePointAnonymousRange {
 		$client.DefaultRequestHeaders.Clear()
 		$request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Get, $uri)
 		$request.Headers.Range = [System.Net.Http.Headers.RangeHeaderValue]::new($Offset, $Offset + $Count - 1)
-		$response = $client.SendAsync($request, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+		$deadline = [Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds($TimeoutSeconds))
+		$response = $client.SendAsync($request, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead, $deadline.Token).GetAwaiter().GetResult()
 		$result.StatusCode = [int]$response.StatusCode
+		if ($response.Headers.RetryAfter) {
+			if ($null -ne $response.Headers.RetryAfter.Delta) { $result.RetryAfterSeconds = [long][Math]::Max(0, [Math]::Ceiling($response.Headers.RetryAfter.Delta.TotalSeconds)) }
+			elseif ($null -ne $response.Headers.RetryAfter.Date) { $result.RetryAfterSeconds = [long][Math]::Max(0, [Math]::Ceiling(($response.Headers.RetryAfter.Date - [DateTimeOffset]::UtcNow).TotalSeconds)) }
+		}
 		if ($response.Content.Headers.ContentRange) { $result.ContentRange = [string]$response.Content.Headers.ContentRange }
 		if ($null -ne $response.Content.Headers.ContentLength) { $result.ContentLength = [long]$response.Content.Headers.ContentLength }
 		$expectedRange = 'bytes {0}-{1}/{2}' -f $Offset, ($Offset + $Count - 1), $TotalLength
 		if ($result.StatusCode -ne 206 -or $result.ContentRange -cne $expectedRange -or $result.ContentLength -ne $Count) { return [pscustomobject]$result }
 		$stream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+		$result.FailureKind = 'InvalidBodyLength'
 		$buffer = New-Object byte[] ($Count + 1)
 		$total = 0
 		while ($total -lt $buffer.Length) {
-			$read = $stream.Read($buffer, $total, $buffer.Length - $total)
+			$read = $stream.ReadAsync($buffer, $total, $buffer.Length - $total, $deadline.Token).GetAwaiter().GetResult()
 			if ($read -le 0) { break }
 			$total += $read
 		}
 		if ($total -ne $Count) { return [pscustomobject]$result }
 		$result.Bytes = New-Object byte[] $Count
 		[Buffer]::BlockCopy($buffer, 0, $result.Bytes, 0, $Count)
+		$result.FailureKind = ''
 	}
-	catch { $result.Bytes = [byte[]]@() }
+	catch { $result.Bytes = [byte[]]@(); $result.FailureKind = 'AnonymousTransport' }
 	finally {
 		if ($stream) { $stream.Dispose() }
 		if ($response) { $response.Dispose() }
 		if ($request) { $request.Dispose() }
 		if ($client) { $client.Dispose() } elseif ($handler) { $handler.Dispose() }
+		if ($deadline) { $deadline.Dispose() }
 	}
 	return [pscustomobject]$result
+}
+
+function script:Invoke-PaxSharePointAnonymousRange {
+	param(
+		[Parameter(Mandatory)][string]$DownloadUri,
+		[Parameter(Mandatory)][long]$Offset,
+		[Parameter(Mandatory)][ValidateRange(1,4194304)][int]$Count,
+		[Parameter(Mandatory)][long]$TotalLength,
+		[AllowNull()][scriptblock]$HttpClientFactory,
+		[ValidateRange(1,120)][int]$TimeoutSeconds = 60,
+		[ValidateRange(0,900)][int]$RetryBudgetSeconds = 120,
+		[AllowNull()][scriptblock]$SleepOperation
+	)
+	$waited = [long]0
+	for ($attempt = 1; $attempt -le 4; $attempt++) {
+		$result = script:Invoke-PaxSharePointAnonymousRangeOnce -DownloadUri $DownloadUri -Offset $Offset -Count $Count -TotalLength $TotalLength -HttpClientFactory $HttpClientFactory -TimeoutSeconds $TimeoutSeconds
+		$retryable = $result.FailureKind -ceq 'AnonymousTransport' -or [int]$result.StatusCode -in @(429,500,502,503,504)
+		if ($result.Bytes.Length -eq $Count -or -not $retryable) { return $result }
+		if ($attempt -lt 4) {
+			$wait = [long][Math]::Max(1, [long]$result.RetryAfterSeconds)
+			if (($waited + $wait) -gt $RetryBudgetSeconds) { $result.FailureKind = 'RetryBudgetExhausted'; return $result }
+			Write-LogFile ("SharePoint anonymous range retry {0}/4 at offset {1}, HTTP {2}; no failed response bytes were admitted." -f $attempt, $Offset, $result.StatusCode) -Level 'WARNING'
+			if ($SleepOperation) { & $SleepOperation $wait } else { Start-Sleep -Seconds $wait }
+			$waited += $wait
+		}
+	}
+	$result.FailureKind = 'RetryAttemptsExhausted'
+	return $result
 }
 
 function script:Read-PaxSharePointPublicationObject {
@@ -42695,13 +43166,15 @@ function script:Read-PaxSharePointPublicationObject {
 		[Parameter(Mandatory)][string]$RelativePath,
 		[Parameter(Mandatory)][string]$Structure
 	)
-	$outcome = [ordered]@{ Observed = $false; Reason = $null; Length = [long]0; Sha256 = $null; HeaderDigest = $null; RecordCount = $null }
+	$outcome = [ordered]@{ Observed = $false; Reason = $null; FailureKind = $null; Length = [long]0; Sha256 = $null; HeaderDigest = $null; RecordCount = $null }
 	$opening = script:Read-PaxSharePointPublicationMetadata -Target $Target -RelativePath $RelativePath
 	if (-not $opening.Observed) {
-		$outcome.Reason = 'the destination did not identify the exact file for readback'
+		$outcome.FailureKind = if ($opening.Missing) { 'MetadataMissing' } elseif ([int]$opening.StatusCode -in @(401,403)) { 'MetadataDenied' } elseif ([int]$opening.StatusCode -ne 200) { 'MetadataUnavailable' } else { 'MetadataShapeOrIdentityUnverified' }
+		$outcome.Reason = 'SharePoint readback refused: {0}; status={1}.' -f $outcome.FailureKind, [int]$opening.StatusCode
 		return [pscustomobject]$outcome
 	}
 	$declared = [long]$opening.Length
+	$capability = $opening
 	$memberProfile = script:New-PaxRemoteMemberProfile -Structure $Structure
 	$completed = $false
 	try {
@@ -42710,16 +43183,30 @@ function script:Read-PaxSharePointPublicationObject {
 		while ($position -lt $declared) {
 			$want = [long][Math]::Min([int64]$chunkSize, $declared - $position)
 			$downloadOp = if ($Target.PSObject.Properties['DownloadRequestOperation']) { $Target.DownloadRequestOperation } else { $null }
-			$chunk = if ($downloadOp) { & $downloadOp $opening.DownloadUri $position ([int]$want) $declared }
-				else { script:Invoke-PaxSharePointAnonymousRange -DownloadUri $opening.DownloadUri -Offset $position -Count ([int]$want) -TotalLength $declared }
+			$chunk = $null
+			for ($refresh = 0; $refresh -le 2; $refresh++) {
+				$factory = if ($Target.PSObject.Properties['DownloadHttpClientFactory']) { $Target.DownloadHttpClientFactory } else { $null }
+				$chunk = if ($downloadOp) { & $downloadOp $capability.DownloadUri $position ([int]$want) $declared }
+					else { script:Invoke-PaxSharePointAnonymousRange -DownloadUri $capability.DownloadUri -Offset $position -Count ([int]$want) -TotalLength $declared -HttpClientFactory $factory }
+				if ([int]$chunk.StatusCode -notin @(401,403) -or $refresh -eq 2) { break }
+				$capability = script:Read-PaxSharePointPublicationMetadata -Target $Target -RelativePath $RelativePath
+				script:Assert-PaxSharePointDownloadVersion -Opening $opening -Observed $capability
+			}
+			if ($chunk -and $chunk.PSObject.Properties['FailureKind'] -and $chunk.FailureKind -in @('RetryAttemptsExhausted','RetryBudgetExhausted')) {
+				$outcome.FailureKind = 'AnonymousRetryExhausted'
+				$outcome.Reason = 'SharePoint readback refused: AnonymousRetryExhausted.'
+				return [pscustomobject]$outcome
+			}
 			$expectedRange = 'bytes {0}-{1}/{2}' -f $position, ($position + $want - 1), $declared
 			if ($null -eq $chunk -or [int]$chunk.StatusCode -ne 206 -or [string]$chunk.ContentRange -cne $expectedRange -or [long]$chunk.ContentLength -ne $want) {
-				$outcome.Reason = 'the anonymous download did not prove the exact requested byte range'
+				$outcome.FailureKind = if ([int]$chunk.StatusCode -in @(401,403)) { 'CapabilityDenied' } elseif ([int]$chunk.StatusCode -in @(0,429,500,502,503,504)) { 'AnonymousRetryExhausted' } else { 'RangeProofInvalid' }
+				$outcome.Reason = 'SharePoint readback refused: {0}; status={1}.' -f $outcome.FailureKind, [int]$chunk.StatusCode
 				return [pscustomobject]$outcome
 			}
 			$bytes = [byte[]]$chunk.Bytes
 			if ($bytes.Length -ne [int]$want) {
-				$outcome.Reason = 'the destination returned a different number of bytes than the range that was asked for'
+				$outcome.FailureKind = 'RangeLengthMismatch'
+				$outcome.Reason = 'SharePoint readback refused: RangeLengthMismatch.'
 				return [pscustomobject]$outcome
 			}
 			script:Add-PaxRemoteMemberProfileBytes -Profile $memberProfile -Buffer $bytes -Count $bytes.Length
@@ -42727,22 +43214,26 @@ function script:Read-PaxSharePointPublicationObject {
 		}
 		$closing = script:Read-PaxSharePointPublicationMetadata -Target $Target -RelativePath $RelativePath
 		if (-not $closing.Observed) {
-			$outcome.Reason = 'the destination did not re-identify the file after anonymous readback'
+			$outcome.FailureKind = 'ClosingMetadataUnverified'
+			$outcome.Reason = 'SharePoint readback refused: ClosingMetadataUnverified; status={0}.' -f [int]$closing.StatusCode
 			return [pscustomobject]$outcome
 		}
 		if ($closing.ItemId -cne $opening.ItemId -or $closing.ParentId -cne $opening.ParentId -or
 			[long]$closing.Length -ne $declared -or $closing.ETag -cne $opening.ETag -or $closing.CTag -cne $opening.CTag) {
-			$outcome.Reason = 'the member at the destination changed while it was being read back'
+			$outcome.FailureKind = 'RemoteVersionChanged'
+			$outcome.Reason = 'SharePoint readback refused: RemoteVersionChanged.'
 			return [pscustomobject]$outcome
 		}
 		$measured = script:Complete-PaxRemoteMemberProfile -Profile $memberProfile
 		$completed = $true
 		if (-not [bool]$measured.Valid) {
-			$outcome.Reason = 'the member at the destination does not resolve as the structure its contract declares'
+			$outcome.FailureKind = 'StructureInvalid'
+			$outcome.Reason = 'SharePoint readback refused: StructureInvalid.'
 			return [pscustomobject]$outcome
 		}
 		if ([long]$measured.Length -ne $declared) {
-			$outcome.Reason = 'fewer bytes were read back than the destination declared'
+			$outcome.FailureKind = 'LengthMismatch'
+			$outcome.Reason = 'SharePoint readback refused: LengthMismatch.'
 			return [pscustomobject]$outcome
 		}
 		$outcome.Observed = $true
@@ -42753,7 +43244,10 @@ function script:Read-PaxSharePointPublicationObject {
 		return [pscustomobject]$outcome
 	}
 	catch {
-		$outcome.Reason = 'the exact SharePoint metadata and anonymous byte readback could not be proven'
+		$readbackFailure = $_.Exception
+		while ($readbackFailure.InnerException) { $readbackFailure = $readbackFailure.InnerException }
+		$outcome.FailureKind = if ($readbackFailure.PSObject.Properties['FailureKind']) { [string]$readbackFailure.FailureKind } else { 'ReadbackFailed' }
+		$outcome.Reason = 'SharePoint readback refused: {0}.' -f $outcome.FailureKind
 		return [pscustomobject]$outcome
 	}
 	finally { if (-not $completed) { [void](script:Complete-PaxRemoteMemberProfile -Profile $memberProfile) } }
@@ -51680,6 +52174,27 @@ function Merge-IncrementalSaves {
 	return $mergedCount
 }
 
+function New-PaxGraphIncrementalFailure {
+	param([Parameter(Mandatory)]$Failure, [string]$Stage, [string]$Code)
+	$exception = $Failure.Exception
+	if ($exception.Data.Contains('PaxGraphFailureClass')) {
+		$class = [string]$exception.Data['PaxGraphFailureClass']
+		$stageValue = [string]$exception.Data['PaxGraphFailureStage']
+		$hresult = [int]$exception.Data['PaxGraphFailureHResult']
+	}
+	else {
+		while ($exception.InnerException) { $exception = $exception.InnerException }
+		$class = $exception.GetType().FullName
+		$stageValue = $Stage
+		$hresult = [int]$exception.HResult
+	}
+	$failure = [IO.IOException]::new(("{0}: stage={1}; class={2}; hresult={3}. Retained source data was not admitted as a complete export." -f $Code, $stageValue, $class, $hresult))
+	$failure.Data['PaxGraphFailureClass'] = $class
+	$failure.Data['PaxGraphFailureStage'] = $stageValue
+	$failure.Data['PaxGraphFailureHResult'] = $hresult
+	return $failure
+}
+
 function Merge-IncrementalSaves-Streaming {
 	<#
 	.SYNOPSIS
@@ -51764,6 +52279,7 @@ function Merge-IncrementalSaves-Streaming {
 	# Track seen RecordIds for deduplication (seed with any in-memory RecordIds already written to CSV)
 	$seenIds = if ($ExcludeRecordIds) { New-Object System.Collections.Generic.HashSet[string] ($ExcludeRecordIds) } else { New-Object System.Collections.Generic.HashSet[string] }
 	$duplicatesSkipped = 0
+	$failureStage = 'source-selection'
 	
 	foreach ($file in $files) {
 		$filesProcessed++
@@ -51772,6 +52288,7 @@ function Merge-IncrementalSaves-Streaming {
 		try {
 			# Open CSV writer on first file with data
 			if (-not $headerWritten) {
+				$failureStage = 'csv-open'
 				Open-CsvWriter -Path $OutputFile -Columns $Columns
 				$headerWritten = $true
 			}
@@ -51781,11 +52298,18 @@ function Merge-IncrementalSaves-Streaming {
 			$fileRecords = 0
 			
 			# Use StreamReader instead of Get-Content pipeline for ~5-10x faster file reading
-			$reader = [System.IO.StreamReader]::new($file.FullName, [System.Text.Encoding]::UTF8)
-			while ($null -ne ($line = $reader.ReadLine())) {
+			$failureStage = 'source-open'
+			$reader = [System.IO.StreamReader]::new($file.FullName, [System.Text.UTF8Encoding]::new($false, $true))
+			while ($true) {
+				$failureStage = 'source-read'
+				$line = $reader.ReadLine()
+				if ($null -eq $line) { break }
 				if (-not [string]::IsNullOrWhiteSpace($line)) {
 					try {
-						$record = $line | ConvertFrom-Json
+						$failureStage = 'row-json'
+						$record = $line | ConvertFrom-Json -ErrorAction Stop
+						if ($null -eq $record -or $record -isnot [pscustomobject]) { throw [IO.InvalidDataException]::new('A retained Graph row is not a JSON object.') }
+						$failureStage = 'row-normalization'
 						
 						# Deduplicate by RecordId
 						$recordId = $null
@@ -51843,12 +52367,13 @@ function Merge-IncrementalSaves-Streaming {
 						
 						# Write batch when full
 						if ($batch.Count -ge $batchSize) {
+							$failureStage = 'csv-write'
 							Write-CsvRows -Rows $batch -Columns $Columns
 							$totalMerged += $batch.Count
 							$batch.Clear()
 						}
 					} catch {
-						throw 'GRAPH_INCREMENTAL_ROW_INVALID: refusing a partial streaming export.'
+						throw (New-PaxGraphIncrementalFailure -Failure $_ -Stage $failureStage -Code 'GRAPH_INCREMENTAL_ROW_INVALID')
 					}
 				}
 			}
@@ -51857,6 +52382,7 @@ function Merge-IncrementalSaves-Streaming {
 			
 			# Flush remaining batch for this file
 			if ($batch.Count -gt 0) {
+				$failureStage = 'csv-write'
 				Write-CsvRows -Rows $batch -Columns $Columns
 				$totalMerged += $batch.Count
 				$batch.Clear()
@@ -51879,17 +52405,22 @@ function Merge-IncrementalSaves-Streaming {
 			}
 			
 		} catch {
+			$originalFailure = $_
 			# Ensure StreamReader is disposed on error to release file handle
 			if ($reader) { try { $reader.Dispose() } catch {} ; $reader = $null }
-			if ($headerWritten) { Close-CsvWriter; $headerWritten = $false }
+			if ($headerWritten) { try { Close-CsvWriter -ThrowOnFailure } catch { }; $headerWritten = $false }
 			$script:HadTerminalFailures = $true
-			throw 'GRAPH_INCREMENTAL_STREAM_FAILED: retained partition data could not be exported completely.'
+			throw (New-PaxGraphIncrementalFailure -Failure $originalFailure -Stage $failureStage -Code 'GRAPH_INCREMENTAL_STREAM_FAILED')
 		}
 	}
 	
 	# Close CSV writer
 	if ($headerWritten) {
-		Close-CsvWriter
+		try { Close-CsvWriter -ThrowOnFailure }
+		catch {
+			$script:HadTerminalFailures = $true
+			throw (New-PaxGraphIncrementalFailure -Failure $_ -Stage 'csv-finalize' -Code 'GRAPH_INCREMENTAL_STREAM_FAILED')
+		}
 	}
 	
 	# Final stats
@@ -58569,7 +59100,16 @@ function Open-CsvWriter {
 	}
 	$script:PAX_CsvWriter.WriteLine(($escapedCols -join ','))
 }
-function Close-CsvWriter { if ($script:PAX_CsvWriter) { try { $script:PAX_CsvWriter.Flush(); $script:PAX_CsvWriter.Dispose() } catch {}; Remove-Variable PAX_CsvWriter -Scope Script -ErrorAction SilentlyContinue } }
+function Close-CsvWriter {
+	param([switch]$ThrowOnFailure)
+	if ($script:PAX_CsvWriter) {
+		$failure = $null
+		try { $script:PAX_CsvWriter.Flush() } catch { $failure = $_ }
+		try { $script:PAX_CsvWriter.Dispose() } catch { if ($null -eq $failure) { $failure = $_ } }
+		Remove-Variable PAX_CsvWriter -Scope Script -ErrorAction SilentlyContinue
+		if ($failure -and $ThrowOnFailure) { throw $failure }
+	}
+}
 function Write-CsvRows {
 	param([System.Collections.IEnumerable]$Rows, [string[]]$Columns)
 	if (-not $Rows) { return }
@@ -59182,7 +59722,7 @@ else {
 	Write-LogHost "  API Method:       REST-based audit log queries" -ForegroundColor White
 	Write-LogHost "  Module:           Microsoft.Graph.Security" -ForegroundColor White
 	Write-LogHost "  Authentication:   $Auth (OAuth 2.0)" -ForegroundColor White
-	$parallelStatus = if ($PSVersionTable.PSVersion.Major -ge 7) { "AVAILABLE (PowerShell 7+)" } else { "LIMITED (PowerShell 5.1 detected)" }
+	$parallelStatus = if ($PSVersionTable.PSVersion.Major -ge 7) { "AVAILABLE (PowerShell 7+)" } else { "UNSUPPORTED HOST (PowerShell 7 required)" }
 	Write-LogHost "  Parallel Support: $parallelStatus" -ForegroundColor Green
 
 	# ---- Auth Context summary ----
@@ -68910,7 +69450,11 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 					Write-CsvRows -Rows $batch -Columns $fastPathColumns
 					$batch.Clear()
 				}
-				Close-CsvWriter
+				try { Close-CsvWriter -ThrowOnFailure }
+				catch {
+					$script:HadTerminalFailures = $true
+					throw (New-PaxGraphIncrementalFailure -Failure $_ -Stage 'csv-memory-finalize' -Code 'GRAPH_INCREMENTAL_STREAM_FAILED')
+				}
 				$csvWriter = $false
 				
 				# Clear in-memory collection to free RAM before streaming merge
@@ -68983,7 +69527,14 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 				# Append streaming temp to main temp (skip header line from streaming file)
 				if ((Test-Path $streamingTemp) -and $streamedCount -gt 0) {
 					Write-LogHost "  Combining in-memory and streamed data..." -ForegroundColor DarkGray
-					Get-Content $streamingTemp | Select-Object -Skip 1 | Add-Content $exportTemp
+					try {
+						Get-Content $streamingTemp -ErrorAction Stop | Select-Object -Skip 1 | Add-Content $exportTemp -ErrorAction Stop
+					}
+					catch {
+						$script:HadTerminalFailures = $true
+						$combineStage = if ($_.InvocationInfo.MyCommand.Name -eq 'Get-Content') { 'csv-combine-read' } else { 'csv-combine-write' }
+						throw (New-PaxGraphIncrementalFailure -Failure $_ -Stage $combineStage -Code 'GRAPH_INCREMENTAL_STREAM_FAILED')
+					}
 					Remove-Item $streamingTemp -Force -ErrorAction SilentlyContinue
 				}
 				$totalStreamedRecords = $inMemoryCount + $streamedCount
@@ -69024,7 +69575,11 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 			
 			# Move temp file to final output
 			if (Test-Path $exportTemp) {
-				Move-Item -Path $exportTemp -Destination $OutputFile -Force
+				try { Move-Item -Path $exportTemp -Destination $OutputFile -Force -ErrorAction Stop }
+				catch {
+					$script:HadTerminalFailures = $true
+					throw (New-PaxGraphIncrementalFailure -Failure $_ -Stage 'csv-promote' -Code 'GRAPH_INCREMENTAL_STREAM_FAILED')
+				}
 			}
 			
 			$fastPathElapsed = (Get-Date) - $fastPathStart
@@ -70698,6 +71253,12 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 			return ([int]$head.StatusCode -eq 404)
 		}
 		$proof = & $transport.ReadObject $transport.Target $rel 'CsvWithHeader'
+		if ($Member.Tier -eq 'SharePoint' -and (-not $proof.Observed -or $proof.Length -ne $Expected.ByteLength -or $proof.Sha256 -cne $Expected.Sha256)) {
+			$failureKind = if (-not $proof.Observed) {
+				if ($proof.PSObject.Properties['FailureKind'] -and [string]$proof.FailureKind -cmatch '^[A-Za-z0-9_-]{1,64}$') { [string]$proof.FailureKind } else { 'ReadbackUnproven' }
+			} elseif ($proof.Length -ne $Expected.ByteLength) { 'LengthMismatch' } else { 'DigestMismatch' }
+			Write-LogHost ('SharePoint member readback refused: {0}. No unproven member is accepted.' -f $failureKind) -ForegroundColor Red
+		}
 		return ($null -ne $Expected -and $proof.Observed -and $proof.Sha256 -ceq $Expected.Sha256 -and $proof.Length -eq $Expected.ByteLength)
 	}
 
@@ -72251,7 +72812,12 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 							Write-LogHost  "Rollup:   -> Requested append output NOT completed this run (completed with gaps, exit 40)." -ForegroundColor Red
 							if ($_raWantUsers) { Write-LogHost ("Rollup:   -> Target left UNCHANGED this run: {0}" -f $(if ($script:AppendRaw.ContainsKey('UserInfo') -and $script:AppendRaw['UserInfo']) { $script:AppendRaw['UserInfo'] } else { $AppendUserInfo })) -ForegroundColor Yellow }
 							if ($_raWantFact) { Write-LogHost ("Rollup:   -> Target left UNCHANGED this run: {0}" -f $(if ($script:AppendRaw.ContainsKey('Purview') -and $script:AppendRaw['Purview']) { $script:AppendRaw['Purview'] } else { $AppendFile })) -ForegroundColor Yellow }
-							Write-LogHost  "Rollup:   -> Do NOT merge this run into the target: restore a known-clean target, or establish a validated re-baseline, and resolve the UserKey conflicts first." -ForegroundColor Yellow
+							if ($rollupAccelResult.Reason -like 'io-error*') {
+								Write-LogHost 'Rollup:   -> File I/O failure does not establish a UserKey conflict. Keep the unchanged targets and retained output; resolve the reported I/O condition before retrying. Do not merge or replace targets manually.' -ForegroundColor Yellow
+							}
+							else {
+								Write-LogHost  "Rollup:   -> Do NOT merge this run into the target: restore a known-clean target, or establish a validated re-baseline, and resolve the UserKey conflicts first." -ForegroundColor Yellow
+							}
 						}
 					}
 				}

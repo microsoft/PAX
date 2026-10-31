@@ -4,7 +4,7 @@
 
 **Portable Audit eXporter (PAX) · Purview Audit Log Processor**
 
-**v2.0.0 prerelease 20261023-12**
+**v2.0.0 prerelease 20261030-13**
 
 **Preview build — not a production release.**
 
@@ -30,24 +30,46 @@ A prerelease build is **not** the released product. The current released version
 <tr>
 <td>
 
-### [PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261023-12.ps1](https://github.com/microsoft/PAX/releases/download/purview-v2.0.0-prerelease-20261023-12/PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261023-12.ps1)
+### [PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261030-13.ps1](https://github.com/microsoft/PAX/releases/download/purview-v2.0.0-prerelease-20261030-13/PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261030-13.ps1)
 
-<sub>Click the file name above to download the script directly. See the [prerelease page](https://github.com/microsoft/PAX/releases/tag/purview-v2.0.0-prerelease-20261023-12) for release details.</sub>
+<sub>Click the file name above to download the script directly. See the [prerelease page](https://github.com/microsoft/PAX/releases/tag/purview-v2.0.0-prerelease-20261030-13) for release details.</sub>
 
-<sub>**SHA256:** `3D5CF3A6B39FD9245F6AAE2037C06A3AF5B236E70876719B3ED329C517B81E10`</sub>
+<sub>**SHA256:** `75D6442978E3FA0909D5E41FC4A1A7474D06406CD75A514764337C80E4480260`</sub>
 
-<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261023-12.ps1 -Algorithm SHA256`</sub>
+<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261030-13.ps1 -Algorithm SHA256`</sub>
 
 </td>
 </tr>
 </table>
 
-Earlier preview builds are kept in [`prerelease_archive`](./prerelease_archive) for reference only.
+Only the immediately previous preview, prerelease 12, is kept in [`prerelease_archive`](./prerelease_archive) for reference only.
 
 > [!NOTE]
-> **What's new in prerelease 12:** Fabric Tables runs that include CoworkAdoption no longer stop at the Users check before any table is written. Prerelease 11 applied the AI-in-One and ValueLens Users identity check to the Cowork Adoption Users table, which uses a different layout, so the whole table set was refused. Cowork Adoption Users are still checked when they are produced. An existing empty Delta table can now be replaced by an empty result, for example for a dashboard with no activity yet; replacing a table that has rows with an empty result is still refused. The CoworkAdoption help text no longer lists qualification as outstanding. Nothing else changed from prerelease 11.
->
-> **Carried forward from prerelease 11:** audit searches are created just in time, in the background, one for each free download slot, instead of all at once at the start of collection. A slow search request holds up only its own partition while the others keep creating and downloading. If a request drops on the network and Purview doesn't list the search within 5 minutes, PAX requests it again on its own (up to 3 times, then through the normal retry passes), first checking Purview for the earlier request so no duplicate is created. No manual step or resume is needed. Downloading starts with the first completed search, and a throttled search request while other partitions are downloading is retried later instead of counting as a partition failure. It also accepts -UserHistory On in any multi-dashboard run that includes M365; prerelease 10 refused it when AIO was not in the list.
+> **What's new in prerelease 13:** reliability corrections for SharePoint history transfers and readback, processed Users verification, retained Graph exports and append I/O diagnostics. **PowerShell 7.0 or later is now required for every mode; Windows PowerShell 5.1 is no longer supported.**
+
+<details>
+<summary><strong>Prerelease 13 changes from prerelease 12</strong></summary>
+
+- **Interrupted SharePoint transfers:** bounded retries recover interrupted history downloads and staged readback while checking exact byte ranges and the same file version. Changed or incomplete content is refused rather than accepted.
+- **Access-preserving local downloads:** verified replacement preserves an existing destination's owner, group and access permissions, including inheritance settings. A refusal retains original data and verified recovery material; a newly appeared competing destination is not overwritten. No new permissions or customer setup are required.
+- **Independent processed Users verification:** checks follow the producer's existing Unicode normalization and de-identification rules. Existing tokens, salts, schemas, history keys and analytical results are unchanged. If verification cannot run in isolation, the result is reported as a failure, not a pass.
+- **Retained Graph exports:** malformed or non-object JSONL records, and read, write, flush, close, combine or final-publication failures, cannot become a successful export. Original files and recoverable shards are preserved when completion is refused.
+- **Append I/O diagnostics:** failures identify the processing stage, file role and native I/O cause without mislabelling them as identity/key conflicts or prescribing a mandatory rebaseline.
+- **Complete-set SharePoint readback:** metadata, range, retry, structure, length, digest and changed-version failures have distinct reasons. Required AIO/ValueLens members must verify before the set is accepted; recovery retains the original-preserving safeguards.
+- **PowerShell 7 only:** every mode requires PowerShell 7.0 or later. `-UseEOM` remains available under PowerShell 7; the PowerShell 7 minimum has not increased.
+
+These changes do not establish the underlying cause of every previously reported customer I/O, JSONL or readback failure. Recovery still requires the actual retained artifacts and matching run identity. Do not manually merge or promote candidates, rehash protected history, reset watermarks or force an older checkpoint to pass.
+
+</details>
+
+<details>
+<summary><strong>Carried forward from prerelease 12</strong></summary>
+
+**Fabric Tables and Cowork Adoption:** runs that include CoworkAdoption no longer apply the AIO/ValueLens Users layout check to the differently shaped Cowork Adoption Users table. Cowork Adoption Users are still checked when produced. An existing empty Delta table can be replaced by an empty result; replacing a populated table with an empty result remains refused. The CoworkAdoption help text no longer lists qualification as outstanding.
+
+**Search creation and multi-dashboard history:** audit searches are created just in time, in the background, one per free download slot. A slow request holds up only its own partition. A dropped request is checked against Purview for up to 5 minutes before automatic resubmission, with a check for the earlier request first; no manual resume is required. Downloads start with the first completed search, and throttled creation requests are retried without counting as partition failures. `-UserHistory On` remains accepted in multi-dashboard runs that include M365, including when AIO is absent.
+
+</details>
 
 ---
 
@@ -56,7 +78,7 @@ Earlier preview builds are kept in [`prerelease_archive`](./prerelease_archive) 
 ## Please read before you run it
 
 > [!IMPORTANT]
-> **This is a preview, not a production-qualified build.** Validation includes targeted synthetic coverage and limited live AIO/Fabric run reviews, not complete end-to-end qualification across supported modes and destinations.
+> **This is a preview, not a production-qualified build.** Validation includes targeted synthetic and native local coverage and limited live AIO/ValueLens SharePoint and Fabric run reviews, not complete end-to-end qualification across supported modes and destinations.
 
 - **Check the results against your own tenant** before relying on them, sharing them, or publishing them to a dashboard. Confirm row counts, dates and included people.
 - **Keep a copy of anything important.** Use a new output folder or destination rather than the files your reporting depends on.
@@ -92,7 +114,7 @@ These are the net changes from the current production release to this **v2.0.0 p
 - **Remove retired switches** from scheduled jobs and saved commands: `-ExplodeArrays`, `-ExplodeDeep`, `-ExportWorkbook` and `-RAWInputCSV` are refused before sign-in.
 - **Unattended rollup runs** need an explicit `-Dashboard` or `-Force`; otherwise PAX asks which dashboard to build.
 - **Update automation and reports that use generated names.** Dashboard files now start with `AIO_`, `ValueLens_`, `M365_` or `CoworkAdoption_`, and Fabric table names no longer carry run timestamps. Point Power BI connections and notebooks at the new names.
-- **Check prerequisites.** Accelerated append needs Python 3.10+ and SQLite 3.24+ (checked before collection). PAX uses Microsoft Graph PowerShell v2.25.0–v2.40.0. `-CopilotAccessGroups` needs `GroupMember.Read.All`.
+- **Check prerequisites.** Every mode requires PowerShell 7.0 or later; Windows PowerShell 5.1 is unsupported, including for `-UseEOM`. Accelerated append needs Python 3.10+ and SQLite 3.24+ (checked before collection). PAX uses Microsoft Graph PowerShell v2.25.0–v2.40.0. `-CopilotAccessGroups` needs `GroupMember.Read.All`.
 - **For `-Watermark`,** supply `-WatermarkStartDate` only on the first run, and use a CSV append target.
 - **In-progress collections:** finish a Microsoft 365 usage collection started on v1.11.15 or earlier on that version, or start fresh.
 
@@ -147,6 +169,8 @@ These are the net changes from the current production release to this **v2.0.0 p
 
 **Verified publication and independent recovery.** Candidates are checked before replacement and read back afterward. A refusal before publication leaves the affected targets unchanged. A later failure triggers restoration where possible; an unverified restoration is reported as potentially modified data, with recovery material retained and no affected watermark advance. Failed sets are not retried by the final upload sweep. Logs, raw recovery files or successfully generated local files are not proof of a completed remote dataset.
 
+**Independent processed Users checks.** Verification follows the producer's Unicode normalization and existing de-identification tokens without changing salts, schemas, history keys or analytical rules. A failed isolation attempt is reported as a failure. The protection digest remains a logical-consistency check, not proof of authenticity.
+
 **Stable identities and complete Users references.** First-run and append output includes minimal Users rows for identities found only in audit activity, including multi-dashboard and history paths. Retained user, message and conversation mappings remain stable. A refused merge reports conflicting keys, people and missing or mismatched references and writes a complete private local conflict list. Resolve conflicts from a known-clean target or validated re-baseline, not a manual blind merge.
 
 **Missing licensing stays Unknown.** Directory collection includes the license assignments needed to retain licensed accounts even when name fields are empty. AIO and ValueLens use `Unknown` for missing or unrecognized evidence in both Users and activity; explicit positive/negative evidence and license-independent agent and Cowork classifications remain distinct. Unknown is not Unlicensed.
@@ -167,6 +191,8 @@ These are the net changes from the current production release to this **v2.0.0 p
 **Source-preserving recovery.** Dictionary and object responses retain source identities and audit payloads. All requested operations, record types and service filters survive retries and recovery, including intentionally omitted M365 filters. Snapshots belong to their complete query contract, not just a partition number. Resume and export validate their exact filename, digest and record count.
 
 **Completion is reconciled with saved data.** Collection checks service counts, completed-partition counts and final export counts, accounting for duplicates and date trimming. Incomplete retrieval, unusable records or failed data/checkpoint saves cannot become successful empty results or later false completions. Genuine zero results are valid and still produce requested independent outputs. Missing activity detail is counted separately; a faster-reader rejection is tried with the standard reader before an unreadable-record refusal withholds affected outputs and records the gap.
+
+**Retained JSONL must complete cleanly.** Malformed or non-object records and read, write, flush, close, combine or final-publication failures refuse completion while preserving original files and recoverable shards. A healthy export retains the existing output semantics.
 
 **Checkpoint-scoped Resume.** Resume follows only the selected checkpoint and its saved publication state; old shared markers do not block unrelated work. Integrity, ownership and concurrent-change checks still apply. Fabric verifies the local checkpoint before backing it up, supports hidden checkpoint names, and retries page writes briefly when backup holds a file. Lock errors report the actual cause and path; foreign-host lock age uses UTC.
 
@@ -196,6 +222,8 @@ These are the net changes from the current production release to this **v2.0.0 p
 **Fabric authentication and dependencies.** Az.Accounts runs in a separate process to avoid Graph authentication-library conflicts while preserving supported Azure, managed-identity and app-registration sign-ins. Delta checks both `pyarrow` and `deltalake`; Windows on ARM uses x64 Python, with current-user installation when allowed and no PATH/default-Python change. Failed Delta delivery may retain a recovery CSV in Files, but is not successful table publication.
 
 **Reliable paths and transfers.** SharePoint and OneDrive resolve the correct library, including folders with spaces. CSV sharing links are resolved to the actual item and non-CSV items are refused; logs omit sharing tokens. Linux local paths use the platform separator. Remote runs have separate working folders even when started together. Large SharePoint uploads recover from the service-confirmed offset within network tolerance, including a bounded sign-in renewal when session creation is unauthorized; existing permissions still apply.
+
+**Verified history downloads and readback.** Interrupted SharePoint reads retry bounded exact byte ranges, refresh download access only for the same item/version, and verify the complete local file before admission. Replacement preserves existing local owner, group and access settings without deleting the destination or relaxing permissions. Failed admission retains verified recovery material; a competing new or changed destination is not overwritten. Complete-set readback distinguishes metadata, range, retry, structure, length, digest and changed-version refusals before accepting required AIO/ValueLens members.
 
 **Expected responses are not failures.** Optional missing recovery markers and OneLake directories (`GET 404` with exact `PathNotFound`), and already-existing directories during idempotent creation (`PUT directory 409` with exact `PathAlreadyExists`), do not print misleading errors. Required paths, access refusals and immutable-file conflicts remain errors. Local watermark replacement retries brief file locks and keeps the previous marker if saving fails.
 
@@ -244,6 +272,8 @@ These are the net changes from the current production release to this **v2.0.0 p
 
 **Failures explain the next step.** Audit refusal logs include the returned error, request identifier, service diagnostics and policy challenge. Permanent permission/policy refusals stop promptly; transient failures retain retry behavior. Remote read errors identify the requested destination. SharePoint guidance distinguishes delegated site access, tenant-wide app-only `Sites.ReadWrite.All`, and app-only `Sites.Selected` with a write grant.
 
+**Append I/O is distinct from identity conflicts.** Bounded diagnostics identify the stage, operation, file role and native error code. A file read/write failure is not reported as a user-key conflict or an instruction to rebaseline history.
+
 **Generation is not publication.** Final messages name accepted physical Delta destinations or identify local processing copies, rather than inventing remote CSVs. Append targets are labeled before work and outcomes afterward. `Departed` means absent from the current window, not deleted from retained history. Current-run distinct identifier counts are separate from all-run reserved counts; `Message_Id_Raw` preserves the original identifier behind the rollup's sequential `Message_Id`.
 
 **Logs and help remain useful across runs.** Logs keep timestamps even with fixed output names. Interruptions are not attributed to Ctrl+C without evidence. Append examples use the full existing-file path without a conflicting output folder. Power BI, permission, retention and Fabric guidance covers the supported input and history options.
@@ -265,8 +295,10 @@ These are the net changes from the current production release to this **v2.0.0 p
 
 ## Known limits
 
+- **Runtime support:** PowerShell 7.0 or later is required for all modes. Windows PowerShell 5.1 is unsupported; `-UseEOM` is retained under PowerShell 7.
 - **Graph SDK compatibility:** PAX uses installed Microsoft Graph PowerShell v2.25.0–v2.40.0, or installs v2.40.0 for the current user if none is available. It does not automatically upgrade the SDK; newer installations remain but are not selected. An incompatible version already loaded requires a fresh PowerShell window.
 - **Private recovery qualification:** Windows synthetic coverage includes Fabric mirror/restore using mocked transport. Live Fabric recovery and positive Unix owner-only recovery remain unqualified; a fail-closed permission refusal is not successful recovery.
+- **Older checkpoint recovery:** cross-build recovery from prerelease 10 or 12 customer artifacts has not been established. Preserve the checkpoint and its actual matching artifacts; never edit version, fingerprint, count or completion fields to force compatibility. Local download-admission coverage does not establish universal crash, concurrent-writer, network-filesystem or macOS recovery guarantees.
 - **History is not reconstructed license truth:** Unknown users/activity remain in outputs, but current dashboard licensed/unlicensed populations may exclude them. The current AI-in-One rollup template expects one row per normalized person, not multi-state history; `-UserHistory On` does not upgrade that template.
 - **Long raw audit JSON:** The Lakehouse SQL endpoint exposes Delta strings as `varchar(8000)`, which can truncate long `AuditData` when read through SQL. Complete JSON remains in Delta for Spark or direct Delta readers. Processed AIO tables do not contain raw `AuditData`; this preview does not change the SQL limit.
 - **Catalog limits:** Creator, channel, environment, risk and other fields are not universally available. An empty sharing collection differs from unavailable data. A complete catalog listing does not establish active-agent status or a match for every audit Agent ID.
