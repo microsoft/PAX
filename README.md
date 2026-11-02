@@ -34,7 +34,7 @@ A prerelease build is **not** the released product. The current released version
 
 <sub>Click the file name above to download the script directly.</sub>
 
-<sub>**SHA256:** `AE5B00EDCC9A77B722ACFE4C452A56401DF93BC8DCE677F779387A599F370AA5`</sub>
+<sub>**SHA256:** `AD4E8864FC8A0DC498F7C4550BE59A5BEEA9A581D70074B752ECE6A2DFC3EE86`</sub>
 
 <sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261101-14.ps1 -Algorithm SHA256`</sub>
 
@@ -50,6 +50,9 @@ A prerelease build is **not** the released product. The current released version
 - **Finish eligible Fabric publications without starting over:** publication-only recovery reuses completed AIO/ValueLens outputs, raw exports, augmented Users and Agent 365 snapshots. It does not collect audit data, refresh directory/catalog data or repeat dashboard rollups. Ordinary Resume is unchanged; `-PublishRecoveryManifest` remains optional advanced input.
 - **Multiline and large CSV values:** both CSV-to-Delta conversion paths use strict logical-record-aware reading, preserving quoted line breaks, Unicode, empty strings and literal values. Malformed quoting, inconsistent row widths and values beyond the qualified bounds are refused, not silently skipped or altered.
 - **Recovery without full CSV duplication or duplicate verification:** publication-only recovery locks retained sources in place and verifies current hashes, schemas, logical counts, temporal UserKeys and destination state. A successful full source proof is reused only after matching source locks, current hashes and its checkpoint/plan/validator bindings are established. Scratch and reserve budgets derive from free space, with optional explicit limits; Parquet and proof working space is still required.
+- **Bounded, resumable large local verification:** new automatic recovery plans allow **24 hours per local unit**, rather than one hour for an opaque ten-file job. `-RecoveryOperationSeconds` can set **60–604800 seconds (7 days)** before the plan is saved. Measurement and strict CSV proofs persist completed per-source receipts; temporal/license/UserKey RI persists completed per-profile receipts. Reuse requires current read locks, SHA256 hashes and matching checkpoint/run/path/role/validator/contracts, not file dates or unfinished SQLite. Interrupted or unreferenced work can still require repetition. Local Parquet preparation and snapshot verification use the same finite local limit; verified snapshots remain read-locked through their remote operation. Phase/role/member start, minute heartbeat and deadline messages contain no row values or credentials.
+- **Saved budgets and remote safeguards remain authoritative:** finalized plans keep their recorded capacity and runtime, including older one-hour plans; neither their hashes nor their limits are silently rewritten. An owned interrupted initial plan without finalized expectations can safely restart and reuse completed matching units. Lightweight prerequisite/envelope checks remain bounded to **120 seconds**. Remote observe/write/restore work remains limited to the lesser of the saved limit, **3600 seconds** and token lifetime minus **300 seconds**, refusing less than **60 seconds** of safe lifetime. Scratch/reserve checks include retained plan receipts and unfinished artifacts throughout recovery. These changes do not establish customer-scale performance or live managed-identity qualification.
+- **Fail-fast worker prerequisites:** before retained-file verification, recovery checks the executing Windows/x64 PowerShell host, actual 64-bit Python/package imports, and supported Az.Accounts discovery/import in a fresh process using that same host and account. Selected versions and paths are reported. This preflight does not sign in, acquire tokens, install packages or establish managed-identity/Fabric access; authentication still follows retained-source proof.
 - **Protocol-correct Fabric recovery markers:** marker append no longer sends conditional headers unsupported by the DFS API. Creation, flush, readback and deletion retain the required ownership and version checks.
 
 These targeted recovery and conversion changes are not a general checkpoint migration. Publication-only recovery requires a supported retained run; PAX generates and preserves its matching plan. Preserve the original files and never edit a checkpoint to force compatibility.
@@ -99,7 +102,8 @@ These are the net changes from the current production release to this **v2.0.0 p
 ### Upgrade checklist
 
 - **Publication-only recovery is opt-in, not ordinary Resume.** Supply `-ResumePublishOnly` and the explicit original `-Resume` checkpoint path. PAX derives its plan; you do not author a manifest. It supports retained initial AIO + ValueLens Fabric Tables snapshots with raw exports, UserHistory On and complete directory/Agent snapshots, not append, watermark or de-identified recovery. Existing destination snapshots require review of the displayed plan and a repeat of the same command with `-ApproveExistingSnapshot`; it reuses the saved plan and proofs rather than recollecting or rolling up again. No scope, authentication or destination overrides, checkpoint auto-selection or `-Force` fallback are accepted. `-PublishRecoveryManifest` remains optional advanced input.
-- **Check the recovery environment and working space.** Publication-only recovery requires Windows x64, PowerShell 7+, existing Python 3.10+ on PATH, stable pyarrow 25.0.1 or later, stable deltalake 1.6.3 or later and Az.Accounts 2.12.0 to below 6.0.0. Dependencies are not installed by that path. The default scratch budget is 85% of current free space after a 10% reserve, with that reserve bounded to 1-8 GiB, and a 32 MiB safety margin; the default per-operation limit is 3600 seconds. `-RecoveryMaxScratchBytes`, `-RecoveryReserveBytes` and `-RecoveryOperationSeconds` can set explicit limits before the plan is saved. Existing input files remain in place; conversion and proofs still need working space.
+- **Check the recovery environment and working space.** Publication-only recovery requires Windows x64, a 64-bit PowerShell 7+ host, existing 64-bit Python 3.10+ on PATH, stable pyarrow 25.0.1 or later, stable deltalake 1.6.3 or later and Az.Accounts 2.12.0 to below 6.0.0. The executing worker's imports, versions and selected paths are checked before retained-file verification, without authentication or dependency installation. The default scratch budget is 85% of current free space after a 10% reserve, with that reserve bounded to 1-8 GiB, and a 32 MiB safety margin. New plans allow 86400 seconds (24 hours) per local unit; explicit local limits range from 60 to 604800 seconds (7 days). Saved plans retain their original limits. Remote operations retain their 3600-second ceiling and token safety margin. `-RecoveryMaxScratchBytes`, `-RecoveryReserveBytes` and `-RecoveryOperationSeconds` can set explicit limits before the plan is saved. Existing input files remain in place; conversion and proofs still need working space.
+
 - **Use PowerShell 7.0 or later for every mode.** Windows PowerShell 5.1 is unsupported; `-UseEOM` remains available under PowerShell 7.
 - **Remove retired switches** from scheduled jobs and saved commands: `-ExplodeArrays`, `-ExplodeDeep`, `-ExportWorkbook` and `-RAWInputCSV` are refused before sign-in.
 - **Unattended rollup runs** need an explicit `-Dashboard` or `-Force`; otherwise PAX asks which dashboard to build.
@@ -107,6 +111,20 @@ These are the net changes from the current production release to this **v2.0.0 p
 - **Check prerequisites.** Accelerated append needs Python 3.10+ and SQLite 3.24+ (checked before collection). PAX uses Microsoft Graph PowerShell v2.25.0–v2.40.0. `-CopilotAccessGroups` needs `GroupMember.Read.All`.
 - **For `-Watermark`,** supply `-WatermarkStartDate` only on the first run, and use a CSV append target.
 - **In-progress collections:** finish a Microsoft 365 usage collection started on v1.11.15 or earlier on that version, or start fresh.
+
+**Checked recovery launch for an unattended wrapper.** Replace only the two example file paths below with the downloaded script and original checkpoint paths. Run the wrapper on the Windows x64 worker that holds those files, not in an Azure-hosted sandbox. It starts a fresh, noninteractive PowerShell process and turns any nonzero PAX exit into a terminating wrapper error; an outer host's green status alone is not proof of accepted publication.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$pwsh = (Get-Command pwsh -CommandType Application -ErrorAction Stop).Source
+& $pwsh -NoLogo -NoProfile -NonInteractive -File 'C:\PAX\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261101-14.ps1' -ResumePublishOnly -Resume 'C:\PAX\output\.pax_checkpoint_YYYYMMDD_HHMMSS.json'
+$paxExitCode = $LASTEXITCODE
+if ($paxExitCode -ne 0) {
+    throw "PAX recovery process failed with exit code $paxExitCode."
+}
+```
+
+Keep the original checkpoint, retained CSVs and recovery directories in place. Do not add ordinary collection switches, clear unfinished state, or add `-ApproveExistingSnapshot` unless PAX requests approval and you have reviewed its displayed saved plan. This wrapper does not establish managed-identity or Fabric access.
 
 ### Details by area
 

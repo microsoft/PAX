@@ -42,6 +42,9 @@
 		ManagedIdentity and original GUID OneLake Tables destination.
 		Requires Windows x64, PowerShell 7+, existing Python 3.10+ on PATH,
 		pyarrow 25.0.1 or later, deltalake 1.6.3 or later and preinstalled Az.Accounts 2.12.0 to <6.0.0.
+		The executing worker's 64-bit runtime, Python package imports and local Az.Accounts
+		discovery/import are checked before retained-file verification. Selected versions
+		and paths are reported. This local preflight does not authenticate or prove access.
 		All raw, processed .withaudit Users, Agent aliases and independently timestamped status outputs are
 		required. PAX generates and retains its run-bound recovery plan from the selected
 		checkpoint, current file proofs, managed identity and read-only target observations.
@@ -50,7 +53,10 @@
 		reviewing the displayed plan. Unrelated or changed targets remain protected.
 		-PublishRecoveryManifest remains an optional advanced input. Automatic budgets
 		use available space; RecoveryMaxScratchBytes, RecoveryReserveBytes and
-		RecoveryOperationSeconds can set explicit limits before the plan is saved.
+		RecoveryOperationSeconds sets the finite local per-unit limit before saving a plan:
+		default 86400 seconds (24 hours), explicit 60-604800 seconds (up to 7 days).
+		Saved plans retain their original explicit runtime/capacity intent, including older
+		3600-second plans; they are never silently enlarged or rewritten.
 		Current hashes do not prove past authenticity.
 		No collection, processing, Graph, dependency installation, prompts or fallback.
 		Retained CSVs are locked read-only, never cloned, moved or deleted. Conversion and
@@ -60,7 +66,12 @@
 		Recovery requires unpartitioned targets and Parquet row groups no larger than
 		256 MiB uncompressed; unsupported existing layouts are refused before publication.
 		CSV logical records are capped at 128 MiB. Scratch and reserve are each at least
-		64 MiB; operations use an explicit 60-3600 second maximum and safe token deadline.
+		64 MiB. Lightweight read-only preflight stays bounded to 120 seconds. Remote
+		operations stay bounded to the lesser of the saved limit, 3600 seconds and token
+		lifetime minus 300 seconds; less than 60 seconds of safe lifetime is refused.
+		Completed per-source measurement/CSV and per-profile RI units can be reused only
+		after locking and rehashing current sources and matching owned receipts/contracts.
+		Unfinished verification may repeat; an interrupted SQLite file is never a proof.
 		Native publication and recovery have bounded OneLake coverage with delegated
 		test authentication. Automatic planning and managed-identity bootstrap have local
 		coverage, not live managed-identity qualification. Release approval is separate.
@@ -2154,7 +2165,7 @@ param(
 	[ValidateRange(0,1125899906842624)]
 	[long]$RecoveryReserveBytes = 0,
 	[Parameter(Mandatory = $false)]
-	[ValidateRange(0,3600)]
+	[ValidateRange(0,604800)]
 	[int]$RecoveryOperationSeconds = 0,
 
 	# Operator-only SELECTIVE recovery: an explicit list of partition indexes whose durable
@@ -2519,8 +2530,11 @@ function script:Assert-PaxPublishRecoveryBudget {
 	$context = $script:PaxPublishRecoveryContext
 	if (-not $context) { throw 'Publish recovery has no owned scratch budget.' }
 	$bytes = [int64]0
-	if (Test-Path -LiteralPath $context.StageRoot -PathType Container) {
-		foreach ($file in Get-ChildItem -LiteralPath $context.StageRoot -File -Recurse -Force -ErrorAction Stop) {
+	$roots = @($context.StageRoot)
+	if ($context.PSObject.Properties['ReceiptRoot'] -and $context.ReceiptRoot -and $context.ReceiptRoot -ine $context.StageRoot) { $roots += $context.ReceiptRoot }
+	foreach ($root in $roots) {
+		if (-not (Test-Path -LiteralPath $root -PathType Container)) { continue }
+		foreach ($file in Get-ChildItem -LiteralPath $root -File -Recurse -Force -ErrorAction Stop) {
 			if ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Publish recovery scratch contains a reparse point.' }
 			$bytes += $file.Length
 		}
@@ -2536,15 +2550,22 @@ function script:Assert-PaxPublishRecoveryBudget {
 
 function script:Get-PaxDeltaSourceHash {
 	[CmdletBinding()]
-	param([Parameter(Mandatory)][string]$LiteralPath, [ValidateSet('SHA256')][string]$Algorithm = 'SHA256')
+	param([Parameter(Mandatory)][string]$LiteralPath, [ValidateSet('SHA256')][string]$Algorithm = 'SHA256', [string]$Phase = 'SourceHash')
 	if (-not $script:PaxPublishRecoveryContext) { return (Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $LiteralPath -Algorithm $Algorithm -ErrorAction Stop) }
 	$stream = [IO.File]::Open($LiteralPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
 	$hash = [Security.Cryptography.IncrementalHash]::CreateHash([Security.Cryptography.HashAlgorithmName]::SHA256)
 	$buffer = [byte[]]::new(1MB)
 	$timer = [Diagnostics.Stopwatch]::StartNew()
+	$nextProgress = 60.0
+	Write-Host ('PAX recovery {0}: started; limit={1}s' -f $Phase,$script:PaxPublishRecoveryContext.MaximumOperationSeconds)
 	try {
 		while (($count = $stream.Read($buffer,0,$buffer.Length)) -gt 0) {
-			if ($timer.Elapsed.TotalSeconds -gt $script:PaxPublishRecoveryContext.MaximumOperationSeconds) { throw 'PAX_RECOVERY_HASH_DEADLINE: retained-byte verification exceeded the explicit runtime; no source was modified.' }
+			if ($timer.Elapsed.TotalSeconds -gt $script:PaxPublishRecoveryContext.MaximumOperationSeconds) { throw ('PAX_RECOVERY_HASH_DEADLINE: phase={0}; elapsed={1:F1}s; limit={2}s; retained sources unchanged.' -f $Phase,$timer.Elapsed.TotalSeconds,$script:PaxPublishRecoveryContext.MaximumOperationSeconds) }
+			if ($timer.Elapsed.TotalSeconds -ge $nextProgress) {
+				$null = script:Assert-PaxPublishRecoveryBudget
+				Write-Host ('PAX recovery {0}: active; elapsed={1:F0}s; limit={2}s' -f $Phase,$timer.Elapsed.TotalSeconds,$script:PaxPublishRecoveryContext.MaximumOperationSeconds)
+				$nextProgress = $timer.Elapsed.TotalSeconds + 60
+			}
 			$hash.AppendData($buffer,0,$count)
 		}
 		return [pscustomobject]@{ Hash = [Convert]::ToHexString($hash.GetHashAndReset()) }
@@ -2553,13 +2574,13 @@ function script:Get-PaxDeltaSourceHash {
 }
 
 function script:Invoke-PaxPublishRecoveryProcess {
-	param([Parameter(Mandatory)][psobject]$Python, [Parameter(Mandatory)][string]$Code, [string[]]$Arguments = @(), [string]$InputText = '', [hashtable]$Environment = @{}, [datetime]$ExpiresUtc = [datetime]::MaxValue, [switch]$ReadOnly)
+	param([Parameter(Mandatory)][psobject]$Python, [Parameter(Mandatory)][string]$Code, [string[]]$Arguments = @(), [string]$InputText = '', [hashtable]$Environment = @{}, [datetime]$ExpiresUtc = [datetime]::MaxValue, [switch]$ReadOnly, [string]$Phase = 'Preflight')
 	$context = $script:PaxPublishRecoveryContext
 	if (-not $context -and -not $ReadOnly) { throw 'A bounded recovery process requires its owned context.' }
 	$seconds = if ($ReadOnly) { 120.0 } else { [double]$context.MaximumOperationSeconds }
 	if ($ExpiresUtc -ne [datetime]::MaxValue) {
-		$seconds = [Math]::Min($seconds, ($ExpiresUtc - [datetime]::UtcNow).TotalSeconds - 300)
-		if ($seconds -lt 60) { throw 'PAX_RECOVERY_TOKEN: storage token lacks a safe operation lifetime; no operation was started.' }
+		$seconds = [Math]::Min([Math]::Min($seconds,3600), ($ExpiresUtc - [datetime]::UtcNow).TotalSeconds - 300)
+		if ($seconds -lt 60) { throw ('PAX_RECOVERY_TOKEN: phase={0}; effective limit={1:F1}s is below the 60s safety minimum; no operation was started.' -f $Phase,$seconds) }
 	}
 	$start = [Diagnostics.ProcessStartInfo]::new()
 	$start.FileName = $Python.Path
@@ -2582,6 +2603,8 @@ function script:Invoke-PaxPublishRecoveryProcess {
 	$process = [Diagnostics.Process]::new()
 	$process.StartInfo = $start
 	$timer = [Diagnostics.Stopwatch]::StartNew()
+	$nextProgress = 60.0
+	Write-Host ('PAX recovery {0}: started; limit={1:F0}s' -f $Phase,$seconds)
 	$started = $false
 	try {
 		if (-not $process.Start()) { throw 'Recovery helper process could not start.' }
@@ -2597,16 +2620,21 @@ function script:Invoke-PaxPublishRecoveryProcess {
 				$inputClosed = $true
 			}
 			if (-not $ReadOnly) { $null = script:Assert-PaxPublishRecoveryBudget }
-			if ($timer.Elapsed.TotalSeconds -gt $seconds) { throw 'PAX_RECOVERY_DEADLINE: operation stopped before its bounded runtime or token safety deadline; recovery remains pending.' }
+			if ($timer.Elapsed.TotalSeconds -gt $seconds) { throw ('PAX_RECOVERY_DEADLINE: phase={0}; elapsed={1:F1}s; limit={2:F1}s; runtime/token bound reached; recovery remains pending.' -f $Phase,$timer.Elapsed.TotalSeconds,$seconds) }
+			if ($timer.Elapsed.TotalSeconds -ge $nextProgress) {
+				Write-Host ('PAX recovery {0}: active; elapsed={1:F0}s; limit={2:F0}s' -f $Phase,$timer.Elapsed.TotalSeconds,$seconds)
+				$nextProgress = $timer.Elapsed.TotalSeconds + 60
+			}
 		}
 		if (-not $ReadOnly) { $null = script:Assert-PaxPublishRecoveryBudget }
 		$out = $stdout.GetAwaiter().GetResult()
 		$errorText = $stderr.GetAwaiter().GetResult()
 		if ($process.ExitCode -ne 0) {
 			# CSV and identity validation report aggregate codes, never offending values.
-			if ($errorText -cmatch 'PAX_RECOVERY_[A-Z_]+|PAX_CSV_[A-Z_]+') { throw ('Recovery helper refused: ' + $Matches[0]) }
-			throw ('Recovery helper failed with exit {0}; no unverified set is accepted.' -f $process.ExitCode)
+			if ($errorText -cmatch 'PAX_RECOVERY_[A-Z_]+|PAX_CSV_[A-Z_]+') { throw ('Recovery helper refused: {0}; phase={1}; elapsed={2:F1}s; limit={3:F1}s' -f $Matches[0],$Phase,$timer.Elapsed.TotalSeconds,$seconds) }
+			throw ('Recovery helper failed with exit {0}; phase={1}; elapsed={2:F1}s; limit={3:F1}s; no unverified set is accepted.' -f $process.ExitCode,$Phase,$timer.Elapsed.TotalSeconds,$seconds)
 		}
+		Write-Host ('PAX recovery {0}: completed; elapsed={1:F1}s' -f $Phase,$timer.Elapsed.TotalSeconds)
 		return $out
 	}
 	finally {
@@ -2731,7 +2759,7 @@ exact(m["Capacity"],["MaxScratchBytes","ReserveBytes","MaximumOperationSeconds"]
 for key in m["Capacity"]:
     if type(m["Capacity"][key]) is not int:refuse("CAPACITY")
 if not (64*1024*1024<=m["Capacity"]["MaxScratchBytes"]<=2**50 and m["Capacity"]["ReserveBytes"]>=64*1024*1024
-        and 60<=m["Capacity"]["MaximumOperationSeconds"]<=3600):refuse("CAPACITY")
+        and 60<=m["Capacity"]["MaximumOperationSeconds"]<=604800):refuse("CAPACITY")
 if not re.fullmatch(r"\d{8}_\d{6}",m["AgentStatusTimestamp"]):refuse("STATUS_PROVENANCE")
 targets=m["TargetExpectations"]
 if not isinstance(targets,list) or len(targets)!=8:refuse("TARGET_EXPECTATIONS")
@@ -2804,8 +2832,74 @@ m["CheckpointPath"]=str(Path(sys.argv[1]));m["ManifestSha256"]=digest(sys.argv[2
 print(json.dumps(m,separators=(",",":")))
 '@
 	# Envelope validation and hashes are read-only and precede stage creation/auth.
-	$output = script:Invoke-PaxPublishRecoveryProcess -Python $Python -Code $code -Arguments @($CheckpointPath,$ManifestPath) -ReadOnly
+	$output = script:Invoke-PaxPublishRecoveryProcess -Python $Python -Code $code -Arguments @($CheckpointPath,$ManifestPath) -ReadOnly -Phase 'ManifestEnvelope'
 	return ($output | ConvertFrom-Json -ErrorAction Stop)
+}
+
+function script:Get-PaxRecoveryUnitBinding {
+	param([psobject]$Manifest,[object[]]$Sources)
+	return [ordered]@{
+		CheckpointPath=$Manifest.CheckpointPath;CheckpointSha256=$Manifest.CheckpointSha256
+		RecoveryId=$Manifest.RecoveryId;RunTimestamp=$Manifest.RunTimestamp;SourceRelease=$Manifest.SourceRelease
+		Profiles=@($Manifest.Profiles);UserHistory=$Manifest.UserHistory;CheckpointHistoryPolicy=$Manifest.CheckpointHistoryPolicy
+		StartUtc=$Manifest.StartUtc;EndUtc=$Manifest.EndUtc
+		Sources=@($Sources|Sort-Object Role|ForEach-Object{[ordered]@{
+			Role=$_.Role;Path=$_.FullPath;RelativePath=$_.RelativePath;Sha256=$_.Sha256
+			Header=$_.ExpectedHeader;Rows=$_.ExpectedRows;UniqueUserKeys=$_.ExpectedUniqueUserKeys
+		}})
+	}
+}
+
+function script:Invoke-PaxRecoveryCompletedUnit {
+	param([string]$Name,[object]$Binding,[psobject]$Python,[string]$Code,[string]$InputText)
+	if ($Name -cnotmatch '^(Measure|Csv|RI)-(RawAudit|RawUsers|AgentCatalog|AgentStatus|AIOFact|ValueLensFact|AIOUsers|ValueLensUsers|AIOAgent|ValueLensAgent|AIO|ValueLens)$') { throw 'PAX_RECOVERY_UNIT_NAME' }
+	$context=$script:PaxPublishRecoveryContext
+	$root=if($context.PSObject.Properties['ReceiptRoot']){$context.ReceiptRoot}else{''}
+	if(-not $root){return (script:Invoke-PaxPublishRecoveryProcess -Python $Python -Code $Code -Arguments @($context.StageRoot) -InputText $InputText -Phase $Name | ConvertFrom-Json -ErrorAction Stop)}
+	$lock=$null
+	try {
+		if(-not ($context.PSObject.Properties['UnitPlanLocked'] -and $context.UnitPlanLocked)){$lock=[IO.File]::Open((script:Assert-PaxPublishRecoveryPath (Join-Path $root 'plan.lock')),[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)}
+		$ownerPath=script:Assert-PaxPublishRecoveryPath (Join-Path $root 'owner.json')
+		if((Get-Item -LiteralPath $ownerPath).Length -gt 1MB){throw 'PAX_RECOVERY_UNIT_OWNER_LIMIT'}
+		$owner=[IO.File]::ReadAllText($ownerPath)|ConvertFrom-Json -ErrorAction Stop
+		if($owner.Kind -cne 'PaxAutomaticRecoveryPlan' -or $owner.RecoveryId -cne $Binding.RecoveryId -or $owner.CheckpointSha256 -cne $Binding.CheckpointSha256){throw 'PAX_RECOVERY_UNIT_OWNER'}
+		$validators=(@('Get-PaxRecoveryUnitBinding','Invoke-PaxRecoveryCompletedUnit','Get-PaxStrictArrowCsvReaderPython','Get-PaxPublishRecoveryManifest','Test-PaxPublishRecoverySources','New-PaxAutomaticRecoveryPlan')|ForEach-Object{(Get-Command $_ -CommandType Function).ScriptBlock.ToString()}) -join "`n"
+		$keyText=([ordered]@{Version='1.0';Name=$Name;Binding=$Binding;Runtime=[string]$PSVersionTable.PSVersion;Code=$Code;Validators=$validators}|ConvertTo-Json -Depth 16 -Compress)
+		$key=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($keyText)))
+		if(-not $owner.PSObject.Properties['Units']){$owner|Add-Member -NotePropertyName Units -NotePropertyValue ([pscustomobject]@{})}
+		$entry=$owner.Units.PSObject.Properties[$Name]
+		if($entry){
+			$ref=$entry.Value
+			if($ref.File -cnotmatch '^unit-[a-f0-9]{32}\.json$' -or $ref.Sha256 -cnotmatch '^[A-F0-9]{64}$'){throw 'PAX_RECOVERY_UNIT_RECEIPT'}
+			$path=script:Assert-PaxPublishRecoveryPath (Join-Path $root $ref.File)
+			if(-not (Test-Path -LiteralPath $path -PathType Leaf)){throw 'PAX_RECOVERY_UNIT_RECEIPT: owned completed receipt is missing or changed.'}
+			$receiptLock=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+			try {
+				if($receiptLock.Length -gt 1MB -or (Get-FileHash -LiteralPath $path).Hash -cne $ref.Sha256){throw 'PAX_RECOVERY_UNIT_RECEIPT: owned completed receipt is missing or changed.'}
+				$receipt=[IO.File]::ReadAllText($path)|ConvertFrom-Json -ErrorAction Stop
+				if($receipt.Kind -cne 'PaxCompletedRecoveryUnit' -or $receipt.Version -cne '1.0' -or $receipt.Name -cne $Name -or $receipt.Key -cnotmatch '^[A-F0-9]{64}$' -or $receipt.Completed -isnot [bool] -or -not $receipt.Completed -or $null -eq $receipt.Result){throw 'PAX_RECOVERY_UNIT_RECEIPT'}
+				if($receipt.Key -ceq $key){
+					$null=script:Assert-PaxPublishRecoveryBudget
+					Write-Host ('PAX recovery {0}: reused completed locked-byte proof' -f $Name)
+					return $receipt.Result
+				}
+				Write-Host ('PAX recovery {0}: binding/validator changed; revalidating' -f $Name)
+			}
+			finally {$receiptLock.Dispose()}
+		}
+		$result=script:Invoke-PaxPublishRecoveryProcess -Python $Python -Code $Code -Arguments @($context.StageRoot) -InputText $InputText -Phase $Name | ConvertFrom-Json -ErrorAction Stop
+		if($null -eq $result){throw 'PAX_RECOVERY_UNIT_RESULT'}
+		# Immutable receipts precede their atomic owner reference. An interrupted, unreferenced
+		# receipt (or SQLite work file) is never completion authority and is safely revalidated.
+		$file='unit-'+[guid]::NewGuid().ToString('N')+'.json'
+		$path=Join-Path $root $file
+		script:Save-PaxRecoveryJsonAtomic -Path $path -Value ([ordered]@{Kind='PaxCompletedRecoveryUnit';Version='1.0';Name=$Name;Key=$key;Completed=$true;CompletedUtc=[datetime]::UtcNow.ToString('o');Result=$result})
+		$owner.Units|Add-Member -NotePropertyName $Name -NotePropertyValue ([pscustomobject]@{File=$file;Sha256=(Get-FileHash -LiteralPath $path).Hash}) -Force
+		script:Save-PaxRecoveryJsonAtomic -Path $ownerPath -Value $owner
+		$null=script:Assert-PaxPublishRecoveryBudget
+		return $result
+	}
+	finally {if($lock){$lock.Dispose()}}
 }
 
 function script:Test-PaxPublishRecoverySources {
@@ -2815,7 +2909,10 @@ import datetime, json, os, sqlite3, sys
 m=json.load(sys.stdin)
 start=datetime.datetime.fromisoformat(m["StartUtc"].replace("Z","+00:00")).astimezone(datetime.timezone.utc)
 end=datetime.datetime.fromisoformat(m["EndUtc"].replace("Z","+00:00")).astimezone(datetime.timezone.utc)
-db=sqlite3.connect(os.path.join(sys.argv[1],"recovery-ri.sqlite"))
+dbpath=os.path.join(sys.argv[1],"recovery-ri.sqlite")
+for suffix in ("","-journal","-wal","-shm"):
+    if os.path.exists(dbpath+suffix):os.unlink(dbpath+suffix)
+db=sqlite3.connect(dbpath)
 db.execute("PRAGMA temp_store=FILE")
 db.execute("PRAGMA cache_size=-16384")
 db.execute("PRAGMA journal_mode=DELETE")
@@ -2843,7 +2940,7 @@ def raw_time(value):
         if created is None:fail("RAW_TIME")
     return created if created.tzinfo is not None else created.replace(tzinfo=datetime.timezone.utc)
 try:
- for s in m["Sources"]:
+ for s in (m["Sources"] if not m["ProofProfiles"] else []):
     validator=None
     if s["Role"]=="RawAudit":
         index=s["ExpectedHeader"].index("CreationDate")
@@ -2852,7 +2949,7 @@ try:
     header,count,_=pax_csv_preflight(s["FullPath"],s["ExpectedHeader"],validator)
     if count!=s["ExpectedRows"]:fail("ROW_COUNT")
     pax_recovery_budget(16*1024*1024)
- for profile in ("AIO","ValueLens"):
+ for profile in m["ProofProfiles"]:
     sources={s["Role"]:s for s in m["Sources"]}
     u=sources[profile+"Users"];f=sources[profile+"Fact"]
     db.execute("DROP TABLE IF EXISTS users");db.execute("DROP TABLE IF EXISTS facts")
@@ -2885,23 +2982,42 @@ try:
     if db.execute("SELECT COUNT(*) FROM (SELECT DISTINCT key FROM facts)").fetchone()[0]!=f["ExpectedUniqueUserKeys"]:fail("FACT_KEY_COUNT")
     if db.execute("SELECT COUNT(*) FROM facts f LEFT JOIN users u ON f.key=u.key WHERE u.key IS NULL OR f.identity<>u.identity OR f.license<>u.license OR f.haslicense<>u.haslicense").fetchone()[0]:fail("REFERENTIAL_INTEGRITY")
     if db.execute("SELECT COUNT(*) FROM (SELECT key FROM facts GROUP BY key HAVING COUNT(DISTINCT identity)>1)").fetchone()[0]:fail("CONFLICTING_KEYS")
- print(json.dumps({"Passed":True,"Profiles":2,"Sources":10}))
+ print(json.dumps({"Passed":True}))
 finally:
  db.close()
  os.unlink(os.path.join(sys.argv[1],"recovery-ri.sqlite"))
 '@
-	$output = script:Invoke-PaxPublishRecoveryProcess -Python $Python -Code $code -Arguments @($script:PaxPublishRecoveryContext.StageRoot) -InputText ($Manifest | ConvertTo-Json -Depth 12 -Compress)
-	return ($output | ConvertFrom-Json -ErrorAction Stop)
+	foreach($source in $Manifest.Sources){
+		$unit=$Manifest|Select-Object *
+		$unit.Sources=@($source)
+		$unit|Add-Member -NotePropertyName ProofProfiles -NotePropertyValue @()
+		$result=script:Invoke-PaxRecoveryCompletedUnit -Name ('Csv-'+$source.Role) -Binding (script:Get-PaxRecoveryUnitBinding $Manifest @($source)) -Python $Python -Code $code -InputText ($unit|ConvertTo-Json -Depth 12 -Compress)
+		if($result.Passed -isnot [bool] -or -not $result.Passed){throw 'PAX_RECOVERY_UNIT_RESULT'}
+	}
+	foreach($profile in @('AIO','ValueLens')){
+		$unit=$Manifest|Select-Object *
+		$unit.Sources=@($Manifest.Sources|Where-Object Role -In @(($profile+'Users'),($profile+'Fact')))
+		$unit|Add-Member -NotePropertyName ProofProfiles -NotePropertyValue @($profile)
+		$result=script:Invoke-PaxRecoveryCompletedUnit -Name ('RI-'+$profile) -Binding (script:Get-PaxRecoveryUnitBinding $Manifest $unit.Sources) -Python $Python -Code $code -InputText ($unit|ConvertTo-Json -Depth 12 -Compress)
+		if($result.Passed -isnot [bool] -or -not $result.Passed){throw 'PAX_RECOVERY_UNIT_RESULT'}
+	}
+	return [pscustomobject]@{Passed=$true;Profiles=2;Sources=10}
 }
 
 function script:Get-PaxPublishRecoveryStorageToken {
-	$identity = $script:PaxPublishRecoveryContext.Authentication
+	param([switch]$EnvironmentOnly)
+	$identity = if ($EnvironmentOnly) { [pscustomobject]@{ClientId='';TenantId=''} } else { $script:PaxPublishRecoveryContext.Authentication }
 	$code = @'
 $ErrorActionPreference='Stop'
 try {
  $module=Get-Module -ListAvailable Az.Accounts | Where-Object {$_.Version -ge [version]'2.12.0' -and $_.Version -lt [version]'6.0.0'} | Sort-Object Version -Descending | Select-Object -First 1
  if(-not $module){throw 'Az.Accounts supported version is not installed.'}
- Import-Module Az.Accounts -RequiredVersion $module.Version -ErrorAction Stop
+ Import-Module -Name $module.Path -ErrorAction Stop
+ if($env:PAX_RECOVERY_ENVIRONMENT_ONLY -eq '1'){
+ $null=Get-Command Connect-AzAccount,Get-AzAccessToken -ErrorAction Stop
+ [Console]::Out.WriteLine((@{Kind='PaxRecoveryEnvironment';PowerShellVersion=$PSVersionTable.PSVersion.ToString();ProcessArchitecture=[Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString();AzAccountsVersion=$module.Version.ToString();AzAccountsPath=$module.ModuleBase}|ConvertTo-Json -Compress))
+ exit 0
+ }
  Disable-AzContextAutosave -Scope Process | Out-Null
  $parameters=@{Identity=$true;Scope='Process';SkipContextPopulation=$true;ErrorAction='Stop'}
  if($env:PAX_RECOVERY_CLIENT){$parameters.AccountId=$env:PAX_RECOVERY_CLIENT}
@@ -2927,6 +3043,7 @@ try {
 	foreach ($arg in @('-NoProfile','-NonInteractive','-NoLogo','-EncodedCommand',[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($code)))) { $start.ArgumentList.Add($arg) }
 	$start.Environment['PAX_RECOVERY_CLIENT'] = [string]$identity.ClientId
 	$start.Environment['PAX_RECOVERY_TENANT'] = [string]$identity.TenantId
+	$start.Environment['PAX_RECOVERY_ENVIRONMENT_ONLY'] = if ($EnvironmentOnly) { '1' } else { '0' }
 	$process = [Diagnostics.Process]::new()
 	$process.StartInfo = $start
 	$started = $false
@@ -2934,9 +3051,24 @@ try {
 		if (-not $process.Start()) { throw 'PAX_RECOVERY_MI_AUTH' }
 		$started = $true
 		$out = $process.StandardOutput.ReadToEndAsync(); $err = $process.StandardError.ReadToEndAsync()
-		if (-not $process.WaitForExit(120000)) { $process.Kill($true); $process.WaitForExit(); throw 'PAX_RECOVERY_MI_AUTH_TIMEOUT' }
-		if ($process.ExitCode) { throw 'PAX_RECOVERY_MI_AUTH: isolated managed identity storage authentication failed; no interactive or cached-account fallback was attempted.' }
+		if (-not $process.WaitForExit(120000)) {
+			$process.Kill($true); $process.WaitForExit()
+			if($EnvironmentOnly){throw 'PAX_RECOVERY_ENVIRONMENT_TIMEOUT: local Az.Accounts discovery/import exceeded 120 seconds; no authentication or retained-file verification was started.'}
+			throw 'PAX_RECOVERY_MI_AUTH_TIMEOUT'
+		}
+		if ($process.ExitCode) {
+			if($EnvironmentOnly){throw 'PAX_RECOVERY_ENVIRONMENT: the executing worker account requires visible, importable Az.Accounts 2.12.0 to below 6.0.0 with Connect-AzAccount and Get-AzAccessToken; no authentication or retained-file verification was started.'}
+			throw 'PAX_RECOVERY_MI_AUTH: isolated managed identity storage authentication failed; no interactive or cached-account fallback was attempted.'
+		}
 		$result = $out.GetAwaiter().GetResult() | ConvertFrom-Json -ErrorAction Stop
+		if($EnvironmentOnly){
+			if($result.Kind -cne 'PaxRecoveryEnvironment' -or $result.PSObject.Properties['Token'] -or
+				[version]$result.PowerShellVersion -lt [version]'7.0' -or $result.ProcessArchitecture -cne 'X64' -or
+				[version]$result.AzAccountsVersion -lt [version]'2.12.0' -or [version]$result.AzAccountsVersion -ge [version]'6.0.0'){
+				throw 'PAX_RECOVERY_ENVIRONMENT: supported worker runtime and local Az.Accounts import could not be proven.'
+			}
+			return $result
+		}
 		if ($script:PaxPublishRecoveryContext.PSObject.Properties['DiscoverIdentity'] -and $script:PaxPublishRecoveryContext.DiscoverIdentity) {
 			if ($result.VerifiedManagedService -ne $true -or -not $result.Identity -or
 				[guid]::Empty -eq [guid]$result.Identity.TenantId -or [guid]::Empty -eq [guid]$result.Identity.PrincipalId -or
@@ -3062,7 +3194,7 @@ function script:Save-PaxRecoveryJsonAtomic {
 
 function script:Get-PaxRecoverySourceProofKey {
 	param([psobject]$Manifest)
-	$validators=@('Get-PaxRecoverySourceProofKey','Get-PaxPublishRecoveryManifest','Test-PaxPublishRecoverySources','Get-PaxStrictArrowCsvReaderPython')
+	$validators=@('Get-PaxRecoverySourceProofKey','Get-PaxPublishRecoveryManifest','Test-PaxPublishRecoverySources','Get-PaxStrictArrowCsvReaderPython','Get-PaxRecoveryUnitBinding','Invoke-PaxRecoveryCompletedUnit')
 	$code=($validators|ForEach-Object{$_+':'+(Get-Command -Name $_ -CommandType Function -ErrorAction Stop).ScriptBlock.ToString()}) -join "`n"
 	$contract=[ordered]@{
 		Kind='PaxRetainedSourceProof';Version='1.0';ValidatorSha256=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($code)))
@@ -3137,14 +3269,14 @@ function script:New-PaxAutomaticRecoveryPlan {
 		$script:ROLLUP_PYTHON_MIN_MAJOR=3;$script:ROLLUP_PYTHON_MIN_MINOR=10
 		$python=Resolve-PythonExe
 		if (-not $python -or -not $python.Path) { throw 'An existing Python interpreter is required; no installation was attempted.' }
-		try {$null=script:Invoke-PaxPublishRecoveryProcess -Python $python -Code 'import pyarrow, deltalake; import importlib.metadata as m; import re; assert tuple(map(int,re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\.post\d+)?(?:\+[A-Za-z0-9._-]+)?",m.version("pyarrow")).groups())) >= (25,0,1); assert tuple(map(int,re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\.post\d+)?(?:\+[A-Za-z0-9._-]+)?",m.version("deltalake")).groups())) >= (1,6,3)' -ReadOnly}
-		catch {throw 'Publish-only recovery requires importable stable pyarrow 25.0.1 or later and deltalake 1.6.3 or later; no dependency installation or authentication was attempted.'}
+		try {$null=script:Invoke-PaxPublishRecoveryProcess -Python $python -Code 'import pyarrow, deltalake; import importlib.metadata as m; import re,sys,struct,json; assert sys.version_info >= (3,10); assert struct.calcsize("P")==8; assert tuple(map(int,re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\.post\d+)?(?:\+[A-Za-z0-9._-]+)?",m.version("pyarrow")).groups())) >= (25,0,1); assert tuple(map(int,re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\.post\d+)?(?:\+[A-Za-z0-9._-]+)?",m.version("deltalake")).groups())) >= (1,6,3); print(json.dumps({"Python":sys.version.split()[0],"Path":sys.executable,"PyArrow":m.version("pyarrow"),"DeltaLake":m.version("deltalake")}))' -ReadOnly}
+		catch {throw [InvalidOperationException]::new(('Publish-only recovery requires existing 64-bit Python 3.10+ with importable stable pyarrow 25.0.1+ and deltalake 1.6.3+; no dependency installation or authentication was attempted. '+$_.Exception.Message),$_.Exception)}
 		$root=Split-Path $checkpoint -Parent
 		$drive=[IO.DriveInfo]::new([IO.Path]::GetPathRoot($root))
 		$reserve=if($ReserveBytes){$ReserveBytes}else{[long][math]::Max([double]1GB,[math]::Min([double]8GB,$drive.AvailableFreeSpace*0.1))}
 		$maximum=if($MaxScratchBytes){$MaxScratchBytes}else{[long](($drive.AvailableFreeSpace-$reserve-32MB)*0.85)}
-		$seconds=if($OperationSeconds){$OperationSeconds}else{3600}
-		if ($maximum -lt 64MB -or $reserve -lt 64MB -or $seconds -lt 60 -or $drive.AvailableFreeSpace -lt [double]$reserve+64MB) { throw 'PAX_RECOVERY_CAPACITY: insufficient free space or invalid explicit recovery budget.' }
+		$seconds=if($OperationSeconds){$OperationSeconds}else{86400}
+		if ($maximum -lt 64MB -or $reserve -lt 64MB -or $seconds -lt 60 -or $seconds -gt 604800 -or $drive.AvailableFreeSpace -lt [double]$reserve+64MB) { throw 'PAX_RECOVERY_CAPACITY: insufficient free space or invalid explicit recovery budget.' }
 		$planRoot=Join-Path $root ('.pax_recovery_plan_'+$stamp)
 		$null=script:Assert-PaxPublishRecoveryPath $planRoot -Directory
 		[void][IO.Directory]::CreateDirectory($planRoot)
@@ -3185,12 +3317,23 @@ function script:New-PaxAutomaticRecoveryPlan {
 			$m=[pscustomobject]@{Version='1.0';Kind='PaxPublishRecoveryExpectations';RecoveryId=$owner.RecoveryId;CheckpointSha256=$cpHash;SourceRelease='Legacy2.1.0KnownRetainedLayout';RunTimestamp=$stamp;StartUtc=$start;EndUtc=$end;Profiles=@('AIO','ValueLens');UserHistory='On';CheckpointHistoryPolicy=$(if($p.userHistory -ceq 'On'){'RequireRecordedOn'}else{'PinnedLegacyCallerOmissionRetainedTemporalProof'});DestinationRoot=[string]$p.outputPath;Authentication=$identity;Capacity=@{MaxScratchBytes=$maximum;ReserveBytes=$reserve;MaximumOperationSeconds=$seconds};BaselineKind='CurrentRetainedBytesNotPastAuthenticity';AgentStatusTimestamp=$statusStamp;Sources=$sources;TargetExpectations=@(@('Agent365','Agent365_Status','AIO_CopilotInteractions','AIO_Users','CopilotInteractions_Raw','Entra_Users_Raw','ValueLens_CopilotInteractions','ValueLens_Users')|ForEach-Object{@{TableName=$_;ExpectedExists=$false;ExpectedVersion=$null;ExpectedContentSha256=$null;ExpectedRows=0;OwnershipPolicy='ExpectedAbsent'}})}
 		}
 		$script:PaxPublishRecoveryContext=[pscustomobject]@{StageRoot=$planRoot;MaxScratchBytes=$maximum;ReserveBytes=$reserve;MaximumOperationSeconds=$seconds;PeakScratchBytes=0L;Authentication=$m.Authentication;TargetUris=@();MarkerRoot='';DiscoverIdentity=$false}
+		$script:PaxPublishRecoveryContext|Add-Member -NotePropertyName ReceiptRoot -NotePropertyValue $planRoot
+		$script:PaxPublishRecoveryContext|Add-Member -NotePropertyName UnitPlanLocked -NotePropertyValue $true
 		$null=script:Assert-PaxPublishRecoveryBudget
 		if (-not (Test-Path -LiteralPath $planPath)) {
+			$m|Add-Member -NotePropertyName CheckpointPath -NotePropertyValue $checkpoint
+			# Every retained file is already locked above. Rehash all current bytes before
+			# consulting any unit receipt; size/mtime and interrupted databases are not proof.
+			foreach($source in $m.Sources){
+				$source.Sha256=(script:Get-PaxDeltaSourceHash -LiteralPath $source.FullPath -Phase ('MeasureHash-'+$source.Role)).Hash
+			}
 			$measure=(script:Get-PaxStrictArrowCsvReaderPython)+@'
 import hashlib,json,sqlite3,sys,os
 sources=json.load(sys.stdin)
-db=sqlite3.connect(os.path.join(sys.argv[1],"measure.sqlite"))
+dbpath=os.path.join(sys.argv[1],"measure.sqlite")
+for suffix in ("","-journal","-wal","-shm"):
+ if os.path.exists(dbpath+suffix):os.unlink(dbpath+suffix)
+db=sqlite3.connect(dbpath)
 db.execute("PRAGMA cache_size=-16384");db.execute("PRAGMA temp_store=FILE")
 try:
  for s in sources:
@@ -3222,7 +3365,14 @@ finally:
  db.close()
  os.unlink(os.path.join(sys.argv[1],"measure.sqlite"))
 '@
-			$m.Sources=@((script:Invoke-PaxPublishRecoveryProcess -Python $python -Code $measure -Arguments @($planRoot) -InputText ($m.Sources|ConvertTo-Json -Depth 6 -Compress))|ConvertFrom-Json)
+			$measured=@(foreach($source in $m.Sources){
+				$binding=script:Get-PaxRecoveryUnitBinding $m @($source)
+				$result=script:Invoke-PaxRecoveryCompletedUnit -Name ('Measure-'+$source.Role) -Binding $binding -Python $python -Code $measure -InputText (ConvertTo-Json -InputObject @($source) -Depth 6 -Compress)
+				if(@($result).Count -ne 1 -or $result.Role -cne $source.Role -or $result.RelativePath -cne $source.RelativePath -or $result.Sha256 -cne $source.Sha256){throw 'PAX_RECOVERY_UNIT_MEASUREMENT'}
+				$result
+			})
+			$m.Sources=$measured
+			$m.PSObject.Properties.Remove('CheckpointPath')
 			$draft=Join-Path $planRoot 'expectations.pending.json'
 			[IO.File]::WriteAllText($draft,($m|ConvertTo-Json -Depth 12),[Text.UTF8Encoding]::new($false))
 			$validated=script:Get-PaxPublishRecoveryManifest -CheckpointPath $checkpoint -ManifestPath $draft -Python $python
@@ -3245,6 +3395,7 @@ finally:
 			[IO.File]::WriteAllText($draft,($m|ConvertTo-Json -Depth 12),[Text.UTF8Encoding]::new($false))
 			$finalManifest=script:Get-PaxPublishRecoveryManifest -CheckpointPath $checkpoint -ManifestPath $draft -Python $python
 			[IO.File]::Move($draft,$planPath)
+			$owner=[IO.File]::ReadAllText($ownerPath)|ConvertFrom-Json -ErrorAction Stop
 			$owner.ManifestSha256=(Get-FileHash -LiteralPath $planPath).Hash
 		}
 		else {$null=script:Get-PaxPublishRecoveryStorageToken}
@@ -3276,7 +3427,9 @@ function script:Invoke-PaxResumePublishOnly {
 		locked retained files, current managed-identity claims and read-only destination
 		observations. Existing snapshots require -ApproveExistingSnapshot after reviewing
 		the displayed saved plan. RecoveryMaxScratchBytes, RecoveryReserveBytes and
-		RecoveryOperationSeconds optionally bound automatic planning and publication.
+		RecoveryOperationSeconds optionally bounds each local measurement, proof and native
+		preparation/verification unit (24-hour default, 60 seconds to 7 days). Remote work
+		retains its 1-hour ceiling and token margin. Saved budgets are never enlarged.
 		An advanced PaxPublishRecoveryExpectations v1.0 JSON manifest may instead contain the
 		selected checkpoint hash, run/window/profile/destination/identity bindings, ten exact
 		role paths, complete headers, logical row and distinct UserKey expectations, current
@@ -3299,10 +3452,22 @@ function script:Invoke-PaxResumePublishOnly {
 	#>
 	param([Parameter(Mandatory)][string]$CheckpointPath, [string]$ManifestPath,[switch]$ApproveExistingSnapshot,[long]$MaxScratchBytes=0,[long]$ReserveBytes=0,[int]$OperationSeconds=0)
 	if($ManifestPath -and ($ApproveExistingSnapshot -or $MaxScratchBytes -or $ReserveBytes -or $OperationSeconds)){throw 'Automatic recovery approval/budget options cannot override an advanced explicit manifest; its recorded intent remains authoritative.'}
+	if ($PSVersionTable.PSVersion -lt [version]'7.0') { throw 'Publish-only recovery requires PowerShell 7 or later.' }
+	if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne [Runtime.InteropServices.Architecture]::X64 -or
+		[Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne [Runtime.InteropServices.Architecture]::X64) { throw 'Publish-only recovery requires Windows x64 and a 64-bit PowerShell host; no retained-file verification was started.' }
+	$script:ROLLUP_PYTHON_MIN_MAJOR = 3
+	$script:ROLLUP_PYTHON_MIN_MINOR = 10
+	$python = Resolve-PythonExe
+	if (-not $python -or -not $python.Path) { throw 'An existing PAX Python interpreter is required; no installation was attempted.' }
+	try {
+		$pythonEnvironment=script:Invoke-PaxPublishRecoveryProcess -Python $python -Code 'import pyarrow, deltalake; import importlib.metadata as m; import re,sys,struct,json; assert sys.version_info >= (3,10); assert struct.calcsize("P")==8; assert tuple(map(int,re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\.post\d+)?(?:\+[A-Za-z0-9._-]+)?",m.version("pyarrow")).groups())) >= (25,0,1); assert tuple(map(int,re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\.post\d+)?(?:\+[A-Za-z0-9._-]+)?",m.version("deltalake")).groups())) >= (1,6,3); print(json.dumps({"Python":sys.version.split()[0],"Path":sys.executable,"PyArrow":m.version("pyarrow"),"DeltaLake":m.version("deltalake")}))' -ReadOnly -Phase 'PythonEnvironment' | ConvertFrom-Json -ErrorAction Stop
+	}
+	catch { throw [InvalidOperationException]::new(('Publish-only recovery requires existing 64-bit Python 3.10+ with importable stable pyarrow 25.0.1+ and deltalake 1.6.3+; no authentication or retained-file verification was started. '+$_.Exception.Message),$_.Exception) }
+	$azureEnvironment=script:Get-PaxPublishRecoveryStorageToken -EnvironmentOnly
+	Write-Host ('PAX recovery environment: PowerShell={0}; architecture={1}; Python={2}; pyarrow={3}; deltalake={4}; Az.Accounts={5}' -f $azureEnvironment.PowerShellVersion,$azureEnvironment.ProcessArchitecture,$pythonEnvironment.Python,$pythonEnvironment.PyArrow,$pythonEnvironment.DeltaLake,$azureEnvironment.AzAccountsVersion)
+	Write-Host ('PAX recovery environment paths: Python={0}; Az.Accounts={1}' -f $pythonEnvironment.Path,$azureEnvironment.AzAccountsPath)
 	$automaticPlan=-not $ManifestPath
 	if($automaticPlan){$ManifestPath=script:New-PaxAutomaticRecoveryPlan -CheckpointPath $CheckpointPath -ApproveExistingSnapshot:$ApproveExistingSnapshot -MaxScratchBytes $MaxScratchBytes -ReserveBytes $ReserveBytes -OperationSeconds $OperationSeconds}
-	if (-not $IsWindows) { throw 'Publish-only recovery requires Windows source-lock fencing.' }
-	if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne [Runtime.InteropServices.Architecture]::X64) { throw 'Urgent publish-only recovery is qualified only on Windows x64.' }
 	$checkpoint = script:Assert-PaxPublishRecoveryPath -Path $CheckpointPath
 	$manifestPath = script:Assert-PaxPublishRecoveryPath -Path $ManifestPath
 	if (-not (Test-Path -LiteralPath $checkpoint -PathType Leaf) -or -not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'Explicit checkpoint and expectation manifest files are required.' }
@@ -3310,12 +3475,6 @@ function script:Invoke-PaxResumePublishOnly {
 	try {
 	$envelopeLocks.Add([IO.File]::Open($checkpoint,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
 	$envelopeLocks.Add([IO.File]::Open($manifestPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
-	$script:ROLLUP_PYTHON_MIN_MAJOR = 3
-	$script:ROLLUP_PYTHON_MIN_MINOR = 10
-	$python = Resolve-PythonExe
-	if (-not $python -or -not $python.Path) { throw 'An existing PAX Python interpreter is required; no installation was attempted.' }
-	try { $null = script:Invoke-PaxPublishRecoveryProcess -Python $python -Code 'import pyarrow, deltalake; import importlib.metadata as m; import re; assert tuple(map(int,re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\.post\d+)?(?:\+[A-Za-z0-9._-]+)?",m.version("pyarrow")).groups())) >= (25,0,1); assert tuple(map(int,re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\.post\d+)?(?:\+[A-Za-z0-9._-]+)?",m.version("deltalake")).groups())) >= (1,6,3)' -ReadOnly }
-	catch { throw 'Publish-only recovery requires importable stable pyarrow 25.0.1 or later and deltalake 1.6.3 or later; no dependency installation was attempted.' }
 	$manifest = script:Get-PaxPublishRecoveryManifest -CheckpointPath $checkpoint -ManifestPath $manifestPath -Python $python
 	foreach ($source in $manifest.Sources) { $null = script:Assert-PaxPublishRecoveryPath -Path $source.FullPath }
 	$stageRoot = Join-Path (Split-Path $checkpoint -Parent) ('.pax_publish_recovery_' + $manifest.RunTimestamp + '_' + $manifest.RecoveryId)
@@ -3325,6 +3484,7 @@ function script:Invoke-PaxResumePublishOnly {
 		ReserveBytes = [int64]$manifest.Capacity.ReserveBytes; MaximumOperationSeconds = [int]$manifest.Capacity.MaximumOperationSeconds
 		PeakScratchBytes = [int64]0; Authentication = $manifest.Authentication; TargetUris = @(); MarkerRoot = ''
 		CheckpointHash = $manifest.CheckpointSha256; ManifestHash = $manifest.ManifestSha256
+		ReceiptRoot = $(if($automaticPlan){Split-Path $manifestPath -Parent}else{''})
 	}
 	$script:CheckpointLockStaleTtl = [TimeSpan]::MaxValue
 	$script:CheckpointEnabled = $false
@@ -3339,7 +3499,7 @@ function script:Invoke-PaxResumePublishOnly {
 		if ((script:Get-PaxDeltaSourceHash -LiteralPath $checkpoint).Hash -cne $manifest.CheckpointSha256) { throw 'The selected checkpoint changed while its exclusive lock was acquired.' }
 		foreach ($source in $manifest.Sources) {
 			$sourceLocks.Add([IO.File]::Open($source.FullPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
-			if ((script:Get-PaxDeltaSourceHash -LiteralPath $source.FullPath).Hash -cne $source.Sha256) { throw 'A retained source changed before its read lock was acquired.' }
+			if ((script:Get-PaxDeltaSourceHash -LiteralPath $source.FullPath -Phase ('SourceHash-'+$source.Role)).Hash -cne $source.Sha256) { throw 'A retained source changed before its read lock was acquired.' }
 		}
 		[void][IO.Directory]::CreateDirectory($stageRoot)
 		$pointerPath = Join-Path $stageRoot 'publish-recovery-pointer.json'
@@ -3396,7 +3556,7 @@ function script:Invoke-PaxResumePublishOnly {
 		$result = script:Invoke-PaxDeltaTableSetPublication -Entries $roster.ToArray() -StageRoot $stageRoot -Python $python -BorrowSources
 		if (-not $result.Accepted) { throw 'Publish-only recovery has not verified every required table.' }
 		foreach ($source in $manifest.Sources) {
-			if ((script:Get-PaxDeltaSourceHash -LiteralPath $source.FullPath).Hash -cne $source.Sha256) { throw 'A retained source changed across publication.' }
+			if ((script:Get-PaxDeltaSourceHash -LiteralPath $source.FullPath -Phase ('FinalSourceHash-'+$source.Role)).Hash -cne $source.Sha256) { throw 'A retained source changed across publication.' }
 		}
 		if ((script:Get-PaxDeltaSourceHash -LiteralPath $checkpoint).Hash -cne $manifest.CheckpointSha256) { throw 'The original checkpoint changed across publication.' }
 		return [pscustomobject]@{ Accepted = $true; Code = $result.Code; Tables = 8; StageRoot = $stageRoot; PeakScratchBytes = $script:PaxPublishRecoveryContext.PeakScratchBytes }
@@ -3507,7 +3667,7 @@ def pax_strict_arrow_reader(path, columns):
 function script:Invoke-PaxDeltaMemberOperation {
 	[CmdletBinding()]
 	param(
-		[Parameter(Mandatory)][ValidateSet('Prepare','PrepareCandidate','PrepareOriginal','Observe','Publish','Restore')][string]$Operation,
+		[Parameter(Mandatory)][ValidateSet('Prepare','PrepareCandidate','PrepareOriginal','VerifyCandidate','VerifyOriginal','Observe','Publish','Restore')][string]$Operation,
 		[Parameter(Mandatory)][psobject]$Member,
 		[Parameter(Mandatory)][string]$WorkDirectory,
 		[Parameter(Mandatory)][psobject]$Python,
@@ -3522,6 +3682,9 @@ function script:Invoke-PaxDeltaMemberOperation {
 		return [pscustomobject]@{ CandidateMeasurement = $local.CandidateMeasurement; CandidateSnapshotSha256 = $local.CandidateSnapshotSha256; CsvHeader = $local.CsvHeader; OriginalMeasurement = $remote.OriginalMeasurement; OriginalSnapshotSha256 = $remote.OriginalSnapshotSha256 }
 	}
 	$recoveryToken = $null
+	$snapshotLock = $null
+	$localSnapshotVerified = ''
+	try {
 	if ($script:PaxPublishRecoveryContext) {
 		script:Assert-PaxPublishRecoveryTarget -TargetUri $Member.TargetUri
 		$work = script:Assert-PaxPublishRecoveryPath -Path $WorkDirectory -Directory
@@ -3531,7 +3694,16 @@ function script:Invoke-PaxDeltaMemberOperation {
 			if ((Split-Path (script:Assert-PaxPublishRecoveryPath -Path $artifact) -Parent) -ine $work) { throw 'PAX_RECOVERY_WORK_PATH' }
 		}
 		$null = script:Assert-PaxPublishRecoveryBudget
-		if ($Operation -ne 'PrepareCandidate') { $recoveryToken = script:Get-PaxPublishRecoveryStorageToken; $BearerToken = $recoveryToken.Token }
+		if($Operation -eq 'Publish' -or ($Operation -eq 'Restore' -and $Member.OriginalMeasurement)){
+			$isCandidate=$Operation -eq 'Publish'
+			$snapshotPath=if($isCandidate){$Member.DeltaCandidatePath}else{$Member.DeltaOriginalPath}
+			$snapshotLock=[IO.File]::Open($snapshotPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+			$verifyOperation=if($isCandidate){'VerifyCandidate'}else{'VerifyOriginal'}
+			$verified=script:Invoke-PaxDeltaMemberOperation -Operation $verifyOperation -Member $Member -WorkDirectory $WorkDirectory -Python $Python
+			$localSnapshotVerified=if($isCandidate){$Member.CandidateSnapshotSha256}else{$Member.OriginalSnapshotSha256}
+			if($verified.VerifiedSha256 -cne $localSnapshotVerified){throw 'PAX_RECOVERY_SNAPSHOT_PROOF'}
+		}
+		if ($Operation -notin @('PrepareCandidate','VerifyCandidate','VerifyOriginal')) { $recoveryToken = script:Get-PaxPublishRecoveryStorageToken; $BearerToken = $recoveryToken.Token }
 		else { $BearerToken = '' }
 	}
 	elseif ([string]$Member.TargetUri -match '^(?:abfss|https)://') {
@@ -3539,7 +3711,7 @@ function script:Invoke-PaxDeltaMemberOperation {
 		script:Assert-PaxEffectiveFabricDestinations -RequestUri ([string]$Member.TargetUri) -RequestMethod $requestMethod -BearerToken $BearerToken
 	}
 	$requestPath = Join-Path $WorkDirectory 'delta-member-request.json'
-	[IO.File]::WriteAllText($requestPath, (@{ operation = $Operation; member = $Member } | ConvertTo-Json -Depth 20 -Compress), [Text.UTF8Encoding]::new($false))
+	[IO.File]::WriteAllText($requestPath, (@{ operation = $Operation; member = $Member; localSnapshotVerified = $localSnapshotVerified } | ConvertTo-Json -Depth 20 -Compress), [Text.UTF8Encoding]::new($false))
 	$inlinePy = @'
 import csv, hashlib, json, os, re, sqlite3, sys, tempfile
 from pathlib import Path
@@ -3556,7 +3728,7 @@ token = os.environ.get("PAX_DELTA_MEMBER_TOKEN", "")
 options = None
 if uri.startswith("https://"):
 	raise ValueError("A Delta member requires its resolved physical target, not an HTTPS URL.")
-if uri.startswith("abfss://") and request["operation"] != "PrepareCandidate":
+if uri.startswith("abfss://") and request["operation"] not in ("PrepareCandidate","VerifyCandidate","VerifyOriginal"):
 	if not token:
 		raise ValueError("A remote Delta member requires a storage token.")
 	options = {"bearer_token": token, "use_fabric_endpoint": "true"}
@@ -3804,6 +3976,10 @@ def parquet_batches(parquet,expected=None):
 		yield from parquet.iter_batches(batch_size=batch_rows,row_groups=[index])
 
 def verified_snapshot(path, expected_hash, expected):
+	# Only the recovery wrapper supplies this after a separate bounded local proof,
+	# keeping the same snapshot read-locked until this remote operation has exited.
+	if request.get("localSnapshotVerified") == expected_hash:
+		return pq.ParquetFile(path)
 	if file_hash(path) != expected_hash:
 		verification_failure("Frozen Delta recovery data changed.", ["snapshot-checksum"])
 	parquet = pq.ParquetFile(path)
@@ -3814,6 +3990,13 @@ def verified_snapshot(path, expected_hash, expected):
 def run():
 	operation = request["operation"]
 	table = None
+	if operation in ("VerifyCandidate","VerifyOriginal"):
+		candidate = operation == "VerifyCandidate"
+		path = member["DeltaCandidatePath"] if candidate else member["DeltaOriginalPath"]
+		digest = member["CandidateSnapshotSha256"] if candidate else member["OriginalSnapshotSha256"]
+		expected = member["CandidateMeasurement"] if candidate else member["OriginalMeasurement"]
+		verified_snapshot(path, digest, expected)
+		return {"VerifiedSha256":digest}
 	if operation in ("Prepare", "PrepareCandidate"):
 		if file_hash(member["CandidatePath"]) != member["SourceSha256"]:
 			raise ValueError("The frozen source CSV changed.")
@@ -3945,7 +4128,7 @@ except Exception as error:
 	if ($script:PaxPublishRecoveryContext) {
 		$environment = @{ PAX_DELTA_MEMBER_TOKEN = $BearerToken }
 		$expiry = if ($recoveryToken) { $recoveryToken.ExpiresUtc } else { [datetime]::MaxValue }
-		$result = script:Invoke-PaxPublishRecoveryProcess -Python $Python -Code $inlinePy -Arguments @($requestPath) -Environment $environment -ExpiresUtc $expiry
+		$result = script:Invoke-PaxPublishRecoveryProcess -Python $Python -Code $inlinePy -Arguments @($requestPath) -Environment $environment -ExpiresUtc $expiry -Phase ('Delta-'+$Operation+'-'+$Member.TableName)
 		return ($result | ConvertFrom-Json -ErrorAction Stop)
 	}
 	$priorToken = [Environment]::GetEnvironmentVariable('PAX_DELTA_MEMBER_TOKEN', 'Process')
@@ -3970,6 +4153,8 @@ except Exception as error:
 		return (($output -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop)
 	}
 	finally { [Environment]::SetEnvironmentVariable('PAX_DELTA_MEMBER_TOKEN', $priorToken, 'Process') }
+	}
+	finally {if($snapshotLock){$snapshotLock.Dispose()}}
 }
 
 function script:New-PaxDeltaPublicationState {
