@@ -1,6 +1,6 @@
-﻿# Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Script Version: v2.0.0 - Prerelease - 2026-10-23-12
-# Requirements: PowerShell 7+ for default Graph API mode; PowerShell 5.1 supported ONLY with -UseEOM (serial Exchange Online Management mode, no parallel query/explosion).
+# Portable Audit eXporter (PAX) - Purview Audit Log Processor
+# Script Version: v2.0.0 - Prerelease - 2026-11-01-14
+# Requirements: PowerShell 7.0 or later for every mode, including -UseEOM (serial Exchange Online Management mode).
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 <#
 .SYNOPSIS
@@ -35,6 +35,36 @@
 	  tenant DLP / sensitivity labels as appropriate.
 
 .DESCRIPTION
+	Retained publication recovery:
+		-ResumePublishOnly -Resume "E:\pax\.pax_checkpoint_<run>.json"
+		Explicit opt-in only: legacy 11/13 initial RollupPlusRaw, AIO + ValueLens,
+		UserHistory On, UserInfo + Agent365, non-append/non-watermark/non-deidentified,
+		ManagedIdentity and original GUID OneLake Tables destination.
+		Requires Windows x64, PowerShell 7+, existing Python 3.10+ on PATH,
+		pyarrow 25.0.1, deltalake 1.6.3 and preinstalled Az.Accounts 2.12.0 to <6.0.0.
+		All raw, processed .withaudit Users, Agent aliases and independently timestamped status outputs are
+		required. PAX generates and retains its run-bound recovery plan from the selected
+		checkpoint, current file proofs, managed identity and read-only target observations.
+		No manually authored manifest, source hashes or row counts are required.
+		An observed existing snapshot requires explicit -ApproveExistingSnapshot after
+		reviewing the displayed plan. Unrelated or changed targets remain protected.
+		-PublishRecoveryManifest remains an optional advanced input. Automatic budgets
+		use available space; RecoveryMaxScratchBytes, RecoveryReserveBytes and
+		RecoveryOperationSeconds can set explicit limits before the plan is saved.
+		Current hashes do not prove past authenticity.
+		No collection, processing, Graph, dependency installation, prompts or fallback.
+		Retained CSVs are locked read-only, never cloned, moved or deleted. Conversion and
+		proofs require measured Parquet/SQLite scratch plus publication headroom and reserve;
+		available capacity is not inferred from CSV size. Oversize records, row groups,
+		expiring credentials, insufficient capacity or unknown contracts stop safely.
+		Recovery requires unpartitioned targets and Parquet row groups no larger than
+		256 MiB uncompressed; unsupported existing layouts are refused before publication.
+		CSV logical records are capped at 128 MiB. Scratch and reserve are each at least
+		64 MiB; operations use an explicit 60-3600 second maximum and safe token deadline.
+		Native publication and recovery have bounded OneLake coverage with delegated
+		test authentication. Automatic planning and managed-identity bootstrap have local
+		coverage, not live managed-identity qualification. Release approval is separate.
+
 	Modes:
 		Standard       - One row per audit record (raw CopilotEventData JSON preserved)
     
@@ -158,24 +188,24 @@
 				• PromptFilter removes responses and resource-only rows
 				• Result: Clean dataset of just sales team questions to the agent
 
-	PowerShell 7+ required for default Graph API mode. PowerShell 5.1 is supported ONLY when running in -UseEOM mode (serial Exchange Online Management cmdlets, no parallelism).
+	PowerShell 7.0 or later is required for every mode. -UseEOM remains available with serial Exchange Online Management cmdlets under PowerShell 7.
 
 .EXECUTIONPOLICY
 	No internal execution policy bypass. Use external host invocation if needed:
 		pwsh.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02
-		# PS 5.1 host (EOM mode only):
-		powershell.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -UseEOM -StartDate 2025-10-01 -EndDate 2025-10-02
+		# PowerShell 7 host with EOM mode:
+		pwsh.exe -ExecutionPolicy Bypass -File .\PAX_Purview_Audit_Log_Processor.ps1 -UseEOM -StartDate 2025-10-01 -EndDate 2025-10-02
 
 .POWERSHELLVERSIONS
-	PowerShell 7+ required (default Graph API mode; download: https://aka.ms/powershell).
-	PowerShell 5.1 supported ONLY with -UseEOM (serial EOM mode; no parallel query/explosion).
+	PowerShell 7.0 or later is required (download: https://aka.ms/powershell).
+	Windows PowerShell 5.1 is not supported. -UseEOM remains available under PowerShell 7.
 
 .EXAMPLE
 	# Basic export with auto-generated timestamped filename
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputPath C:\Temp\
 .EXAMPLE
-	# PowerShell 5.1 (EOM mode only — serial, no parallelization)
-	powershell -File .\PAX_Purview_Audit_Log_Processor.ps1 -UseEOM -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputPath C:\Temp\
+	# PowerShell 7 with serial Exchange Online Management mode
+	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -UseEOM -StartDate 2025-10-01 -EndDate 2025-10-02 -OutputPath C:\Temp\
 .EXAMPLE
 	# Filter to only records with agents present
 	pwsh -File .\PAX_Purview_Audit_Log_Processor.ps1 -StartDate 2025-10-01 -EndDate 2025-10-02 -AgentsOnly -OutputPath C:\Temp\
@@ -1592,8 +1622,8 @@
 	  If -EnableParallel or -ParallelMode is specified with -UseEOM, script will exit with error.
 
 	POWERSHELL VERSION:
-	  EOM mode is the only path supported on PowerShell 5.1. The default Graph API mode
-	  requires PowerShell 7+ (for ThreadJob-based parallel query execution).
+	PowerShell 7.0 or later is required for every mode, including -UseEOM.
+	Windows PowerShell 5.1 is not supported.
 
 
 .PARAMETER IncludeUserInfo
@@ -2099,6 +2129,34 @@ param(
 	[Parameter(Mandatory = $false)]
 	[switch]$Force,
 
+	# Explicit retained-output publication bypasses collection and processing.
+	# Refused recovery requests never fall back to ordinary Resume.
+	[Parameter(Mandatory = $false)]
+	[switch]$ResumePublishOnly,
+
+	# An exact Resume alias prevents PowerShell interpreting -Resume as an
+	# abbreviation of ResumePublishOnly. Its optional positional path is normalized below.
+	[Parameter(Mandatory = $false)]
+	[Alias('Resume')]
+	[switch]$ResumeRequest,
+
+	[Parameter(Mandatory = $false)]
+	[string]$PublishRecoveryManifest,
+
+	# Publication-only defaults are derived from current free space. Existing
+	# snapshots require explicit operator approval of the persisted observed plan.
+	[Parameter(Mandatory = $false)]
+	[switch]$ApproveExistingSnapshot,
+	[Parameter(Mandatory = $false)]
+	[ValidateRange(0,1125899906842624)]
+	[long]$RecoveryMaxScratchBytes = 0,
+	[Parameter(Mandatory = $false)]
+	[ValidateRange(0,1125899906842624)]
+	[long]$RecoveryReserveBytes = 0,
+	[Parameter(Mandatory = $false)]
+	[ValidateRange(0,3600)]
+	[int]$RecoveryOperationSeconds = 0,
+
 	# Operator-only SELECTIVE recovery: an explicit list of partition indexes whose durable
 	# uncertain-create checkpoint state is discarded on resume so those specific partitions are
 	# created fresh. Durable uncertain state is never auto-cleared (see .PARAMETER
@@ -2238,6 +2296,2749 @@ param(
 	[Parameter(Mandatory = $false, ValueFromRemainingArguments = $true)]
 	[string[]]$RemainingArgs
 )
+
+function Write-Log { 
+	param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Message, [string]$Level = "INFO") 
+	$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+	$logEntry = "[$timestamp] [$Level] $Message"
+	Microsoft.PowerShell.Utility\Write-Host $Message
+	try {
+		if ($script:LogFile) { Add-Content -Path $script:LogFile -Value $logEntry -Encoding UTF8 -ErrorAction SilentlyContinue }
+		else { $script:LogBuffer.Add($logEntry) | Out-Null }
+	} catch {}
+}
+
+function Write-LogHost { 
+	param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Message, [string]$ForegroundColor = "White") 
+	Microsoft.PowerShell.Utility\Write-Host $Message -ForegroundColor $ForegroundColor
+	try { 
+		$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+		$logEntry = "[$timestamp] [INFO] $Message"
+		if ($script:LogFile) { Add-Content -Path $script:LogFile -Value $logEntry -Encoding UTF8 -ErrorAction SilentlyContinue }
+		else { $script:LogBuffer.Add($logEntry) | Out-Null }
+	} catch {}
+}
+
+function Resolve-PythonExe {
+	[CmdletBinding()]
+	param([switch]$AllowAutoInstall)
+
+	# Returns: hashtable @{ Path=<full path or 'py'>; Args=<launcher args, e.g. '-3.13'>; Version='3.13.1' }
+	# Throws on hard failure (no usable interpreter even after install attempts).
+
+	$candidates = @(
+		@{ Cmd = 'python';  LauncherArgs = @('-u') }
+		@{ Cmd = 'py';      LauncherArgs = @('-3.13', '-u') }
+		@{ Cmd = 'py';      LauncherArgs = @('-3.12', '-u') }
+		@{ Cmd = 'py';      LauncherArgs = @('-3.11', '-u') }
+		@{ Cmd = 'py';      LauncherArgs = @('-3.10', '-u') }
+		@{ Cmd = 'python3'; LauncherArgs = @('-u') }
+	)
+
+	foreach ($c in $candidates) {
+		try {
+			$cmdInfo = Get-Command -Name $c.Cmd -ErrorAction SilentlyContinue
+			if (-not $cmdInfo) { continue }
+			$probeArgs = @($c.LauncherArgs) + @('-c', 'import sys; print("{}.{}.{}".format(sys.version_info.major, sys.version_info.minor, sys.version_info.micro))')
+			$verOutput = & $c.Cmd @probeArgs 2>$null
+			if ($LASTEXITCODE -ne 0 -or -not $verOutput) { continue }
+			$verText = ($verOutput | Select-Object -First 1).Trim()
+			if ($verText -notmatch '^(\d+)\.(\d+)\.(\d+)') { continue }
+			$maj = [int]$Matches[1]
+			$min = [int]$Matches[2]
+			if ($maj -lt $Script:ROLLUP_PYTHON_MIN_MAJOR) { continue }
+			if ($maj -eq $Script:ROLLUP_PYTHON_MIN_MAJOR -and $min -lt $Script:ROLLUP_PYTHON_MIN_MINOR) { continue }
+			return @{ Path = $c.Cmd; Args = $c.LauncherArgs; Version = $verText }
+		}
+		catch { continue }
+	}
+
+	if (-not $AllowAutoInstall) {
+		throw "No Python $($Script:ROLLUP_PYTHON_MIN_MAJOR).$($Script:ROLLUP_PYTHON_MIN_MINOR)+ interpreter found on PATH."
+	}
+
+	# Auto-install path: try winget first, then python.org installer.
+	Write-LogHost "Rollup: no Python $($Script:ROLLUP_PYTHON_MIN_MAJOR).$($Script:ROLLUP_PYTHON_MIN_MINOR)+ found. Attempting auto-install..." -ForegroundColor Yellow
+
+	$winget = Get-Command -Name 'winget' -ErrorAction SilentlyContinue
+	$installed = $false
+	if ($winget) {
+		Write-LogHost "Rollup: installing Python 3.13 via winget (Python.Python.3.13)..." -ForegroundColor Cyan
+		try {
+			$wingetArgs = @('install', '--id', 'Python.Python.3.13', '-e', '--accept-source-agreements', '--accept-package-agreements', '--scope', 'user', '--silent')
+			& winget @wingetArgs | Out-Host
+			if ($LASTEXITCODE -eq 0) { $installed = $true }
+		}
+		catch {
+			Write-LogHost "Rollup: winget install failed: $($_.Exception.Message)" -ForegroundColor Yellow
+		}
+	}
+	else {
+		Write-LogHost "Rollup: winget is not available on this host; falling back to python.org installer." -ForegroundColor Yellow
+	}
+
+	if (-not $installed) {
+		# python.org per-user silent install
+		try {
+			$tmpDir = Join-Path (script:Resolve-PaxTempRoot) ("PAX_PythonInstaller_" + [guid]::NewGuid().ToString('N'))
+			New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+			$installerUrl = 'https://www.python.org/ftp/python/3.13.1/python-3.13.1-amd64.exe'
+			$installerPath = Join-Path $tmpDir 'python-3.13.1-amd64.exe'
+			Write-LogHost "Rollup: downloading $installerUrl ..." -ForegroundColor Cyan
+			Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing
+			Write-LogHost "Rollup: running silent per-user install (PrependPath=1)..." -ForegroundColor Cyan
+			$proc = Start-Process -FilePath $installerPath -ArgumentList @('/quiet', 'InstallAllUsers=0', 'PrependPath=1', 'Include_launcher=1', 'Include_pip=1') -Wait -PassThru
+			if ($proc.ExitCode -eq 0) { $installed = $true }
+			else { Write-LogHost "Rollup: python.org installer exited with code $($proc.ExitCode)." -ForegroundColor Yellow }
+		}
+		catch {
+			Write-LogHost "Rollup: python.org install failed: $($_.Exception.Message)" -ForegroundColor Yellow
+		}
+	}
+
+	if (-not $installed) {
+		throw "Rollup: failed to auto-install Python $($Script:ROLLUP_PYTHON_MIN_MAJOR).$($Script:ROLLUP_PYTHON_MIN_MINOR)+. Install Python manually from https://www.python.org/downloads/ and re-run."
+	}
+
+	# Refresh PATH from process + machine + user scopes so new install is visible without restart.
+	$paths = @(
+		[Environment]::GetEnvironmentVariable('Path', 'Machine'),
+		[Environment]::GetEnvironmentVariable('Path', 'User'),
+		$env:Path
+	) | Where-Object { $_ }
+	$env:Path = ($paths -join ';')
+
+	# Recurse once with auto-install disabled to prevent loops.
+	return Resolve-PythonExe -AllowAutoInstall:$false
+}
+
+function script:Get-PaxFabricTableName {
+	param(
+		[Parameter(Mandatory)][string]$CsvStem,
+		[string]$Dashboard = 'AIO',
+		[string]$LogicalStem,
+		[string]$DataType,
+		[string]$ProcessorMode,
+		[bool]$UsersDimension,
+		[switch]$OnlyInfo,
+		[switch]$IncludeM365Usage,
+		[System.Collections.IDictionary]$Overrides,
+		[switch]$AsClassification
+	)
+	# PAX-Fabric c58eb5dce86b680bd91b5cbd746854d791517dd8, MIT:
+	# delta_writer.table_name_for and pipeline._DASHBOARD_PREFIX_MAP.
+	# Producer identity precedes naming: custom CSV leaves do not change their logical dataset.
+	if ($Overrides) {
+		foreach ($key in $Overrides.Keys) { if ([string]$key -ceq $CsvStem) { return [string]$Overrides[$key] } }
+	}
+	$ts = '\d{8}_\d{6}'
+	$clean = ([regex]::Replace($CsvStem, $ts, '')).Trim('_') -replace '_+', '_'
+	if (-not $LogicalStem) {
+		if ($DataType -eq 'Agent365Info') {
+			$LogicalStem = if ($clean -ceq 'Agent365_Status') { 'Agent365_Status' } else { 'Agent365' }
+		}
+		elseif ($DataType -eq 'UserInfo') {
+			$LogicalStem = if ($UsersDimension) { 'Entra_Users' } else { 'Entra_Users_Raw' }
+		}
+		elseif ($ProcessorMode -in @('CopilotInteraction','CoworkAdoption') -and $clean -cmatch '_(Interactions|ActiveDaysSummary|UserMonthMetrics|LicensedUserRankings|UnlicensedUserRankings|LicensedUserSummary)$') {
+			$LogicalStem = "CopilotInteraction_$($Matches[1])_Rollup"
+		}
+		elseif ($ProcessorMode -eq 'M365Bundle' -and $clean -cmatch '_(Rollup|UserStats|SessionCohort|SessionStats|Exploded)$') {
+			$LogicalStem = "CombinedActivityTypes_$($Matches[1])_Rollup"
+		}
+		else { $LogicalStem = $CsvStem }
+	}
+	$raw = ''
+	if ($LogicalStem -cmatch "^Purview_Audit_UsageActivity_([^_]+)_${ts}_(.+)$") {
+		$raw = "$($Matches[1])_$($Matches[2])_Rollup"
+	}
+	elseif ($LogicalStem -cmatch "^Purview_Audit_UsageActivity_([^_]+)_${ts}$") { $raw = "$($Matches[1])_Raw" }
+	elseif ($LogicalStem -cmatch "^EntraUsers_MAClicensing_${ts}_(.+)$") { $raw = "Entra_$($Matches[1])" }
+	elseif ($LogicalStem -cmatch "^EntraUsers_MAClicensing_${ts}$") { $raw = 'Entra_Users_Raw' }
+	elseif ($LogicalStem -cmatch "^Agent365_${ts}$") { $raw = 'Agent365' }
+	elseif ($LogicalStem -cmatch "^Purview_Audit_${ts}$") { $raw = 'Audit_Raw' }
+	else {
+		$raw = ([regex]::Replace($LogicalStem, $ts, '')).Trim('_') -replace '_+', '_'
+		if (-not $raw) { $raw = $LogicalStem }
+	}
+	$aliases = @{
+		CopilotInteraction_Raw = 'CopilotInteractions_Raw'
+		CopilotInteraction_Interactions_Rollup = 'CopilotInteractions'
+		CopilotInteraction_ActiveDaysSummary_Rollup = 'ActiveDaysSummary'
+		CopilotInteraction_UserMonthMetrics_Rollup = 'UserMonthMetrics'
+		CopilotInteraction_LicensedUserRankings_Rollup = 'LicensedRankings'
+		CopilotInteraction_UnlicensedUserRankings_Rollup = 'UnlicensedRankings'
+		CopilotInteraction_LicensedUserSummary_Rollup = 'LicensedSummary'
+		CombinedActivityTypes_Raw = 'Raw'
+		CombinedActivityTypes_Rollup_Rollup = 'Rollup'
+		CombinedActivityTypes_UserStats_Rollup = 'UserStats'
+		CombinedActivityTypes_SessionCohort_Rollup = 'SessionCohort'
+		CombinedActivityTypes_SessionStats_Rollup = 'SessionStats'
+		CombinedActivityTypes_Interactions_Rollup = 'CopilotInteractions'
+		Entra_Users = 'Users'
+	}
+	foreach ($key in $aliases.Keys) { if ($key -ceq $raw) { $raw = $aliases[$key]; break } }
+	$shared = @('CopilotInteractions_Raw','Entra_Users_Raw','Audit_Raw','Agent365','Agent365_Status') -ccontains $raw
+	$prefix = if ($OnlyInfo) { '' } elseif ($IncludeM365Usage) { 'M365' } else {
+		switch ($Dashboard.ToUpperInvariant()) {
+			'VALUELENS' { 'ValueLens' }
+			'M365' { 'M365' }
+			'COWORKADOPTION' { 'CoworkAdoption' }
+			'AISID' { 'AISID' }
+			default { 'AIO' }
+		}
+	}
+	if ($AsClassification) { return [pscustomobject]@{ Shared = $shared; DashboardPrefix = $prefix; BaseName = $raw } }
+	if ($shared) { return $raw }
+	if ($prefix) { return "${prefix}_${raw}" }
+	return $raw
+}
+
+function script:Assert-PaxPublishRecoveryPath {
+	param([Parameter(Mandatory)][string]$Path, [switch]$Directory)
+	if (-not [IO.Path]::IsPathFullyQualified($Path) -or $Path -match '(^|[\\/])\.\.([\\/]|$)' -or $Path -match '^[^:]+::' -or $Path.StartsWith('\\')) { throw 'Publish recovery requires explicit local absolute paths without traversal or UNC providers.' }
+	$full = [IO.Path]::GetFullPath($Path)
+	if ($full.Substring(2).Contains(':')) { throw 'Publish recovery does not use alternate data streams.' }
+	$current = if ($Directory) { $full } else { [IO.Path]::GetDirectoryName($full) }
+	foreach ($part in @($full, $current)) {
+		if (Test-Path -LiteralPath $part) {
+			if ((Get-Item -LiteralPath $part -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Publish recovery does not follow reparse points.' }
+		}
+	}
+	while ($current) {
+		if (Test-Path -LiteralPath $current) {
+			if ((Get-Item -LiteralPath $current -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Publish recovery does not follow reparse-point ancestors.' }
+		}
+		$current = [IO.Path]::GetDirectoryName($current)
+	}
+	return $full
+}
+
+function script:Assert-PaxPublishRecoveryBudget {
+	param([switch]$BeforePublication)
+	$context = $script:PaxPublishRecoveryContext
+	if (-not $context) { throw 'Publish recovery has no owned scratch budget.' }
+	$bytes = [int64]0
+	if (Test-Path -LiteralPath $context.StageRoot -PathType Container) {
+		foreach ($file in Get-ChildItem -LiteralPath $context.StageRoot -File -Recurse -Force -ErrorAction Stop) {
+			if ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Publish recovery scratch contains a reparse point.' }
+			$bytes += $file.Length
+		}
+	}
+	$headroom = if ($BeforePublication -and $context.PSObject.Properties['ProofHeadroomBytes']) { [int64]$context.ProofHeadroomBytes } else { [int64]0 }
+	if ($bytes + $headroom -gt $context.MaxScratchBytes) { throw 'PAX_RECOVERY_CAPACITY: owned Parquet/proof/journal scratch and mandatory proof headroom exceed the explicit budget; canonical publication is blocked.' }
+	$drive = [IO.DriveInfo]::new([IO.Path]::GetPathRoot($context.StageRoot))
+	$required = if ($BeforePublication) { $context.ReserveBytes + $headroom } else { $context.ReserveBytes + 32MB }
+	if (-not $drive.IsReady -or $drive.AvailableFreeSpace -lt $required) { throw 'PAX_RECOVERY_CAPACITY: the explicit drive reserve cannot be maintained; recovery material is retained.' }
+	if ($bytes -gt $context.PeakScratchBytes) { $context.PeakScratchBytes = $bytes }
+	return $bytes
+}
+
+function script:Get-PaxDeltaSourceHash {
+	[CmdletBinding()]
+	param([Parameter(Mandatory)][string]$LiteralPath, [ValidateSet('SHA256')][string]$Algorithm = 'SHA256')
+	if (-not $script:PaxPublishRecoveryContext) { return (Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $LiteralPath -Algorithm $Algorithm -ErrorAction Stop) }
+	$stream = [IO.File]::Open($LiteralPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+	$hash = [Security.Cryptography.IncrementalHash]::CreateHash([Security.Cryptography.HashAlgorithmName]::SHA256)
+	$buffer = [byte[]]::new(1MB)
+	$timer = [Diagnostics.Stopwatch]::StartNew()
+	try {
+		while (($count = $stream.Read($buffer,0,$buffer.Length)) -gt 0) {
+			if ($timer.Elapsed.TotalSeconds -gt $script:PaxPublishRecoveryContext.MaximumOperationSeconds) { throw 'PAX_RECOVERY_HASH_DEADLINE: retained-byte verification exceeded the explicit runtime; no source was modified.' }
+			$hash.AppendData($buffer,0,$count)
+		}
+		return [pscustomobject]@{ Hash = [Convert]::ToHexString($hash.GetHashAndReset()) }
+	}
+	finally { $hash.Dispose(); $stream.Dispose() }
+}
+
+function script:Invoke-PaxPublishRecoveryProcess {
+	param([Parameter(Mandatory)][psobject]$Python, [Parameter(Mandatory)][string]$Code, [string[]]$Arguments = @(), [string]$InputText = '', [hashtable]$Environment = @{}, [datetime]$ExpiresUtc = [datetime]::MaxValue, [switch]$ReadOnly)
+	$context = $script:PaxPublishRecoveryContext
+	if (-not $context -and -not $ReadOnly) { throw 'A bounded recovery process requires its owned context.' }
+	$seconds = if ($ReadOnly) { 120.0 } else { [double]$context.MaximumOperationSeconds }
+	if ($ExpiresUtc -ne [datetime]::MaxValue) {
+		$seconds = [Math]::Min($seconds, ($ExpiresUtc - [datetime]::UtcNow).TotalSeconds - 300)
+		if ($seconds -lt 60) { throw 'PAX_RECOVERY_TOKEN: storage token lacks a safe operation lifetime; no operation was started.' }
+	}
+	$start = [Diagnostics.ProcessStartInfo]::new()
+	$start.FileName = $Python.Path
+	$start.UseShellExecute = $false
+	$start.RedirectStandardInput = $true
+	$start.RedirectStandardOutput = $true
+	$start.RedirectStandardError = $true
+	$start.CreateNoWindow = $true
+	foreach ($arg in @($Python.Args) + @('-B','-c',$Code) + $Arguments) { $start.ArgumentList.Add([string]$arg) }
+	if (-not $ReadOnly) {
+		$start.Environment['TEMP'] = $context.StageRoot
+		$start.Environment['TMP'] = $context.StageRoot
+		$start.Environment['TMPDIR'] = $context.StageRoot
+		$start.Environment['SQLITE_TMPDIR'] = $context.StageRoot
+		$start.Environment['PAX_RECOVERY_ROOT'] = $context.StageRoot
+		$start.Environment['PAX_RECOVERY_MAX_SCRATCH'] = [string]$context.MaxScratchBytes
+		$start.Environment['PAX_RECOVERY_RESERVE'] = [string]$context.ReserveBytes
+	}
+	foreach ($key in $Environment.Keys) { $start.Environment[$key] = [string]$Environment[$key] }
+	$process = [Diagnostics.Process]::new()
+	$process.StartInfo = $start
+	$timer = [Diagnostics.Stopwatch]::StartNew()
+	$started = $false
+	try {
+		if (-not $process.Start()) { throw 'Recovery helper process could not start.' }
+		$started = $true
+		$stdout = $process.StandardOutput.ReadToEndAsync()
+		$stderr = $process.StandardError.ReadToEndAsync()
+		$inputTask = $process.StandardInput.WriteAsync($InputText)
+		$inputClosed = $false
+		while (-not $process.WaitForExit(250)) {
+			if (-not $inputClosed -and $inputTask.IsCompleted) {
+				$null = $inputTask.GetAwaiter().GetResult()
+				$process.StandardInput.Close()
+				$inputClosed = $true
+			}
+			if (-not $ReadOnly) { $null = script:Assert-PaxPublishRecoveryBudget }
+			if ($timer.Elapsed.TotalSeconds -gt $seconds) { throw 'PAX_RECOVERY_DEADLINE: operation stopped before its bounded runtime or token safety deadline; recovery remains pending.' }
+		}
+		if (-not $ReadOnly) { $null = script:Assert-PaxPublishRecoveryBudget }
+		$out = $stdout.GetAwaiter().GetResult()
+		$errorText = $stderr.GetAwaiter().GetResult()
+		if ($process.ExitCode -ne 0) {
+			# CSV and identity validation report aggregate codes, never offending values.
+			if ($errorText -cmatch 'PAX_RECOVERY_[A-Z_]+|PAX_CSV_[A-Z_]+') { throw ('Recovery helper refused: ' + $Matches[0]) }
+			throw ('Recovery helper failed with exit {0}; no unverified set is accepted.' -f $process.ExitCode)
+		}
+		return $out
+	}
+	finally {
+		if ($started -and -not $process.HasExited) { $process.Kill($true); $process.WaitForExit() }
+		$process.Dispose()
+	}
+}
+
+function script:Get-PaxPublishRecoveryManifest {
+	param([string]$CheckpointPath, [string]$ManifestPath, [psobject]$Python)
+	$code = @'
+import datetime, hashlib, json, os, re, sys
+from pathlib import Path
+def refuse(code):
+    raise ValueError("PAX_RECOVERY_" + code)
+def unique(pairs):
+    out={}
+    for key,value in pairs:
+        if key in out:refuse("DUPLICATE_JSON")
+        out[key]=value
+    return out
+def load(path):
+    if Path(path).stat().st_size > 1024*1024:refuse("ENVELOPE_LIMIT")
+    return json.loads(Path(path).read_text(encoding="utf-8-sig"),object_pairs_hook=unique)
+def digest(path):
+    h=hashlib.sha256()
+    with open(path,"rb") as f:
+        for block in iter(lambda:f.read(1024*1024),b""):h.update(block)
+    return h.hexdigest().upper()
+def exact(value,keys):
+    if not isinstance(value,dict) or set(value)!=set(keys):refuse("MANIFEST_FIELDS")
+def date(value):
+    try:
+        d=datetime.datetime.fromisoformat(value.replace("Z","+00:00"))
+        if d.tzinfo is None:
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",value):refuse("UTC_BOUNDARY")
+            d=d.replace(tzinfo=datetime.timezone.utc)
+        return d.astimezone(datetime.timezone.utc)
+    except (ValueError,TypeError):refuse("UTC_BOUNDARY")
+cp=load(sys.argv[1]);m=load(sys.argv[2]);p=cp.get("parameters",{})
+exact(m,["Version","Kind","RecoveryId","CheckpointSha256","SourceRelease","RunTimestamp","StartUtc","EndUtc","Profiles","UserHistory","CheckpointHistoryPolicy",
+         "DestinationRoot","Authentication","Capacity","BaselineKind","AgentStatusTimestamp","Sources","TargetExpectations"])
+if m["Version"]!="1.0" or m["Kind"]!="PaxPublishRecoveryExpectations" or m["BaselineKind"]!="CurrentRetainedBytesNotPastAuthenticity":refuse("MANIFEST_KIND")
+automatic=m["SourceRelease"]=="Legacy2.1.0KnownRetainedLayout"
+if m["SourceRelease"] not in ("20261021-11","20261030-13","Legacy2.1.0KnownRetainedLayout") or cp.get("createdByVersion")!="2.0.0":refuse("SOURCE_RELEASE")
+if automatic and cp.get("compatibilityMinimumVersion")!="1.11.0":refuse("UNKNOWN_PRODUCER_CONTRACT")
+if not re.fullmatch("[a-f0-9]{32}",m["RecoveryId"]):refuse("RECOVERY_ID")
+if digest(sys.argv[1])!=m["CheckpointSha256"]:refuse("CHECKPOINT_HASH")
+stamp=cp.get("runTimestamp","")
+if not re.fullmatch(r"\d{8}_\d{6}",stamp) or stamp!=m["RunTimestamp"]:refuse("RUN_ID")
+if Path(sys.argv[1]).name != ".pax_checkpoint_"+stamp+".json":refuse("CHECKPOINT_LEAF")
+if (type(cp.get("version")) is not int or cp["version"]!=2 or cp.get("checkpointSchemaVersion")!="2.1.0"
+    or cp.get("checkpointType")!="PurviewAudit" or cp.get("outputFiles",{}).get("privateRecovery")):refuse("CHECKPOINT_CONTRACT")
+minimum=cp.get("compatibilityMinimumVersion")
+if not isinstance(minimum,str) or not re.fullmatch(r"\d+\.\d+\.\d+",minimum) or tuple(map(int,minimum.split(".")))>(2,0,0):refuse("CHECKPOINT_MINIMUM_VERSION")
+partitions=cp.get("partitions",{})
+if (type(partitions.get("total")) is not int or partitions["total"]<=0 or
+    not isinstance(partitions.get("completed"),list) or len(partitions["completed"])!=partitions["total"] or
+    len({str(v) for v in partitions["completed"]})!=partitions["total"] or partitions.get("uncertainCreate")):refuse("COLLECTION_INCOMPLETE")
+completed=partitions["completed"]
+if partitions.get("queryCreated") or any(not isinstance(v,dict) or type(v.get("index")) is not int or
+    type(v.get("records")) is not int or v["records"]<0 or not v.get("queryId") or
+    v.get("UncertainCreate") for v in completed):refuse("PARTITION_CONTRACT")
+indices=sorted(v["index"] for v in completed)
+if indices!=list(range(1,partitions["total"]+1)):refuse("PARTITION_CONTRACT")
+if type(cp.get("statistics",{}).get("totalRecordsSaved")) is not int or sum(v["records"] for v in completed)!=cp["statistics"]["totalRecordsSaved"]:refuse("PARTITION_RECORDS")
+statistics=cp["statistics"]
+if any(type(statistics.get(k)) is not int for k in ("partitionsComplete","partitionsQueryCreated","partitionsRemaining")) or statistics["partitionsComplete"]!=partitions["total"] or statistics["partitionsQueryCreated"]!=0 or statistics["partitionsRemaining"]!=0:refuse("PARTITION_STATISTICS")
+required=("rollupMode","processorMode","rollupDashboard","dashboard","dashboards","userHistory","deidentify","includeUserInfo","includeAgent365Info",
+          "includeM365Usage","onlyAgent365Info","appendFile","appendUserInfo","appendAgent365Info","outputPath","outputDestinationType","auth","startDate","endDate","dateBoundaryBasis",
+          "activityTypes","recordTypes","serviceTypes","userIds","groupNames","copilotAccessGroups","agentId",
+          "agentsOnly","excludeAgents","includeCopilotInteraction","excludeCopilotInteraction","combineOutput","useEOM","userInfoSupplement")
+if any(key not in p for key in required):refuse("LEGACY_CONTRACT_INCOMPLETE")
+for k in ("deidentify","includeUserInfo","includeAgent365Info","includeM365Usage","onlyAgent365Info","agentsOnly","excludeAgents","includeCopilotInteraction","excludeCopilotInteraction","combineOutput","useEOM"):
+    if type(p[k]) is not bool:refuse("LEGACY_PARAMETER_TYPES")
+# The initializer's `if (...) { @(...) } else { @() }` pipeline unwraps zero/one
+# filter values into JSON null/scalar; dashboards are serialized as a direct array.
+for k in ("activityTypes","recordTypes","serviceTypes","userIds","groupNames","copilotAccessGroups","agentId"):
+    value=p[k]
+    if value is not None and not isinstance(value,str) and not (isinstance(value,list) and all(isinstance(v,str) for v in value)):refuse("LEGACY_PARAMETER_TYPES")
+if not isinstance(p["dashboards"],list):refuse("LEGACY_PARAMETER_TYPES")
+if (p["rollupMode"]!="RollupPlusRaw" or p["processorMode"]!="CopilotInteraction"
+    or p["deidentify"] is not False or p["includeUserInfo"] is not True or p["includeAgent365Info"] is not True
+    or p["includeM365Usage"] is not False or p["onlyAgent365Info"] is not False or p["auth"]!="ManagedIdentity"
+    or p["excludeCopilotInteraction"] is not False or p["useEOM"] is not False or p["outputDestinationType"]!="Fabric"):refuse("INELIGIBLE_MODE")
+if m["UserHistory"]!="On" or p["userHistory"] not in ("On","Off"):refuse("HISTORY_CONTRACT")
+if m["CheckpointHistoryPolicy"]=="RequireRecordedOn":
+    if p["userHistory"]!="On":refuse("HISTORY_CONTRACT")
+elif m["CheckpointHistoryPolicy"]!="PinnedLegacyCallerOmissionRetainedTemporalProof":refuse("HISTORY_CONTRACT")
+m["CheckpointRecordedUserHistory"]=p["userHistory"]
+if p["rollupDashboard"] not in ("AIO","AIBV") or not isinstance(p["dashboard"],str):refuse("PROFILES")
+if sorted(p["dashboards"])!=["AIO","ValueLens"] or sorted(m["Profiles"])!=["AIO","ValueLens"] or len(m["Profiles"])!=2:refuse("PROFILES")
+for key in ("appendFile","appendUserInfo","appendAgent365Info","appendDefenderUsage","purviewInputFile","userInfoFile","userInfoSupplement","outputPathDefenderUsage","resolvedDefenderUsageDir"):
+    if p.get(key):refuse("INELIGIBLE_INPUT_OVERRIDE")
+for key in ("watermark","watermarkWindow","watermarkState","multiDashboardAppend","deltaTableSet","aisidWindow"):
+    if cp.get(key):refuse("UNKNOWN_OR_EXISTING_RECOVERY")
+for key in p:
+    if ("watermark" in key.lower() or key.lower().startswith("append") or key.lower().startswith("only")) and p[key]:refuse("INELIGIBLE_OVERRIDE")
+start,end=date(m["StartUtc"]),date(m["EndUtc"])
+if p["dateBoundaryBasis"]!="UtcCalendarDate":refuse("UTC_BOUNDARY")
+# The producer stores Parse-DateSafe(...).ToUniversalTime(), then restores its UTC
+# calendar label before ConvertTo-PaxUtcDateBoundary. Never reinterpret it as local.
+checkpoint_start=date(p["startDate"]).replace(hour=0,minute=0,second=0,microsecond=0)
+checkpoint_end=date(p["endDate"]).replace(hour=0,minute=0,second=0,microsecond=0)
+if start>=end or checkpoint_start!=start or checkpoint_end!=end:refuse("WINDOW_BINDING")
+m["StartUtc"]=start.isoformat();m["EndUtc"]=end.isoformat()
+windows=sorted((date(v.get("start")),date(v.get("end"))) for v in completed)
+if windows[0][0]!=start or windows[-1][1]!=end or any(a>=b for a,b in windows) or any(windows[i-1][1]!=windows[i][0] for i in range(1,len(windows))):refuse("PARTITION_WINDOW")
+root=m["DestinationRoot"].rstrip("/")
+guid=r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+if not re.fullmatch(r"https://onelake\.dfs\.fabric\.microsoft\.com/"+guid+"/"+guid+r"/Tables(?:/[A-Za-z_][A-Za-z0-9_]*)?",root):refuse("GUID_DESTINATION")
+if p["outputPath"].rstrip("/")!=root:refuse("DESTINATION_BINDING")
+for key in ("outputPathUserInfo","outputPathAgent365Info"):
+    if p.get(key) and p[key].rstrip("/")!=root:refuse("DESTINATION_OVERRIDE")
+exact(m["Authentication"],["TenantId","PrincipalId","ClientId"])
+for key in ("TenantId","PrincipalId"):
+    if not re.fullmatch(guid,m["Authentication"][key]):refuse("IDENTITY")
+if m["Authentication"]["ClientId"] and not re.fullmatch(guid,m["Authentication"]["ClientId"]):refuse("IDENTITY")
+for ck,mk in (("tenantId","TenantId"),("clientId","ClientId")):
+    if p.get(ck) and p[ck].lower()!=m["Authentication"][mk].lower():refuse("IDENTITY_BINDING")
+exact(m["Capacity"],["MaxScratchBytes","ReserveBytes","MaximumOperationSeconds"])
+for key in m["Capacity"]:
+    if type(m["Capacity"][key]) is not int:refuse("CAPACITY")
+if not (64*1024*1024<=m["Capacity"]["MaxScratchBytes"]<=2**50 and m["Capacity"]["ReserveBytes"]>=64*1024*1024
+        and 60<=m["Capacity"]["MaximumOperationSeconds"]<=3600):refuse("CAPACITY")
+if not re.fullmatch(r"\d{8}_\d{6}",m["AgentStatusTimestamp"]):refuse("STATUS_PROVENANCE")
+targets=m["TargetExpectations"]
+if not isinstance(targets,list) or len(targets)!=8:refuse("TARGET_EXPECTATIONS")
+target_names=set()
+for t in targets:
+    exact(t,["TableName","ExpectedExists","ExpectedVersion","ExpectedContentSha256","ExpectedRows","OwnershipPolicy"])
+    if not re.fullmatch("[A-Za-z_][A-Za-z0-9_]*",t["TableName"]) or t["TableName"] in target_names:refuse("TARGET_EXPECTATIONS")
+    target_names.add(t["TableName"])
+    if type(t["ExpectedExists"]) is not bool:refuse("TARGET_EXPECTATIONS")
+    if t["ExpectedExists"]:
+        if (t["OwnershipPolicy"]!="ExplicitExistingSnapshot" or type(t["ExpectedVersion"]) is not int or t["ExpectedVersion"]<0
+            or type(t["ExpectedRows"]) is not int or t["ExpectedRows"]<0 or not re.fullmatch("[A-F0-9]{64}",t["ExpectedContentSha256"] or "")):refuse("TARGET_EXPECTATIONS")
+    elif t["OwnershipPolicy"]!="ExpectedAbsent" or t["ExpectedVersion"] is not None or t["ExpectedContentSha256"] is not None or t["ExpectedRows"]!=0:refuse("TARGET_EXPECTATIONS")
+stage=".pax_multidashboard_"+stamp
+raw="Purview_Audit_UsageActivity_CopilotInteraction_"+stamp+".csv"
+final=Path(cp.get("outputFiles",{}).get("finalCsv") or "")
+if final.name!=raw or (".." in final.parts) or (final.is_absolute() and final.parent!=Path(sys.argv[1]).parent):refuse("RAW_OUTPUT_BINDING")
+users="EntraUsers_MAClicensing_"+stamp+".csv"
+agent="Agent365_"+stamp+".csv"
+grain=["UserKey","InteractionDate","AgentId","AgentName","AppHost","Environment","License Status","Context_Type","Behavior_Category",
+       "Behavior_Enriched","AI_Model","Is_Sensitive","Autonomy_Pattern","AppIdentity_AppId","AISystemPlugin_Name","ThreadId"]
+carried=["CreationDate","WeekStart","MonthStart","UserMonthKey","Has license","Resource_Count","SensitivityLabelId",
+         "AccessedResource_Type","AccessedResource_Action","AccessedResource_SiteUrl","AccessedResource_SensitivityLabelId",
+         "AppIdentity_DisplayName","AISystemPlugin_Id","ModelTransparencyDetails_ModelName","Agent_TitleID","Message_isPrompt",
+         "Behavior_Source","Value_Outcome","ActivityDate"]
+fact_headers={
+ "AIOFact":grain+["Message_Id"]+carried+["User_Id_Normalized","Message_Id_Raw","ThreadId_Raw"],
+ "ValueLensFact":grain+["Is_Agent_Activity","Web_Grounded_Signal","Workflow_Action","Message_Id"]+carried+
+ ["Audit_UserId","Audit_UserId_Normalized","Agent Filter","Agent Publish Status","Behavior_Enriched_Full","Usage_Mode","Expertise_Role",
+  "Efficiency_Breakdown","Human_Baseline_Min","Behavior_Plausible","Delegation_Event_Key","Message_Id_Raw","ThreadId_Raw"]}
+paths={"RawAudit":raw,"RawUsers":users,"AgentCatalog":agent,"AgentStatus":"Agent365_Status_"+m["AgentStatusTimestamp"]+".csv",
+       "AIOFact":stage+"\\AIO\\"+raw[:-4]+"_Interactions.csv",
+       "ValueLensFact":stage+"\\ValueLens\\"+raw[:-4]+"_Interactions.csv",
+       "AIOUsers":stage+"\\AIO\\"+users[:-4]+"_Users.csv.withaudit",
+       "ValueLensUsers":stage+"\\ValueLens\\"+users[:-4]+"_Users.csv.withaudit",
+       "AIOAgent":stage+"\\.pax_agent365\\AIO\\"+agent,
+       "ValueLensAgent":stage+"\\.pax_agent365\\ValueLens\\"+agent}
+if not isinstance(m["Sources"],list) or len(m["Sources"])!=10:refuse("COMPLETE_ROSTER")
+seen=set()
+for source in m["Sources"]:
+    exact(source,["Role","RelativePath","ExpectedRows","ExpectedHeader","ExpectedUniqueUserKeys","Sha256"])
+    role=source["Role"]
+    if role in seen or role not in paths or source["RelativePath"]!=paths[role]:refuse("ROLE_PATH")
+    seen.add(role)
+    if type(source["ExpectedRows"]) is not int or source["ExpectedRows"]<=0:refuse("EXPECTED_ROWS")
+    header=source["ExpectedHeader"]
+    if not isinstance(header,list) or not header or len(header)>1024 or any(not isinstance(x,str) or not x.strip() for x in header) or len(set(header))!=len(header):refuse("EXPECTED_SCHEMA")
+    if not re.fullmatch("[A-F0-9]{64}",source["Sha256"]):refuse("SOURCE_HASH_FORMAT")
+    if role.endswith("Fact") or role.endswith("Users") and role!="RawUsers":
+        if type(source["ExpectedUniqueUserKeys"]) is not int or not 0<source["ExpectedUniqueUserKeys"]<=source["ExpectedRows"]:refuse("EXPECTED_KEYS")
+    elif source["ExpectedUniqueUserKeys"] is not None:refuse("UNEXPECTED_KEYS")
+    if role in fact_headers and header!=fact_headers[role]:refuse("FACT_SCHEMA")
+    if role in ("AIOUsers","ValueLensUsers") and not {"UserKey","PersonId_Normalized","EffectiveDate","License Status","Has license","HierarchyPath"}.issubset(header):refuse("PROCESSED_USERS_SCHEMA")
+    if role=="RawAudit" and not {"RecordId","CreationDate","RecordType","Operation","UserId","AuditData"}.issubset(header):refuse("RAW_SCHEMA")
+    if role=="RawUsers":
+        names={re.sub(r"[^a-z0-9]","",name.lower()) for name in header}
+        if not names.intersection({"userprincipalname","upn","personid"}) or not names.intersection({"haslicense","hascopilotlicense","hascopilotlicenseassigned","isuser"}):refuse("RAW_USERS_SCHEMA")
+    if role=="RawAudit":
+        saved=cp.get("statistics",{}).get("totalRecordsSaved")
+        if (not automatic and source["ExpectedRows"]!=saved) or (automatic and not 0<source["ExpectedRows"]<=saved):refuse("RAW_RECEIPT")
+if seen!=set(paths):refuse("COMPLETE_ROSTER")
+root_path=Path(sys.argv[1]).parent
+for source in m["Sources"]:
+    path=root_path/Path(source["RelativePath"])
+    if not path.is_file():refuse("SOURCE_MISSING")
+    source["FullPath"]=str(path)
+agent_sources=[s for s in m["Sources"] if s["Role"] in ("AgentCatalog","AIOAgent","ValueLensAgent")]
+if len({(s["Sha256"],s["ExpectedRows"],json.dumps(s["ExpectedHeader"])) for s in agent_sources})!=1:refuse("AGENT_ALIASES")
+m["CheckpointPath"]=str(Path(sys.argv[1]));m["ManifestSha256"]=digest(sys.argv[2])
+print(json.dumps(m,separators=(",",":")))
+'@
+	# Envelope validation and hashes are read-only and precede stage creation/auth.
+	$output = script:Invoke-PaxPublishRecoveryProcess -Python $Python -Code $code -Arguments @($CheckpointPath,$ManifestPath) -ReadOnly
+	return ($output | ConvertFrom-Json -ErrorAction Stop)
+}
+
+function script:Test-PaxPublishRecoverySources {
+	param([psobject]$Manifest, [psobject]$Python)
+	$code = (script:Get-PaxStrictArrowCsvReaderPython) + @'
+import datetime, json, os, sqlite3, sys
+m=json.load(sys.stdin)
+start=datetime.datetime.fromisoformat(m["StartUtc"].replace("Z","+00:00")).astimezone(datetime.timezone.utc)
+end=datetime.datetime.fromisoformat(m["EndUtc"].replace("Z","+00:00")).astimezone(datetime.timezone.utc)
+db=sqlite3.connect(os.path.join(sys.argv[1],"recovery-ri.sqlite"))
+db.execute("PRAGMA temp_store=FILE")
+db.execute("PRAGMA cache_size=-16384")
+db.execute("PRAGMA journal_mode=DELETE")
+def fail(code):raise ValueError("PAX_RECOVERY_"+code)
+def identity(value):return value.strip().lower()
+pending=0
+rows_since_budget=0
+def ri_budget(*values):
+    global pending,rows_since_budget
+    cost=4*sum(len(value.encode("utf-8"))+32 for value in values)
+    pending+=cost;rows_since_budget+=1
+    if pending>=1024*1024 or rows_since_budget>=256:
+        pax_recovery_budget(16*1024*1024+pending)
+        pending=0;rows_since_budget=0
+def key(value):
+    if not value.strip().isdigit() or not 0<int(value)<=2147483647:fail("USERKEY_SHAPE")
+    return str(int(value))
+def raw_time(value):
+    try:created=datetime.datetime.fromisoformat(value.replace("Z","+00:00"))
+    except ValueError:
+        created=None
+        for pattern in ("%m/%d/%Y %I:%M:%S %p","%m/%d/%Y %H:%M:%S"):
+            try:created=datetime.datetime.strptime(value,pattern);break
+            except ValueError:pass
+        if created is None:fail("RAW_TIME")
+    return created if created.tzinfo is not None else created.replace(tzinfo=datetime.timezone.utc)
+try:
+ for s in m["Sources"]:
+    validator=None
+    if s["Role"]=="RawAudit":
+        index=s["ExpectedHeader"].index("CreationDate")
+        def validator(row):
+            if not start<=raw_time(row[index])<end:fail("RAW_WINDOW")
+    header,count,_=pax_csv_preflight(s["FullPath"],s["ExpectedHeader"],validator)
+    if count!=s["ExpectedRows"]:fail("ROW_COUNT")
+    pax_recovery_budget(16*1024*1024)
+ for profile in ("AIO","ValueLens"):
+    sources={s["Role"]:s for s in m["Sources"]}
+    u=sources[profile+"Users"];f=sources[profile+"Fact"]
+    db.execute("DROP TABLE IF EXISTS users");db.execute("DROP TABLE IF EXISTS facts")
+    db.execute("CREATE TABLE users (key TEXT PRIMARY KEY, identity TEXT NOT NULL, effective TEXT NOT NULL, license TEXT NOT NULL, haslicense TEXT NOT NULL)")
+    db.execute("CREATE TABLE facts (key TEXT NOT NULL, identity TEXT NOT NULL, license TEXT NOT NULL, haslicense TEXT NOT NULL)")
+    start=datetime.datetime.fromisoformat(m["StartUtc"].replace("Z","+00:00")).astimezone(datetime.timezone.utc)
+    end=datetime.datetime.fromisoformat(m["EndUtc"].replace("Z","+00:00")).astimezone(datetime.timezone.utc)
+    with open(u["FullPath"],encoding="utf-8-sig",newline="") as handle:
+     for row in csv.DictReader(handle):
+      person=identity(row["PersonId_Normalized"]);effective=row["EffectiveDate"]
+      if not person:fail("USERS_IDENTITY")
+      if effective not in ("Unknown",start.date().isoformat()):fail("TEMPORAL_USERS")
+      ri_budget(person,row["UserKey"],effective,row["License Status"],row["Has license"])
+      try:db.execute("INSERT INTO users VALUES (?,?,?,?,?)",(key(row["UserKey"]),person,effective,row["License Status"].strip().casefold(),row["Has license"].strip().casefold()))
+      except sqlite3.IntegrityError:fail("DUPLICATE_USERS_KEY")
+    db.commit()
+    if m["CheckpointHistoryPolicy"]=="PinnedLegacyCallerOmissionRetainedTemporalProof" and db.execute("SELECT COUNT(*) FROM users WHERE effective=?",(start.date().isoformat(),)).fetchone()[0]==0:fail("HISTORY_EVIDENCE")
+    with open(f["FullPath"],encoding="utf-8-sig",newline="") as handle:
+     for row in csv.DictReader(handle):
+      person=identity(row["User_Id_Normalized"] if profile=="AIO" else row["Audit_UserId_Normalized"])
+      if not person:fail("FACT_IDENTITY")
+      try:created=datetime.datetime.fromisoformat(row["CreationDate"].replace("Z","+00:00"))
+      except (ValueError,TypeError):fail("FACT_TIME")
+      if created.tzinfo is None or not start<=created<end:fail("FACT_WINDOW")
+      ri_budget(person,row["UserKey"],row["License Status"],row["Has license"])
+      db.execute("INSERT INTO facts VALUES (?,?,?,?)",(key(row["UserKey"]),person,row["License Status"].strip().casefold(),row["Has license"].strip().casefold()))
+    db.commit()
+    pax_recovery_budget(3*os.path.getsize(os.path.join(sys.argv[1],"recovery-ri.sqlite"))+16*1024*1024)
+    if db.execute("SELECT COUNT(*) FROM (SELECT DISTINCT key FROM users)").fetchone()[0]!=u["ExpectedUniqueUserKeys"]:fail("USERS_KEY_COUNT")
+    if db.execute("SELECT COUNT(*) FROM (SELECT DISTINCT key FROM facts)").fetchone()[0]!=f["ExpectedUniqueUserKeys"]:fail("FACT_KEY_COUNT")
+    if db.execute("SELECT COUNT(*) FROM facts f LEFT JOIN users u ON f.key=u.key WHERE u.key IS NULL OR f.identity<>u.identity OR f.license<>u.license OR f.haslicense<>u.haslicense").fetchone()[0]:fail("REFERENTIAL_INTEGRITY")
+    if db.execute("SELECT COUNT(*) FROM (SELECT key FROM facts GROUP BY key HAVING COUNT(DISTINCT identity)>1)").fetchone()[0]:fail("CONFLICTING_KEYS")
+ print(json.dumps({"Passed":True,"Profiles":2,"Sources":10}))
+finally:
+ db.close()
+ os.unlink(os.path.join(sys.argv[1],"recovery-ri.sqlite"))
+'@
+	$output = script:Invoke-PaxPublishRecoveryProcess -Python $Python -Code $code -Arguments @($script:PaxPublishRecoveryContext.StageRoot) -InputText ($Manifest | ConvertTo-Json -Depth 12 -Compress)
+	return ($output | ConvertFrom-Json -ErrorAction Stop)
+}
+
+function script:Get-PaxPublishRecoveryStorageToken {
+	$identity = $script:PaxPublishRecoveryContext.Authentication
+	$code = @'
+$ErrorActionPreference='Stop'
+try {
+ $module=Get-Module -ListAvailable Az.Accounts | Where-Object {$_.Version -ge [version]'2.12.0' -and $_.Version -lt [version]'6.0.0'} | Sort-Object Version -Descending | Select-Object -First 1
+ if(-not $module){throw 'Az.Accounts supported version is not installed.'}
+ Import-Module Az.Accounts -RequiredVersion $module.Version -ErrorAction Stop
+ Disable-AzContextAutosave -Scope Process | Out-Null
+ $parameters=@{Identity=$true;Scope='Process';SkipContextPopulation=$true;ErrorAction='Stop'}
+ if($env:PAX_RECOVERY_CLIENT){$parameters.AccountId=$env:PAX_RECOVERY_CLIENT}
+ $login=Connect-AzAccount @parameters
+ $context=$login.Context
+ if(-not $context -or $context.Account.Type -ne 'ManagedService' -or ($env:PAX_RECOVERY_TENANT -and [string]$context.Tenant.Id -ine $env:PAX_RECOVERY_TENANT)){throw 'Managed identity context mismatch.'}
+ $token=Get-AzAccessToken -ResourceUrl 'https://storage.azure.com/' -DefaultProfile $context -ErrorAction Stop
+ $plain=if($token.Token -is [Security.SecureString]){[Net.NetworkCredential]::new('',$token.Token).Password}else{[string]$token.Token}
+ $expiry=if($token.ExpiresOn -is [DateTimeOffset]){$token.ExpiresOn.UtcDateTime}else{([datetime]$token.ExpiresOn).ToUniversalTime()}
+ $part=$plain.Split('.')[1].Replace('-','+').Replace('_','/');$part=$part.PadRight([int]([Math]::Ceiling($part.Length/4)*4),'=')
+ $claims=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($part))|ConvertFrom-Json
+ $client=if($claims.appid){[string]$claims.appid}else{[string]$claims.azp}
+ if([string]$claims.tid -ine [string]$context.Tenant.Id -or ($env:PAX_RECOVERY_CLIENT -and $client -ine $env:PAX_RECOVERY_CLIENT)){throw 'Managed identity claims/context mismatch.'}
+ [Console]::Out.WriteLine((@{Token=$plain;ExpiresUtc=$expiry.ToString('o');AuthMethod='ManagedIdentity';VerifiedManagedService=$true;Identity=@{TenantId=[string]$claims.tid;PrincipalId=[string]$claims.oid;ClientId=$env:PAX_RECOVERY_CLIENT}}|ConvertTo-Json -Compress))
+} catch { [Console]::Error.WriteLine('PAX_RECOVERY_MI_AUTH');exit 1 }
+'@
+	$hostPath = (Get-Process -Id $PID -ErrorAction Stop).Path
+	$start = [Diagnostics.ProcessStartInfo]::new($hostPath)
+	$start.UseShellExecute = $false
+	$start.RedirectStandardOutput = $true
+	$start.RedirectStandardError = $true
+	$start.CreateNoWindow = $true
+	foreach ($arg in @('-NoProfile','-NonInteractive','-NoLogo','-EncodedCommand',[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($code)))) { $start.ArgumentList.Add($arg) }
+	$start.Environment['PAX_RECOVERY_CLIENT'] = [string]$identity.ClientId
+	$start.Environment['PAX_RECOVERY_TENANT'] = [string]$identity.TenantId
+	$process = [Diagnostics.Process]::new()
+	$process.StartInfo = $start
+	$started = $false
+	try {
+		if (-not $process.Start()) { throw 'PAX_RECOVERY_MI_AUTH' }
+		$started = $true
+		$out = $process.StandardOutput.ReadToEndAsync(); $err = $process.StandardError.ReadToEndAsync()
+		if (-not $process.WaitForExit(120000)) { $process.Kill($true); $process.WaitForExit(); throw 'PAX_RECOVERY_MI_AUTH_TIMEOUT' }
+		if ($process.ExitCode) { throw 'PAX_RECOVERY_MI_AUTH: isolated managed identity storage authentication failed; no interactive or cached-account fallback was attempted.' }
+		$result = $out.GetAwaiter().GetResult() | ConvertFrom-Json -ErrorAction Stop
+		if ($script:PaxPublishRecoveryContext.PSObject.Properties['DiscoverIdentity'] -and $script:PaxPublishRecoveryContext.DiscoverIdentity) {
+			if ($result.VerifiedManagedService -ne $true -or -not $result.Identity -or
+				[guid]::Empty -eq [guid]$result.Identity.TenantId -or [guid]::Empty -eq [guid]$result.Identity.PrincipalId -or
+				($identity.TenantId -and $identity.TenantId -ine $result.Identity.TenantId) -or
+				([string]$identity.ClientId -ine [string]$result.Identity.ClientId)) { throw 'PAX_RECOVERY_MI_IDENTITY_DISCOVERY' }
+			$script:PaxPublishRecoveryContext.Authentication = $result.Identity
+			$script:PaxPublishRecoveryContext.DiscoverIdentity = $false
+		}
+		return (script:Test-PaxPublishRecoveryToken -Token $result)
+	}
+	finally { if ($started -and -not $process.HasExited) { $process.Kill($true); $process.WaitForExit() }; $process.Dispose() }
+}
+
+function script:Test-PaxPublishRecoveryToken {
+	param([psobject]$Token)
+	try {
+		if ($Token.AuthMethod -cne 'ManagedIdentity' -or [string]::IsNullOrWhiteSpace($Token.Token)) { throw 'auth' }
+		$part = ([string]$Token.Token -split '\.')[1].Replace('-','+').Replace('_','/')
+		$part = $part.PadRight([int]([Math]::Ceiling($part.Length / 4) * 4),'=')
+		$claims = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($part)) | ConvertFrom-Json -ErrorAction Stop
+		$identity = $script:PaxPublishRecoveryContext.Authentication
+		$expires = if ($Token.ExpiresUtc -is [DateTimeOffset]) { $Token.ExpiresUtc.UtcDateTime }
+			elseif ($Token.ExpiresUtc -is [datetime]) { $Token.ExpiresUtc.ToUniversalTime() }
+			else { [datetime]::Parse([string]$Token.ExpiresUtc,[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime() }
+		$jwtExpires = [DateTimeOffset]::FromUnixTimeSeconds([long]$claims.exp).UtcDateTime
+		$app = if ($claims.appid) { [string]$claims.appid } else { [string]$claims.azp }
+		if ([string]$claims.aud -notin @('https://storage.azure.com','https://storage.azure.com/') -or
+			[string]$claims.tid -ine [string]$identity.TenantId -or [string]$claims.oid -ine [string]$identity.PrincipalId -or
+			($identity.ClientId -and $app -ine [string]$identity.ClientId) -or
+			$expires -gt $jwtExpires.AddSeconds(60) -or $expires -lt [datetime]::UtcNow.AddMinutes(10)) { throw 'identity/expiry' }
+		return [pscustomobject]@{ Token = [string]$Token.Token; ExpiresUtc = $expires; AuthMethod = 'ManagedIdentity' }
+	}
+	catch { throw 'PAX_RECOVERY_TOKEN: expected managed identity, storage audience, tenant, principal and safe expiry could not be proven.' }
+}
+
+function script:Assert-PaxPublishRecoveryTarget {
+	param([string]$TargetUri)
+	$context = $script:PaxPublishRecoveryContext
+	if (-not $context -or $TargetUri -cnotin @($context.TargetUris)) { throw 'PAX_RECOVERY_TARGET: operation is outside the checkpoint-bound canonical eight-table roster.' }
+}
+
+function script:Invoke-PaxPublishRecoveryMarkerRequest {
+	param([string]$Method, [string]$Uri, [hashtable]$Headers = @{}, [byte[]]$Bytes, [switch]$MissingAllowed)
+	$root = $script:PaxPublishRecoveryContext.MarkerRoot
+	if (-not $Uri.StartsWith($root, [StringComparison]::Ordinal) -or $Uri -match '\.\.|%|#' -or $Uri -notmatch '^https://onelake\.dfs\.fabric\.microsoft\.com/') { throw 'PAX_RECOVERY_MARKER_PATH' }
+	$token = script:Get-PaxPublishRecoveryStorageToken
+	$client = [Net.Http.HttpClient]::new()
+	$client.Timeout = [TimeSpan]::FromSeconds(120)
+	$request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::new($Method), $Uri)
+	try {
+		$request.Headers.Authorization = [Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer',$token.Token)
+		[void]$request.Headers.TryAddWithoutValidation('x-ms-version','2021-06-08')
+		foreach ($key in $Headers.Keys) { [void]$request.Headers.TryAddWithoutValidation($key,[string]$Headers[$key]) }
+		if ($null -ne $Bytes) { $request.Content = [Net.Http.ByteArrayContent]::new($Bytes) }
+		$response = $client.SendAsync($request).GetAwaiter().GetResult()
+		try {
+			$body = $response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+			$status = [int]$response.StatusCode
+			$errorCode = ''; $values = $null
+			if ($response.Headers.TryGetValues('x-ms-error-code',[ref]$values)) { $errorCode = [string]@($values)[0] }
+			if ($MissingAllowed -and $status -eq 404 -and $errorCode -ceq 'PathNotFound') { return [pscustomobject]@{ Missing = $true; Bytes = @(); ETag = '' } }
+			if (-not $response.IsSuccessStatusCode) { throw ('PAX_RECOVERY_MARKER_HTTP_{0}' -f $status) }
+			return [pscustomobject]@{ Missing = $false; Bytes = $body; ETag = [string]$response.Headers.ETag }
+		}
+		finally { $response.Dispose() }
+	}
+	finally { $request.Dispose(); $client.Dispose() }
+}
+
+function script:Get-PaxPublishRecoveryMarker {
+	param([psobject]$Member)
+	$id = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes([string]$Member.SetId)))
+	$uri = $script:PaxPublishRecoveryContext.MarkerRoot + '/.pax_delta_' + $id + '_pending.paxrecovery'
+	$result = script:Invoke-PaxPublishRecoveryMarkerRequest -Method GET -Uri $uri -MissingAllowed
+	if ($result.Missing) { return [pscustomobject]@{ Missing = $true; Uri = $uri; Marker = $null; ETag = '' } }
+	if (-not $result.ETag -or $result.Bytes.Length -gt 65536) { throw 'PAX_RECOVERY_MARKER_INVALID' }
+	$marker = [Text.Encoding]::UTF8.GetString($result.Bytes) | ConvertFrom-Json -ErrorAction Stop
+	if ($marker.Version -cne '2.0' -or $marker.Kind -cne 'DeltaTables' -or $marker.RunTimestamp -cne $global:ScriptRunTimestamp) { throw 'PAX_RECOVERY_MARKER_INVALID' }
+	return [pscustomobject]@{ Missing = $false; Uri = $uri; Marker = $marker; ETag = $result.ETag }
+}
+
+function script:Start-PaxPublishRecoveryMarker {
+	param([psobject]$Member)
+	$null = script:Assert-PaxPublishRecoveryBudget -BeforePublication
+	$current = script:Get-PaxPublishRecoveryMarker -Member $Member
+	if (-not $current.Missing) {
+		if ($current.Marker.SetId -cne $Member.SetId -or $current.Marker.IntentHash -cne $Member.IntentHash) { throw 'PAX_RECOVERY_FOREIGN_MARKER' }
+		return
+	}
+	$root = $script:PaxPublishRecoveryContext.MarkerRoot
+	# An existing directory is never replaced or removed.
+	try { $null = script:Invoke-PaxPublishRecoveryMarkerRequest -Method PUT -Uri ($root + '?resource=directory') -Headers @{ 'If-None-Match' = '*' } }
+	catch { if ($_.Exception.Message -notmatch 'PAX_RECOVERY_MARKER_HTTP_(409|412)$') { throw } }
+	$bytes = [Text.Encoding]::UTF8.GetBytes((@{ Version = '2.0'; Kind = 'DeltaTables'; SetId = $Member.SetId; IntentHash = $Member.IntentHash; RunTimestamp = $global:ScriptRunTimestamp } | ConvertTo-Json -Compress))
+	$created = script:Invoke-PaxPublishRecoveryMarkerRequest -Method PUT -Uri ($current.Uri + '?resource=file') -Headers @{ 'If-None-Match' = '*' }
+	if (-not $created.ETag) { throw 'PAX_RECOVERY_MARKER_ETAG' }
+	# DFS append rejects conditional headers; the following flush retains the creation ETag fence.
+	$appended = script:Invoke-PaxPublishRecoveryMarkerRequest -Method PATCH -Uri ($current.Uri + '?action=append&position=0') -Bytes $bytes
+	$etag = if ($appended.ETag) { $appended.ETag } else { $created.ETag }
+	$null = script:Invoke-PaxPublishRecoveryMarkerRequest -Method PATCH -Uri ($current.Uri + '?action=flush&position=' + $bytes.Length) -Headers @{ 'If-Match' = $etag }
+	$readback = script:Get-PaxPublishRecoveryMarker -Member $Member
+	if ($readback.Missing -or $readback.Marker.SetId -cne $Member.SetId -or $readback.Marker.IntentHash -cne $Member.IntentHash) { throw 'PAX_RECOVERY_MARKER_READBACK' }
+}
+
+function script:Complete-PaxPublishRecoveryMarker {
+	param([psobject]$Member)
+	$current = script:Get-PaxPublishRecoveryMarker -Member $Member
+	if ($current.Missing) { return }
+	if ($current.Marker.SetId -cne $Member.SetId -or $current.Marker.IntentHash -cne $Member.IntentHash) { throw 'PAX_RECOVERY_FOREIGN_MARKER' }
+	$null = script:Invoke-PaxPublishRecoveryMarkerRequest -Method DELETE -Uri $current.Uri -Headers @{ 'If-Match' = $current.ETag }
+	if (-not (script:Get-PaxPublishRecoveryMarker -Member $Member).Missing) { throw 'PAX_RECOVERY_MARKER_DELETE_READBACK' }
+}
+
+function script:Save-PaxRecoveryJsonAtomic {
+	param([string]$Path,[object]$Value)
+	$null=script:Assert-PaxPublishRecoveryPath $Path
+	$temp=$Path+'.'+[guid]::NewGuid().ToString('N')+'.new'
+	$bytes=[Text.UTF8Encoding]::new($false).GetBytes(($Value|ConvertTo-Json -Depth 14 -Compress))
+	$stream=[IO.File]::Open($temp,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+	try {$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)} finally {$stream.Dispose()}
+	[IO.File]::Move($temp,$Path,$true)
+}
+
+function script:Get-PaxRecoverySourceProofKey {
+	param([psobject]$Manifest)
+	$validators=@('Get-PaxRecoverySourceProofKey','Get-PaxPublishRecoveryManifest','Test-PaxPublishRecoverySources','Get-PaxStrictArrowCsvReaderPython')
+	$code=($validators|ForEach-Object{$_+':'+(Get-Command -Name $_ -CommandType Function -ErrorAction Stop).ScriptBlock.ToString()}) -join "`n"
+	$contract=[ordered]@{
+		Kind='PaxRetainedSourceProof';Version='1.0';ValidatorSha256=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($code)))
+		Runtime=[string]$PSVersionTable.PSVersion;CheckpointPath=$Manifest.CheckpointPath
+		CheckpointSha256=$Manifest.CheckpointSha256;ManifestSha256=$Manifest.ManifestSha256
+		SourceRelease=$Manifest.SourceRelease;Profiles=@($Manifest.Profiles);UserHistory=$Manifest.UserHistory
+		CheckpointHistoryPolicy=$Manifest.CheckpointHistoryPolicy;CheckpointRecordedUserHistory=$Manifest.CheckpointRecordedUserHistory
+		StartUtc=$Manifest.StartUtc;EndUtc=$Manifest.EndUtc
+		Sources=@($Manifest.Sources|Sort-Object Role|ForEach-Object{[ordered]@{Role=$_.Role;Path=$_.FullPath;Sha256=$_.Sha256;Header=@($_.ExpectedHeader);Rows=$_.ExpectedRows;UniqueUserKeys=$_.ExpectedUniqueUserKeys}})
+	}
+	return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes(($contract|ConvertTo-Json -Depth 14 -Compress))))
+}
+
+function script:Get-PaxRecoverySourceProof {
+	param([psobject]$Manifest,[string]$ManifestPath)
+	$root=Split-Path $ManifestPath -Parent
+	$ownerPath=script:Assert-PaxPublishRecoveryPath (Join-Path $root 'owner.json')
+	$cachePath=script:Assert-PaxPublishRecoveryPath (Join-Path $root 'source-proof.json')
+	$locks=[Collections.Generic.List[IO.FileStream]]::new()
+	try {
+		$locks.Add([IO.File]::Open($ownerPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+		if((Get-Item -LiteralPath $ownerPath).Length -gt 1MB){throw 'PAX_RECOVERY_PROOF_OWNER_LIMIT'}
+		$owner=[IO.File]::ReadAllText($ownerPath)|ConvertFrom-Json
+		if($owner.Kind -cne 'PaxAutomaticRecoveryPlan' -or $owner.CheckpointSha256 -cne $Manifest.CheckpointSha256 -or $owner.RecoveryId -cne $Manifest.RecoveryId -or $owner.ManifestSha256 -cne $Manifest.ManifestSha256){throw 'PAX_RECOVERY_PROOF_OWNER'}
+		if(-not $owner.PSObject.Properties['ProofSha256'] -or -not $owner.ProofSha256){return $null}
+		if($owner.ProofSha256 -cnotmatch '^[A-F0-9]{64}$' -or -not (Test-Path -LiteralPath $cachePath -PathType Leaf)){throw 'PAX_RECOVERY_PROOF_CACHE: owned receipt is missing or invalid.'}
+		$locks.Add([IO.File]::Open($cachePath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+		if((Get-Item -LiteralPath $cachePath).Length -gt 1MB -or (Get-FileHash -LiteralPath $cachePath).Hash -cne $owner.ProofSha256){throw 'PAX_RECOVERY_PROOF_CACHE: owned receipt changed.'}
+		$cache=[IO.File]::ReadAllText($cachePath)|ConvertFrom-Json
+		if($cache.Kind -cne 'PaxRetainedSourceProof' -or $cache.Version -cne '1.0' -or $cache.Passed -isnot [bool] -or -not $cache.Passed -or $cache.Profiles -ne 2 -or $cache.Sources -ne 10 -or $cache.Key -cnotmatch '^[A-F0-9]{64}$'){throw 'PAX_RECOVERY_PROOF_CACHE: invalid proof structure.'}
+		if($cache.Key -cne (script:Get-PaxRecoverySourceProofKey $Manifest)){return $null}
+		return [pscustomobject]@{Passed=$true;Profiles=2;Sources=10}
+	}
+	finally {foreach($lock in $locks){$lock.Dispose()}}
+}
+
+function script:Save-PaxRecoverySourceProof {
+	param([psobject]$Manifest,[string]$ManifestPath,[psobject]$Proof,[switch]$PlanLocked)
+	if($Proof.Passed -isnot [bool] -or -not $Proof.Passed -or $Proof.Profiles -ne 2 -or $Proof.Sources -ne 10){throw 'PAX_RECOVERY_PROOF_RESULT'}
+	$root=Split-Path $ManifestPath -Parent
+	$lock=$null
+	try {
+		if(-not $PlanLocked){$lock=[IO.File]::Open((script:Assert-PaxPublishRecoveryPath (Join-Path $root 'plan.lock')),[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)}
+		$ownerPath=script:Assert-PaxPublishRecoveryPath (Join-Path $root 'owner.json')
+		if((Get-Item -LiteralPath $ownerPath).Length -gt 1MB){throw 'PAX_RECOVERY_PROOF_OWNER_LIMIT'}
+		$owner=[IO.File]::ReadAllText($ownerPath)|ConvertFrom-Json
+		if($owner.Kind -cne 'PaxAutomaticRecoveryPlan' -or $owner.CheckpointSha256 -cne $Manifest.CheckpointSha256 -or $owner.RecoveryId -cne $Manifest.RecoveryId -or $owner.ManifestSha256 -cne $Manifest.ManifestSha256){throw 'PAX_RECOVERY_PROOF_OWNER'}
+		$cachePath=Join-Path $root 'source-proof.json'
+		script:Save-PaxRecoveryJsonAtomic -Path $cachePath -Value ([ordered]@{Kind='PaxRetainedSourceProof';Version='1.0';Key=(script:Get-PaxRecoverySourceProofKey $Manifest);Passed=$true;Profiles=2;Sources=10;CompletedUtc=[datetime]::UtcNow.ToString('o')})
+		$owner|Add-Member -NotePropertyName ProofSha256 -NotePropertyValue (Get-FileHash -LiteralPath $cachePath).Hash -Force
+		script:Save-PaxRecoveryJsonAtomic -Path $ownerPath -Value $owner
+	}
+	finally {if($lock){$lock.Dispose()}}
+}
+
+function script:New-PaxAutomaticRecoveryPlan {
+	[CmdletBinding()]
+	param([string]$CheckpointPath,[switch]$ApproveExistingSnapshot,[long]$MaxScratchBytes=0,[long]$ReserveBytes=0,[int]$OperationSeconds=0)
+	if (-not $IsWindows) { throw 'Publication-only recovery requires Windows retained-file read locks.' }
+	$checkpoint = script:Assert-PaxPublishRecoveryPath $CheckpointPath
+	$locks = [Collections.Generic.List[IO.FileStream]]::new()
+	$planLock = $null
+	$priorContext = $script:PaxPublishRecoveryContext
+	try {
+		$locks.Add([IO.File]::Open($checkpoint,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+		if((Get-Item -LiteralPath $checkpoint).Length -gt 1MB){throw 'PAX_RECOVERY_ENVELOPE_LIMIT'}
+		$cp = [IO.File]::ReadAllText($checkpoint) | ConvertFrom-Json -ErrorAction Stop
+		$p = $cp.parameters; $stamp = [string]$cp.runTimestamp
+		if ($stamp -cnotmatch '^\d{8}_\d{6}$' -or [IO.Path]::GetFileName($checkpoint) -cne ('.pax_checkpoint_'+$stamp+'.json') -or
+			$cp.checkpointSchemaVersion -cne '2.1.0' -or $cp.createdByVersion -cne '2.0.0' -or $cp.compatibilityMinimumVersion -cne '1.11.0' -or
+			$p.auth -cne 'ManagedIdentity' -or $p.rollupMode -cne 'RollupPlusRaw') { throw 'PAX_RECOVERY_SUPPORTED_CHECKPOINT: select a completed supported schema 2.1.0 initial ManagedIdentity RollupPlusRaw checkpoint.' }
+		$script:ROLLUP_PYTHON_MIN_MAJOR=3;$script:ROLLUP_PYTHON_MIN_MINOR=10
+		$python=Resolve-PythonExe
+		if (-not $python -or -not $python.Path) { throw 'An existing Python interpreter is required; no installation was attempted.' }
+		try {$null=script:Invoke-PaxPublishRecoveryProcess -Python $python -Code 'import importlib.metadata as m; assert m.version("pyarrow")=="25.0.1"; assert m.version("deltalake")=="1.6.3"' -ReadOnly}
+		catch {throw 'Publish-only recovery requires existing pyarrow 25.0.1 and deltalake 1.6.3; no dependency installation or authentication was attempted.'}
+		$root=Split-Path $checkpoint -Parent
+		$drive=[IO.DriveInfo]::new([IO.Path]::GetPathRoot($root))
+		$reserve=if($ReserveBytes){$ReserveBytes}else{[long][math]::Max([double]1GB,[math]::Min([double]8GB,$drive.AvailableFreeSpace*0.1))}
+		$maximum=if($MaxScratchBytes){$MaxScratchBytes}else{[long](($drive.AvailableFreeSpace-$reserve-32MB)*0.85)}
+		$seconds=if($OperationSeconds){$OperationSeconds}else{3600}
+		if ($maximum -lt 64MB -or $reserve -lt 64MB -or $seconds -lt 60 -or $drive.AvailableFreeSpace -lt [double]$reserve+64MB) { throw 'PAX_RECOVERY_CAPACITY: insufficient free space or invalid explicit recovery budget.' }
+		$planRoot=Join-Path $root ('.pax_recovery_plan_'+$stamp)
+		$null=script:Assert-PaxPublishRecoveryPath $planRoot -Directory
+		[void][IO.Directory]::CreateDirectory($planRoot)
+		$ownerPath=Join-Path $planRoot 'owner.json';$planPath=Join-Path $planRoot 'expectations.json'
+		$null=script:Assert-PaxPublishRecoveryPath $ownerPath
+		$null=script:Assert-PaxPublishRecoveryPath $planPath
+		if((Test-Path -LiteralPath $ownerPath) -and (Get-Item -LiteralPath $ownerPath).Length -gt 1MB){throw 'PAX_RECOVERY_PLAN_OWNER_LIMIT'}
+		$cpHash=(Get-FileHash -LiteralPath $checkpoint -Algorithm SHA256).Hash
+		if (-not (Test-Path -LiteralPath $ownerPath) -and @(Get-ChildItem -LiteralPath $planRoot -Force).Count) { throw 'An unowned recovery-plan directory cannot be adopted.' }
+		$planLock=[IO.File]::Open((script:Assert-PaxPublishRecoveryPath (Join-Path $planRoot 'plan.lock')),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+		$owner=if(Test-Path -LiteralPath $ownerPath){[IO.File]::ReadAllText($ownerPath)|ConvertFrom-Json}else{[pscustomobject]@{Kind='PaxAutomaticRecoveryPlan';CheckpointSha256=$cpHash;RecoveryId=[guid]::NewGuid().ToString('N');ManifestSha256='';Approved=$false}}
+		if ($owner.Kind -cne 'PaxAutomaticRecoveryPlan' -or $owner.CheckpointSha256 -cne $cpHash -or $owner.RecoveryId -cnotmatch '^[a-f0-9]{32}$') { throw 'PAX_RECOVERY_PLAN_OWNER: checkpoint-bound plan ownership does not match.' }
+		if(-not (Test-Path -LiteralPath $ownerPath)){script:Save-PaxRecoveryJsonAtomic -Path $ownerPath -Value $owner}
+		$freshProof=$null
+		if (Test-Path -LiteralPath $planPath) {
+			if ($owner.ManifestSha256 -and (Get-FileHash -LiteralPath $planPath).Hash -cne $owner.ManifestSha256) { throw 'PAX_RECOVERY_PLAN_CHANGED: the saved generated plan must not be edited.' }
+			$m=script:Get-PaxPublishRecoveryManifest -CheckpointPath $checkpoint -ManifestPath $planPath -Python $python
+			if($m.RecoveryId -cne $owner.RecoveryId -or $m.SourceRelease -cne 'Legacy2.1.0KnownRetainedLayout'){throw 'PAX_RECOVERY_PLAN_OWNER'}
+			$owner.ManifestSha256=(Get-FileHash -LiteralPath $planPath).Hash
+			if (($MaxScratchBytes -and $MaxScratchBytes -ne $m.Capacity.MaxScratchBytes) -or ($ReserveBytes -and $ReserveBytes -ne $m.Capacity.ReserveBytes) -or ($OperationSeconds -and $OperationSeconds -ne $m.Capacity.MaximumOperationSeconds)) { throw 'A saved recovery plan cannot change its capacity or runtime intent.' }
+			$maximum=[long]$m.Capacity.MaxScratchBytes;$reserve=[long]$m.Capacity.ReserveBytes;$seconds=[int]$m.Capacity.MaximumOperationSeconds
+		}
+		else {
+			$raw='Purview_Audit_UsageActivity_CopilotInteraction_'+$stamp+'.csv';$users='EntraUsers_MAClicensing_'+$stamp+'.csv';$agent='Agent365_'+$stamp+'.csv';$stage='.pax_multidashboard_'+$stamp
+			$status=@(Get-ChildItem -LiteralPath $root -File -Filter 'Agent365_Status_*.csv' | Where-Object Name -Match '^Agent365_Status_\d{8}_\d{6}\.csv$')
+			if ($status.Count -ne 1) { throw 'PAX_RECOVERY_STATUS_AMBIGUOUS: exactly one retained Agent365 status capture is required in the selected run root; no capture was queried or regenerated.' }
+			$statusStamp=$status[0].BaseName.Substring('Agent365_Status_'.Length)
+			$paths=@{RawAudit=$raw;RawUsers=$users;AgentCatalog=$agent;AgentStatus=$status[0].Name;AIOFact="$stage\AIO\$($raw.Replace('.csv','_Interactions.csv'))";ValueLensFact="$stage\ValueLens\$($raw.Replace('.csv','_Interactions.csv'))";AIOUsers="$stage\AIO\$($users.Replace('.csv','_Users.csv.withaudit'))";ValueLensUsers="$stage\ValueLens\$($users.Replace('.csv','_Users.csv.withaudit'))";AIOAgent="$stage\.pax_agent365\AIO\$agent";ValueLensAgent="$stage\.pax_agent365\ValueLens\$agent"}
+			$sources=@(foreach($role in @('RawAudit','RawUsers','AgentCatalog','AgentStatus','AIOFact','ValueLensFact','AIOUsers','ValueLensUsers','AIOAgent','ValueLensAgent')){
+				$path=script:Assert-PaxPublishRecoveryPath (Join-Path $root $paths[$role])
+				$locks.Add([IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+				@{Role=$role;RelativePath=$paths[$role];FullPath=$path}
+			})
+			$guid=[guid]::NewGuid().ToString()
+			$identity=[pscustomobject]@{TenantId=$(if($p.tenantId){[string]$p.tenantId}else{$guid});PrincipalId=$guid;ClientId=[string]$p.clientId}
+			$start=([DateTimeOffset]$p.startDate).UtcDateTime.Date.ToString('yyyy-MM-ddT00:00:00Z')
+			$end=([DateTimeOffset]$p.endDate).UtcDateTime.Date.ToString('yyyy-MM-ddT00:00:00Z')
+			$m=[pscustomobject]@{Version='1.0';Kind='PaxPublishRecoveryExpectations';RecoveryId=$owner.RecoveryId;CheckpointSha256=$cpHash;SourceRelease='Legacy2.1.0KnownRetainedLayout';RunTimestamp=$stamp;StartUtc=$start;EndUtc=$end;Profiles=@('AIO','ValueLens');UserHistory='On';CheckpointHistoryPolicy=$(if($p.userHistory -ceq 'On'){'RequireRecordedOn'}else{'PinnedLegacyCallerOmissionRetainedTemporalProof'});DestinationRoot=[string]$p.outputPath;Authentication=$identity;Capacity=@{MaxScratchBytes=$maximum;ReserveBytes=$reserve;MaximumOperationSeconds=$seconds};BaselineKind='CurrentRetainedBytesNotPastAuthenticity';AgentStatusTimestamp=$statusStamp;Sources=$sources;TargetExpectations=@(@('Agent365','Agent365_Status','AIO_CopilotInteractions','AIO_Users','CopilotInteractions_Raw','Entra_Users_Raw','ValueLens_CopilotInteractions','ValueLens_Users')|ForEach-Object{@{TableName=$_;ExpectedExists=$false;ExpectedVersion=$null;ExpectedContentSha256=$null;ExpectedRows=0;OwnershipPolicy='ExpectedAbsent'}})}
+		}
+		$script:PaxPublishRecoveryContext=[pscustomobject]@{StageRoot=$planRoot;MaxScratchBytes=$maximum;ReserveBytes=$reserve;MaximumOperationSeconds=$seconds;PeakScratchBytes=0L;Authentication=$m.Authentication;TargetUris=@();MarkerRoot='';DiscoverIdentity=$false}
+		$null=script:Assert-PaxPublishRecoveryBudget
+		if (-not (Test-Path -LiteralPath $planPath)) {
+			$measure=(script:Get-PaxStrictArrowCsvReaderPython)+@'
+import hashlib,json,sqlite3,sys,os
+sources=json.load(sys.stdin)
+db=sqlite3.connect(os.path.join(sys.argv[1],"measure.sqlite"))
+db.execute("PRAGMA cache_size=-16384");db.execute("PRAGMA temp_store=FILE")
+try:
+ for s in sources:
+  with open(s["FullPath"],encoding="utf-8-sig",newline="") as f:header=next(csv.reader(PaxBoundedCsvLines(f),strict=True),[])
+  db.execute("DROP TABLE IF EXISTS keys");db.execute("CREATE TABLE keys(value TEXT PRIMARY KEY)")
+  column="UserKey" if s["Role"] in ("AIOFact","AIOUsers","ValueLensFact","ValueLensUsers") else ("RecordId" if s["Role"]=="RawAudit" else None)
+  index=header.index(column) if column else None
+  rows=0
+  def check(row):
+   global rows
+   rows+=1
+   if index is not None:
+    value=row[index].strip().lower() if column=="RecordId" else row[index].strip()
+    if not value:raise ValueError("PAX_RECOVERY_EMPTY_KEY")
+    if column=="RecordId":
+     try:db.execute("INSERT INTO keys VALUES (?)",(value,))
+     except sqlite3.IntegrityError:raise ValueError("PAX_RECOVERY_DUPLICATE_RAW_RECORD")
+    else:db.execute("INSERT OR IGNORE INTO keys VALUES (?)",(value,))
+   if rows%256==0:pax_recovery_budget(16777216)
+  header,count,_=pax_csv_preflight(s["FullPath"],header,check);db.commit()
+  h=hashlib.sha256()
+  with open(s["FullPath"],"rb") as f:
+   for block in iter(lambda:f.read(1048576),b""):h.update(block)
+  s["ExpectedHeader"]=header;s["ExpectedRows"]=count;s["Sha256"]=h.hexdigest().upper()
+  s["ExpectedUniqueUserKeys"]=db.execute("SELECT COUNT(*) FROM keys").fetchone()[0] if column=="UserKey" else None
+  del s["FullPath"]
+ print(json.dumps(sources,separators=(",",":")))
+finally:
+ db.close()
+ os.unlink(os.path.join(sys.argv[1],"measure.sqlite"))
+'@
+			$m.Sources=@((script:Invoke-PaxPublishRecoveryProcess -Python $python -Code $measure -Arguments @($planRoot) -InputText ($m.Sources|ConvertTo-Json -Depth 6 -Compress))|ConvertFrom-Json)
+			$draft=Join-Path $planRoot 'expectations.pending.json'
+			[IO.File]::WriteAllText($draft,($m|ConvertTo-Json -Depth 12),[Text.UTF8Encoding]::new($false))
+			$validated=script:Get-PaxPublishRecoveryManifest -CheckpointPath $checkpoint -ManifestPath $draft -Python $python
+			$proof=script:Test-PaxPublishRecoverySources -Manifest $validated -Python $python
+			if(-not $proof.Passed){throw 'Automatic retained-source proof failed before authentication.'}
+			$freshProof=$proof
+			$script:PaxPublishRecoveryContext.Authentication=[pscustomobject]@{TenantId=[string]$p.tenantId;PrincipalId='';ClientId=[string]$p.clientId}
+			$script:PaxPublishRecoveryContext.DiscoverIdentity=$true
+			$null=script:Get-PaxPublishRecoveryStorageToken
+			$m.Authentication=$script:PaxPublishRecoveryContext.Authentication
+			$parts=([Uri]$m.DestinationRoot).AbsolutePath.Trim('/') -split '/'
+			$tableRoot='abfss://'+$parts[0]+'@onelake.dfs.fabric.microsoft.com/'+($parts[1..($parts.Length-1)] -join '/')
+			$script:PaxPublishRecoveryContext.TargetUris=@($m.TargetExpectations|ForEach-Object{$tableRoot+'/'+$_.TableName})
+			$work=Join-Path $planRoot 'observations';[void][IO.Directory]::CreateDirectory($work)
+			foreach($target in $m.TargetExpectations){
+				$member=[pscustomobject]@{TableName=$target.TableName;TargetUri=($tableRoot+'/'+$target.TableName);DeltaCandidatePath=(Join-Path $work 'unused-candidate.parquet');DeltaOriginalPath=(Join-Path $work 'unused-original.parquet');OriginalMeasurement=$null;CandidateMeasurement=$null}
+				$observed=script:Invoke-PaxDeltaMemberOperation -Operation Observe -Member $member -WorkDirectory $work -Python $python
+				if($observed.Observation){$o=$observed.Observation;$target.ExpectedExists=$true;$target.ExpectedVersion=[long]$o.Version;$target.ExpectedContentSha256=[string]$o.Sha256;$target.ExpectedRows=[long]$o.DataRowCount;$target.OwnershipPolicy='ExplicitExistingSnapshot'}
+			}
+			[IO.File]::WriteAllText($draft,($m|ConvertTo-Json -Depth 12),[Text.UTF8Encoding]::new($false))
+			$finalManifest=script:Get-PaxPublishRecoveryManifest -CheckpointPath $checkpoint -ManifestPath $draft -Python $python
+			[IO.File]::Move($draft,$planPath)
+			$owner.ManifestSha256=(Get-FileHash -LiteralPath $planPath).Hash
+		}
+		else {$null=script:Get-PaxPublishRecoveryStorageToken}
+		$existing=@($m.TargetExpectations|Where-Object ExpectedExists)
+		if($existing.Count -and -not $owner.Approved){
+			Microsoft.PowerShell.Utility\Write-Host ('Saved checkpoint-bound replacement plan: '+$m.DestinationRoot)
+			foreach($t in $existing){Microsoft.PowerShell.Utility\Write-Host ('  {0}: version {1}, rows {2}' -f $t.TableName,$t.ExpectedVersion,$t.ExpectedRows)}
+			if($ApproveExistingSnapshot){$owner.Approved=$true}
+		}
+		script:Save-PaxRecoveryJsonAtomic -Path $ownerPath -Value $owner
+		if($freshProof){script:Save-PaxRecoverySourceProof -Manifest $finalManifest -ManifestPath $planPath -Proof $freshProof -PlanLocked}
+		if($existing.Count -and -not $owner.Approved){throw 'PAX_RECOVERY_APPROVAL_REQUIRED: existing destination snapshots were observed read-only. Review the saved plan above, then repeat the same -ResumePublishOnly -Resume <checkpoint> command with -ApproveExistingSnapshot. No manually authored manifest is required and no target was changed.'}
+		Microsoft.PowerShell.Utility\Write-Host ('PAX generated retained-byte recovery plan: {0}; scratch limit {1} bytes, reserve {2} bytes, per-operation limit {3}s. Current hashes do not establish past authenticity.' -f $planPath,$maximum,$reserve,$seconds)
+		return $planPath
+	}
+	finally {foreach($lock in $locks){$lock.Dispose()};if($planLock){$planLock.Dispose()};$script:PaxPublishRecoveryContext=$priorContext}
+}
+
+function script:Invoke-PaxResumePublishOnly {
+	<#
+	.SYNOPSIS
+		Publish an explicitly selected retained initial snapshot, without collection or processing.
+	.DESCRIPTION
+		Windows only; legacy 11/13 schema 2.1.0 RollupPlusRaw, AIO + ValueLens, retained UserHistory On,
+		IncludeUserInfo and IncludeAgent365Info, non-append, non-watermark, non-deidentified,
+		ManagedIdentity, explicit GUID OneLake Tables destination and all ten retained
+		source/alias artifacts. Augmented .withaudit Users are required and never regenerated.
+		Without -PublishRecoveryManifest, PAX generates a strict checkpoint-bound plan from
+		locked retained files, current managed-identity claims and read-only destination
+		observations. Existing snapshots require -ApproveExistingSnapshot after reviewing
+		the displayed saved plan. RecoveryMaxScratchBytes, RecoveryReserveBytes and
+		RecoveryOperationSeconds optionally bound automatic planning and publication.
+		An advanced PaxPublishRecoveryExpectations v1.0 JSON manifest may instead contain the
+		selected checkpoint hash, run/window/profile/destination/identity bindings, ten exact
+		role paths, complete headers, logical row and distinct UserKey expectations, current
+		source hashes, independent Agent status timestamp and explicit scratch/reserve/runtime
+		budgets. These newly captured hashes are not proof of past authenticity.
+		The manifest explicitly selects recorded-On or the pinned legacy caller's omitted
+		UserHistory snapshot policy. The latter requires dated temporal Users in both profiles,
+		complete Fact/Users joins and immutable current hashes; the original checkpoint stays unchanged.
+		No checkpoint auto-selection, Force, overrides, Graph, SDK installation, shard hydration or
+		ordinary Resume fallback. Conversion writes bounded Parquet and SQLite proofs,
+		but never duplicates retained CSVs. Runtime/space/token refusals retain owned recovery
+		material; newly created visible tables remain recovery-pending, never silently deleted.
+	.PARAMETER CheckpointPath
+		Explicit original .pax_checkpoint_<run>.json path.
+	.PARAMETER ManifestPath
+		Optional advanced expectation manifest; omitted for ordinary retained-output recovery.
+	.EXAMPLE
+		& .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261101-14.ps1 -ResumePublishOnly -Resume C:\PAX\.pax_checkpoint_20260101_120000.json
+		Derive and validate the saved run's plan without collection or processing.
+	#>
+	param([Parameter(Mandatory)][string]$CheckpointPath, [string]$ManifestPath,[switch]$ApproveExistingSnapshot,[long]$MaxScratchBytes=0,[long]$ReserveBytes=0,[int]$OperationSeconds=0)
+	if($ManifestPath -and ($ApproveExistingSnapshot -or $MaxScratchBytes -or $ReserveBytes -or $OperationSeconds)){throw 'Automatic recovery approval/budget options cannot override an advanced explicit manifest; its recorded intent remains authoritative.'}
+	$automaticPlan=-not $ManifestPath
+	if($automaticPlan){$ManifestPath=script:New-PaxAutomaticRecoveryPlan -CheckpointPath $CheckpointPath -ApproveExistingSnapshot:$ApproveExistingSnapshot -MaxScratchBytes $MaxScratchBytes -ReserveBytes $ReserveBytes -OperationSeconds $OperationSeconds}
+	if (-not $IsWindows) { throw 'Publish-only recovery requires Windows source-lock fencing.' }
+	if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne [Runtime.InteropServices.Architecture]::X64) { throw 'Urgent publish-only recovery is qualified only on Windows x64.' }
+	$checkpoint = script:Assert-PaxPublishRecoveryPath -Path $CheckpointPath
+	$manifestPath = script:Assert-PaxPublishRecoveryPath -Path $ManifestPath
+	if (-not (Test-Path -LiteralPath $checkpoint -PathType Leaf) -or -not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'Explicit checkpoint and expectation manifest files are required.' }
+	$envelopeLocks = [Collections.Generic.List[IO.FileStream]]::new()
+	try {
+	$envelopeLocks.Add([IO.File]::Open($checkpoint,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+	$envelopeLocks.Add([IO.File]::Open($manifestPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+	$script:ROLLUP_PYTHON_MIN_MAJOR = 3
+	$script:ROLLUP_PYTHON_MIN_MINOR = 10
+	$python = Resolve-PythonExe
+	if (-not $python -or -not $python.Path) { throw 'An existing PAX Python interpreter is required; no installation was attempted.' }
+	try { $null = script:Invoke-PaxPublishRecoveryProcess -Python $python -Code 'import pyarrow, deltalake; import importlib.metadata as m; assert m.version("deltalake")=="1.6.3"; assert m.version("pyarrow")=="25.0.1"' -ReadOnly }
+	catch { throw 'Publish-only recovery requires existing qualified pyarrow 25.0.1 and deltalake 1.6.3; no dependency installation was attempted.' }
+	$manifest = script:Get-PaxPublishRecoveryManifest -CheckpointPath $checkpoint -ManifestPath $manifestPath -Python $python
+	foreach ($source in $manifest.Sources) { $null = script:Assert-PaxPublishRecoveryPath -Path $source.FullPath }
+	$stageRoot = Join-Path (Split-Path $checkpoint -Parent) ('.pax_publish_recovery_' + $manifest.RunTimestamp + '_' + $manifest.RecoveryId)
+	$null = script:Assert-PaxPublishRecoveryPath -Path $stageRoot -Directory
+	$script:PaxPublishRecoveryContext = [pscustomobject]@{
+		StageRoot = $stageRoot; MaxScratchBytes = [int64]$manifest.Capacity.MaxScratchBytes
+		ReserveBytes = [int64]$manifest.Capacity.ReserveBytes; MaximumOperationSeconds = [int]$manifest.Capacity.MaximumOperationSeconds
+		PeakScratchBytes = [int64]0; Authentication = $manifest.Authentication; TargetUris = @(); MarkerRoot = ''
+		CheckpointHash = $manifest.CheckpointSha256; ManifestHash = $manifest.ManifestSha256
+	}
+	$script:CheckpointLockStaleTtl = [TimeSpan]::MaxValue
+	$script:CheckpointEnabled = $false
+	$script:ScriptVersion = '2.0.0'
+	$script:LogBuffer = [Collections.Generic.List[string]]::new()
+	$global:ScriptRunTimestamp = [string]$manifest.RunTimestamp
+	$sourceLocks = [Collections.Generic.List[IO.FileStream]]::new()
+	try {
+		$null = script:Assert-PaxPublishRecoveryBudget
+		if (-not (Read-Checkpoint -CheckpointPath $checkpoint -PublicationOnly)) { throw 'Publish-only checkpoint envelope validation failed.' }
+		script:Acquire-CheckpointLock -CheckpointPath $checkpoint
+		if ((script:Get-PaxDeltaSourceHash -LiteralPath $checkpoint).Hash -cne $manifest.CheckpointSha256) { throw 'The selected checkpoint changed while its exclusive lock was acquired.' }
+		foreach ($source in $manifest.Sources) {
+			$sourceLocks.Add([IO.File]::Open($source.FullPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+			if ((script:Get-PaxDeltaSourceHash -LiteralPath $source.FullPath).Hash -cne $source.Sha256) { throw 'A retained source changed before its read lock was acquired.' }
+		}
+		[void][IO.Directory]::CreateDirectory($stageRoot)
+		$pointerPath = Join-Path $stageRoot 'publish-recovery-pointer.json'
+		$pointer = [ordered]@{ Version = '1.0'; CheckpointPath = $checkpoint; CheckpointSha256 = $manifest.CheckpointSha256; ManifestSha256 = $manifest.ManifestSha256; RunTimestamp = $manifest.RunTimestamp; StageRoot = $stageRoot; StatePath = (Join-Path $stageRoot '.pax_delta_set_state.json'); BaselineKind = $manifest.BaselineKind }
+		$pointerText = $pointer | ConvertTo-Json -Compress
+		if (Test-Path -LiteralPath $pointerPath) {
+			if ([IO.File]::ReadAllText($pointerPath) -cne $pointerText) { throw 'The owned recovery pointer changed; selected run, expectation manifest and recovery intent must remain identical.' }
+		}
+		else {
+			if (@(Get-ChildItem -LiteralPath $stageRoot -Force).Count) { throw 'An unowned recovery directory cannot be adopted.' }
+			$pointerBytes = [Text.UTF8Encoding]::new($false).GetBytes($pointerText)
+			$pointerStream = [IO.File]::Open($pointerPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+			try { $pointerStream.Write($pointerBytes,0,$pointerBytes.Length); $pointerStream.Flush($true) }
+			finally { $pointerStream.Dispose() }
+			if ([IO.File]::ReadAllText($pointerPath) -cne $pointerText) { throw 'PAX_RECOVERY_POINTER: owned recovery pointer failed durable readback; no publication was attempted.' }
+		}
+		# A receipt is reusable only here, after every current source is read-locked and rehashed.
+		$proof = if($automaticPlan){script:Get-PaxRecoverySourceProof -Manifest $manifest -ManifestPath $manifestPath}else{$null}
+		if($null -eq $proof){
+			$proof = script:Test-PaxPublishRecoverySources -Manifest $manifest -Python $python
+			if($automaticPlan){script:Save-PaxRecoverySourceProof -Manifest $manifest -ManifestPath $manifestPath -Proof $proof}
+		}
+		if (-not $proof.Passed) { throw 'Retained source schema/count/temporal identity proof failed.' }
+		$cp = $script:CheckpointData.parameters
+		$script:DestParentUrl = @{ Purview = $cp.outputPath; UserInfo = $cp.outputPath; Agent365Info = $cp.outputPath }
+		$script:RemoteOutputUrl = [string]$cp.outputPath
+		$script:AppendIsBound = @{}
+		$script:Auth = 'ManagedIdentity'; $script:UserHistory = 'On'
+		$parts = ([Uri]$manifest.DestinationRoot).AbsolutePath.Trim('/') -split '/'
+		$script:PaxPublishRecoveryContext.MarkerRoot = 'https://onelake.dfs.fabric.microsoft.com/' + $parts[0] + '/' + $parts[1] + '/Files/.pax_delta_recovery'
+		$tableRoot = 'abfss://' + $parts[0] + '@onelake.dfs.fabric.microsoft.com/' + ($parts[1..($parts.Length-1)] -join '/')
+		$roster = [Collections.Generic.List[object]]::new()
+		foreach ($source in $manifest.Sources) {
+			$spec = switch ($source.Role) {
+				'AIOFact' { @('AIO:Fact','AIO','Purview','CopilotInteraction_Interactions_Rollup',$false) }
+				'ValueLensFact' { @('ValueLens:Fact','ValueLens','Purview','CopilotInteraction_Interactions_Rollup',$false) }
+				'AIOUsers' { @('AIO:Users','AIO','UserInfo','Entra_Users',$false) }
+				'ValueLensUsers' { @('ValueLens:Users','ValueLens','UserInfo','Entra_Users',$false) }
+				'RawAudit' { @('Shared:RawPurview','AIO','Purview','CopilotInteraction_Raw',$true) }
+				'RawUsers' { @('Shared:RawUsers','AIO','UserInfo','Entra_Users_Raw',$true) }
+				'AgentCatalog' { @('Shared:Agent365Info','AIO','Agent365Info','Agent365',$true) }
+				'AgentStatus' { @('Shared:Agent365Status','AIO','Agent365Info','Agent365_Status',$true) }
+				default { $null }
+			}
+			if ($null -eq $spec) { continue }
+			$table = script:Get-PaxFabricTableName -CsvStem ([IO.Path]::GetFileNameWithoutExtension($source.FullPath)) -LogicalStem $spec[3] -Dashboard $spec[1] -DataType $spec[2] -ProcessorMode 'CopilotInteraction'
+			$expectation = @($manifest.TargetExpectations | Where-Object TableName -CEQ $table)
+			if ($expectation.Count -ne 1) { throw 'Every canonical target requires an explicit absent or independently measured existing-target expectation.' }
+			$roster.Add([pscustomobject]@{ TableName = $table; TargetUri = ($tableRoot + '/' + $table); SourcePath = $source.FullPath; SourceSha256 = $source.Sha256; SourceIdentity = $spec[0]; Dashboard = $spec[1]; DataType = $spec[2]; MarkerParent = $script:PaxPublishRecoveryContext.MarkerRoot; WriteIntent = $(if ($spec[2] -eq 'UserInfo') { 'UsersSnapshot' } else { 'Snapshot' }); ProtectRowCount = $false; AuthoritativeProducer = $spec[4]; OriginalExpectation = $expectation[0] })
+		}
+		if ($roster.Count -ne 8 -or @($roster.TableName | Sort-Object -Unique).Count -ne 8) { throw 'The complete canonical eight-table recovery roster is required.' }
+		$script:PaxPublishRecoveryContext.TargetUris = @($roster.TargetUri)
+		$null = script:Assert-PaxPublishRecoveryBudget -BeforePublication
+		$result = script:Invoke-PaxDeltaTableSetPublication -Entries $roster.ToArray() -StageRoot $stageRoot -Python $python -BorrowSources
+		if (-not $result.Accepted) { throw 'Publish-only recovery has not verified every required table.' }
+		foreach ($source in $manifest.Sources) {
+			if ((script:Get-PaxDeltaSourceHash -LiteralPath $source.FullPath).Hash -cne $source.Sha256) { throw 'A retained source changed across publication.' }
+		}
+		if ((script:Get-PaxDeltaSourceHash -LiteralPath $checkpoint).Hash -cne $manifest.CheckpointSha256) { throw 'The original checkpoint changed across publication.' }
+		return [pscustomobject]@{ Accepted = $true; Code = $result.Code; Tables = 8; StageRoot = $stageRoot; PeakScratchBytes = $script:PaxPublishRecoveryContext.PeakScratchBytes }
+	}
+	finally {
+		$ownedLockPath = $script:CheckpointLockPath
+		try {
+			foreach ($lock in $sourceLocks) { $lock.Dispose() }
+			script:Release-CheckpointLock
+			if ($ownedLockPath -and (Test-Path -LiteralPath $ownedLockPath)) { throw 'PAX_RECOVERY_FINALIZER: the owned checkpoint lock could not be removed; original inputs and canonical recovery state were retained, but this invocation is not successful.' }
+		}
+		finally { $script:PaxPublishRecoveryContext = $null }
+	}
+	}
+	finally { foreach ($lock in $envelopeLocks) { $lock.Dispose() } }
+}
+
+function script:Get-PaxStrictArrowCsvReaderPython {
+	return @'
+import csv, os, re, shutil
+
+def pax_recovery_budget(required=0):
+    root = os.environ.get("PAX_RECOVERY_ROOT")
+    if not root:
+        return
+    used = sum(os.path.getsize(os.path.join(directory,name)) for directory,_,names in os.walk(root) for name in names)
+    maximum = int(os.environ["PAX_RECOVERY_MAX_SCRATCH"])
+    reserve = int(os.environ["PAX_RECOVERY_RESERVE"])
+    if used + required > maximum or shutil.disk_usage(root).free < reserve + required:
+        raise ValueError("PAX_RECOVERY_CAPACITY")
+
+PAX_CSV_RECORD_LIMIT = 128 * 1024 * 1024
+
+class PaxBoundedCsvLines:
+    def __init__(self, handle):
+        self.handle, self.used, self.state = handle, 0, "start"
+    def __iter__(self):
+        return self
+    def __next__(self):
+        line = self.handle.readline(PAX_CSV_RECORD_LIMIT - self.used + 1)
+        if not line:
+            raise StopIteration
+        self.used += len(line.encode("utf-8"))
+        if self.used > PAX_CSV_RECORD_LIMIT:
+            raise ValueError("PAX_CSV_RECORD_LIMIT: logical record exceeds 128 MiB; no rows were skipped")
+        # Skip nonstructural spans in the regex engine without weakening CSV grammar.
+        for token in re.finditer(r'[^",\r\n]+|[",\r\n]', line):
+            char = token.group(0)
+            if self.state == "quoted":
+                if char == '"':
+                    self.state = "closed"
+            elif self.state == "closed":
+                if char == '"':
+                    self.state = "quoted"
+                elif char == ',':
+                    self.state = "start"
+                elif char not in "\r\n":
+                    raise ValueError("PAX_CSV_INVALID: unexpected character after closing quote")
+            elif self.state == "start":
+                if char == '"':
+                    self.state = "quoted"
+                elif char not in ",\r\n":
+                    self.state = "unquoted"
+            elif char == '"':
+                raise ValueError("PAX_CSV_INVALID: quote inside an unquoted field")
+            elif char == ',':
+                self.state = "start"
+        return line
+    def reset(self):
+        self.used, self.state = 0, "start"
+
+def pax_csv_preflight(path, expected_columns=None, row_validator=None):
+    csv.field_size_limit(PAX_CSV_RECORD_LIMIT)
+    maximum, count = 0, 0
+    with open(path, encoding="utf-8-sig", newline="") as handle:
+        lines = PaxBoundedCsvLines(handle)
+        parser = csv.reader(lines, strict=True)
+        columns = next(parser, [])
+        maximum = lines.used
+        lines.reset()
+        if not columns or any(not name.strip() for name in columns) or len(set(columns)) != len(columns):
+            raise ValueError("PAX_CSV_SCHEMA: empty, blank or duplicate header")
+        if expected_columns is not None and columns != expected_columns:
+            raise ValueError("PAX_CSV_SCHEMA: complete header changed")
+        for row in parser:
+            maximum = max(maximum, lines.used)
+            lines.reset()
+            if len(row) != len(columns):
+                raise ValueError("PAX_CSV_WIDTH: logical row does not match the complete header")
+            if row_validator is not None:
+                row_validator(row)
+            count += 1
+    return columns, count, max(8 * 1024 * 1024, 2 * maximum + 1024)
+
+def pax_strict_arrow_reader(path, columns):
+    import pyarrow as pa
+    import pyarrow.csv as pacsv
+    _, _, block = pax_csv_preflight(path, columns)
+    return pacsv.open_csv(path,
+        read_options=pacsv.ReadOptions(block_size=block),
+        parse_options=pacsv.ParseOptions(newlines_in_values=True),
+        convert_options=pacsv.ConvertOptions(strings_can_be_null=False,
+            column_types={name: pa.string() for name in columns}))
+
+'@
+}
+
+function script:Invoke-PaxDeltaMemberOperation {
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)][ValidateSet('Prepare','PrepareCandidate','PrepareOriginal','Observe','Publish','Restore')][string]$Operation,
+		[Parameter(Mandatory)][psobject]$Member,
+		[Parameter(Mandatory)][string]$WorkDirectory,
+		[Parameter(Mandatory)][psobject]$Python,
+		[string]$BearerToken = ''
+	)
+	if ($script:PaxPublishRecoveryContext -and $Operation -eq 'Prepare') {
+		$local = script:Invoke-PaxDeltaMemberOperation -Operation PrepareCandidate -Member $Member -WorkDirectory $WorkDirectory -Python $Python
+		$Member.CandidateMeasurement = $local.CandidateMeasurement
+		$Member.CandidateSnapshotSha256 = $local.CandidateSnapshotSha256
+		$Member.CsvHeader = $local.CsvHeader
+		$remote = script:Invoke-PaxDeltaMemberOperation -Operation PrepareOriginal -Member $Member -WorkDirectory $WorkDirectory -Python $Python
+		return [pscustomobject]@{ CandidateMeasurement = $local.CandidateMeasurement; CandidateSnapshotSha256 = $local.CandidateSnapshotSha256; CsvHeader = $local.CsvHeader; OriginalMeasurement = $remote.OriginalMeasurement; OriginalSnapshotSha256 = $remote.OriginalSnapshotSha256 }
+	}
+	$recoveryToken = $null
+	if ($script:PaxPublishRecoveryContext) {
+		script:Assert-PaxPublishRecoveryTarget -TargetUri $Member.TargetUri
+		$work = script:Assert-PaxPublishRecoveryPath -Path $WorkDirectory -Directory
+		$owned = $script:PaxPublishRecoveryContext.StageRoot.TrimEnd('\') + '\'
+		if (-not $work.StartsWith($owned,[StringComparison]::OrdinalIgnoreCase)) { throw 'PAX_RECOVERY_WORK_PATH' }
+		foreach ($artifact in @($Member.DeltaCandidatePath,$Member.DeltaOriginalPath)) {
+			if ((Split-Path (script:Assert-PaxPublishRecoveryPath -Path $artifact) -Parent) -ine $work) { throw 'PAX_RECOVERY_WORK_PATH' }
+		}
+		$null = script:Assert-PaxPublishRecoveryBudget
+		if ($Operation -ne 'PrepareCandidate') { $recoveryToken = script:Get-PaxPublishRecoveryStorageToken; $BearerToken = $recoveryToken.Token }
+		else { $BearerToken = '' }
+	}
+	elseif ([string]$Member.TargetUri -match '^(?:abfss|https)://') {
+		$requestMethod = if ($Operation -eq 'Observe') { 'GET' } else { 'PUT' }
+		script:Assert-PaxEffectiveFabricDestinations -RequestUri ([string]$Member.TargetUri) -RequestMethod $requestMethod -BearerToken $BearerToken
+	}
+	$requestPath = Join-Path $WorkDirectory 'delta-member-request.json'
+	[IO.File]::WriteAllText($requestPath, (@{ operation = $Operation; member = $Member } | ConvertTo-Json -Depth 20 -Compress), [Text.UTF8Encoding]::new($false))
+	$inlinePy = @'
+import csv, hashlib, json, os, re, sqlite3, sys, tempfile
+from pathlib import Path
+import pyarrow as pa
+import pyarrow.csv as pacsv
+import pyarrow.parquet as pq
+from deltalake import CommitProperties, DeltaTable, write_deltalake
+from deltalake.exceptions import TableNotFoundError
+
+request = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+member = request["member"]
+uri = member["TargetUri"]
+token = os.environ.get("PAX_DELTA_MEMBER_TOKEN", "")
+options = None
+if uri.startswith("https://"):
+	raise ValueError("A Delta member requires its resolved physical target, not an HTTPS URL.")
+if uri.startswith("abfss://") and request["operation"] != "PrepareCandidate":
+	if not token:
+		raise ValueError("A remote Delta member requires a storage token.")
+	options = {"bearer_token": token, "use_fabric_endpoint": "true"}
+
+def file_hash(path):
+	digest = hashlib.sha256()
+	with open(path, "rb") as handle:
+		for block in iter(lambda: handle.read(1024 * 1024), b""):
+			digest.update(block)
+	return digest.hexdigest().upper()
+
+def names_for_delta(columns):
+	seen, result = {}, []
+	for column in columns:
+		name = re.sub(r"[ ,;{}()\n\t=]", "_", column)
+		if name in seen:
+			seen[name] += 1
+			candidate = f"{name}_{seen[name]}"
+			while candidate in seen:
+				seen[name] += 1
+				candidate = f"{name}_{seen[name]}"
+			name = candidate
+		seen[name] = 1
+		result.append(name)
+	return result
+
+def logical_schema(schema):
+	result = []
+	for field in schema:
+		kind = "string" if (pa.types.is_string(field.type) or pa.types.is_large_string(field.type)
+							or pa.types.is_string_view(field.type)) else str(field.type)
+		result.append([field.name, kind, field.nullable])
+	return result
+
+def byte_batches(batches):
+	for batch in batches:
+		stack=[batch]
+		while stack:
+			current=stack.pop()
+			if current.nbytes>8*1024*1024 and current.num_rows>1:
+				middle=current.num_rows//2
+				stack.extend((current.slice(middle),current.slice(0,middle)))
+			else:
+				if current.nbytes>256*1024*1024:
+					raise ValueError("PAX_RECOVERY_DECODED_ROW_LIMIT")
+				yield current
+
+def row_hash(row):
+	if not os.environ.get("PAX_RECOVERY_ROOT") or sum(len(value.encode("utf-8")) if isinstance(value,str) else 8 for value in row)<=1024*1024:
+		encoded=json.dumps(row,ensure_ascii=False,separators=(",",":"),allow_nan=False,default=str).encode("utf-8")
+		return hashlib.sha256(encoded).digest(),len(encoded)
+	digest=hashlib.sha256();length=0
+	def feed(value):
+		nonlocal length
+		length+=len(value)
+		if length>256*1024*1024:raise ValueError("PAX_RECOVERY_ENCODED_ROW_LIMIT")
+		digest.update(value)
+	feed(b"[")
+	for index,value in enumerate(row):
+		if index:feed(b",")
+		if isinstance(value,str):
+			feed(b'"')
+			for offset in range(0,len(value),65536):
+				feed(json.dumps(value[offset:offset+65536],ensure_ascii=False)[1:-1].encode("utf-8"))
+			feed(b'"')
+		else:feed(json.dumps(value,ensure_ascii=False,separators=(",",":"),allow_nan=False,default=str).encode("utf-8"))
+	feed(b"]")
+	return digest.digest(),length
+
+def snapshot_layout(path):
+	if not os.environ.get("PAX_RECOVERY_ROOT"):return
+	parquet=pq.ParquetFile(path)
+	for index in range(parquet.metadata.num_row_groups):
+		if parquet.metadata.row_group(index).total_byte_size>256*1024*1024:
+			raise ValueError("PAX_RECOVERY_PARQUET_ROW_GROUP_LIMIT")
+
+def measure(batches, schema, snapshot=None):
+	descriptor, database_path = tempfile.mkstemp(prefix="delta-proof-", suffix=".sqlite", dir=Path(sys.argv[1]).parent)
+	os.close(descriptor)
+	database = sqlite3.connect(database_path)
+	writer = pq.ParquetWriter(snapshot, schema) if snapshot else None
+	columns = logical_schema(schema)
+	encoded_schema = json.dumps(columns, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+	count, length, maximum_batch_bytes, maximum_row_bytes = 0, len(encoded_schema), 0, 0
+	try:
+		database.execute("CREATE TABLE rows (digest BLOB NOT NULL)")
+		source_batches=byte_batches(batches) if os.environ.get("PAX_RECOVERY_ROOT") else batches
+		for batch in source_batches:
+			maximum_batch_bytes = max(maximum_batch_bytes, batch.nbytes)
+			pax_recovery_budget(batch.nbytes * 4 + batch.num_columns * 262144 + 16777216)
+			if writer:
+				writer.write_batch(batch)
+			digests = []
+			for row in zip(*(column.to_pylist() for column in batch.columns)):
+				row_digest,row_length=row_hash(row)
+				maximum_row_bytes = max(maximum_row_bytes,row_length)
+				digests.append((row_digest,))
+				count += 1
+				length += row_length
+			database.executemany("INSERT INTO rows VALUES (?)", digests)
+			database.commit()
+		digest = hashlib.sha256(encoded_schema)
+		pax_recovery_budget(os.path.getsize(database_path) * 3 + 16777216)
+		for value, multiplicity in database.execute("SELECT digest, COUNT(*) FROM rows GROUP BY digest ORDER BY digest"):
+			digest.update(value)
+			digest.update(int(multiplicity).to_bytes(8, "big"))
+		result = {"Sha256": digest.hexdigest().upper(), "ByteLength": length, "DataRowCount": count, "Schema": columns}
+		if os.environ.get("PAX_RECOVERY_ROOT"):
+			result["MaxBatchBytes"] = maximum_batch_bytes
+			result["MaxEncodedRowBytes"] = maximum_row_bytes
+		return result
+	finally:
+		if writer:
+			writer.close()
+		database.close()
+		os.unlink(database_path)
+
+def open_table():
+	try:
+		return DeltaTable(uri, storage_options=options)
+	except TableNotFoundError:
+		if os.environ.get("PAX_RECOVERY_ROOT"):
+			if uri.startswith("abfss://"):
+				from urllib.parse import urlsplit
+				from urllib.request import Request,urlopen
+				from urllib.error import HTTPError
+				target=urlsplit(uri);workspace,host=target.netloc.split("@",1)
+				url="https://"+host+"/"+workspace+target.path
+				try:
+					with urlopen(Request(url,method="HEAD",headers={"Authorization":"Bearer "+token,"x-ms-version":"2021-06-08"}),timeout=60):
+						raise ValueError("PAX_RECOVERY_NONDELTA_TARGET")
+				except HTTPError as error:
+					if error.code!=404 or error.headers.get("x-ms-error-code")!="PathNotFound":
+						raise ValueError("PAX_RECOVERY_TARGET_PRESENCE")
+			elif Path(uri).exists():
+				raise ValueError("PAX_RECOVERY_NONDELTA_TARGET")
+		return None
+
+def observe(table, snapshot=None, reference=None):
+	if table is None:
+		return None
+	dataset = table.to_pyarrow_dataset()
+	schema = dataset.schema
+	if os.environ.get("PAX_RECOVERY_ROOT"):
+		if table.metadata().partition_columns:
+			raise ValueError("PAX_RECOVERY_PARTITIONED_TARGET")
+		if len(schema)>1024:
+			raise ValueError("PAX_RECOVERY_EXISTING_SCHEMA_LIMIT")
+		if any(field[1]!="string" for field in logical_schema(schema)):
+			raise ValueError("PAX_RECOVERY_EXISTING_SCHEMA")
+		for fragment in dataset.get_fragments():
+			metadata=fragment.metadata
+			if metadata is None:
+				raise ValueError("PAX_RECOVERY_PARQUET_METADATA")
+			for index in range(metadata.num_row_groups):
+				size=metadata.row_group(index).total_byte_size
+				if size>256*1024*1024:
+					raise ValueError("PAX_RECOVERY_PARQUET_ROW_GROUP_LIMIT")
+				pax_recovery_budget(size*4+len(schema)*262144+16777216)
+	columns = None
+	if reference is not None:
+		actual, expected = logical_schema(schema), reference["Schema"]
+		# Delta merge retains existing physical order. Project only after proving the
+		# complete named schema, preserving frozen 2.0 hashes without casts or drops.
+		if (len({field[0] for field in actual}) == len(actual)
+				and len({field[0] for field in expected}) == len(expected)
+				and sorted(actual) == sorted(expected)):
+			columns = [field[0] for field in expected]
+			schema = pa.schema([schema.field(name) for name in columns])
+	def batches():
+		if not os.environ.get("PAX_RECOVERY_ROOT"):
+			yield from dataset.scanner(columns=columns, batch_size=65536).to_batches()
+			return
+		for fragment in dataset.get_fragments():
+			for group in fragment.split_by_row_group():
+				size=group.metadata.row_group(0).total_byte_size if group.metadata.num_row_groups==1 else max(
+					group.metadata.row_group(info.id).total_byte_size for info in group.row_groups)
+				pax_recovery_budget(size*4+len(schema)*262144+16777216)
+				# Encoded group size bounds any string value, including dictionary repetitions;
+				# averaging by row count would permit an unbounded decoded Arrow batch.
+				row_upper=size+len(schema)*16+16
+				batch_rows=max(1,min(65536,(32*1024*1024)//max(row_upper,1)))
+				yield from group.to_batches(schema=dataset.schema,columns=columns,batch_size=batch_rows,
+					batch_readahead=1,fragment_readahead=1,use_threads=False)
+	proof = measure(batches(), schema, snapshot)
+	proof["Version"] = table.version()
+	history = table.history(1)[0]
+	proof["Commit"] = {key: history.get(key) for key in
+					   ("paxSet", "paxMember", "paxAction", "paxOriginalVersion", "paxExpectedVersion", "paxContent")}
+	return proof
+
+def same_data(left, right):
+	return left is not None and right is not None and all(left[key] == right[key]
+			   for key in ("Sha256", "ByteLength", "DataRowCount", "Schema"))
+
+def ownership_failures(proof, action, expected):
+	if proof is None or expected is None:
+		return ["missing-table-or-reference"]
+	commit = proof["Commit"]
+	original_version = member["OriginalMeasurement"]["Version"] if member["OriginalMeasurement"] else -1
+	failures = []
+	if not (commit["paxSet"] == member["SetId"] and commit["paxMember"] == member["PublicationId"]
+			and commit["paxAction"] == action and commit["paxOriginalVersion"] == original_version
+			and commit["paxContent"] == expected["Sha256"]):
+		failures.append("ownership-tags")
+	if type(commit["paxExpectedVersion"]) is not int or proof["Version"] != commit["paxExpectedVersion"] + 1:
+		failures.append("commit-version")
+	if proof["Schema"] != expected["Schema"]:
+		actual_fields, expected_fields = proof["Schema"], expected["Schema"]
+		if sorted(field[0] for field in actual_fields) != sorted(field[0] for field in expected_fields):
+			failures.append("columns")
+		elif sorted(actual_fields) != sorted(expected_fields):
+			failures.append("types-or-nullability")
+		else:
+			failures.append("column-order")
+	for key, label in (("Sha256", "logical-content"), ("ByteLength", "logical-byte-length"), ("DataRowCount", "row-count")):
+		if proof[key] != expected[key]:
+			failures.append(label)
+	return failures
+
+def owned(proof, action, expected):
+	return not ownership_failures(proof, action, expected)
+
+class VerificationError(ValueError):
+	pass
+
+def verification_failure(reason, comparisons):
+	table_name = re.sub(r"[^A-Za-z0-9_]", "_", member["TableName"])
+	raise VerificationError(f"PAX_DELTA_VERIFICATION: table={table_name}; phase={request['operation']}; "
+							f"failed={','.join(comparisons)}; {reason}")
+
+def parquet_batches(parquet,expected=None):
+	if not os.environ.get("PAX_RECOVERY_ROOT"):
+		yield from parquet.iter_batches(batch_size=65536)
+		return
+	for index in range(parquet.metadata.num_row_groups):
+		size=parquet.metadata.row_group(index).total_byte_size
+		if size>256*1024*1024:
+			raise ValueError("PAX_RECOVERY_PARQUET_ROW_GROUP_LIMIT")
+		pax_recovery_budget(size*4+len(parquet.schema_arrow)*262144+16777216)
+		if expected is None or not isinstance(expected.get("MaxEncodedRowBytes"),int):
+			raise ValueError("PAX_RECOVERY_BYTE_PROOF")
+		row_cost=expected["MaxEncodedRowBytes"]+len(parquet.schema_arrow)*8+16
+		batch_rows=max(1,min(65536,(8*1024*1024)//max(row_cost,1)))
+		yield from parquet.iter_batches(batch_size=batch_rows,row_groups=[index])
+
+def verified_snapshot(path, expected_hash, expected):
+	if file_hash(path) != expected_hash:
+		verification_failure("Frozen Delta recovery data changed.", ["snapshot-checksum"])
+	parquet = pq.ParquetFile(path)
+	if not same_data(measure(parquet_batches(parquet,expected), parquet.schema_arrow), expected):
+		verification_failure("Frozen Delta recovery data no longer matches its logical manifest.", ["snapshot-logical-manifest"])
+	return parquet
+
+def run():
+	operation = request["operation"]
+	table = None
+	if operation in ("Prepare", "PrepareCandidate"):
+		if file_hash(member["CandidatePath"]) != member["SourceSha256"]:
+			raise ValueError("The frozen source CSV changed.")
+		with open(member["CandidatePath"], encoding="utf-8-sig", newline="") as handle:
+			columns = next(csv.reader(handle), [])
+		if not columns:
+			raise ValueError("The Delta source CSV has no header.")
+		safe = names_for_delta(columns)
+		reader = pax_strict_arrow_reader(member["CandidatePath"], columns)
+		schema = pa.schema([pa.field(name, pa.string()) for name in safe])
+		batches = (pa.RecordBatch.from_arrays(batch.columns, names=safe) for batch in reader)
+		candidate = measure(batches, schema, member["DeltaCandidatePath"])
+		snapshot_layout(member["DeltaCandidatePath"])
+		if operation == "PrepareCandidate":
+			return {"CandidateMeasurement": candidate, "CandidateSnapshotSha256": file_hash(member["DeltaCandidatePath"]), "CsvHeader": columns}
+		table = open_table()
+		original = observe(table, member["DeltaOriginalPath"] if table is not None else None)
+		if original:snapshot_layout(member["DeltaOriginalPath"])
+		def reject_candidate(reason):
+			table_name = re.sub(r"[^A-Za-z0-9_]", "_", member["TableName"])
+			mode = member.get("WriteIntent", "HistoryAppend" if member["ProtectRowCount"] else "Snapshot")
+			raise ValueError(f"PAX_DELTA_VALIDATION: table={table_name}; mode={mode}; "
+							 f"oldRows={original['DataRowCount']}; newRows={candidate['DataRowCount']}; {reason}")
+		if original:
+			existing_columns = {column[0]: column[1] for column in original["Schema"]}
+			new_columns = {column[0]: column[1] for column in candidate["Schema"]}
+			if any(new_columns.get(name) != kind for name, kind in existing_columns.items()):
+				reject_candidate("The Delta candidate would remove or change an existing column.")
+			# An empty table may be replaced by an empty candidate (for example a dashboard
+			# with no activity yet); no existing row can be lost.
+			if candidate["DataRowCount"] == 0 and original["DataRowCount"] > 0:
+				reject_candidate("Refusing a zero-row replacement of an existing Delta table.")
+			if member["ProtectRowCount"] and candidate["DataRowCount"] < original["DataRowCount"]:
+				reject_candidate("Refusing a shrinking Delta append replacement.")
+		return {"CandidateMeasurement": candidate, "OriginalMeasurement": original,
+				"CandidateSnapshotSha256": file_hash(member["DeltaCandidatePath"]),
+				"OriginalSnapshotSha256": file_hash(member["DeltaOriginalPath"]) if original else None,
+				"CsvHeader": columns}
+	table = open_table()
+	if operation == "PrepareOriginal":
+		candidate = member["CandidateMeasurement"]
+		original = observe(table, member["DeltaOriginalPath"] if table is not None else None)
+		if original:snapshot_layout(member["DeltaOriginalPath"])
+		if original:
+			existing_columns = {column[0]: column[1] for column in original["Schema"]}
+			new_columns = {column[0]: column[1] for column in candidate["Schema"]}
+			if any(new_columns.get(name) != kind for name, kind in existing_columns.items()):
+				raise ValueError("PAX_RECOVERY_EXISTING_SCHEMA")
+			if candidate["DataRowCount"] == 0 and original["DataRowCount"] > 0:
+				raise ValueError("PAX_RECOVERY_EMPTY_REPLACEMENT")
+		return {"OriginalMeasurement": original, "OriginalSnapshotSha256": file_hash(member["DeltaOriginalPath"]) if original else None}
+	original, candidate = member["OriginalMeasurement"], member["CandidateMeasurement"]
+	# History chooses a comparison layout, never authority: owned() still requires
+	# all tags, the version fence and a complete logical-data proof.
+	reference = original if original and table is not None and (
+		table.version() == original["Version"] or table.history(1)[0].get("paxAction") == "Restore") else candidate
+	current = observe(table, reference=reference)
+	if operation == "Observe":
+		return {"Observation": current, "Published": owned(current, "Publish", candidate),
+				"Restored": bool(original and owned(current, "Restore", original)),
+				"Original": (current is None and original is None) or
+					bool(original and current and current["Version"] == original["Version"] and same_data(current, original))}
+	if operation == "Publish":
+		parquet = verified_snapshot(member["DeltaCandidatePath"], member["CandidateSnapshotSha256"], candidate)
+		if owned(current, "Publish", candidate):
+			return {"Observation": current, "Reconciled": True}
+		if owned(current, "Restore", original):
+			expected_version = current["Version"]
+		else:
+			expected_version = original["Version"] if original else -1
+			if (current["Version"] if current else -1) != expected_version or (original and not same_data(current, original)):
+				verification_failure("The Delta base changed after preparation; foreign data will not be overwritten.", ["base-version-or-logical-data"])
+		action, expected, schema_mode = "Publish", candidate, "merge"
+	else:
+		if original is None:
+			if current is None:
+				return {"Observation": None, "Restored": True}
+			if owned(current, "Publish", candidate):
+				return {"Observation": current, "Restored": False, "Code": "NewTableRecoveryPending"}
+			verification_failure("An unverified table appeared; recovery will not delete or overwrite it.", ownership_failures(current, "Publish", candidate))
+		parquet = verified_snapshot(member["DeltaOriginalPath"], member["OriginalSnapshotSha256"], original)
+		if current and current["Version"] == original["Version"] and same_data(current, original):
+			return {"Observation": current, "Restored": True}
+		if owned(current, "Restore", original):
+			return {"Observation": current, "Restored": True}
+		if not owned(current, "Publish", candidate):
+			failures = ownership_failures(current, "Publish", candidate)
+			reason = ("A foreign or unverifiable Delta commit blocks restoration; its data is left untouched."
+					  if any(value in failures for value in ("ownership-tags", "commit-version"))
+					  else "The tagged Delta commit does not match its frozen content/schema; restoration is blocked and its data is left untouched.")
+			verification_failure(reason, failures)
+		expected_version = current["Version"]
+		action, expected, schema_mode = "Restore", original, "overwrite"
+	metadata = {"paxSet": member["SetId"], "paxMember": member["PublicationId"], "paxAction": action,
+				"paxOriginalVersion": original["Version"] if original else -1,
+				"paxExpectedVersion": expected_version, "paxContent": expected["Sha256"]}
+	pinned = DeltaTable(uri, version=expected_version, storage_options=options) if expected_version >= 0 else uri
+	data = pa.RecordBatchReader.from_batches(parquet.schema_arrow, parquet_batches(parquet,expected))
+	writer_options={}
+	if os.environ.get("PAX_RECOVERY_ROOT"):
+		from deltalake import WriterProperties
+		if not isinstance(expected.get("MaxEncodedRowBytes"),int):
+			raise ValueError("PAX_RECOVERY_BYTE_PROOF")
+		row_cost=expected["MaxEncodedRowBytes"]+len(parquet.schema_arrow)*8+16
+		if row_cost>256*1024*1024:
+			raise ValueError("PAX_RECOVERY_PARQUET_ROW_GROUP_LIMIT")
+		group_rows=max(1,min(65536,(8*1024*1024)//max(row_cost,1)))
+		writer_options["writer_properties"]=WriterProperties(max_row_group_size=group_rows,
+			write_batch_size=min(1024,group_rows),data_page_size_limit=1024*1024,
+			dictionary_page_size_limit=1024*1024,data_page_row_count_limit=min(1024,group_rows))
+	write_deltalake(pinned, data, mode="overwrite" if expected_version >= 0 else "error",
+				   schema_mode=schema_mode, storage_options=options,
+				   commit_properties=CommitProperties(max_commit_retries=0, custom_metadata=metadata),**writer_options)
+	after = observe(open_table(), reference=expected)
+	if after["Version"] != expected_version + 1 or not owned(after, action, expected):
+		failures = ownership_failures(after, action, expected)
+		if after["Version"] != expected_version + 1:
+			failures.append("expected-next-version")
+		verification_failure("The committed Delta member failed readback; publication is not accepted.", failures)
+	return {"Observation": after, "Restored": action == "Restore", "Reconciled": False}
+
+try:
+	print(json.dumps(run(), ensure_ascii=False, separators=(",", ":")))
+except Exception as error:
+	print(f"Delta member {request['operation']} failed ({type(error).__name__}): {error}", file=sys.stderr)
+	sys.exit(1)
+'@
+	$inlinePy = (script:Get-PaxStrictArrowCsvReaderPython) + $inlinePy
+	if ($script:PaxPublishRecoveryContext) {
+		$environment = @{ PAX_DELTA_MEMBER_TOKEN = $BearerToken }
+		$expiry = if ($recoveryToken) { $recoveryToken.ExpiresUtc } else { [datetime]::MaxValue }
+		$result = script:Invoke-PaxPublishRecoveryProcess -Python $Python -Code $inlinePy -Arguments @($requestPath) -Environment $environment -ExpiresUtc $expiry
+		return ($result | ConvertFrom-Json -ErrorAction Stop)
+	}
+	$priorToken = [Environment]::GetEnvironmentVariable('PAX_DELTA_MEMBER_TOKEN', 'Process')
+	try {
+		$env:PAX_DELTA_MEMBER_TOKEN = $BearerToken
+		$arguments = @($Python.Args) + @('-B', '-c', $inlinePy, $requestPath)
+		$output = @(& $Python.Path @arguments 2>&1)
+		$nativeExit = $LASTEXITCODE
+		if ($nativeExit -ne 0) {
+			$nativeFailure = [InvalidOperationException]::new(($output -join [Environment]::NewLine))
+			if (($output -join "`n") -match '(?m)^Delta member (?:Prepare|Observe|Publish|Restore) failed \((?:ValueError|VerificationError)\): (PAX_DELTA_(?:VALIDATION|VERIFICATION): [^\r\n]+)$') {
+				$nativeFailure.Data['PaxLocalDeltaFailure'] = $Matches[1]
+				Write-Log $Matches[1]
+				throw $nativeFailure
+			}
+			$formatted = script:Format-PaxOneLakeFailure -Failure $nativeFailure -Cause ('Delta member {0} failed with native exit {1}.' -f $Operation, $nativeExit)
+			$outerFailure = [InvalidOperationException]::new($formatted, $nativeFailure)
+			$outerFailure.Data['PaxOneLakeFailure'] = $formatted
+			Write-Log $formatted
+			throw $outerFailure
+		}
+		return (($output -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop)
+	}
+	finally { [Environment]::SetEnvironmentVariable('PAX_DELTA_MEMBER_TOKEN', $priorToken, 'Process') }
+}
+
+function script:New-PaxDeltaPublicationState {
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)][object[]]$Entries,
+		[Parameter(Mandatory)][string]$StageRoot,
+		[Parameter(Mandatory)][psobject]$Python,
+		[string]$BearerToken = ''
+	)
+	$borrowSources = ($script:PaxDeltaPublicationContext -and $script:PaxDeltaPublicationContext.PSObject.Properties['BorrowSources'] -and $script:PaxDeltaPublicationContext.BorrowSources)
+	if ($Entries.Count -eq 0) { throw 'A Delta publication requires a declared producer roster.' }
+	[void][IO.Directory]::CreateDirectory($StageRoot)
+	$groups = @($Entries | Group-Object TargetUri | Sort-Object Name)
+	$requiredIds = @($groups | ForEach-Object { 'Table_' + [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes([string]$_.Group[0].TargetUri))) })
+	$roster = @($Entries | Sort-Object TargetUri, SourceIdentity, SourcePath | ForEach-Object {
+		$item = [ordered]@{ TargetUri = [string]$_.TargetUri; SourceIdentity = [string]$_.SourceIdentity; SourcePath = [IO.Path]::GetFullPath($_.SourcePath); Dashboard = [string]$_.Dashboard; DataType = [string]$_.DataType; ProtectRowCount = [bool]$_.ProtectRowCount; AuthoritativeProducer = [bool]($_.PSObject.Properties['AuthoritativeProducer'] -and $_.AuthoritativeProducer) }
+		if ($_.PSObject.Properties['WriteIntent']) { $item.WriteIntent = [string]$_.WriteIntent }
+		if ($borrowSources) { $item.SourcePolicy = 'BorrowedReadOnlyV1'; $item.SourceSha256 = [string]$_.SourceSha256 }
+		if ($_.PSObject.Properties['OriginalExpectation']) { $item.OriginalExpectation = $_.OriginalExpectation }
+		$item
+	})
+	$rosterText = ConvertTo-Json -InputObject $roster -Depth 8 -Compress
+	$statePath = Join-Path $StageRoot '.pax_delta_set_state.json'
+	if (Test-Path -LiteralPath $statePath -PathType Leaf) {
+		$saved = [IO.File]::ReadAllText($statePath) | ConvertFrom-Json -ErrorAction Stop
+		if ($saved.Version -cne '2.0' -or $saved.Kind -cne 'DeltaTables' -or $saved.RunTimestamp -cne [string]$global:ScriptRunTimestamp -or $saved.RosterText -cne $rosterText -or $saved.Status -notin @('Prepared','Publishing','RestorePending','Restored','Accepted')) { throw 'The frozen Delta set cannot change its producer roster, target namespace or run identity.' }
+		$tableMembers = @($saved.Members | Where-Object Kind -eq 'DeltaTable')
+		if ((@($tableMembers | ForEach-Object PublicationId | Sort-Object) -join ',') -cne ((@($requiredIds | Sort-Object)) -join ',') -or ((@($saved.Members.PublicationId | Sort-Object)) -join ',') -cne ((@($saved.RequiredIds | Sort-Object)) -join ',') -or @($saved.Members.PublicationId | Sort-Object -Unique).Count -ne $saved.Members.Count -or $saved.IntentHash -cne (script:Get-PaxDeltaIntentHash -State $saved)) { throw 'The frozen Delta member manifest is incomplete or changed.' }
+		foreach ($member in $saved.Members) {
+			if ($borrowSources -or $member.PSObject.Properties['SourcePolicy']) {
+				$boundEntries = @($Entries | Where-Object { $_.TargetUri -ceq $member.TargetUri -and $_.SourceIdentity -ceq $member.SourceIdentity -and [IO.Path]::GetFullPath([string]$_.SourcePath) -ieq [IO.Path]::GetFullPath([string]$member.CandidatePath) })
+				if ($boundEntries.Count -ne 1 -or $member.TableName -cne $boundEntries[0].TableName -or
+					$member.SourceSha256 -cne $boundEntries[0].SourceSha256 -or $member.SourceBaselineKind -cne 'CurrentBytesNotPastAuthenticity') { throw 'PAX_RECOVERY_SOURCE_BINDING: frozen member source, role, table and baseline must match the exact declared producer.' }
+				if ($script:PaxPublishRecoveryContext) {
+					$expected = $boundEntries[0].OriginalExpectation
+					if (($member.OriginalExpectation | ConvertTo-Json -Depth 8 -Compress) -cne ($expected | ConvertTo-Json -Depth 8 -Compress) -or
+						($expected.ExpectedExists -and (-not $member.OriginalMeasurement -or $member.OriginalMeasurement.Version -ne $expected.ExpectedVersion -or $member.OriginalMeasurement.Sha256 -cne $expected.ExpectedContentSha256 -or $member.OriginalMeasurement.DataRowCount -ne $expected.ExpectedRows)) -or
+						(-not $expected.ExpectedExists -and $member.OriginalMeasurement)) { throw 'PAX_RECOVERY_ORIGINAL_BINDING: frozen original must retain its independently declared existence/version/content/count expectation.' }
+				}
+				$expectedDirectory = Join-Path $StageRoot ([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes([string]$member.TargetUri))))
+				if (-not $borrowSources -or $member.SourcePolicy -cne 'BorrowedReadOnlyV1' -or
+					[IO.Path]::GetFullPath([string]$member.OwnedWorkDirectory) -ine [IO.Path]::GetFullPath($expectedDirectory) -or
+					[IO.Path]::GetFullPath([string]$member.DeltaCandidatePath) -ine [IO.Path]::GetFullPath((Join-Path $expectedDirectory 'candidate_0.parquet')) -or
+					[IO.Path]::GetFullPath([string]$member.DeltaOriginalPath) -ine [IO.Path]::GetFullPath((Join-Path $expectedDirectory 'original_0.parquet')) -or
+					-not $script:PaxDeltaPublicationContext.SourceLocks.ContainsKey([string]$member.CandidatePath)) { throw 'Borrowed recovery requires its original validated sources and independently owned member paths.' }
+			}
+			if ($member.Kind -notin @('DeltaTable','CsvFile') -or $member.IntentHash -cne $saved.IntentHash -or $member.SetId -cne $saved.SetId) { throw 'A frozen member no longer belongs to its declared complete set.' }
+			if ($member.Kind -eq 'DeltaTable' -and @($Entries | Where-Object { $_.TargetUri -ceq $member.TargetUri -and $_.SourceIdentity -ceq $member.SourceIdentity }).Count -eq 0) { throw 'A frozen Delta member no longer belongs to its declared producer and target.' }
+			if (-not (Test-Path -LiteralPath $member.CandidatePath -PathType Leaf) -or (script:Get-PaxDeltaSourceHash -LiteralPath $member.CandidatePath -Algorithm SHA256).Hash -cne $member.SourceSha256) { throw 'A frozen Delta source is missing or changed; recovery cannot use mutable current output.' }
+		}
+		return $saved
+	}
+	$setId = 'Delta_' + [guid]::NewGuid().ToString('N')
+	$prepared = [System.Collections.Generic.List[object]]::new()
+	$sharedNames = @('CopilotInteractions_Raw','Entra_Users_Raw','Audit_Raw','Agent365','Agent365_Status')
+	foreach ($group in $groups) {
+		$first = $group.Group[0]
+		if ($group.Count -gt 1 -and ($first.TableName -cnotin $sharedNames -or @($group.Group | Select-Object -ExpandProperty SourceIdentity -Unique).Count -ne 1)) { throw 'Distinct logical producers collide on one Delta table; no table may be written.' }
+		$orderedSources = @($group.Group)
+		if ($first.TableName -cin $sharedNames) {
+			$authority = @($group.Group | Where-Object { $_.PSObject.Properties['AuthoritativeProducer'] -and $_.AuthoritativeProducer })
+			if ($authority.Count -ne 1) { throw 'A shared Delta table requires exactly one registered authoritative producer.' }
+			$orderedSources = @($authority[0]) + @($group.Group | Where-Object { -not ($_.PSObject.Properties['AuthoritativeProducer'] -and $_.AuthoritativeProducer) })
+		}
+		$identityBytes = [Text.Encoding]::UTF8.GetBytes([string]$first.TargetUri)
+		$identity = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($identityBytes))
+		$memberDirectory = Join-Path $StageRoot $identity
+		[void][IO.Directory]::CreateDirectory($memberDirectory)
+		$canonical = $null
+		for ($aliasIndex = 0; $aliasIndex -lt $group.Count; $aliasIndex++) {
+			$entry = $orderedSources[$aliasIndex]
+			$source = [IO.Path]::GetFullPath([string]$entry.SourcePath)
+			if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw 'A required Delta producer did not supply its declared output.' }
+			$sourceHash = (script:Get-PaxDeltaSourceHash -LiteralPath $source -Algorithm SHA256).Hash
+			$frozen = if ($borrowSources) { $source } else { Join-Path $memberDirectory ("source_{0}.csv" -f $aliasIndex) }
+			if ($borrowSources) {
+				if (-not $script:PaxDeltaPublicationContext.SourceLocks.ContainsKey($source) -or
+					$sourceHash -cne $script:PaxDeltaPublicationContext.SourceHashes[$source]) { throw 'A borrowed Delta source is not locked to its validated baseline.' }
+				if ($canonical -and $sourceHash -cne $canonical.SourceSha256) { throw 'Borrowed shared Delta aliases have different source bytes; no table may be written.' }
+			}
+			else { Copy-Item -LiteralPath $source -Destination $frozen -ErrorAction Stop }
+			if ((script:Get-PaxDeltaSourceHash -LiteralPath $frozen -Algorithm SHA256).Hash -cne $sourceHash -or (script:Get-PaxDeltaSourceHash -LiteralPath $source -Algorithm SHA256).Hash -cne $sourceHash) { throw 'A Delta source changed while its complete-set snapshot was being taken.' }
+			$member = [pscustomobject]@{
+				Kind = 'DeltaTable'; SetId = $setId; IntentHash = ''; Name = [string]$entry.TableName; TableName = [string]$entry.TableName
+				Dashboard = $(if ($entry.TableName -cin $sharedNames) { 'Shared' } else { [string]$entry.Dashboard })
+				DataType = [string]$entry.DataType; SourceIdentity = [string]$entry.SourceIdentity; PublicationId = 'Table_' + $identity
+				TargetUri = [string]$entry.TargetUri; Tier = 'Fabric'; RemoteParent = [string]$entry.MarkerParent
+				Leaf = [string]$entry.TableName; StageLeaf = 'candidate.paxsetcandidate'
+				CandidatePath = $frozen; DestinationPath = $source; SourceSha256 = $sourceHash; ProtectRowCount = [bool]$entry.ProtectRowCount
+				DeltaCandidatePath = (Join-Path $memberDirectory ("candidate_{0}.parquet" -f $aliasIndex))
+				DeltaOriginalPath = (Join-Path $memberDirectory ("original_{0}.parquet" -f $aliasIndex))
+				CandidateMeasurement = $null; OriginalMeasurement = $null; CandidateSnapshotSha256 = $null; OriginalSnapshotSha256 = $null
+				OriginalPath = ''; CsvHeader = @(); PublishedObservation = $null; RestoredObservation = $null; RecoveryCode = ''
+			}
+			if ($borrowSources) {
+				$member | Add-Member -NotePropertyName SourcePolicy -NotePropertyValue 'BorrowedReadOnlyV1'
+				$member | Add-Member -NotePropertyName OwnedWorkDirectory -NotePropertyValue $memberDirectory
+				$member | Add-Member -NotePropertyName SourceBaselineKind -NotePropertyValue 'CurrentBytesNotPastAuthenticity'
+				if ($canonical) { continue }
+			}
+			if ($entry.PSObject.Properties['WriteIntent']) { $member | Add-Member -NotePropertyName WriteIntent -NotePropertyValue ([string]$entry.WriteIntent) }
+			$proof = script:Invoke-PaxDeltaMemberOperation -Operation Prepare -Member $member -WorkDirectory $memberDirectory -Python $Python -BearerToken $BearerToken
+			foreach ($property in @('CandidateMeasurement','OriginalMeasurement','CandidateSnapshotSha256','OriginalSnapshotSha256','CsvHeader')) { $member.$property = $proof.$property }
+			if ($script:PaxPublishRecoveryContext) {
+				$expected = $entry.OriginalExpectation
+				if ($expected.ExpectedExists) {
+					if (-not $member.OriginalMeasurement -or $member.OriginalMeasurement.Version -ne $expected.ExpectedVersion -or
+						$member.OriginalMeasurement.Sha256 -cne $expected.ExpectedContentSha256 -or
+						$member.OriginalMeasurement.DataRowCount -ne $expected.ExpectedRows) { throw 'PAX_RECOVERY_FOREIGN_BASE: existing table differs from its explicit independently measured version/content/count expectation.' }
+				}
+				elseif ($member.OriginalMeasurement) { throw 'PAX_RECOVERY_FOREIGN_BASE: a table exists where the selected snapshot requires absence; initial seed does not authorize overwriting it.' }
+				$member | Add-Member -NotePropertyName OriginalExpectation -NotePropertyValue $expected
+			}
+			$member.CandidateMeasurement | Add-Member -NotePropertyName Role -NotePropertyValue 'Candidate'
+			if ($member.OriginalMeasurement) { $member.OriginalMeasurement | Add-Member -NotePropertyName Role -NotePropertyValue 'Original' }
+			if ($canonical) {
+				if ($canonical.CandidateMeasurement.Sha256 -cne $member.CandidateMeasurement.Sha256 -or $canonical.CandidateMeasurement.DataRowCount -ne $member.CandidateMeasurement.DataRowCount -or ($canonical.OriginalMeasurement | ConvertTo-Json -Depth 12 -Compress) -cne ($member.OriginalMeasurement | ConvertTo-Json -Depth 12 -Compress)) { throw 'Shared Delta producers disagree or their base changed during preparation; no table may be written.' }
+			}
+			else { $canonical = $member }
+		}
+		[void]$prepared.Add($canonical)
+	}
+	$state = [pscustomobject]@{
+		Version = '2.0'; Kind = 'DeltaTables'; RunTimestamp = [string]$global:ScriptRunTimestamp
+		SetId = $setId; RosterText = $rosterText; RequiredIds = $requiredIds; IntentHash = ''; Status = 'Prepared'; Members = $prepared.ToArray()
+		ProducerMembers = @($Entries | Where-Object { -not $borrowSources -and $_.PSObject.Properties['Producer'] } | ForEach-Object Producer)
+	}
+	$state.IntentHash = script:Get-PaxDeltaIntentHash -State $state
+	foreach ($member in $state.Members) { $member.IntentHash = $state.IntentHash }
+	return $state
+}
+
+function script:Get-PaxDeltaIntentHash {
+	param([psobject]$State)
+	$manifest = [ordered]@{
+		Version = $State.Version; Kind = $State.Kind; SetId = $State.SetId; RosterText = $State.RosterText; RequiredIds = @($State.RequiredIds)
+		ProducerMembers = @($State.ProducerMembers)
+		Members = @($State.Members | ForEach-Object {
+			$item = [ordered]@{
+				Kind = $_.Kind; Tier = $_.Tier; Leaf = $_.Leaf; StageLeaf = $_.StageLeaf; OriginalPath = $_.OriginalPath
+				PublicationId = $_.PublicationId; TargetUri = $_.TargetUri; SourceIdentity = $_.SourceIdentity; Dashboard = $_.Dashboard
+				RemoteParent = $_.RemoteParent; CandidatePath = $_.CandidatePath; DestinationPath = $_.DestinationPath
+				SourceSha256 = $_.SourceSha256; DeltaCandidatePath = $_.DeltaCandidatePath; DeltaOriginalPath = $_.DeltaOriginalPath
+				CandidateSnapshotSha256 = $_.CandidateSnapshotSha256; OriginalSnapshotSha256 = $_.OriginalSnapshotSha256
+				CandidateMeasurement = $_.CandidateMeasurement; OriginalMeasurement = $_.OriginalMeasurement; CsvHeader = @($_.CsvHeader)
+			}
+			# Preserve verification of pre-policy frozen manifests without reinterpreting them.
+			if ($_.PSObject.Properties['WriteIntent']) { $item.WriteIntent = [string]$_.WriteIntent; $item.ProtectRowCount = [bool]$_.ProtectRowCount }
+			if ($_.PSObject.Properties['SourcePolicy']) {
+				$item.SourcePolicy = [string]$_.SourcePolicy
+				$item.OwnedWorkDirectory = [string]$_.OwnedWorkDirectory
+				$item.SourceBaselineKind = [string]$_.SourceBaselineKind
+			}
+			if ($_.PSObject.Properties['OriginalExpectation']) { $item.OriginalExpectation = $_.OriginalExpectation }
+			$item
+		})
+	}
+	return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes(($manifest | ConvertTo-Json -Depth 20 -Compress))))
+}
+
+function script:Invoke-PaxDeltaPublicationMember {
+	param([string]$Operation, [psobject]$Member)
+	if (-not $script:PaxDeltaPublicationContext) { throw 'The Delta publication context is unavailable.' }
+	$workDirectory = Split-Path $Member.CandidatePath -Parent
+	if ($Member.PSObject.Properties['SourcePolicy']) {
+		if ($Member.SourcePolicy -cne 'BorrowedReadOnlyV1' -or -not $Member.OwnedWorkDirectory -or
+			-not $script:PaxDeltaPublicationContext.SourceLocks.ContainsKey([string]$Member.CandidatePath) -or
+			(script:Get-PaxDeltaSourceHash -LiteralPath $Member.CandidatePath -Algorithm SHA256).Hash -cne $Member.SourceSha256) { throw 'A borrowed Delta member lost its immutable source baseline or owned work directory.' }
+		$workDirectory = [string]$Member.OwnedWorkDirectory
+		if ([IO.Path]::GetFullPath($workDirectory) -ieq [IO.Path]::GetFullPath((Split-Path $Member.CandidatePath -Parent))) { throw 'Delta member work must not be placed beside a borrowed source.' }
+	}
+	return (script:Invoke-PaxDeltaMemberOperation -Operation $Operation -Member $Member -WorkDirectory $workDirectory -Python $script:PaxDeltaPublicationContext.Python -BearerToken $script:PaxDeltaPublicationContext.BearerToken)
+}
+
+function script:Get-PaxDeltaRecoveryMarker {
+	param([psobject]$Member)
+	if ($script:PaxPublishRecoveryContext) { return (script:Get-PaxPublishRecoveryMarker -Member $Member) }
+	$transport = script:Get-PaxMultiDashboardRemoteTransport -Member $Member
+	if ([string]::IsNullOrWhiteSpace([string]$Member.SetId)) { throw 'A Delta recovery marker requires its frozen set identity.' }
+	# Recovery evidence belongs to this set, not every run targeting the lakehouse.
+	$markerId = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes([string]$Member.SetId)))
+	$relative = & $transport.ResolvePath $transport.Target ('.pax_delta_{0}_pending.paxrecovery' -f $markerId)
+	$uri = script:Get-PaxWatermarkFabricFilesUri -Transport $transport.Target -RelativePath $relative
+	$response = script:Invoke-PaxWatermarkFabricFilesRequestWithRecovery -Transport $transport.Target -Method GET -Uri $uri -Headers $null -Body $null -ExpectedPathNotFound
+	if ($response.StatusCode -eq 404) { return [pscustomobject]@{ Missing = $true; Transport = $transport; Relative = $relative; Uri = $uri; ETag = ''; Marker = $null } }
+	if ($response.Class -cne 'Ok' -or -not (script:Test-PaxWatermarkFabricFilesToken -Value $response.ETag)) { throw 'The Delta recovery marker could not be read with a valid concurrency token.' }
+	$marker = [Text.Encoding]::UTF8.GetString([byte[]]$response.Bytes) | ConvertFrom-Json -ErrorAction Stop
+	if ($marker.Version -cne '2.0' -or $marker.Kind -cne 'DeltaTables' -or [string]::IsNullOrWhiteSpace($marker.SetId)) { throw 'The Delta recovery marker is invalid; table publication is blocked.' }
+	return [pscustomobject]@{ Missing = $false; Transport = $transport; Relative = $relative; Uri = $uri; ETag = [string]$response.ETag; Marker = $marker }
+}
+
+function script:Start-PaxDeltaRecoveryMarker {
+	param([psobject]$Member, [string]$WorkDirectory)
+	if ($script:PaxPublishRecoveryContext) { script:Start-PaxPublishRecoveryMarker -Member $Member; return }
+	$current = script:Get-PaxDeltaRecoveryMarker -Member $Member
+	if (-not $current.Missing) {
+		if ($current.Marker.SetId -cne $Member.SetId -or $current.Marker.IntentHash -cne $Member.IntentHash) { throw 'This Delta set recovery marker has changed; its identity must match the selected checkpoint.' }
+		return
+	}
+	$directory = $current.Relative.Substring(0, $current.Relative.LastIndexOf('/'))
+	$directoryUri = script:Get-PaxWatermarkFabricFilesUri -Transport $current.Transport.Target -RelativePath $directory -Query 'resource=directory'
+	$created = script:Invoke-PaxWatermarkFabricFilesRequestWithRecovery -Transport $current.Transport.Target -Method PUT -Uri $directoryUri -Headers @{ 'If-None-Match' = '*' } -Body $null -ExpectedDirectoryExists
+	if ($created.Class -cne 'Ok' -and $created.StatusCode -notin @(409,412)) { throw 'The owned Delta recovery directory could not be prepared.' }
+	$path = Join-Path $WorkDirectory 'delta-pending-marker.json'
+	[IO.File]::WriteAllText($path, (@{ Version = '2.0'; Kind = 'DeltaTables'; SetId = $Member.SetId; IntentHash = $Member.IntentHash; RunTimestamp = [string]$global:ScriptRunTimestamp } | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
+	$sent = script:Write-PaxWatermarkFabricFilesObject -Transport $current.Transport.Target -RelativePath $current.Relative -Bytes ([IO.File]::ReadAllBytes($path)) -CreateHeaders @{ 'If-None-Match' = '*' }
+	if (-not $sent.Committed) { throw 'Exclusive Delta recovery intent could not be persisted; no table may be written.' }
+	$observed = script:Get-PaxDeltaRecoveryMarker -Member $Member
+	if ($observed.Missing -or $observed.Marker.SetId -cne $Member.SetId -or $observed.Marker.IntentHash -cne $Member.IntentHash) { throw 'Delta recovery intent failed readback; no table may be written.' }
+}
+
+function script:Complete-PaxDeltaRecoveryMarker {
+	param([psobject]$Member)
+	if ($script:PaxPublishRecoveryContext) { script:Complete-PaxPublishRecoveryMarker -Member $Member; return }
+	$current = script:Get-PaxDeltaRecoveryMarker -Member $Member
+	if ($current.Missing) { return }
+	if ($current.Marker.SetId -cne $Member.SetId -or $current.Marker.IntentHash -cne $Member.IntentHash) { throw 'A foreign or changed Delta recovery marker will not be removed.' }
+	$removed = script:Invoke-PaxWatermarkFabricFilesRequestWithRecovery -Transport $current.Transport.Target -Method DELETE -Uri $current.Uri -Headers @{ 'If-Match' = $current.ETag } -Body $null
+	if ($removed.Class -cne 'Ok') { throw 'Conditional Delta marker cleanup failed; resume must reconcile the accepted set.' }
+}
+
+function script:Invoke-PaxDeltaTableSetPublication {
+	param([object[]]$Entries, [string]$StageRoot, [psobject]$Python, [string]$BearerToken = '', [object[]]$ProducerMembers = @(), [switch]$BorrowSources)
+	$priorContext = $script:PaxDeltaPublicationContext
+	$sourceLocks = [Collections.Generic.Dictionary[string, IO.FileStream]]::new([StringComparer]::OrdinalIgnoreCase)
+	$sourceHashes = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::OrdinalIgnoreCase)
+	try {
+		$script:PaxDeltaPublicationContext = [pscustomobject]@{ Python = $Python; BearerToken = $BearerToken; Recovering = (Test-Path -LiteralPath (Join-Path $StageRoot '.pax_delta_set_state.json')) }
+		if ($BorrowSources) {
+			if (-not $IsWindows) { throw 'Borrowed source publication requires Windows FileShare.Read fencing; other hosts are not qualified.' }
+			if ($ProducerMembers.Count) { throw 'Borrowed source publication does not create or replay producer CSV representations.' }
+			$ownedRoot = [IO.Path]::GetFullPath($StageRoot).TrimEnd('\') + '\'
+			foreach ($entry in $Entries) {
+				$source = [IO.Path]::GetFullPath([string]$entry.SourcePath)
+				if ($source.StartsWith($ownedRoot, [StringComparison]::OrdinalIgnoreCase) -or
+					-not $entry.PSObject.Properties['SourceSha256'] -or [string]$entry.SourceSha256 -cnotmatch '^[A-F0-9]{64}$') { throw 'Borrowed sources must be outside their independently owned stage and have explicit current-byte SHA256 expectations.' }
+				if (-not $sourceLocks.ContainsKey($source)) {
+					$sourceLocks.Add($source, [IO.File]::Open($source, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read))
+					$sourceHashes.Add($source, (script:Get-PaxDeltaSourceHash -LiteralPath $source -Algorithm SHA256).Hash)
+				}
+				if ($sourceHashes[$source] -cne [string]$entry.SourceSha256) { throw 'A borrowed source no longer matches its supplied current-byte baseline; no table may be written.' }
+			}
+			$script:PaxDeltaPublicationContext | Add-Member -NotePropertyName BorrowSources -NotePropertyValue $true
+			$script:PaxDeltaPublicationContext | Add-Member -NotePropertyName SourceLocks -NotePropertyValue $sourceLocks
+			$script:PaxDeltaPublicationContext | Add-Member -NotePropertyName SourceHashes -NotePropertyValue $sourceHashes
+			$script:PaxDeltaPublicationContext | Add-Member -NotePropertyName StageRoot -NotePropertyValue ([IO.Path]::GetFullPath($StageRoot))
+		}
+		$state = script:New-PaxDeltaPublicationState -Entries $Entries -StageRoot $StageRoot -Python $Python -BearerToken $BearerToken
+		if ($script:PaxPublishRecoveryContext) {
+			$headroom = [int64]0
+			foreach ($member in $state.Members) {
+				foreach ($measurement in @($member.CandidateMeasurement,$member.OriginalMeasurement) | Where-Object { $null -ne $_ }) {
+					$largest = [Math]::Max([int64]$measurement.MaxBatchBytes,[int64]$measurement.MaxEncodedRowBytes)
+					$required = [Math]::Max([int64]$measurement.DataRowCount * 256 + 16MB, $largest * 4 + @($measurement.Schema).Count * 262144 + 16MB)
+					if ($required -gt $headroom) { $headroom = [int64]$required }
+				}
+			}
+			$script:PaxPublishRecoveryContext | Add-Member -Force -NotePropertyName ProofHeadroomBytes -NotePropertyValue $headroom
+			$null = script:Assert-PaxPublishRecoveryBudget -BeforePublication
+		}
+		if (-not $script:PaxCompleteSetPublicationStates) { $script:PaxCompleteSetPublicationStates = @{} }
+		$script:PaxCompleteSetPublicationStates[(Join-Path $StageRoot '.pax_delta_set_state.json')] = $state
+		if (-not $script:PaxDeltaPublicationContext.Recovering -and $ProducerMembers.Count -gt 0) {
+			$producerRoot = Join-Path $StageRoot 'producers'
+			[void][IO.Directory]::CreateDirectory($producerRoot)
+			$frozenProducers = [Collections.Generic.List[object]]::new()
+			foreach ($producer in $ProducerMembers) {
+				$source = [IO.Path]::GetFullPath([string]$producer.CandidatePath)
+				$sourceHash = (script:Get-PaxDeltaSourceHash -LiteralPath $source -Algorithm SHA256 -ErrorAction Stop).Hash
+				$frozenPath = Join-Path $producerRoot ('producer_{0}.csv' -f $frozenProducers.Count)
+				Copy-Item -LiteralPath $source -Destination $frozenPath -ErrorAction Stop
+				if ((script:Get-PaxDeltaSourceHash -LiteralPath $frozenPath -Algorithm SHA256).Hash -cne $sourceHash -or (script:Get-PaxDeltaSourceHash -LiteralPath $source -Algorithm SHA256).Hash -cne $sourceHash) { throw 'A producer changed while its complete-set recovery copy was being frozen.' }
+				[void]$frozenProducers.Add([pscustomobject]@{
+					Name = $producer.Name; Dashboard = $producer.Dashboard; DataType = $producer.DataType
+					CandidatePath = $source; DestinationPath = $producer.DestinationPath; PublicationId = $producer.PublicationId
+					ProtectionExpectation = $producer.ProtectionExpectation; FrozenPath = $frozenPath; SourceSha256 = $sourceHash
+					WriteIntent = [string]$producer.WriteIntent
+				})
+				if (@($Entries | Where-Object { [IO.Path]::GetFullPath($_.SourcePath) -ieq $source }).Count -eq 0) {
+					$parent = if ($script:DestParentUrl -and $script:DestParentUrl.ContainsKey([string]$producer.DataType)) { [string]$script:DestParentUrl[[string]$producer.DataType] } else { [string]$script:RemoteOutputUrl }
+					if ($parent -notlike 'https://*onelake*' -or $parent -notmatch '/Files(/|$)') { throw 'A mixed complete-set producer has no Fabric Files destination.' }
+					if ($script:PaxMultiDashboardEnabled -and $producer.Dashboard -in @('AIO','M365','ValueLens','CoworkAdoption') -and $producer.Name -notlike 'Shared:*') { $parent = $parent.TrimEnd('/') + '/' + $producer.Dashboard }
+					$destination = if ($producer.DestinationPath) { [string]$producer.DestinationPath } else { $source }
+					$leaf = [IO.Path]::GetFileName($destination)
+					$measurement = script:Measure-PaxWatermarkCsvArtifact -Path $frozenPath -AllowCandidateLeaf
+					if (-not $measurement.Valid) { throw 'A Files producer is unreadable; the complete set remains unchanged.' }
+					$originalPath = Join-Path $producerRoot ('original_{0}.csv' -f $frozenProducers.Count)
+					$originalMeasurement = $null
+					try { Get-RemoteFile-OneLake -RelativeName $leaf -DestinationPath $originalPath -ParentOverride $parent -ErrorAction Stop }
+					catch {
+						$status = 0
+						try { $status = [int]$_.Exception.Response.StatusCode } catch { }
+						if ($status -ne 404) { throw }
+						if (Test-Path -LiteralPath $originalPath) { Remove-Item -LiteralPath $originalPath -Force -ErrorAction Stop }
+					}
+					if (Test-Path -LiteralPath $originalPath -PathType Leaf) {
+						$originalMeasurement = script:Measure-PaxWatermarkCsvArtifact -Path $originalPath -AllowCandidateLeaf
+						if (-not $originalMeasurement.Valid -or $measurement.DataRowCount -le 0 -or ($producer.WriteIntent -notin @('Snapshot','UsersSnapshot') -and $measurement.DataRowCount -lt $originalMeasurement.DataRowCount)) { throw 'A Files candidate is empty or would shrink existing history; no member may be published.' }
+					}
+					$identity = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($parent.TrimEnd('/') + '/' + $leaf)))
+					if (@($state.Members | Where-Object PublicationId -CEQ ('File_' + $identity)).Count -gt 0) { throw 'Distinct file producers collide on one destination.' }
+					$state.Members += [pscustomobject]@{
+						Kind = 'CsvFile'; SetId = $state.SetId; IntentHash = ''; Name = $producer.Name; TableName = ''
+						Dashboard = $producer.Dashboard; DataType = $producer.DataType; SourceIdentity = $producer.Name
+						PublicationId = 'File_' + $identity; TargetUri = $parent.TrimEnd('/') + '/' + $leaf; Tier = 'Fabric'; RemoteParent = $parent
+						Leaf = $leaf; StageLeaf = ('.pax_multiappend_{0}_{1}.paxsetcandidate' -f $global:ScriptRunTimestamp, $identity)
+						CandidatePath = $frozenPath; DestinationPath = $destination; SourceSha256 = $sourceHash
+						CandidateMeasurement = $measurement; OriginalPath = $originalPath; OriginalMeasurement = $originalMeasurement
+						DeltaCandidatePath = ''; DeltaOriginalPath = ''; CandidateSnapshotSha256 = ''; OriginalSnapshotSha256 = ''; CsvHeader = @()
+						WriteIntent = [string]$producer.WriteIntent; ProtectRowCount = ($producer.WriteIntent -notin @('Snapshot','UsersSnapshot'))
+					}
+				}
+			}
+			$state.ProducerMembers = $frozenProducers.ToArray()
+			$state.RequiredIds = @($state.Members.PublicationId | Sort-Object)
+			$state.IntentHash = script:Get-PaxDeltaIntentHash -State $state
+			foreach ($member in $state.Members) { $member.IntentHash = $state.IntentHash }
+		}
+		foreach ($producer in $state.ProducerMembers) {
+			if (-not $producer.FrozenPath -or -not (Test-Path -LiteralPath $producer.FrozenPath -PathType Leaf) -or (script:Get-PaxDeltaSourceHash -LiteralPath $producer.FrozenPath -Algorithm SHA256).Hash -cne $producer.SourceSha256) { throw 'A frozen producer is missing or changed; recovery cannot replay processing.' }
+		}
+		if ($state.Status -eq 'Accepted') {
+			foreach ($member in $state.Members) {
+				if (-not (script:Test-PaxMultiDashboardDestination -Member $member -Expected $member.CandidateMeasurement -Leaf $member.Leaf)) { throw 'An accepted Delta set no longer matches its recorded versions; replay is blocked.' }
+			}
+			script:Complete-PaxMultiDashboardRecoveryMarkers -Members $state.Members -WorkDirectory $StageRoot
+			return [pscustomobject]@{ Accepted = $true; Code = 'RecoveredAcceptedDeltaSet' }
+		}
+		$result = script:Invoke-PaxMultiDashboardAppendPublication -Members $state.Members -Roster @{} -StageRoot $StageRoot -RequiredIds $state.RequiredIds -DeltaState $state
+		foreach ($source in $sourceHashes.Keys) {
+			if ((script:Get-PaxDeltaSourceHash -LiteralPath $source -Algorithm SHA256).Hash -cne $sourceHashes[$source]) { throw 'A borrowed source changed across complete-set publication.' }
+		}
+		return $result
+	}
+	finally {
+		foreach ($sourceLock in $sourceLocks.Values) { $sourceLock.Dispose() }
+		$script:PaxDeltaPublicationContext = $priorContext
+	}
+}
+
+function script:Acquire-CheckpointLock {
+	param(
+		[Parameter(Mandatory)][string]$CheckpointPath
+	)
+	$CheckpointPath = script:Resolve-PaxRunCleanupFileSystemPath -Path $CheckpointPath
+	$lockPath = "$CheckpointPath.lock"
+
+	# Inspect any existing lock for stale-takeover eligibility BEFORE attempting open.
+	if (Test-Path -LiteralPath $lockPath -PathType Leaf) {
+		$existing = $null
+		try { $existing = Get-Content -LiteralPath $lockPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop } catch {}
+		if ($script:PaxPublishRecoveryContext -and (-not $existing -or $existing.runTimestamp -cne $global:ScriptRunTimestamp -or
+			$existing.host -cne [System.Net.Dns]::GetHostName() -or -not $existing.pid -or [int64]$existing.pid -le 0)) {
+			throw 'PAX_RECOVERY_CHECKPOINT_LOCK: an unreadable, foreign-host or foreign-run lock requires independent ownership review; it was not removed.'
+		}
+		$stale = $false
+		$reason = ''
+		if (-not $existing) {
+			$stale = $true; $reason = 'unreadable lock file (corrupt or empty)'
+		}
+		elseif ($existing.host -eq [System.Net.Dns]::GetHostName()) {
+			# Same-host: definitive PID check.
+			$alive = $false
+			try { $alive = [bool](Get-Process -Id ([int]$existing.pid) -ErrorAction Stop) } catch { $alive = $false }
+			if (-not $alive) { $stale = $true; $reason = "owning PID $($existing.pid) is no longer running on this host" }
+		}
+		else {
+			# Foreign host: fall back to age-based TTL.
+			try {
+				$startedValue = $existing.started
+				if ($startedValue -is [datetime]) {
+					$startedText = $startedValue.ToString('o', [System.Globalization.CultureInfo]::InvariantCulture)
+				}
+				else {
+					$startedText = [string]$startedValue
+				}
+				$parsedStarted = [datetime]::MinValue
+				if (-not [datetime]::TryParseExact($startedText, 'o', [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind, [ref]$parsedStarted)) {
+					throw 'Checkpoint lock timestamp is not in round-trip format.'
+				}
+				$startedUtc = if ($parsedStarted.Kind -eq [System.DateTimeKind]::Unspecified) {
+					[datetime]::SpecifyKind($parsedStarted, [System.DateTimeKind]::Utc)
+				}
+				else {
+					$parsedStarted.ToUniversalTime()
+				}
+				$age = [datetime]::UtcNow - $startedUtc
+				if ($age -gt $script:CheckpointLockStaleTtl) {
+					$stale = $true
+					$reason = "foreign-host lock from $($existing.host) is older than $($script:CheckpointLockStaleTtl.TotalMinutes) min (age $([int]$age.TotalMinutes) min)"
+				}
+			} catch { $stale = $true; $reason = 'foreign-host lock has unparseable timestamp' }
+		}
+
+		if ($stale) {
+			Write-LogHost "  Checkpoint lock at $lockPath is stale ($reason); taking over." -ForegroundColor Yellow
+			try { Remove-Item -LiteralPath $lockPath -Force -ErrorAction Stop } catch {
+				throw "G-9: Could not remove stale checkpoint lock at $lockPath`: $($_.Exception.Message)"
+			}
+		}
+		else {
+			$ownerDesc = if ($existing) { "pid=$($existing.pid) host=$($existing.host) started=$($existing.started)" } else { '(unknown owner)' }
+			throw "G-9: Another PAX run is using this checkpoint ($ownerDesc). Refusing to start. If you know the other run is dead, delete the lock file manually: $lockPath"
+		}
+	}
+
+	# Open the lock file exclusively (CreateNew + FileShare.None). Hold the stream for the lifetime of the run.
+	try {
+		$stream = [System.IO.File]::Open($lockPath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+	}
+	catch {
+		throw "G-9: Failed to acquire checkpoint lock at $lockPath`: $($_.Exception.Message)"
+	}
+	$script:CheckpointLockStream = $stream
+	$script:CheckpointLockPath   = $lockPath
+
+	# Stamp the lock with our identity so other replicas can do stale detection later.
+	$payload = @{
+		pid          = $PID
+		host         = [System.Net.Dns]::GetHostName()
+		started      = (Get-Date).ToUniversalTime().ToString('o')
+		runTimestamp = $global:ScriptRunTimestamp
+	} | ConvertTo-Json -Compress
+	$bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+	$stream.Write($bytes, 0, $bytes.Length)
+	$stream.Flush()
+
+}
+
+function script:Release-CheckpointLock {
+	if ($script:CheckpointLockStream) {
+		try { $script:CheckpointLockStream.Dispose() } catch {}
+		$script:CheckpointLockStream = $null
+	}
+	if ($script:CheckpointLockPath -and (Test-Path -LiteralPath $script:CheckpointLockPath)) {
+		try { Remove-Item -LiteralPath $script:CheckpointLockPath -Force -ErrorAction SilentlyContinue } catch {}
+	}
+	$script:CheckpointLockPath = $null
+}
+
+function Move-PaxFileOverwriteAtomic {
+	<#
+	.SYNOPSIS
+		Same-directory overwrite-rename that keeps the DESTINATION path continuously
+		present, with a bounded retry for transient Windows sharing failures.
+	.DESCRIPTION
+		[System.IO.File]::Move(..., overwrite) maps to MoveFileEx with
+		MOVEFILE_REPLACE_EXISTING - one directory-entry replacement, so the destination
+		path never disappears. That is the property a checkpoint swap needs and that
+		neither remove-then-move nor [System.IO.File]::Replace provides: both rename or
+		delete the destination BEFORE putting the replacement in place, leaving a window
+		in which an interruption exposes no file at all.
+
+		MoveFileEx can transiently fail while another agent (indexer, antivirus scan, a
+		just-closed reader) still holds the destination open, so a bounded retry with a
+		short backoff is applied. Every attempt is a COMPLETE replacement: a failed
+		attempt leaves the destination holding its previous content - never nothing - so
+		retrying is always safe. The last failure is rethrown when the budget is
+		exhausted so callers fail closed instead of proceeding on an unproven swap.
+	#>
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)] [string] $SourcePath,
+		[Parameter(Mandatory)] [string] $DestinationPath,
+		[int] $MaxAttempts = 10,
+		[int] $BackoffMilliseconds = 25
+	)
+	$attempt = 0
+	while ($true) {
+		try {
+			[System.IO.File]::Move($SourcePath, $DestinationPath, $true)
+			return
+		}
+		catch {
+			$attempt++
+			if ($attempt -ge $MaxAttempts) { throw }
+			Start-Sleep -Milliseconds $BackoffMilliseconds
+		}
+	}
+}
+
+function Test-CheckpointCompatibility {
+	<#
+	.SYNOPSIS
+		Validates that a parsed checkpoint can safely be resumed by this script version.
+	.DESCRIPTION
+		Defends against three failure modes:
+		  1. Legacy integer `version` outside the supported range (1..2).
+		  2. `checkpointSchemaVersion` from a FUTURE major release — warned but allowed
+		     when within the same major (forward-compat best effort), rejected on major
+		     mismatch.
+		  3. `compatibilityMinimumVersion` higher than the running script version — hard
+		     reject (the checkpoint explicitly says this script is too old).
+		The check is intentionally conservative: it never silently up/down-converts the
+		structure on disk, and it always emits actionable recovery guidance.
+	.OUTPUTS
+		$true  -> safe to resume.
+		$false -> incompatible; caller must abort the resume.
+	#>
+	param(
+		[Parameter(Mandatory)] $CheckpointData,
+		[Parameter(Mandatory)] [string]$RunningScriptVersion
+	)
+
+	# 1) Legacy integer version range (preserves prior behaviour).
+	if (-not $CheckpointData.version -or [int]$CheckpointData.version -lt 1 -or [int]$CheckpointData.version -gt 2) {
+		Write-LogHost "ERROR: Unsupported checkpoint legacy version: $($CheckpointData.version). Supported range is 1..2." -ForegroundColor Red
+		Write-LogHost "  Recovery: start a fresh run without -Resume, or use a checkpoint produced by PAX 1.11.x." -ForegroundColor Yellow
+		return $false
+	}
+
+	# 2/3) New structured fields are OPTIONAL (older checkpoints predate them). When
+	# present, they are authoritative.
+	$schemaVer  = [string]$CheckpointData.checkpointSchemaVersion
+	$minVerStr  = [string]$CheckpointData.compatibilityMinimumVersion
+	$createdBy  = [string]$CheckpointData.createdByVersion
+
+	try { $running = [version]$RunningScriptVersion } catch { $running = $null }
+	try { $minVer  = if ($minVerStr) { [version]$minVerStr } else { $null } } catch { $minVer = $null }
+	try { $created = if ($createdBy) { [version]$createdBy } else { $null } } catch { $created = $null }
+
+	if ($minVer -and $running -and $running -lt $minVer) {
+		Write-LogHost "ERROR: Checkpoint requires PAX >= $minVerStr but running version is $RunningScriptVersion." -ForegroundColor Red
+		Write-LogHost "  Recovery: upgrade PAX to a version >= $minVerStr or start a fresh run without -Resume." -ForegroundColor Yellow
+		return $false
+	}
+
+	if ($schemaVer) {
+		# Parse the schema version. Only the leading "major.minor" pair gates compatibility.
+		$parts = $schemaVer.Split('.')
+		$schemaMajor = 0; [void][int]::TryParse($parts[0], [ref]$schemaMajor)
+		if ($schemaMajor -gt 2) {
+			Write-LogHost "ERROR: Checkpoint schema major version $schemaMajor is newer than this script supports (max major 2)." -ForegroundColor Red
+			Write-LogHost "  Recovery: upgrade PAX or start a fresh run without -Resume." -ForegroundColor Yellow
+			return $false
+		}
+	}
+
+	# Created-by drift is informational only (not all script edits change the on-disk shape).
+	if ($created -and $running -and $created -gt $running) {
+		Write-LogHost "  [WARN] Checkpoint was produced by PAX $createdBy; running PAX $RunningScriptVersion is older. Resume will proceed but newer fields may be ignored." -ForegroundColor Yellow
+	}
+
+	return $true
+}
+
+function Read-Checkpoint {
+	<#
+	.SYNOPSIS
+		Loads and validates a checkpoint file.
+	.PARAMETER CheckpointPath
+		Path to the checkpoint JSON file.
+	.OUTPUTS
+		$true if valid and loaded, $false if invalid.
+	#>
+	param(
+		[Parameter(Mandatory)]
+		[string]$CheckpointPath,
+		[switch]$PublicationOnly
+	)
+	$script:PaxVerifiedResumeCheckpoint = $null
+	
+	try {
+		# Keep one selected FileSystem identity through read, restore and startup locking.
+		$CheckpointPath = script:Resolve-PaxRunCleanupFileSystemPath -Path $CheckpointPath
+		if (-not (Test-Path -LiteralPath $CheckpointPath)) {
+			Write-LogHost "ERROR: Checkpoint file not found: $CheckpointPath" -ForegroundColor Red
+			return $false
+		}
+		$data = Get-Content -LiteralPath $CheckpointPath -Raw | ConvertFrom-Json -AsHashtable
+		
+		# Validate version (supports version 1 and 2)
+		if (-not $data.version -or $data.version -gt 2) {
+			Write-LogHost "ERROR: Unsupported checkpoint version: $($data.version). This script supports versions 1-2." -ForegroundColor Red
+			return $false
+		}
+
+		# Structured compatibility check (schema version,
+		# compatibilityMinimumVersion, createdByVersion). Hard-rejects checkpoints from
+		# the future or from releases that explicitly require a newer PAX.
+		if (-not (Test-CheckpointCompatibility -CheckpointData $data -RunningScriptVersion $ScriptVersion)) {
+			return $false
+		}
+		
+		# Validate required fields
+		if (-not $data.runTimestamp -or -not $data.outputFiles -or -not $data.partitions) {
+			Write-LogHost "ERROR: Checkpoint file is missing required fields" -ForegroundColor Red
+			return $false
+		}
+		if ($data.outputFiles.privateRecovery) {
+			if ($PublicationOnly) { throw 'Private/deidentified recovery is not eligible for publish-only recovery.' }
+			$data = script:Restore-PaxPrivateCheckpointRecovery -CheckpointPath $CheckpointPath -Data $data
+		}
+		
+		# Get output directory from checkpoint path
+		$outputDir = Split-Path $CheckpointPath -Parent
+		$partialCsvPath = Join-Path $outputDir $data.outputFiles.partialCsv
+		
+		# Note: We don't require _PARTIAL.csv to exist - the actual data is in .pax_incremental/*.jsonl files
+		# The _PARTIAL.csv is only created when merging at completion, or may not exist yet
+		
+		# Check for incremental save data if there are completed partitions
+		$completedPartitions = @($data.partitionStates.PSObject.Properties | Where-Object { $_.Value.state -eq 'Completed' })
+		if (-not $PublicationOnly -and $completedPartitions.Count -gt 0) {
+			$incrementalDir = Join-Path $outputDir ".pax_incremental"
+			$hasIncrementalData = $false
+			$incrementalRecordCount = 0
+			
+			if (Test-Path $incrementalDir) {
+				$jsonlFiles = Get-ChildItem -Path $incrementalDir -Filter "*.jsonl" -ErrorAction SilentlyContinue
+				if ($jsonlFiles -and $jsonlFiles.Count -gt 0) {
+					$hasIncrementalData = $true
+					# Count records in files
+					foreach ($file in $jsonlFiles) {
+						$incrementalRecordCount += (Get-Content $file.FullName | Measure-Object -Line).Lines
+					}
+				}
+			}
+			
+			$expectedRecords = ($completedPartitions | ForEach-Object { $_.Value.recordCount } | Measure-Object -Sum).Sum
+			
+			if (-not $hasIncrementalData) {
+				Write-LogHost ""
+				Write-LogHost "════════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
+				Write-LogHost "  WARNING: INCREMENTAL DATA MISSING" -ForegroundColor Red
+				Write-LogHost "════════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
+				Write-LogHost ""
+				Write-LogHost "  Checkpoint shows $($completedPartitions.Count) completed partition(s) with ~$expectedRecords records," -ForegroundColor Yellow
+				Write-LogHost "  but the .pax_incremental folder is missing or empty." -ForegroundColor Yellow
+				Write-LogHost ""
+				Write-LogHost "  Expected location: $incrementalDir" -ForegroundColor White
+				Write-LogHost ""
+				Write-LogHost "  If you continue, data from completed partitions will be LOST." -ForegroundColor Red
+				Write-LogHost "  The remaining partitions will be re-queried, but previous data cannot be recovered." -ForegroundColor Red
+				Write-LogHost ""
+				Write-LogHost "  OPTIONS:" -ForegroundColor Cyan
+				Write-LogHost "    1. Restore the .pax_incremental folder from backup (if available)" -ForegroundColor White
+				Write-LogHost "    2. Start a fresh run without -Resume (will re-query all partitions)" -ForegroundColor White
+				Write-LogHost "    3. Continue anyway and accept data loss from completed partitions" -ForegroundColor White
+				Write-LogHost ""
+				Write-LogHost "════════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
+				Write-LogHost ""
+
+				# G-6 noninteractive guard: a noninteractive host (container, ACA Job, scheduled
+				# task, CI runner) cannot answer a Read-Host. The original code would hang
+				# forever on stdin. Fail-fast with a clear message that points at the only
+				# two correct recoveries (restore the incremental folder, or start fresh).
+				if (script:Test-IsNonInteractive) {
+					Write-LogHost "  Noninteractive host detected (no console available to confirm data loss)." -ForegroundColor Red
+					Write-LogHost "  Resume aborted to prevent silent data loss." -ForegroundColor Red
+					Write-LogHost "  Recovery: restore the .pax_incremental folder from backup OR re-run without -Resume." -ForegroundColor Yellow
+					return $false
+				}
+
+				$response = Read-Host "Continue with potential data loss? (yes/no)"
+				if ($response -notmatch '^y(es)?$') {
+					Write-LogHost "Resume cancelled. Consider starting a fresh run." -ForegroundColor Yellow
+					return $false
+				}
+				Write-LogHost "Continuing with resume despite missing incremental data..." -ForegroundColor Yellow
+			} elseif ($incrementalRecordCount -lt ($expectedRecords * 0.9)) {
+				# Warn if incremental count is significantly less than expected (allow 10% variance for counting differences)
+				Write-LogHost ""
+				Write-LogHost "  [WARN] Incremental data may be incomplete:" -ForegroundColor Yellow
+				Write-LogHost "         Checkpoint expects ~$expectedRecords records from completed partitions" -ForegroundColor Yellow
+				Write-LogHost "         Found $incrementalRecordCount records in .pax_incremental" -ForegroundColor Yellow
+				Write-LogHost ""
+			}
+		}
+		
+		# Load into script scope
+		$script:CheckpointPath = $CheckpointPath
+		$script:CheckpointData = $data
+		$script:PartialOutputPath = $partialCsvPath
+		$script:IsResumeMode = $true
+		$script:PaxVerifiedResumeCheckpoint = @{
+			Path = $CheckpointPath
+			RunTimestamp = [string]$data.runTimestamp
+			OperationId = [string]$data.operationId
+		}
+		
+		return $true
+	}
+	catch {
+		Write-LogHost "ERROR: Failed to parse checkpoint file: $($_.Exception.Message)" -ForegroundColor Red
+		return $false
+	}
+}
+
+function script:Resolve-PaxRunCleanupFileSystemPath {
+	param([Parameter(Mandatory)][string]$Path)
+	if ($Path -match '^[a-zA-Z][a-zA-Z0-9+.-]*://') {
+		throw 'Recovery cleanup requires a FileSystem path, not a remote URL.'
+	}
+	$provider = $null
+	$drive = $null
+	$resolved = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path, [ref]$provider, [ref]$drive)
+	if ($null -eq $provider -or $provider.Name -cne 'FileSystem') {
+		throw 'Recovery cleanup does not support this provider; a FileSystem path is required.'
+	}
+	return $resolved
+}
+
+function script:Get-PaxMultiDashboardRemoteTransport {
+		param([psobject]$Member)
+		if ($Member.Tier -eq 'SharePoint') {
+			$resolved = Resolve-SharePointTarget -Url $Member.RemoteParent
+			$target = script:New-PaxSharePointPublicationTarget -DriveId $resolved.DriveId -FolderPath $resolved.FolderPath
+			return (script:New-PaxRemotePublicationTransport -Kind 'SharePoint' -Target $target)
+		}
+		if ($Member.Tier -eq 'Fabric') {
+			$resolved = Resolve-FabricTarget -Url $Member.RemoteParent
+			$target = script:New-PaxFabricFilesPublicationTarget -FilesystemBase $resolved.FilesystemBase -Item $resolved.ItemFull -FilesRoot $resolved.FilesPath
+			return (script:New-PaxRemotePublicationTransport -Kind 'FabricFiles' -Target $target)
+		}
+		throw 'A remote multi-dashboard member has an unsupported destination.'
+	}
+
+function script:Send-PaxMultiDashboardMember {
+		param([psobject]$Member, [string]$Path, [string]$Leaf)
+		if ($Member.PSObject.Properties['Kind'] -and $Member.Kind -eq 'DeltaTable' -and $Leaf -in @($Member.Leaf, $Member.StageLeaf)) {
+			if ($Leaf -eq $Member.StageLeaf) {
+				if ((script:Get-PaxDeltaSourceHash -LiteralPath $Member.CandidatePath -Algorithm SHA256).Hash -cne $Member.SourceSha256 -or (script:Get-PaxDeltaSourceHash -LiteralPath $Member.DeltaCandidatePath -Algorithm SHA256).Hash -cne $Member.CandidateSnapshotSha256) { throw 'A frozen Delta candidate changed before publication.' }
+				return
+			}
+			$marker = script:Get-PaxDeltaRecoveryMarker -Member $Member
+			if ($marker.Missing -or $marker.Marker.SetId -cne $Member.SetId -or $marker.Marker.IntentHash -cne $Member.IntentHash) { throw 'Delta recovery ownership changed before the canonical commit.' }
+			$result = script:Invoke-PaxDeltaPublicationMember -Operation Publish -Member $Member
+			$Member.PublishedObservation = $result.Observation
+			return
+		}
+		if ($Member.Tier -eq 'Local') { throw 'Remote member send cannot publish a local member.' }
+		if ($Member.Tier -eq 'SharePoint') { Send-FileToSharePoint -LocalPath $Path -RemoteFileName $Leaf -ParentOverride $Member.RemoteParent }
+		else { Send-FileToOneLake -LocalPath $Path -RemoteFileName $Leaf -ParentOverride $Member.RemoteParent }
+	}
+
+function script:Test-PaxMultiDashboardDestination {
+		param([psobject]$Member, [psobject]$Expected, [string]$Leaf)
+		if ($Member.PSObject.Properties['Kind'] -and $Member.Kind -eq 'DeltaTable') {
+			if ($Leaf -eq $Member.StageLeaf) {
+				return ((script:Get-PaxDeltaSourceHash -LiteralPath $Member.CandidatePath -Algorithm SHA256).Hash -ceq $Member.SourceSha256 -and (script:Get-PaxDeltaSourceHash -LiteralPath $Member.DeltaCandidatePath -Algorithm SHA256).Hash -ceq $Member.CandidateSnapshotSha256)
+			}
+			$result = script:Invoke-PaxDeltaPublicationMember -Operation Observe -Member $Member
+			if ($Expected -and $Expected.Role -eq 'Candidate') {
+				if ($Member.PublishedObservation -and $result.Observation -and $Member.PublishedObservation.Version -ne $result.Observation.Version) { return $false }
+				if ($result.Published) { $Member.PublishedObservation = $result.Observation }
+				return [bool]$result.Published
+			}
+			return [bool]($result.Original -or $result.Restored -or ($script:PaxDeltaPublicationContext.Recovering -and $result.Published))
+		}
+		if ($Member.Tier -eq 'Local') {
+			if (-not $Expected) { return (-not (Test-Path -LiteralPath $Member.DestinationPath)) }
+			$actual = script:Measure-PaxWatermarkCsvArtifact -Path $Member.DestinationPath -AllowCandidateLeaf
+			return ($actual.Valid -and $actual.Sha256 -ceq $Expected.Sha256 -and $actual.ByteLength -eq $Expected.ByteLength)
+		}
+		$transport = script:Get-PaxMultiDashboardRemoteTransport -Member $Member
+		$rel = & $transport.ResolvePath $transport.Target $Leaf
+		if (-not $Expected) {
+			if ($Member.Tier -eq 'SharePoint') {
+				$metadata = script:Read-PaxSharePointPublicationMetadata -Target $transport.Target -RelativePath $rel
+				return ([bool]$metadata.Missing -and [int]$metadata.StatusCode -eq 404)
+			}
+			$uri = script:Get-PaxWatermarkFabricFilesUri -Transport $transport.Target -RelativePath $rel
+			$head = script:Invoke-PaxWatermarkFabricFilesRequestWithRecovery -Transport $transport.Target -Method 'HEAD' -Uri $uri -Headers $null -Body $null
+			return ([int]$head.StatusCode -eq 404)
+		}
+		$proof = & $transport.ReadObject $transport.Target $rel 'CsvWithHeader'
+		if ($Member.Tier -eq 'SharePoint' -and (-not $proof.Observed -or $proof.Length -ne $Expected.ByteLength -or $proof.Sha256 -cne $Expected.Sha256)) {
+			$failureKind = if (-not $proof.Observed) {
+				if ($proof.PSObject.Properties['FailureKind'] -and [string]$proof.FailureKind -cmatch '^[A-Za-z0-9_-]{1,64}$') { [string]$proof.FailureKind } else { 'ReadbackUnproven' }
+			} elseif ($proof.Length -ne $Expected.ByteLength) { 'LengthMismatch' } else { 'DigestMismatch' }
+			Write-LogHost ('SharePoint member readback refused: {0}. No unproven member is accepted.' -f $failureKind) -ForegroundColor Red
+		}
+		return ($null -ne $Expected -and $proof.Observed -and $proof.Sha256 -ceq $Expected.Sha256 -and $proof.Length -eq $Expected.ByteLength)
+	}
+
+function script:Save-PaxMultiDashboardAppendState {
+		param([psobject]$State, [string]$Path)
+		if (-not $script:PaxCompleteSetPublicationStates) { $script:PaxCompleteSetPublicationStates = @{} }
+		$script:PaxCompleteSetPublicationStates[$Path] = $State
+		$temp = $Path + '.tmp'
+		$text = $State | ConvertTo-Json -Depth 12
+		[IO.File]::WriteAllText($temp, $text, [Text.UTF8Encoding]::new($false))
+		$null = [IO.File]::ReadAllText($temp) | ConvertFrom-Json -ErrorAction Stop
+		if ($State.PSObject.Properties['Kind'] -and $State.Kind -eq 'DeltaTables') {
+			$durable = [IO.File]::Open($temp, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+			try { $durable.Flush($true) } finally { $durable.Dispose() }
+		}
+		Move-PaxFileOverwriteAtomic -SourcePath $temp -DestinationPath $Path
+		if ($script:CheckpointEnabled -and $script:CheckpointData) {
+			$checkpointKey = if ($State.PSObject.Properties['Kind'] -and $State.Kind -eq 'DeltaTables') { 'deltaTableSet' } else { 'multiDashboardAppend' }
+			$script:CheckpointData[$checkpointKey] = @{ statePath = $Path; state = [string]$State.Status; runTimestamp = [string]$State.RunTimestamp }
+			$null = Save-CheckpointStrict
+		}
+	}
+
+function script:Get-PaxMultiDashboardRecoveryMarker {
+		param([psobject]$Member, [string]$WorkDirectory)
+		if ([string]$global:ScriptRunTimestamp -cnotmatch '^\d{8}_\d{6}$') { throw 'An append recovery marker requires a valid selected run timestamp.' }
+		$markerLeaf = '.pax_multiappend_{0}_pending.paxrecovery' -f $global:ScriptRunTimestamp
+		$path = Join-Path $WorkDirectory 'remote-recovery-marker.json'
+		if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force -ErrorAction Stop }
+		try {
+			if ($Member.Tier -eq 'SharePoint') { Get-RemoteFile-SharePoint -RelativeName $markerLeaf -DestinationPath $path -ParentOverride $Member.RemoteParent -ExpectedNotFound -ErrorAction Stop }
+			else { Get-RemoteFile-OneLake -RelativeName $markerLeaf -DestinationPath $path -ParentOverride $Member.RemoteParent -ExpectedPathNotFound -ErrorAction Stop }
+		}
+		catch {
+			$status = 0
+			try { $status = [int]$_.Exception.Response.StatusCode } catch { }
+			if (($Member.Tier -eq 'SharePoint' -and $status -eq 404) -or ($Member.Tier -eq 'Fabric' -and $_.Exception.Data['PaxExpectedPathNotFound'] -eq $true)) { return $null }
+			throw 'The multi-dashboard recovery marker could not be read; publication is blocked.'
+		}
+		return ([IO.File]::ReadAllText($path) | ConvertFrom-Json -ErrorAction Stop)
+	}
+
+function script:Complete-PaxMultiDashboardRecoveryMarkers {
+		param([object[]]$Members, [string]$WorkDirectory)
+		$seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+		foreach ($member in $Members) {
+			if ($member.Tier -eq 'Local') { continue }
+			if ($member.PSObject.Properties['Kind'] -and $member.Kind -eq 'DeltaTable') {
+				if ($seen.Add([string]$member.RemoteParent)) { script:Complete-PaxDeltaRecoveryMarker -Member $member }
+				continue
+			}
+			if ($member.StageLeaf) {
+				$transport = script:Get-PaxMultiDashboardRemoteTransport -Member $member
+				$stageRel = & $transport.ResolvePath $transport.Target $member.StageLeaf
+				$null = & $transport.RemoveObject $transport.Target @($stageRel) '.paxsetcandidate'
+			}
+			if (-not $seen.Add([string]$member.RemoteParent)) { continue }
+			$marker = script:Get-PaxMultiDashboardRecoveryMarker -Member $member -WorkDirectory $WorkDirectory
+			if (-not $marker) { continue }
+			if ([string]$marker.RunTimestamp -cne [string]$global:ScriptRunTimestamp) { throw 'A recovery marker belongs to another append run; it cannot be removed.' }
+			$transport = script:Get-PaxMultiDashboardRemoteTransport -Member $member
+			$rel = & $transport.ResolvePath $transport.Target ('.pax_multiappend_{0}_pending.paxrecovery' -f $global:ScriptRunTimestamp)
+			$null = & $transport.RemoveObject $transport.Target @($rel) '.paxrecovery'
+			if (script:Get-PaxMultiDashboardRecoveryMarker -Member $member -WorkDirectory $WorkDirectory) { throw 'This run recovery marker could not be cleared; resume this checkpoint to reconcile its publication.' }
+		}
+	}
+
+function script:Restore-PaxMultiDashboardAppendSet {
+		param([psobject]$State, [string]$StatePath)
+		$State.Status = 'RestorePending'
+		script:Save-PaxMultiDashboardAppendState -State $State -Path $StatePath
+		$failures = [System.Collections.Generic.List[string]]::new()
+		foreach ($member in $State.Members) {
+			try {
+				if ($member.PSObject.Properties['Kind'] -and $member.Kind -eq 'DeltaTable') {
+					$result = script:Invoke-PaxDeltaPublicationMember -Operation Restore -Member $member
+					$member.RestoredObservation = $result.Observation
+					$member.RecoveryCode = if ($result.Restored) { 'OriginalDataRestored' } else { [string]$result.Code }
+					script:Save-PaxMultiDashboardAppendState -State $State -Path $StatePath
+					if (-not $result.Restored) { throw 'A newly created Delta table remains visible. Its frozen complete set must be resumed; the table will not be deleted.' }
+					continue
+				}
+				# A later run may have published since this checkpoint stopped. Never
+				# restore its old snapshot over data outside this run's frozen pair.
+				if (script:Test-PaxMultiDashboardDestination -Member $member -Expected $member.OriginalMeasurement -Leaf $member.Leaf) { continue }
+				if (-not (script:Test-PaxMultiDashboardDestination -Member $member -Expected $member.CandidateMeasurement -Leaf $member.Leaf)) { throw 'The append destination changed outside this checkpoint; its current data will not be restored or removed.' }
+				if (-not $member.OriginalMeasurement) {
+					if ($member.Tier -eq 'Local') {
+						if (Test-Path -LiteralPath $member.DestinationPath -PathType Leaf) { Remove-Item -LiteralPath $member.DestinationPath -Force -ErrorAction Stop }
+						if (Test-Path -LiteralPath $member.DestinationPath) { throw 'A new destination could not be removed.' }
+					}
+					else {
+						$transport = script:Get-PaxMultiDashboardRemoteTransport -Member $member
+						$rel = & $transport.ResolvePath $transport.Target $member.Leaf
+						$null = & $transport.RemoveObject $transport.Target @($rel) $member.Leaf
+						if (-not (script:Test-PaxMultiDashboardDestination -Member $member -Expected $null -Leaf $member.Leaf)) { throw 'A new remote destination could not be proven absent.' }
+					}
+				}
+				else {
+					$original = script:Measure-PaxWatermarkCsvArtifact -Path $member.OriginalPath -AllowCandidateLeaf
+					if (-not $original.Valid -or $original.Sha256 -cne $member.OriginalMeasurement.Sha256) { throw 'Frozen original history is unavailable or changed.' }
+					if ($member.Tier -eq 'Local') {
+						$restore = $member.OriginalPath + '.restore'
+						Copy-Item -LiteralPath $member.OriginalPath -Destination $restore -Force -ErrorAction Stop
+						[void](script:Publish-PaxPurviewNamedOutputSet -Members @([pscustomobject]@{ Name = $member.Name; CandidatePath = $restore; DestinationPath = $member.DestinationPath }))
+					}
+					else { script:Send-PaxMultiDashboardMember -Member $member -Path $member.OriginalPath -Leaf $member.Leaf }
+					if (-not (script:Test-PaxMultiDashboardDestination -Member $member -Expected $member.OriginalMeasurement -Leaf $member.Leaf)) { throw 'Restored history could not be independently read back.' }
+				}
+			}
+			catch {
+				if ($member.PSObject.Properties['Kind'] -and $member.Kind -eq 'DeltaTable') { Write-LogHost ("Delta recovery is pending for '{0}': {1}" -f $member.Name, $_.Exception.Message) -ForegroundColor Red }
+				[void]$failures.Add([string]$member.Name)
+			}
+		}
+		if ($failures.Count -gt 0) {
+			$script:RollupProcessorFailed = $true
+			$script:HadTerminalFailures = $true
+			throw 'This checkpoint restoration is indeterminate or conflicts with changed destination data. Its recovery material is retained and its replay, publication and watermark advancement are blocked; unrelated runs do not require its recovery.'
+		}
+		$State.Status = 'Restored'
+		script:Save-PaxMultiDashboardAppendState -State $State -Path $StatePath
+		script:Complete-PaxMultiDashboardRecoveryMarkers -Members $State.Members -WorkDirectory (Split-Path $StatePath -Parent)
+	}
+
+function script:Resolve-PaxMultiDashboardAppendRecovery {
+		param([string]$BaseDirectory, [string]$StageRoot, [string[]]$Dashboards)
+		$currentPath = Join-Path $StageRoot '.pax_multiappend_state.json'
+		$savedPath = if ($script:CheckpointData -and $script:CheckpointData.multiDashboardAppend) { [string]$script:CheckpointData.multiDashboardAppend.statePath } else { '' }
+		if ($savedPath -and -not (Test-Path -LiteralPath $savedPath -PathType Leaf)) { throw 'Multi-dashboard recovery material named by the checkpoint is unavailable; publication and additive replay are blocked.' }
+		# The selected checkpoint is authoritative; sibling runs are not dependencies.
+		$paths = @(
+			if ($savedPath) { $savedPath }
+			elseif (Test-Path -LiteralPath $currentPath -PathType Leaf) { $currentPath }
+		)
+		foreach ($path in $paths) {
+			$state = [IO.File]::ReadAllText($path) | ConvertFrom-Json -ErrorAction Stop
+			if ($state.Version -cne '1.0' -or $state.Status -notin @('Prepared','Publishing','RestorePending','Restored','Accepted')) { throw 'Unrecognized multi-dashboard recovery state; publication is blocked.' }
+			$thisRun = ([string]$state.RunTimestamp -ceq [string]$global:ScriptRunTimestamp)
+			if (-not $thisRun) { throw 'The append recovery state does not belong to the selected checkpoint run.' }
+			$memberships = @($state.Members | ForEach-Object Dashboard | Sort-Object -Unique)
+			if (($memberships -join ',') -ine ((@($Dashboards | Sort-Object -Unique)) -join ',')) { throw 'Multi-dashboard recovery cannot change dashboard membership.' }
+			if ($state.Status -eq 'Accepted') {
+				foreach ($member in $state.Members) {
+					if (-not (script:Test-PaxMultiDashboardDestination -Member $member -Expected $member.CandidateMeasurement -Leaf $member.Leaf)) { throw 'An accepted append set no longer matches its checkpoint. Additive replay is blocked.' }
+					if ($member.Tier -ne 'Local') {
+						[void][IO.Directory]::CreateDirectory((Split-Path $member.DestinationPath -Parent))
+						Copy-Item -LiteralPath $member.CandidatePath -Destination $member.DestinationPath -Force -ErrorAction Stop
+					}
+				}
+				script:Complete-PaxMultiDashboardRecoveryMarkers -Members $state.Members -WorkDirectory (Split-Path $path -Parent)
+				return [pscustomobject]@{ Accepted = $true; Members = @($state.Members) }
+			}
+			if ($state.Status -eq 'Prepared') {
+				# No canonical mutation was authorized. In particular, a stale-opening-state
+				# refusal must never "restore" over an unrelated writer's newer history.
+				$state.Status = 'Restored'
+				script:Save-PaxMultiDashboardAppendState -State $state -Path $path
+				script:Complete-PaxMultiDashboardRecoveryMarkers -Members $state.Members -WorkDirectory (Split-Path $path -Parent)
+			}
+			elseif ($state.Status -ne 'Restored') { script:Restore-PaxMultiDashboardAppendSet -State $state -StatePath $path }
+			else { script:Complete-PaxMultiDashboardRecoveryMarkers -Members $state.Members -WorkDirectory (Split-Path $path -Parent) }
+		}
+		return [pscustomobject]@{ Accepted = $false; Members = @() }
+	}
+
+function script:Invoke-PaxMultiDashboardAppendPublication {
+		param([object[]]$Members, [hashtable]$Roster, [string]$StageRoot, [string[]]$RequiredIds, [psobject]$DeltaState)
+		$ids = @($Members | ForEach-Object PublicationId | Sort-Object -Unique)
+		if (($ids -join ',') -cne ((@($RequiredIds | Sort-Object -Unique)) -join ',') -or $ids.Count -ne $Members.Count) { throw 'The candidate set does not match the complete intended publication roster.' }
+		$statePath = Join-Path $StageRoot $(if ($DeltaState) { '.pax_delta_set_state.json' } else { '.pax_multiappend_state.json' })
+		$prepared = [System.Collections.Generic.List[object]]::new()
+		foreach ($member in $Members) {
+			if ($DeltaState) { [void]$prepared.Add($member); continue }
+			$type = ([string]$member.Name -split ':', 2)[1]
+			$history = $Roster[[string]$member.Dashboard][$type]
+			$tier = if ($script:DestTier.ContainsKey($member.DataType)) { [string]$script:DestTier[$member.DataType] } else { 'Local' }
+			$baseParent = if ($script:DestParentUrl.ContainsKey($member.DataType)) { [string]$script:DestParentUrl[$member.DataType] } else { [string]$script:RemoteOutputUrl }
+			$dashboardFolder = if ($member.PSObject.Properties['Folder']) { [string]$member.Folder } else { [string]$member.Dashboard }
+			$parent = if ($tier -ne 'Local') { if ($dashboardFolder) { '{0}/{1}' -f $baseParent.TrimEnd('/'), $dashboardFolder } else { $baseParent } } else { '' }
+			if ($history) { $parent = [string]$history.RemoteParent }
+			$originalPath = if ($history) { [string]$history.ExistingPath } else { '' }
+			$originalMeasurement = if ($history) { $history.OriginalMeasurement } else { $null }
+			if (-not $history -and (Test-Path -LiteralPath $member.DestinationPath)) { throw 'A non-append output would replace an existing local member; select its append target or use a new output location.' }
+			$measurement = script:Measure-PaxWatermarkCsvArtifact -Path $member.CandidatePath -AllowCandidateLeaf
+			if (-not $measurement.Valid -or $measurement.DataRowCount -le 0) { throw 'A complete-set candidate is unreadable or empty.' }
+			[void]$prepared.Add([pscustomobject]@{
+				Name = [string]$member.Name; Dashboard = [string]$member.Dashboard; DataType = [string]$member.DataType; PublicationId = [string]$member.PublicationId
+				Tier = $tier; RemoteParent = $parent; Leaf = [IO.Path]::GetFileName($member.DestinationPath)
+				CandidatePath = [string]$member.CandidatePath; DestinationPath = [string]$member.DestinationPath
+				CandidateMeasurement = $measurement; OriginalPath = $originalPath; OriginalMeasurement = $originalMeasurement
+				StageLeaf = ('.pax_multiappend_{0}_{1}.paxsetcandidate' -f $global:ScriptRunTimestamp, $prepared.Count)
+			})
+		}
+		$state = if ($DeltaState) { $DeltaState } else { [pscustomobject]@{ Version = '1.0'; RunTimestamp = [string]$global:ScriptRunTimestamp; Status = 'Prepared'; Members = $prepared.ToArray() } }
+		script:Save-PaxMultiDashboardAppendState -State $state -Path $statePath
+		$markerPath = Join-Path $StageRoot 'pending-marker.json'
+		[IO.File]::WriteAllText($markerPath, (@{ Version = '1.0'; RunTimestamp = [string]$global:ScriptRunTimestamp } | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
+		$markerParents = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+		foreach ($member in $prepared) {
+			if ($member.Tier -eq 'Local' -or -not $markerParents.Add([string]$member.RemoteParent)) { continue }
+			if ($member.PSObject.Properties['Kind'] -and $member.Kind -eq 'DeltaTable') { script:Start-PaxDeltaRecoveryMarker -Member $member -WorkDirectory $StageRoot; continue }
+			$marker = script:Get-PaxMultiDashboardRecoveryMarker -Member $member -WorkDirectory $StageRoot
+			if ($marker -and [string]$marker.RunTimestamp -cne [string]$global:ScriptRunTimestamp) { throw 'The append recovery marker does not belong to the selected checkpoint run.' }
+			script:Send-PaxMultiDashboardMember -Member $member -Path $markerPath -Leaf ('.pax_multiappend_{0}_pending.paxrecovery' -f $global:ScriptRunTimestamp)
+			$marker = script:Get-PaxMultiDashboardRecoveryMarker -Member $member -WorkDirectory $StageRoot
+			if (-not $marker -or [string]$marker.RunTimestamp -cne [string]$global:ScriptRunTimestamp) { throw 'The append recovery marker failed readback; no canonical member was promoted.' }
+		}
+		foreach ($member in $prepared) {
+			if ($member.Tier -eq 'Local') { continue }
+			script:Send-PaxMultiDashboardMember -Member $member -Path $member.CandidatePath -Leaf $member.StageLeaf
+			if (-not (script:Test-PaxMultiDashboardDestination -Member $member -Expected $member.CandidateMeasurement -Leaf $member.StageLeaf)) { throw 'A staged dashboard candidate failed destination readback; no canonical member was promoted.' }
+		}
+		foreach ($member in $prepared) {
+			if (-not (script:Test-PaxMultiDashboardDestination -Member $member -Expected $member.OriginalMeasurement -Leaf $member.Leaf)) { throw 'An original dashboard destination changed after preflight; no canonical member was promoted.' }
+		}
+		$state.Status = 'Publishing'
+		if ($script:PaxPublishRecoveryContext) { $null = script:Assert-PaxPublishRecoveryBudget -BeforePublication }
+		script:Save-PaxMultiDashboardAppendState -State $state -Path $statePath
+		try {
+			foreach ($member in $prepared) {
+				if ($member.Tier -ne 'Local') {
+					if (-not (script:Test-PaxMultiDashboardDestination -Member $member -Expected $member.OriginalMeasurement -Leaf $member.Leaf)) { throw 'An original dashboard destination changed before its canonical promotion.' }
+					script:Send-PaxMultiDashboardMember -Member $member -Path $member.CandidatePath -Leaf $member.Leaf
+					if ($DeltaState) { script:Save-PaxMultiDashboardAppendState -State $state -Path $statePath }
+				}
+			}
+			$localMembers = @(foreach ($member in @($prepared | Where-Object Tier -eq 'Local')) {
+				# The existing publisher consumes its candidate; preserve the frozen candidate
+				# for interrupted-run reconciliation until acceptance is durable.
+				$publicationCopy = $member.CandidatePath + '.publish'
+				Copy-Item -LiteralPath $member.CandidatePath -Destination $publicationCopy -Force -ErrorAction Stop
+				[pscustomobject]@{ Name = $member.Name; CandidatePath = $publicationCopy; DestinationPath = $member.DestinationPath }
+			})
+			if ($localMembers.Count -gt 0) {
+				$localResult = script:Publish-PaxPurviewNamedOutputSet -Members $localMembers
+				if (-not $localResult.Accepted) { throw 'The local complete-set publisher refused the candidate set.' }
+			}
+			foreach ($member in $prepared) {
+				if (-not (script:Test-PaxMultiDashboardDestination -Member $member -Expected $member.CandidateMeasurement -Leaf $member.Leaf)) { throw 'A canonical dashboard member failed destination readback.' }
+			}
+			$state.Status = 'Accepted'
+			script:Save-PaxMultiDashboardAppendState -State $state -Path $statePath
+		}
+		catch {
+			if ($DeltaState) { Write-LogHost ("Delta complete-set publication failed: {0}" -f $_.Exception.Message) -ForegroundColor Red }
+			script:Restore-PaxMultiDashboardAppendSet -State $state -StatePath $statePath
+			throw 'Multi-dashboard publication failed; every original destination was restored and independently verified. No watermark may advance.'
+		}
+		# Remote acceptance is proven above. Only now install the verified local readback
+		# representation used by the existing watermark and protection registries.
+		foreach ($member in @($prepared | Where-Object Tier -ne 'Local')) {
+			if ($member.PSObject.Properties['SourcePolicy'] -and $member.SourcePolicy -ceq 'BorrowedReadOnlyV1') { continue }
+			[void][IO.Directory]::CreateDirectory((Split-Path $member.DestinationPath -Parent))
+			Copy-Item -LiteralPath $member.CandidatePath -Destination $member.DestinationPath -Force -ErrorAction Stop
+			if ($DeltaState) { continue }
+			$transport = script:Get-PaxMultiDashboardRemoteTransport -Member $member
+			$rel = & $transport.ResolvePath $transport.Target $member.StageLeaf
+			$null = & $transport.RemoveObject $transport.Target @($rel) '.paxsetcandidate'
+		}
+		script:Complete-PaxMultiDashboardRecoveryMarkers -Members $prepared.ToArray() -WorkDirectory $StageRoot
+		return [pscustomobject]@{ Accepted = $true; Code = 'CompleteDestinationSetProven'; Reason = '' }
+	}
+
+
+# PAX14_EARLY_PUBLISH_DISPATCH
+if ($ResumePublishOnly) {
+	$allowed = @('ResumePublishOnly','ResumeRequest','PublishRecoveryManifest','ApproveExistingSnapshot','RecoveryMaxScratchBytes','RecoveryReserveBytes','RecoveryOperationSeconds','RemainingArgs','StartDate','Verbose','Debug','ErrorAction','WarningAction','InformationAction','ErrorVariable','WarningVariable','InformationVariable','OutVariable','OutBuffer','PipelineVariable')
+	$invalid = @($PSBoundParameters.Keys | Where-Object { $_ -notin $allowed })
+	# PowerShell binds the path following a Resume switch to the first positional
+	# parameter. Accept that spelling only as an explicit checkpoint path, never a date override.
+	$remainingCount = if ($null -eq $RemainingArgs) { 0 } else { @($RemainingArgs).Count }
+	$selectedCheckpoint = if ($remainingCount -eq 1 -and -not $PSBoundParameters.ContainsKey('StartDate')) { [string]$RemainingArgs[0] }
+		elseif ($remainingCount -eq 0 -and $PSBoundParameters.ContainsKey('StartDate')) { [string]$StartDate } else { '' }
+	if ($invalid.Count -or -not $ResumeRequest -or -not [IO.Path]::IsPathFullyQualified($selectedCheckpoint)) {
+		throw 'Publish-only recovery requires -ResumePublishOnly -Resume <explicit original checkpoint>. PAX generates its recovery plan; -PublishRecoveryManifest is optional advanced input. Force, checkpoint auto-selection, scope/auth/destination overrides and ordinary collection options are unsupported; no fallback was attempted.'
+	}
+	try {
+		$result = script:Invoke-PaxResumePublishOnly -CheckpointPath $selectedCheckpoint -ManifestPath $PublishRecoveryManifest -ApproveExistingSnapshot:$ApproveExistingSnapshot -MaxScratchBytes $RecoveryMaxScratchBytes -ReserveBytes $RecoveryReserveBytes -OperationSeconds $RecoveryOperationSeconds
+		if (-not $result.Accepted) { throw 'The complete eight-table recovery set was not accepted.' }
+		Microsoft.PowerShell.Utility\Write-Host ('Publish-only recovery accepted: all eight tables independently verified; originals and owned recovery journal retained. Peak owned scratch bytes: {0}.' -f $result.PeakScratchBytes)
+	}
+	catch {
+		Microsoft.PowerShell.Utility\Write-Host 'Publish-only recovery failed. Original retained inputs were not consumed; any owned recovery journal remains authoritative. No ordinary Resume, collection, processing or generic cleanup was invoked.' -ForegroundColor Red
+		throw
+	}
+	return
+}
+if ($PSBoundParameters.ContainsKey('PublishRecoveryManifest')) { throw '-PublishRecoveryManifest is supported only with explicit -ResumePublishOnly; no ordinary-mode fallback was attempted.' }
+if (@('ApproveExistingSnapshot','RecoveryMaxScratchBytes','RecoveryReserveBytes','RecoveryOperationSeconds'|Where-Object{$PSBoundParameters.ContainsKey($_)}).Count) { throw 'Recovery approval/budget parameters require -ResumePublishOnly; no ordinary-mode fallback was attempted.' }
+if ($ResumeRequest -and $PSBoundParameters.ContainsKey('StartDate') -and -not $RemainingArgs) {
+	$RemainingArgs = @('-Resume',[string]$StartDate)
+	$null = $PSBoundParameters.Remove('StartDate')
+	$StartDate = $null
+}
 
 $retiredParameters = @(foreach ($retiredParameter in @('ExplodeArrays', 'ExplodeDeep', 'ExportWorkbook', 'RAWInputCSV')) {
 	if ($PSBoundParameters.ContainsKey($retiredParameter)) { "-$retiredParameter" }
@@ -4906,7 +7707,7 @@ try {
 # Keep CLI binding intact: Resume is manually parsed from RemainingArgs below.
 # Invalid rollup-only combinations still reach their existing refusal, not a raw-only escape.
 $script:PaxDashboardSelectedAtStartup = $false
-$paxDashboardResumeRequested = $PSBoundParameters.ContainsKey('Resume') -or (@($RemainingArgs) -contains '-Resume')
+$paxDashboardResumeRequested = [bool]$ResumeRequest -or (@($RemainingArgs) -contains '-Resume')
 if (-not $PSBoundParameters.ContainsKey('Dashboard') -and -not $paxDashboardResumeRequested -and
 	($Rollup -or $RollupPlusRaw) -and -not ($Rollup -and $RollupPlusRaw) -and
 	-not $OnlyUserInfo -and -not $OnlyAgent365Info -and -not $UseEOM) {
@@ -5061,6 +7862,10 @@ if (script:Test-AISIDEntryPointGated -DashboardIsAISID $aisidCliDashboard -Defen
 # ============================================================
 $Resume = $null
 $ResumeSpecified = $false
+if ($ResumeRequest) {
+	$ResumeSpecified = $true
+	$Resume = if ($RemainingArgs -and $RemainingArgs.Count -eq 1 -and [string]$RemainingArgs[0] -notmatch '^-') { [string]$RemainingArgs[0] } else { '' }
+}
 if ($RemainingArgs -and $RemainingArgs.Count -gt 0) {
 	for ($i = 0; $i -lt $RemainingArgs.Count; $i++) {
 		if ($RemainingArgs[$i] -eq '-Resume') {
@@ -8927,7 +11732,7 @@ $m365UsageActivityBundle = @(
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
 $ScriptVersion = '2.0.0'
 $ScriptReleaseType = 'Prerelease'
-$ScriptReleaseDate = '2026-10-23-12'
+$ScriptReleaseDate = '2026-11-01-14'
 
 function Invoke-PaxVersionCheck {
 	# Informational, non-blocking, failure-isolated version check against the public PAX repo.
@@ -8984,16 +11789,7 @@ if (-not (Get-Variable -Name LogFile -Scope Script -ErrorAction SilentlyContinue
 }
 $script:LogBuffer = New-Object System.Collections.Generic.List[string]
 
-function Write-Log { 
-	param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Message, [string]$Level = "INFO") 
-	$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-	$logEntry = "[$timestamp] [$Level] $Message"
-	Microsoft.PowerShell.Utility\Write-Host $Message
-	try {
-		if ($script:LogFile) { Add-Content -Path $script:LogFile -Value $logEntry -Encoding UTF8 -ErrorAction SilentlyContinue }
-		else { $script:LogBuffer.Add($logEntry) | Out-Null }
-	} catch {}
-}
+
 
 # Log-file-only writer: never echoes to host. Used for diagnostic detail (temp paths,
 # argument vectors, stack traces) that should be captured in the run log but not
@@ -9075,16 +11871,7 @@ function Write-PaxMemoryObservation {
 	catch {}
 }
 
-function Write-LogHost { 
-	param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Message, [string]$ForegroundColor = "White") 
-	Microsoft.PowerShell.Utility\Write-Host $Message -ForegroundColor $ForegroundColor
-	try { 
-		$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-		$logEntry = "[$timestamp] [INFO] $Message"
-		if ($script:LogFile) { Add-Content -Path $script:LogFile -Value $logEntry -Encoding UTF8 -ErrorAction SilentlyContinue }
-		else { $script:LogBuffer.Add($logEntry) | Out-Null }
-	} catch {}
-}
+
 
 # Mirror Write-Host to log file with matching signature
 function global:Write-Host {
@@ -9916,7 +12703,9 @@ function script:New-PaxSourceVerifiedUsersRecord {
 		[Parameter(Mandatory)][string]$SourcePath,
 		[Parameter(Mandatory)][string]$CandidatePath,
 		[Parameter(Mandatory)][string]$SourceSha256,
-		[switch]$ProcessedUsers
+		[switch]$ProcessedUsers,
+		[string]$PythonExe,
+		[string[]]$LauncherArgs = @()
 	)
 	if (-not $script:PaxDeidEnabled) { throw 'Users protection issuance requires enabled de-identification.' }
 	$candidateBefore = (Get-FileHash -LiteralPath $CandidatePath -Algorithm SHA256 -ErrorAction Stop).Hash
@@ -9944,7 +12733,29 @@ function script:New-PaxSourceVerifiedUsersRecord {
 		$fields['Email'] = 'Upn'
 		for ($level = 0; $level -lt 15; $level++) { $fields["Level${level}_Name"] = 'Name' }
 	}
-	$verified = script:Test-PaxRawDeidCandidate -SourcePath $SourcePath -CandidatePath $CandidatePath -SourceSha256 $SourceSha256 -FieldKinds $fields -ProcessedHierarchy:$ProcessedUsers
+	if ($ProcessedUsers) {
+		if ([string]::IsNullOrWhiteSpace($PythonExe)) { throw 'Processed Users verification requires the actual processor interpreter.' }
+		$verificationWork = script:New-PaxPrivateDeidWorkDirectory
+		try {
+			$verificationScript = Join-Path $verificationWork 'processed-users-verifier.py'
+			[IO.File]::WriteAllText($verificationScript, $Script:EMBEDDED_PROCESSOR_COPILOT, [Text.UTF8Encoding]::new($false))
+			$verificationArgs = @($LauncherArgs) + @('-u', $verificationScript, '--purview', $SourcePath, '--entra', $SourcePath,
+				'--verify-users-reference', $SourcePath, '--verify-users-candidate', $CandidatePath,
+				'--verify-users-source-sha256', $SourceSha256, '--verify-users-salt-hex', [BitConverter]::ToString($script:PaxDeidSaltBytes).Replace('-', ''),
+				'--verify-users-domain', $script:PaxDeidDomain)
+			$verificationText = @(& $PythonExe @verificationArgs 2>&1)
+			$verificationExit = $LASTEXITCODE
+			$verified = ($verificationText -join "`n") | ConvertFrom-Json -ErrorAction Stop
+			if ($verificationExit -ne 0 -or $verified.Verified -isnot [bool] -or -not $verified.Verified) {
+				if ([string]$verified.Reason -cmatch '^De-identification verification failed at record [0-9]+, column [0-9]+\.$') { throw ([string]$verified.Reason) }
+				throw 'Independent processed Users protection verification failed; publication remains blocked.'
+			}
+		}
+		finally { Remove-Item -LiteralPath $verificationWork -Recurse -Force -ErrorAction Stop }
+	}
+	else {
+		$verified = script:Test-PaxRawDeidCandidate -SourcePath $SourcePath -CandidatePath $CandidatePath -SourceSha256 $SourceSha256 -FieldKinds $fields -ProcessedHierarchy:$ProcessedUsers
+	}
 	$measurement = script:Measure-PaxProtectedUsersArtifact -Path $CandidatePath -ProtectionPolicy $policy
 	if (-not $verified.Verified -or $verified.Sha256 -cne $candidateBefore -or $verified.Sha256 -cne $measurement.Sha256 -or $verified.DataRowCount -ne $measurement.DataRowCount) {
 		throw 'Complete source-to-Users protection verification did not match the candidate.'
@@ -10325,6 +13136,7 @@ function script:Hold-PaxDeidOutputPublication {
 	$protected = script:Get-PaxDeidProtectedInputPaths -AdditionalPaths $ProtectedPaths -IncludeAppendTargets
 	$files = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 	$held = [System.Collections.Generic.List[string]]::new()
+	$isolationComplete = $true
 	foreach ($leaf in $script:PaxRollupCandidateHeldLeafs) {
 		if ($leaf -and -not $held.Contains([string]$leaf)) { [void]$held.Add([string]$leaf) }
 	}
@@ -10336,6 +13148,7 @@ function script:Hold-PaxDeidOutputPublication {
 				foreach ($file in Get-ChildItem -LiteralPath $full -File -Recurse -ErrorAction Stop) { [void]$files.Add($file.FullName) }
 			}
 			catch {
+				$isolationComplete = $false
 				Write-LogHost ("ERROR: could not inventory unverified recovery files; Purview and Users publication remains blocked: {0}" -f $_.Exception.Message) -ForegroundColor Red
 			}
 		}
@@ -10355,11 +13168,15 @@ function script:Hold-PaxDeidOutputPublication {
 			Move-Item -LiteralPath $full -Destination $destination -ErrorAction Stop
 		}
 		catch {
+			$isolationComplete = $false
 			Write-LogHost ("ERROR: could not isolate an unverified output after de-identification failed: {0}" -f $_.Exception.Message) -ForegroundColor Red
 		}
 	}
-	if ($script:PaxDeidRecoveryDirectory) {
+	if ($isolationComplete -and $script:PaxDeidRecoveryDirectory) {
 		Write-LogHost ("Identified or unverified recovery files are private and withheld from publication: {0}" -f $script:PaxDeidRecoveryDirectory) -ForegroundColor Yellow
+	}
+	elseif (-not $isolationComplete) {
+		Write-LogHost 'ERROR: recovery isolation is incomplete; privacy of all unverified outputs was not established. Publication remains blocked. Preserve original inputs and recovery material; unverified files may remain at their original locations.' -ForegroundColor Red
 	}
 }
 
@@ -12788,12 +15605,11 @@ if ($OnlyAgent365Info) {
 # --- Early parameter validation & environment sanity checks ---
 
 # PowerShell version gate.
-# The entire script requires PowerShell 7+ (pwsh.exe). The ONLY exception is -UseEOM
-# (which uses Exchange Online Management and runs on Windows PowerShell 5.1 / powershell.exe).
-# All other supported modes — including -Resume — require pwsh.exe because they
+# The entire script requires PowerShell 7+ (pwsh.exe), including -UseEOM and -Resume.
+# All supported modes require pwsh.exe because they
 # depend on PS 7-only features (ThreadJob parallelism, ForEach-Object -Parallel, JSON
 # parsing performance).
-if ($PSVersionTable.PSVersion.Major -lt 7 -and -not $UseEOM) {
+if ($PSVersionTable.PSVersion.Major -lt 7) {
 	Write-Host "" -ForegroundColor Red
 	Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
 	Write-Host "  ERROR: PowerShell 7+ Required (pwsh.exe)" -ForegroundColor Red
@@ -12802,10 +15618,10 @@ if ($PSVersionTable.PSVersion.Major -lt 7 -and -not $UseEOM) {
 	Write-Host "  Detected: PowerShell $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))" -ForegroundColor Yellow
 	Write-Host "  Required: PowerShell 7.0 or later (pwsh.exe)" -ForegroundColor Yellow
 	Write-Host ""
-	Write-Host "  PAX requires PowerShell 7+ for Microsoft Graph API mode, parallel query" -ForegroundColor White
+	Write-Host "  PAX requires PowerShell 7+ for every mode, including -UseEOM, parallel query" -ForegroundColor White
 	Write-Host "  execution, JSON streaming performance, and post-processing features." -ForegroundColor White
-	Write-Host "  Windows PowerShell 5.1 (powershell.exe) is ONLY supported when running with" -ForegroundColor White
-	Write-Host "  the -UseEOM switch (Exchange Online Management mode)." -ForegroundColor White
+	Write-Host "  Windows PowerShell 5.1 (powershell.exe) is not supported." -ForegroundColor White
+	Write-Host "  The -UseEOM switch remains available under PowerShell 7." -ForegroundColor White
 	Write-Host ""
 	Write-Host "  SOLUTIONS:" -ForegroundColor Cyan
 	Write-Host ""
@@ -12813,8 +15629,8 @@ if ($PSVersionTable.PSVersion.Major -lt 7 -and -not $UseEOM) {
 	Write-Host "         https://aka.ms/powershell" -ForegroundColor Gray
 	Write-Host "         pwsh.exe -File .\PAX_Purview_Audit_Log_Processor.ps1 [your parameters]" -ForegroundColor Gray
 	Write-Host ""
-	Write-Host "    2. Or run in EOM mode on Windows PowerShell 5.1 by adding -UseEOM:" -ForegroundColor White
-	Write-Host "         .\PAX_Purview_Audit_Log_Processor.ps1 -UseEOM [your other parameters]" -ForegroundColor Gray
+	Write-Host "    2. For EOM mode, use PowerShell 7 and add -UseEOM:" -ForegroundColor White
+	Write-Host "         pwsh.exe -File .\PAX_Purview_Audit_Log_Processor.ps1 -UseEOM [your parameters]" -ForegroundColor Gray
 	Write-Host ""
 	Write-Host "  EOM MODE NOTES:" -ForegroundColor DarkCyan
 	Write-Host "    - Uses Search-UnifiedAuditLog cmdlet (serial processing)" -ForegroundColor Gray
@@ -14531,6 +17347,85 @@ def deid_proxy(value: str) -> str:
         else:
             out.append(deid_upn(entry))
     return ";".join(out)
+
+
+_PROCESSED_USERS_FIELD_KINDS = {
+    "userprincipalname": "upn", "personid": "upn", "personid_normalized": "upn",
+    "displayname": "name", "mail": "upn", "givenname": "name", "surname": "name",
+    "username": "upn", "employeeid": "token", "onpremisesimmutableid": "token",
+    "proxyaddresses_primary": "proxy", "proxyaddresses_all": "proxy",
+    "id": "guid", "manager_id": "guid", "manager_userprincipalname": "upn",
+    "manager_displayname": "name", "manager_mail": "upn", "managerid": "guid", "email": "upn",
+}
+_PROCESSED_USERS_FIELD_KINDS.update({"level%d_name" % level: "name" for level in range(15)})
+
+
+def _processed_users_digest(path):
+    result = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(65536), b""):
+            result.update(block)
+    return result.hexdigest().upper()
+
+
+def _processed_users_expected_token(value, kind, salt, domain):
+    if not value:
+        return value
+    if kind == "proxy":
+        entries = []
+        for entry in value.split(";"):
+            prefix, separator, address = entry.partition(":")
+            entries.append(prefix + separator + _processed_users_expected_token(address, "upn", salt, domain)
+                           if separator else _processed_users_expected_token(entry, "upn", salt, domain))
+        return ";".join(entries)
+    hexadecimal = hmac.new(salt, value.strip().lower().encode("utf-8"), hashlib.sha256).hexdigest()
+    if kind == "guid":
+        return "-".join((hexadecimal[:8], hexadecimal[8:12], hexadecimal[12:16], hexadecimal[16:20], hexadecimal[20:32]))
+    return hexadecimal[:12] + ("@" + domain if kind == "upn" else "")
+
+
+def verify_processed_users(source, candidate, source_sha256, salt, domain):
+    original_candidate = _processed_users_digest(candidate)
+    limit = sys.maxsize
+    while True:
+        try:
+            csv.field_size_limit(limit)
+            break
+        except OverflowError:
+            limit //= 10
+    count = 0
+    with open(source, encoding="utf-8-sig", newline="") as identified, open(candidate, encoding="utf-8-sig", newline="") as protected:
+        original_rows = csv.reader(identified, strict=True)
+        candidate_rows = csv.reader(protected, strict=True)
+        header = next(original_rows, None)
+        if header is None or next(candidate_rows, None) != header:
+            raise ValueError("Processed Users verification failed: CSV header changed.")
+        kinds = [_PROCESSED_USERS_FIELD_KINDS.get(name.lower()) for name in header]
+        reporting_keys = {}
+        for position, name in enumerate(header):
+            if re.fullmatch(r"Level[0-9]+_Name", name) and kinds[position]:
+                try:
+                    reporting_keys[position] = header.index(name[:-5] + "_UserKey")
+                except ValueError:
+                    raise ValueError("Processed Users hierarchy verification requires its reporting key column.") from None
+        for row in original_rows:
+            count += 1
+            other = next(candidate_rows, None)
+            if len(row) != len(header) or other is None or len(other) != len(header):
+                raise ValueError("Processed Users verification failed: record count or CSV shape changed.")
+            for position, value in enumerate(row):
+                kind = kinds[position]
+                fixed_label = position in reporting_keys and not row[reporting_keys[position]]
+                expected = _processed_users_expected_token(value, kind, salt, domain) if kind and not fixed_label else value
+                if expected != other[position]:
+                    raise ValueError("De-identification verification failed at record %d, column %d." % (count, position))
+        if next(candidate_rows, None) is not None:
+            raise ValueError("Processed Users verification failed: additional output records.")
+    if _processed_users_digest(source) != source_sha256.upper():
+        raise ValueError("The identified source changed during processed Users verification.")
+    if _processed_users_digest(candidate) != original_candidate:
+        raise ValueError("The protected candidate changed during processed Users verification.")
+    return {"Verified": True, "DataRowCount": count, "Sha256": original_candidate}
 
 
 # Non-human/system identities found in Purview audit logs (Teams Sync, SharePoint app,
@@ -18239,7 +21134,28 @@ def main() -> None:
         version=f"%(prog)s {SCRIPT_VERSION}",
     )
 
+    parser.add_argument("--verify-users-reference", help=argparse.SUPPRESS)
+    parser.add_argument("--verify-users-candidate", help=argparse.SUPPRESS)
+    parser.add_argument("--verify-users-source-sha256", help=argparse.SUPPRESS)
+    parser.add_argument("--verify-users-salt-hex", help=argparse.SUPPRESS)
+    parser.add_argument("--verify-users-domain", help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.verify_users_reference or args.verify_users_candidate:
+        try:
+            if not all((args.verify_users_reference, args.verify_users_candidate, args.verify_users_source_sha256,
+                        args.verify_users_salt_hex, args.verify_users_domain)):
+                raise ValueError("Processed Users verification requires complete source arguments.")
+            proof = verify_processed_users(args.verify_users_reference, args.verify_users_candidate,
+                                           args.verify_users_source_sha256, bytes.fromhex(args.verify_users_salt_hex),
+                                           args.verify_users_domain)
+        except Exception as error:
+            reason = str(error) if isinstance(error, ValueError) and str(error).startswith((
+                "Processed Users", "De-identification", "The identified", "The protected")) else "Processed Users verification could not complete."
+            print(json.dumps({"Verified": False, "Reason": reason}))
+            sys.exit(1)
+        print(json.dumps(proof))
+        return
 
     global _DEIDENTIFY
     _DEIDENTIFY = bool(args.deidentify)
@@ -21770,98 +24686,7 @@ function Test-PaxAppendPythonRuntime {
 	}
 }
 
-function Resolve-PythonExe {
-	[CmdletBinding()]
-	param([switch]$AllowAutoInstall)
 
-	# Returns: hashtable @{ Path=<full path or 'py'>; Args=<launcher args, e.g. '-3.13'>; Version='3.13.1' }
-	# Throws on hard failure (no usable interpreter even after install attempts).
-
-	$candidates = @(
-		@{ Cmd = 'python';  LauncherArgs = @('-u') }
-		@{ Cmd = 'py';      LauncherArgs = @('-3.13', '-u') }
-		@{ Cmd = 'py';      LauncherArgs = @('-3.12', '-u') }
-		@{ Cmd = 'py';      LauncherArgs = @('-3.11', '-u') }
-		@{ Cmd = 'py';      LauncherArgs = @('-3.10', '-u') }
-		@{ Cmd = 'python3'; LauncherArgs = @('-u') }
-	)
-
-	foreach ($c in $candidates) {
-		try {
-			$cmdInfo = Get-Command -Name $c.Cmd -ErrorAction SilentlyContinue
-			if (-not $cmdInfo) { continue }
-			$probeArgs = @($c.LauncherArgs) + @('-c', 'import sys; print("{}.{}.{}".format(sys.version_info.major, sys.version_info.minor, sys.version_info.micro))')
-			$verOutput = & $c.Cmd @probeArgs 2>$null
-			if ($LASTEXITCODE -ne 0 -or -not $verOutput) { continue }
-			$verText = ($verOutput | Select-Object -First 1).Trim()
-			if ($verText -notmatch '^(\d+)\.(\d+)\.(\d+)') { continue }
-			$maj = [int]$Matches[1]
-			$min = [int]$Matches[2]
-			if ($maj -lt $Script:ROLLUP_PYTHON_MIN_MAJOR) { continue }
-			if ($maj -eq $Script:ROLLUP_PYTHON_MIN_MAJOR -and $min -lt $Script:ROLLUP_PYTHON_MIN_MINOR) { continue }
-			return @{ Path = $c.Cmd; Args = $c.LauncherArgs; Version = $verText }
-		}
-		catch { continue }
-	}
-
-	if (-not $AllowAutoInstall) {
-		throw "No Python $($Script:ROLLUP_PYTHON_MIN_MAJOR).$($Script:ROLLUP_PYTHON_MIN_MINOR)+ interpreter found on PATH."
-	}
-
-	# Auto-install path: try winget first, then python.org installer.
-	Write-LogHost "Rollup: no Python $($Script:ROLLUP_PYTHON_MIN_MAJOR).$($Script:ROLLUP_PYTHON_MIN_MINOR)+ found. Attempting auto-install..." -ForegroundColor Yellow
-
-	$winget = Get-Command -Name 'winget' -ErrorAction SilentlyContinue
-	$installed = $false
-	if ($winget) {
-		Write-LogHost "Rollup: installing Python 3.13 via winget (Python.Python.3.13)..." -ForegroundColor Cyan
-		try {
-			$wingetArgs = @('install', '--id', 'Python.Python.3.13', '-e', '--accept-source-agreements', '--accept-package-agreements', '--scope', 'user', '--silent')
-			& winget @wingetArgs | Out-Host
-			if ($LASTEXITCODE -eq 0) { $installed = $true }
-		}
-		catch {
-			Write-LogHost "Rollup: winget install failed: $($_.Exception.Message)" -ForegroundColor Yellow
-		}
-	}
-	else {
-		Write-LogHost "Rollup: winget is not available on this host; falling back to python.org installer." -ForegroundColor Yellow
-	}
-
-	if (-not $installed) {
-		# python.org per-user silent install
-		try {
-			$tmpDir = Join-Path (script:Resolve-PaxTempRoot) ("PAX_PythonInstaller_" + [guid]::NewGuid().ToString('N'))
-			New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
-			$installerUrl = 'https://www.python.org/ftp/python/3.13.1/python-3.13.1-amd64.exe'
-			$installerPath = Join-Path $tmpDir 'python-3.13.1-amd64.exe'
-			Write-LogHost "Rollup: downloading $installerUrl ..." -ForegroundColor Cyan
-			Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing
-			Write-LogHost "Rollup: running silent per-user install (PrependPath=1)..." -ForegroundColor Cyan
-			$proc = Start-Process -FilePath $installerPath -ArgumentList @('/quiet', 'InstallAllUsers=0', 'PrependPath=1', 'Include_launcher=1', 'Include_pip=1') -Wait -PassThru
-			if ($proc.ExitCode -eq 0) { $installed = $true }
-			else { Write-LogHost "Rollup: python.org installer exited with code $($proc.ExitCode)." -ForegroundColor Yellow }
-		}
-		catch {
-			Write-LogHost "Rollup: python.org install failed: $($_.Exception.Message)" -ForegroundColor Yellow
-		}
-	}
-
-	if (-not $installed) {
-		throw "Rollup: failed to auto-install Python $($Script:ROLLUP_PYTHON_MIN_MAJOR).$($Script:ROLLUP_PYTHON_MIN_MINOR)+. Install Python manually from https://www.python.org/downloads/ and re-run."
-	}
-
-	# Refresh PATH from process + machine + user scopes so new install is visible without restart.
-	$paths = @(
-		[Environment]::GetEnvironmentVariable('Path', 'Machine'),
-		[Environment]::GetEnvironmentVariable('Path', 'User'),
-		$env:Path
-	) | Where-Object { $_ }
-	$env:Path = ($paths -join ';')
-
-	# Recurse once with auto-install disabled to prevent loops.
-	return Resolve-PythonExe -AllowAutoInstall:$false
-}
 
 function script:Test-PaxWindowsArm64Host {
 	# pyarrow and deltalake publish no Windows ARM64 packages, so Delta writes on
@@ -26592,6 +29417,51 @@ def read_key_spec(path):
     return key_column, lines[1:], policy
 
 
+def io_failure_details(failure, phase, opts, key_spec_path):
+    phases = (PHASE_AUDIT_ONLY, PHASE_USERS_TARGET, PHASE_USERS_CURRENT,
+              PHASE_USERS_MERGE, PHASE_FACT_TARGET, PHASE_FACT_CURRENT,
+              PHASE_FACT_RECONCILE, PHASE_FACT_ORDER, PHASE_INTEGRITY,
+              PHASE_CANDIDATE)
+    stage = phase if phase in phases else 'append-prepare'
+    operation = 'file-io'
+    operations = {'read_key_spec': 'key-specification-read',
+                  'read_header': 'csv-header-read', 'next_record': 'csv-read',
+                  'write_record': 'csv-write', 'close': 'file-close',
+				  'build_fact': 'file-open',
+				  'build_users': 'file-open',
+				  'build_users_append_only': 'file-open'}
+    trace = failure.__traceback__
+    while trace is not None:
+        name = trace.tb_frame.f_code.co_name
+        if name in operations:
+            operation = operations[name]
+            if name == 'read_key_spec':
+                stage = 'key-specification'
+        trace = trace.tb_next
+    role = 'unclassified'
+    paths = [('key-specification', key_spec_path),
+             ('current-users', opts['current_users']),
+             ('current-fact', opts['current_fact']),
+             ('target-users', opts['target_users']),
+             ('target-fact', opts['target_fact']),
+             ('audit-only', opts['audit_only']),
+             ('users-candidate', opts['out_users']),
+             ('fact-candidate', opts['out_fact'])]
+    filename = getattr(failure, 'filename', None)
+    if filename is not None:
+        filename = os.path.normcase(os.path.abspath(os.fsdecode(filename)))
+        for label, path in paths:
+            if path and filename == os.path.normcase(os.path.abspath(path)):
+                role = label
+                break
+    code = getattr(failure, 'errno', None)
+    windows_code = getattr(failure, 'winerror', None)
+    return {'stage': stage, 'operation': operation, 'fileRole': role,
+            'exceptionType': type(failure).__name__,
+            'errno': code if isinstance(code, int) else None,
+            'winerror': windows_code if isinstance(windows_code, int) else None}
+
+
 def main(argv):
     if len(argv) != ARG_COUNT:
         return EXIT_FAILED
@@ -26658,8 +29528,10 @@ def main(argv):
         status, reason = STATUS_FAILED, 'database-error'
     except UnicodeDecodeError:
         status, reason = STATUS_FAILED, 'encoding-error'
-    except OSError:
+    except OSError as failure:
         status, reason = STATUS_FAILED, 'io-error'
+        counts['ioFailure'] = io_failure_details(failure, beat.phase, opts,
+                                               key_spec_path)
     except Exception:
         status, reason = STATUS_FAILED, 'unexpected-error'
 
@@ -26693,6 +29565,7 @@ def main(argv):
         'mismatchedFactRows': counts.get('mismatchedFactRows', 0),
         'integrityUsersRows': counts.get('integrityUsersRows', 0),
         'integrityFactRows': counts.get('integrityFactRows', 0),
+        'ioFailure': counts.get('ioFailure'),
     }
     try:
         with open(result_path, 'w', encoding='utf-8', newline='') as handle:
@@ -26891,6 +29764,23 @@ if __name__ == '__main__':
 			$rowsWritten = [int64]$payload.rowsWritten
 			$elapsedSeconds = [double]$payload.elapsedSeconds
 			$reason = [string]$payload.reason
+			if ($reason -ceq 'io-error' -and $payload.PSObject.Properties['ioFailure'] -and $payload.ioFailure) {
+				$ioSafe = $true
+				$ioValues = New-Object System.Collections.Generic.List[string]
+				foreach ($ioField in @('stage','operation','fileRole','exceptionType')) {
+					$ioProperty = $payload.ioFailure.PSObject.Properties[$ioField]
+					if ($null -eq $ioProperty -or [string]$ioProperty.Value -cnotmatch '^[A-Za-z0-9_-]{1,64}$') { $ioSafe = $false; break }
+					$ioValues.Add([string]$ioProperty.Value)
+				}
+				foreach ($ioField in @('errno','winerror')) {
+					$ioProperty = $payload.ioFailure.PSObject.Properties[$ioField]
+					if ($null -eq $ioProperty -or $null -eq $ioProperty.Value) { $ioValues.Add('unknown'); continue }
+					$ioCode = [long]0
+					if (-not [long]::TryParse([string]$ioProperty.Value, [ref]$ioCode) -or $ioCode -lt -2147483648 -or $ioCode -gt 2147483647) { $ioSafe = $false; break }
+					$ioValues.Add([string]$ioCode)
+				}
+				if ($ioSafe) { $reason = 'io-error [stage={0}; operation={1}; fileRole={2}; class={3}; errno={4}; winerror={5}]' -f @($ioValues) }
+			}
 			switch ([string]$payload.status) {
 				'success' {
 					$status = if ($exitCode -eq 0) { 'Success' } else { 'Failed' }
@@ -30966,87 +33856,7 @@ function script:Resolve-PaxOneLakeDeltaUri {
 	return ("abfss://{0}@onelake.dfs.fabric.microsoft.com/{1}/Tables/{2}" -f $workspaceId, $itemId, $tablePath)
 }
 
-function script:Get-PaxFabricTableName {
-	param(
-		[Parameter(Mandatory)][string]$CsvStem,
-		[string]$Dashboard = 'AIO',
-		[string]$LogicalStem,
-		[string]$DataType,
-		[string]$ProcessorMode,
-		[bool]$UsersDimension,
-		[switch]$OnlyInfo,
-		[switch]$IncludeM365Usage,
-		[System.Collections.IDictionary]$Overrides,
-		[switch]$AsClassification
-	)
-	# PAX-Fabric c58eb5dce86b680bd91b5cbd746854d791517dd8, MIT:
-	# delta_writer.table_name_for and pipeline._DASHBOARD_PREFIX_MAP.
-	# Producer identity precedes naming: custom CSV leaves do not change their logical dataset.
-	if ($Overrides) {
-		foreach ($key in $Overrides.Keys) { if ([string]$key -ceq $CsvStem) { return [string]$Overrides[$key] } }
-	}
-	$ts = '\d{8}_\d{6}'
-	$clean = ([regex]::Replace($CsvStem, $ts, '')).Trim('_') -replace '_+', '_'
-	if (-not $LogicalStem) {
-		if ($DataType -eq 'Agent365Info') {
-			$LogicalStem = if ($clean -ceq 'Agent365_Status') { 'Agent365_Status' } else { 'Agent365' }
-		}
-		elseif ($DataType -eq 'UserInfo') {
-			$LogicalStem = if ($UsersDimension) { 'Entra_Users' } else { 'Entra_Users_Raw' }
-		}
-		elseif ($ProcessorMode -in @('CopilotInteraction','CoworkAdoption') -and $clean -cmatch '_(Interactions|ActiveDaysSummary|UserMonthMetrics|LicensedUserRankings|UnlicensedUserRankings|LicensedUserSummary)$') {
-			$LogicalStem = "CopilotInteraction_$($Matches[1])_Rollup"
-		}
-		elseif ($ProcessorMode -eq 'M365Bundle' -and $clean -cmatch '_(Rollup|UserStats|SessionCohort|SessionStats|Exploded)$') {
-			$LogicalStem = "CombinedActivityTypes_$($Matches[1])_Rollup"
-		}
-		else { $LogicalStem = $CsvStem }
-	}
-	$raw = ''
-	if ($LogicalStem -cmatch "^Purview_Audit_UsageActivity_([^_]+)_${ts}_(.+)$") {
-		$raw = "$($Matches[1])_$($Matches[2])_Rollup"
-	}
-	elseif ($LogicalStem -cmatch "^Purview_Audit_UsageActivity_([^_]+)_${ts}$") { $raw = "$($Matches[1])_Raw" }
-	elseif ($LogicalStem -cmatch "^EntraUsers_MAClicensing_${ts}_(.+)$") { $raw = "Entra_$($Matches[1])" }
-	elseif ($LogicalStem -cmatch "^EntraUsers_MAClicensing_${ts}$") { $raw = 'Entra_Users_Raw' }
-	elseif ($LogicalStem -cmatch "^Agent365_${ts}$") { $raw = 'Agent365' }
-	elseif ($LogicalStem -cmatch "^Purview_Audit_${ts}$") { $raw = 'Audit_Raw' }
-	else {
-		$raw = ([regex]::Replace($LogicalStem, $ts, '')).Trim('_') -replace '_+', '_'
-		if (-not $raw) { $raw = $LogicalStem }
-	}
-	$aliases = @{
-		CopilotInteraction_Raw = 'CopilotInteractions_Raw'
-		CopilotInteraction_Interactions_Rollup = 'CopilotInteractions'
-		CopilotInteraction_ActiveDaysSummary_Rollup = 'ActiveDaysSummary'
-		CopilotInteraction_UserMonthMetrics_Rollup = 'UserMonthMetrics'
-		CopilotInteraction_LicensedUserRankings_Rollup = 'LicensedRankings'
-		CopilotInteraction_UnlicensedUserRankings_Rollup = 'UnlicensedRankings'
-		CopilotInteraction_LicensedUserSummary_Rollup = 'LicensedSummary'
-		CombinedActivityTypes_Raw = 'Raw'
-		CombinedActivityTypes_Rollup_Rollup = 'Rollup'
-		CombinedActivityTypes_UserStats_Rollup = 'UserStats'
-		CombinedActivityTypes_SessionCohort_Rollup = 'SessionCohort'
-		CombinedActivityTypes_SessionStats_Rollup = 'SessionStats'
-		CombinedActivityTypes_Interactions_Rollup = 'CopilotInteractions'
-		Entra_Users = 'Users'
-	}
-	foreach ($key in $aliases.Keys) { if ($key -ceq $raw) { $raw = $aliases[$key]; break } }
-	$shared = @('CopilotInteractions_Raw','Entra_Users_Raw','Audit_Raw','Agent365','Agent365_Status') -ccontains $raw
-	$prefix = if ($OnlyInfo) { '' } elseif ($IncludeM365Usage) { 'M365' } else {
-		switch ($Dashboard.ToUpperInvariant()) {
-			'VALUELENS' { 'ValueLens' }
-			'M365' { 'M365' }
-			'COWORKADOPTION' { 'CoworkAdoption' }
-			'AISID' { 'AISID' }
-			default { 'AIO' }
-		}
-	}
-	if ($AsClassification) { return [pscustomobject]@{ Shared = $shared; DashboardPrefix = $prefix; BaseName = $raw } }
-	if ($shared) { return $raw }
-	if ($prefix) { return "${prefix}_${raw}" }
-	return $raw
-}
+
 
 function script:Resolve-PaxDashboardOutputLeaf {
 	param(
@@ -31189,546 +33999,49 @@ function script:Get-PaxRawOutputStatusLine {
 	return ("Raw {0} CSV: {1}" -f $Label, (Get-DisplayPath -LocalPath $Path))
 }
 
-function script:Invoke-PaxDeltaMemberOperation {
-	[CmdletBinding()]
-	param(
-		[Parameter(Mandatory)][ValidateSet('Prepare','Observe','Publish','Restore')][string]$Operation,
-		[Parameter(Mandatory)][psobject]$Member,
-		[Parameter(Mandatory)][string]$WorkDirectory,
-		[Parameter(Mandatory)][psobject]$Python,
-		[string]$BearerToken = ''
-	)
-	if ([string]$Member.TargetUri -match '^(?:abfss|https)://') {
-		$requestMethod = if ($Operation -eq 'Observe') { 'GET' } else { 'PUT' }
-		script:Assert-PaxEffectiveFabricDestinations -RequestUri ([string]$Member.TargetUri) -RequestMethod $requestMethod -BearerToken $BearerToken
-	}
-	$requestPath = Join-Path $WorkDirectory 'delta-member-request.json'
-	[IO.File]::WriteAllText($requestPath, (@{ operation = $Operation; member = $Member } | ConvertTo-Json -Depth 20 -Compress), [Text.UTF8Encoding]::new($false))
-	$inlinePy = @'
-import csv, hashlib, json, os, re, sqlite3, sys, tempfile
-from pathlib import Path
-import pyarrow as pa
-import pyarrow.csv as pacsv
-import pyarrow.parquet as pq
-from deltalake import CommitProperties, DeltaTable, write_deltalake
-from deltalake.exceptions import TableNotFoundError
 
-request = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-member = request["member"]
-uri = member["TargetUri"]
-token = os.environ.get("PAX_DELTA_MEMBER_TOKEN", "")
-options = None
-if uri.startswith("https://"):
-	raise ValueError("A Delta member requires its resolved physical target, not an HTTPS URL.")
-if uri.startswith("abfss://"):
-	if not token:
-		raise ValueError("A remote Delta member requires a storage token.")
-	options = {"bearer_token": token, "use_fabric_endpoint": "true"}
 
-def file_hash(path):
-	digest = hashlib.sha256()
-	with open(path, "rb") as handle:
-		for block in iter(lambda: handle.read(1024 * 1024), b""):
-			digest.update(block)
-	return digest.hexdigest().upper()
 
-def names_for_delta(columns):
-	seen, result = {}, []
-	for column in columns:
-		name = re.sub(r"[ ,;{}()\n\t=]", "_", column)
-		if name in seen:
-			seen[name] += 1
-			candidate = f"{name}_{seen[name]}"
-			while candidate in seen:
-				seen[name] += 1
-				candidate = f"{name}_{seen[name]}"
-			name = candidate
-		seen[name] = 1
-		result.append(name)
-	return result
 
-def logical_schema(schema):
-	result = []
-	for field in schema:
-		kind = "string" if (pa.types.is_string(field.type) or pa.types.is_large_string(field.type)
-							or pa.types.is_string_view(field.type)) else str(field.type)
-		result.append([field.name, kind, field.nullable])
-	return result
 
-def measure(batches, schema, snapshot=None):
-	descriptor, database_path = tempfile.mkstemp(prefix="delta-proof-", suffix=".sqlite", dir=Path(sys.argv[1]).parent)
-	os.close(descriptor)
-	database = sqlite3.connect(database_path)
-	writer = pq.ParquetWriter(snapshot, schema) if snapshot else None
-	columns = logical_schema(schema)
-	encoded_schema = json.dumps(columns, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-	count, length = 0, len(encoded_schema)
-	try:
-		database.execute("CREATE TABLE rows (digest BLOB NOT NULL)")
-		for batch in batches:
-			if writer:
-				writer.write_batch(batch)
-			digests = []
-			for row in zip(*(column.to_pylist() for column in batch.columns)):
-				encoded = json.dumps(row, ensure_ascii=False, separators=(",", ":"), allow_nan=False, default=str).encode("utf-8")
-				digests.append((hashlib.sha256(encoded).digest(),))
-				count += 1
-				length += len(encoded)
-			database.executemany("INSERT INTO rows VALUES (?)", digests)
-			database.commit()
-		digest = hashlib.sha256(encoded_schema)
-		for value, multiplicity in database.execute("SELECT digest, COUNT(*) FROM rows GROUP BY digest ORDER BY digest"):
-			digest.update(value)
-			digest.update(int(multiplicity).to_bytes(8, "big"))
-		return {"Sha256": digest.hexdigest().upper(), "ByteLength": length,
-				"DataRowCount": count, "Schema": columns}
-	finally:
-		if writer:
-			writer.close()
-		database.close()
-		os.unlink(database_path)
 
-def open_table():
-	try:
-		return DeltaTable(uri, storage_options=options)
-	except TableNotFoundError:
-		return None
 
-def observe(table, snapshot=None, reference=None):
-	if table is None:
-		return None
-	dataset = table.to_pyarrow_dataset()
-	schema = dataset.schema
-	columns = None
-	if reference is not None:
-		actual, expected = logical_schema(schema), reference["Schema"]
-		# Delta merge retains existing physical order. Project only after proving the
-		# complete named schema, preserving frozen 2.0 hashes without casts or drops.
-		if (len({field[0] for field in actual}) == len(actual)
-				and len({field[0] for field in expected}) == len(expected)
-				and sorted(actual) == sorted(expected)):
-			columns = [field[0] for field in expected]
-			schema = pa.schema([schema.field(name) for name in columns])
-	proof = measure(dataset.scanner(columns=columns, batch_size=65536).to_batches(), schema, snapshot)
-	proof["Version"] = table.version()
-	history = table.history(1)[0]
-	proof["Commit"] = {key: history.get(key) for key in
-					   ("paxSet", "paxMember", "paxAction", "paxOriginalVersion", "paxExpectedVersion", "paxContent")}
-	return proof
 
-def same_data(left, right):
-	return left is not None and right is not None and all(left[key] == right[key]
-			   for key in ("Sha256", "ByteLength", "DataRowCount", "Schema"))
 
-def ownership_failures(proof, action, expected):
-	if proof is None or expected is None:
-		return ["missing-table-or-reference"]
-	commit = proof["Commit"]
-	original_version = member["OriginalMeasurement"]["Version"] if member["OriginalMeasurement"] else -1
-	failures = []
-	if not (commit["paxSet"] == member["SetId"] and commit["paxMember"] == member["PublicationId"]
-			and commit["paxAction"] == action and commit["paxOriginalVersion"] == original_version
-			and commit["paxContent"] == expected["Sha256"]):
-		failures.append("ownership-tags")
-	if type(commit["paxExpectedVersion"]) is not int or proof["Version"] != commit["paxExpectedVersion"] + 1:
-		failures.append("commit-version")
-	if proof["Schema"] != expected["Schema"]:
-		actual_fields, expected_fields = proof["Schema"], expected["Schema"]
-		if sorted(field[0] for field in actual_fields) != sorted(field[0] for field in expected_fields):
-			failures.append("columns")
-		elif sorted(actual_fields) != sorted(expected_fields):
-			failures.append("types-or-nullability")
-		else:
-			failures.append("column-order")
-	for key, label in (("Sha256", "logical-content"), ("ByteLength", "logical-byte-length"), ("DataRowCount", "row-count")):
-		if proof[key] != expected[key]:
-			failures.append(label)
-	return failures
 
-def owned(proof, action, expected):
-	return not ownership_failures(proof, action, expected)
 
-class VerificationError(ValueError):
-	pass
 
-def verification_failure(reason, comparisons):
-	table_name = re.sub(r"[^A-Za-z0-9_]", "_", member["TableName"])
-	raise VerificationError(f"PAX_DELTA_VERIFICATION: table={table_name}; phase={request['operation']}; "
-							f"failed={','.join(comparisons)}; {reason}")
 
-def verified_snapshot(path, expected_hash, expected):
-	if file_hash(path) != expected_hash:
-		verification_failure("Frozen Delta recovery data changed.", ["snapshot-checksum"])
-	parquet = pq.ParquetFile(path)
-	if not same_data(measure(parquet.iter_batches(batch_size=65536), parquet.schema_arrow), expected):
-		verification_failure("Frozen Delta recovery data no longer matches its logical manifest.", ["snapshot-logical-manifest"])
-	return parquet
 
-def run():
-	operation = request["operation"]
-	table = open_table()
-	if operation == "Prepare":
-		if file_hash(member["CandidatePath"]) != member["SourceSha256"]:
-			raise ValueError("The frozen source CSV changed.")
-		with open(member["CandidatePath"], encoding="utf-8-sig", newline="") as handle:
-			columns = next(csv.reader(handle), [])
-		if not columns:
-			raise ValueError("The Delta source CSV has no header.")
-		safe = names_for_delta(columns)
-		reader = pacsv.open_csv(member["CandidatePath"], read_options=pacsv.ReadOptions(block_size=8 * 1024 * 1024),
-			convert_options=pacsv.ConvertOptions(strings_can_be_null=False, column_types={name: pa.string() for name in columns}))
-		schema = pa.schema([pa.field(name, pa.string()) for name in safe])
-		batches = (pa.RecordBatch.from_arrays(batch.columns, names=safe) for batch in reader)
-		candidate = measure(batches, schema, member["DeltaCandidatePath"])
-		original = observe(table, member["DeltaOriginalPath"] if table is not None else None)
-		def reject_candidate(reason):
-			table_name = re.sub(r"[^A-Za-z0-9_]", "_", member["TableName"])
-			mode = member.get("WriteIntent", "HistoryAppend" if member["ProtectRowCount"] else "Snapshot")
-			raise ValueError(f"PAX_DELTA_VALIDATION: table={table_name}; mode={mode}; "
-							 f"oldRows={original['DataRowCount']}; newRows={candidate['DataRowCount']}; {reason}")
-		if original:
-			existing_columns = {column[0]: column[1] for column in original["Schema"]}
-			new_columns = {column[0]: column[1] for column in candidate["Schema"]}
-			if any(new_columns.get(name) != kind for name, kind in existing_columns.items()):
-				reject_candidate("The Delta candidate would remove or change an existing column.")
-			# An empty table may be replaced by an empty candidate (for example a dashboard
-			# with no activity yet); no existing row can be lost.
-			if candidate["DataRowCount"] == 0 and original["DataRowCount"] > 0:
-				reject_candidate("Refusing a zero-row replacement of an existing Delta table.")
-			if member["ProtectRowCount"] and candidate["DataRowCount"] < original["DataRowCount"]:
-				reject_candidate("Refusing a shrinking Delta append replacement.")
-		return {"CandidateMeasurement": candidate, "OriginalMeasurement": original,
-				"CandidateSnapshotSha256": file_hash(member["DeltaCandidatePath"]),
-				"OriginalSnapshotSha256": file_hash(member["DeltaOriginalPath"]) if original else None,
-				"CsvHeader": columns}
-	original, candidate = member["OriginalMeasurement"], member["CandidateMeasurement"]
-	# History chooses a comparison layout, never authority: owned() still requires
-	# all tags, the version fence and a complete logical-data proof.
-	reference = original if original and table is not None and (
-		table.version() == original["Version"] or table.history(1)[0].get("paxAction") == "Restore") else candidate
-	current = observe(table, reference=reference)
-	if operation == "Observe":
-		return {"Observation": current, "Published": owned(current, "Publish", candidate),
-				"Restored": bool(original and owned(current, "Restore", original)),
-				"Original": (current is None and original is None) or
-					bool(original and current and current["Version"] == original["Version"] and same_data(current, original))}
-	if operation == "Publish":
-		parquet = verified_snapshot(member["DeltaCandidatePath"], member["CandidateSnapshotSha256"], candidate)
-		if owned(current, "Publish", candidate):
-			return {"Observation": current, "Reconciled": True}
-		if owned(current, "Restore", original):
-			expected_version = current["Version"]
-		else:
-			expected_version = original["Version"] if original else -1
-			if (current["Version"] if current else -1) != expected_version or (original and not same_data(current, original)):
-				verification_failure("The Delta base changed after preparation; foreign data will not be overwritten.", ["base-version-or-logical-data"])
-		action, expected, schema_mode = "Publish", candidate, "merge"
-	else:
-		if original is None:
-			if current is None:
-				return {"Observation": None, "Restored": True}
-			if owned(current, "Publish", candidate):
-				return {"Observation": current, "Restored": False, "Code": "NewTableRecoveryPending"}
-			verification_failure("An unverified table appeared; recovery will not delete or overwrite it.", ownership_failures(current, "Publish", candidate))
-		parquet = verified_snapshot(member["DeltaOriginalPath"], member["OriginalSnapshotSha256"], original)
-		if current and current["Version"] == original["Version"] and same_data(current, original):
-			return {"Observation": current, "Restored": True}
-		if owned(current, "Restore", original):
-			return {"Observation": current, "Restored": True}
-		if not owned(current, "Publish", candidate):
-			failures = ownership_failures(current, "Publish", candidate)
-			reason = ("A foreign or unverifiable Delta commit blocks restoration; its data is left untouched."
-					  if any(value in failures for value in ("ownership-tags", "commit-version"))
-					  else "The tagged Delta commit does not match its frozen content/schema; restoration is blocked and its data is left untouched.")
-			verification_failure(reason, failures)
-		expected_version = current["Version"]
-		action, expected, schema_mode = "Restore", original, "overwrite"
-	metadata = {"paxSet": member["SetId"], "paxMember": member["PublicationId"], "paxAction": action,
-				"paxOriginalVersion": original["Version"] if original else -1,
-				"paxExpectedVersion": expected_version, "paxContent": expected["Sha256"]}
-	pinned = DeltaTable(uri, version=expected_version, storage_options=options) if expected_version >= 0 else uri
-	data = pa.RecordBatchReader.from_batches(parquet.schema_arrow, parquet.iter_batches(batch_size=65536))
-	write_deltalake(pinned, data, mode="overwrite" if expected_version >= 0 else "error",
-				   schema_mode=schema_mode, storage_options=options,
-				   commit_properties=CommitProperties(max_commit_retries=0, custom_metadata=metadata))
-	after = observe(open_table(), reference=expected)
-	if after["Version"] != expected_version + 1 or not owned(after, action, expected):
-		failures = ownership_failures(after, action, expected)
-		if after["Version"] != expected_version + 1:
-			failures.append("expected-next-version")
-		verification_failure("The committed Delta member failed readback; publication is not accepted.", failures)
-	return {"Observation": after, "Restored": action == "Restore", "Reconciled": False}
 
-try:
-	print(json.dumps(run(), ensure_ascii=False, separators=(",", ":")))
-except Exception as error:
-	print(f"Delta member {request['operation']} failed ({type(error).__name__}): {error}", file=sys.stderr)
-	sys.exit(1)
-'@
-	$priorToken = [Environment]::GetEnvironmentVariable('PAX_DELTA_MEMBER_TOKEN', 'Process')
-	try {
-		$env:PAX_DELTA_MEMBER_TOKEN = $BearerToken
-		$arguments = @($Python.Args) + @('-B', '-c', $inlinePy, $requestPath)
-		$output = @(& $Python.Path @arguments 2>&1)
-		$nativeExit = $LASTEXITCODE
-		if ($nativeExit -ne 0) {
-			$nativeFailure = [InvalidOperationException]::new(($output -join [Environment]::NewLine))
-			if (($output -join "`n") -match '(?m)^Delta member (?:Prepare|Observe|Publish|Restore) failed \((?:ValueError|VerificationError)\): (PAX_DELTA_(?:VALIDATION|VERIFICATION): [^\r\n]+)$') {
-				$nativeFailure.Data['PaxLocalDeltaFailure'] = $Matches[1]
-				Write-Log $Matches[1]
-				throw $nativeFailure
-			}
-			$formatted = script:Format-PaxOneLakeFailure -Failure $nativeFailure -Cause ('Delta member {0} failed with native exit {1}.' -f $Operation, $nativeExit)
-			$outerFailure = [InvalidOperationException]::new($formatted, $nativeFailure)
-			$outerFailure.Data['PaxOneLakeFailure'] = $formatted
-			Write-Log $formatted
-			throw $outerFailure
-		}
-		return (($output -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop)
-	}
-	finally { [Environment]::SetEnvironmentVariable('PAX_DELTA_MEMBER_TOKEN', $priorToken, 'Process') }
-}
 
-function script:New-PaxDeltaPublicationState {
-	[CmdletBinding()]
-	param(
-		[Parameter(Mandatory)][object[]]$Entries,
-		[Parameter(Mandatory)][string]$StageRoot,
-		[Parameter(Mandatory)][psobject]$Python,
-		[string]$BearerToken = ''
-	)
-	if ($Entries.Count -eq 0) { throw 'A Delta publication requires a declared producer roster.' }
-	[void][IO.Directory]::CreateDirectory($StageRoot)
-	$groups = @($Entries | Group-Object TargetUri | Sort-Object Name)
-	$requiredIds = @($groups | ForEach-Object { 'Table_' + [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes([string]$_.Group[0].TargetUri))) })
-	$roster = @($Entries | Sort-Object TargetUri, SourceIdentity, SourcePath | ForEach-Object {
-		$item = [ordered]@{ TargetUri = [string]$_.TargetUri; SourceIdentity = [string]$_.SourceIdentity; SourcePath = [IO.Path]::GetFullPath($_.SourcePath); Dashboard = [string]$_.Dashboard; DataType = [string]$_.DataType; ProtectRowCount = [bool]$_.ProtectRowCount; AuthoritativeProducer = [bool]($_.PSObject.Properties['AuthoritativeProducer'] -and $_.AuthoritativeProducer) }
-		if ($_.PSObject.Properties['WriteIntent']) { $item.WriteIntent = [string]$_.WriteIntent }
-		$item
-	})
-	$rosterText = ConvertTo-Json -InputObject $roster -Depth 8 -Compress
-	$statePath = Join-Path $StageRoot '.pax_delta_set_state.json'
-	if (Test-Path -LiteralPath $statePath -PathType Leaf) {
-		$saved = [IO.File]::ReadAllText($statePath) | ConvertFrom-Json -ErrorAction Stop
-		if ($saved.Version -cne '2.0' -or $saved.Kind -cne 'DeltaTables' -or $saved.RunTimestamp -cne [string]$global:ScriptRunTimestamp -or $saved.RosterText -cne $rosterText -or $saved.Status -notin @('Prepared','Publishing','RestorePending','Restored','Accepted')) { throw 'The frozen Delta set cannot change its producer roster, target namespace or run identity.' }
-		$tableMembers = @($saved.Members | Where-Object Kind -eq 'DeltaTable')
-		if ((@($tableMembers | ForEach-Object PublicationId | Sort-Object) -join ',') -cne ((@($requiredIds | Sort-Object)) -join ',') -or ((@($saved.Members.PublicationId | Sort-Object)) -join ',') -cne ((@($saved.RequiredIds | Sort-Object)) -join ',') -or @($saved.Members.PublicationId | Sort-Object -Unique).Count -ne $saved.Members.Count -or $saved.IntentHash -cne (script:Get-PaxDeltaIntentHash -State $saved)) { throw 'The frozen Delta member manifest is incomplete or changed.' }
-		foreach ($member in $saved.Members) {
-			if ($member.Kind -notin @('DeltaTable','CsvFile') -or $member.IntentHash -cne $saved.IntentHash -or $member.SetId -cne $saved.SetId) { throw 'A frozen member no longer belongs to its declared complete set.' }
-			if ($member.Kind -eq 'DeltaTable' -and @($Entries | Where-Object { $_.TargetUri -ceq $member.TargetUri -and $_.SourceIdentity -ceq $member.SourceIdentity }).Count -eq 0) { throw 'A frozen Delta member no longer belongs to its declared producer and target.' }
-			if (-not (Test-Path -LiteralPath $member.CandidatePath -PathType Leaf) -or (Get-FileHash -LiteralPath $member.CandidatePath -Algorithm SHA256).Hash -cne $member.SourceSha256) { throw 'A frozen Delta source is missing or changed; recovery cannot use mutable current output.' }
-		}
-		return $saved
-	}
-	$setId = 'Delta_' + [guid]::NewGuid().ToString('N')
-	$prepared = [System.Collections.Generic.List[object]]::new()
-	$sharedNames = @('CopilotInteractions_Raw','Entra_Users_Raw','Audit_Raw','Agent365','Agent365_Status')
-	foreach ($group in $groups) {
-		$first = $group.Group[0]
-		if ($group.Count -gt 1 -and ($first.TableName -cnotin $sharedNames -or @($group.Group | Select-Object -ExpandProperty SourceIdentity -Unique).Count -ne 1)) { throw 'Distinct logical producers collide on one Delta table; no table may be written.' }
-		$orderedSources = @($group.Group)
-		if ($first.TableName -cin $sharedNames) {
-			$authority = @($group.Group | Where-Object { $_.PSObject.Properties['AuthoritativeProducer'] -and $_.AuthoritativeProducer })
-			if ($authority.Count -ne 1) { throw 'A shared Delta table requires exactly one registered authoritative producer.' }
-			$orderedSources = @($authority[0]) + @($group.Group | Where-Object { -not ($_.PSObject.Properties['AuthoritativeProducer'] -and $_.AuthoritativeProducer) })
-		}
-		$identityBytes = [Text.Encoding]::UTF8.GetBytes([string]$first.TargetUri)
-		$identity = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($identityBytes))
-		$memberDirectory = Join-Path $StageRoot $identity
-		[void][IO.Directory]::CreateDirectory($memberDirectory)
-		$canonical = $null
-		for ($aliasIndex = 0; $aliasIndex -lt $group.Count; $aliasIndex++) {
-			$entry = $orderedSources[$aliasIndex]
-			$source = [IO.Path]::GetFullPath([string]$entry.SourcePath)
-			if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw 'A required Delta producer did not supply its declared output.' }
-			$sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
-			$frozen = Join-Path $memberDirectory ("source_{0}.csv" -f $aliasIndex)
-			Copy-Item -LiteralPath $source -Destination $frozen -ErrorAction Stop
-			if ((Get-FileHash -LiteralPath $frozen -Algorithm SHA256).Hash -cne $sourceHash -or (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -cne $sourceHash) { throw 'A Delta source changed while its complete-set snapshot was being taken.' }
-			$member = [pscustomobject]@{
-				Kind = 'DeltaTable'; SetId = $setId; IntentHash = ''; Name = [string]$entry.TableName; TableName = [string]$entry.TableName
-				Dashboard = $(if ($entry.TableName -cin $sharedNames) { 'Shared' } else { [string]$entry.Dashboard })
-				DataType = [string]$entry.DataType; SourceIdentity = [string]$entry.SourceIdentity; PublicationId = 'Table_' + $identity
-				TargetUri = [string]$entry.TargetUri; Tier = 'Fabric'; RemoteParent = [string]$entry.MarkerParent
-				Leaf = [string]$entry.TableName; StageLeaf = 'candidate.paxsetcandidate'
-				CandidatePath = $frozen; DestinationPath = $source; SourceSha256 = $sourceHash; ProtectRowCount = [bool]$entry.ProtectRowCount
-				DeltaCandidatePath = (Join-Path $memberDirectory ("candidate_{0}.parquet" -f $aliasIndex))
-				DeltaOriginalPath = (Join-Path $memberDirectory ("original_{0}.parquet" -f $aliasIndex))
-				CandidateMeasurement = $null; OriginalMeasurement = $null; CandidateSnapshotSha256 = $null; OriginalSnapshotSha256 = $null
-				OriginalPath = ''; CsvHeader = @(); PublishedObservation = $null; RestoredObservation = $null; RecoveryCode = ''
-			}
-			if ($entry.PSObject.Properties['WriteIntent']) { $member | Add-Member -NotePropertyName WriteIntent -NotePropertyValue ([string]$entry.WriteIntent) }
-			$proof = script:Invoke-PaxDeltaMemberOperation -Operation Prepare -Member $member -WorkDirectory $memberDirectory -Python $Python -BearerToken $BearerToken
-			foreach ($property in @('CandidateMeasurement','OriginalMeasurement','CandidateSnapshotSha256','OriginalSnapshotSha256','CsvHeader')) { $member.$property = $proof.$property }
-			$member.CandidateMeasurement | Add-Member -NotePropertyName Role -NotePropertyValue 'Candidate'
-			if ($member.OriginalMeasurement) { $member.OriginalMeasurement | Add-Member -NotePropertyName Role -NotePropertyValue 'Original' }
-			if ($canonical) {
-				if ($canonical.CandidateMeasurement.Sha256 -cne $member.CandidateMeasurement.Sha256 -or $canonical.CandidateMeasurement.DataRowCount -ne $member.CandidateMeasurement.DataRowCount -or ($canonical.OriginalMeasurement | ConvertTo-Json -Depth 12 -Compress) -cne ($member.OriginalMeasurement | ConvertTo-Json -Depth 12 -Compress)) { throw 'Shared Delta producers disagree or their base changed during preparation; no table may be written.' }
-			}
-			else { $canonical = $member }
-		}
-		[void]$prepared.Add($canonical)
-	}
-	$state = [pscustomobject]@{
-		Version = '2.0'; Kind = 'DeltaTables'; RunTimestamp = [string]$global:ScriptRunTimestamp
-		SetId = $setId; RosterText = $rosterText; RequiredIds = $requiredIds; IntentHash = ''; Status = 'Prepared'; Members = $prepared.ToArray()
-		ProducerMembers = @($Entries | Where-Object { $_.PSObject.Properties['Producer'] } | ForEach-Object Producer)
-	}
-	$state.IntentHash = script:Get-PaxDeltaIntentHash -State $state
-	foreach ($member in $state.Members) { $member.IntentHash = $state.IntentHash }
-	return $state
-}
 
-function script:Get-PaxDeltaIntentHash {
-	param([psobject]$State)
-	$manifest = [ordered]@{
-		Version = $State.Version; Kind = $State.Kind; SetId = $State.SetId; RosterText = $State.RosterText; RequiredIds = @($State.RequiredIds)
-		ProducerMembers = @($State.ProducerMembers)
-		Members = @($State.Members | ForEach-Object {
-			$item = [ordered]@{
-				Kind = $_.Kind; Tier = $_.Tier; Leaf = $_.Leaf; StageLeaf = $_.StageLeaf; OriginalPath = $_.OriginalPath
-				PublicationId = $_.PublicationId; TargetUri = $_.TargetUri; SourceIdentity = $_.SourceIdentity; Dashboard = $_.Dashboard
-				RemoteParent = $_.RemoteParent; CandidatePath = $_.CandidatePath; DestinationPath = $_.DestinationPath
-				SourceSha256 = $_.SourceSha256; DeltaCandidatePath = $_.DeltaCandidatePath; DeltaOriginalPath = $_.DeltaOriginalPath
-				CandidateSnapshotSha256 = $_.CandidateSnapshotSha256; OriginalSnapshotSha256 = $_.OriginalSnapshotSha256
-				CandidateMeasurement = $_.CandidateMeasurement; OriginalMeasurement = $_.OriginalMeasurement; CsvHeader = @($_.CsvHeader)
-			}
-			# Preserve verification of pre-policy frozen manifests without reinterpreting them.
-			if ($_.PSObject.Properties['WriteIntent']) { $item.WriteIntent = [string]$_.WriteIntent; $item.ProtectRowCount = [bool]$_.ProtectRowCount }
-			$item
-		})
-	}
-	return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes(($manifest | ConvertTo-Json -Depth 20 -Compress))))
-}
 
-function script:Invoke-PaxDeltaPublicationMember {
-	param([string]$Operation, [psobject]$Member)
-	if (-not $script:PaxDeltaPublicationContext) { throw 'The Delta publication context is unavailable.' }
-	return (script:Invoke-PaxDeltaMemberOperation -Operation $Operation -Member $Member -WorkDirectory (Split-Path $Member.CandidatePath -Parent) -Python $script:PaxDeltaPublicationContext.Python -BearerToken $script:PaxDeltaPublicationContext.BearerToken)
-}
 
-function script:Get-PaxDeltaRecoveryMarker {
-	param([psobject]$Member)
-	$transport = script:Get-PaxMultiDashboardRemoteTransport -Member $Member
-	if ([string]::IsNullOrWhiteSpace([string]$Member.SetId)) { throw 'A Delta recovery marker requires its frozen set identity.' }
-	# Recovery evidence belongs to this set, not every run targeting the lakehouse.
-	$markerId = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes([string]$Member.SetId)))
-	$relative = & $transport.ResolvePath $transport.Target ('.pax_delta_{0}_pending.paxrecovery' -f $markerId)
-	$uri = script:Get-PaxWatermarkFabricFilesUri -Transport $transport.Target -RelativePath $relative
-	$response = script:Invoke-PaxWatermarkFabricFilesRequestWithRecovery -Transport $transport.Target -Method GET -Uri $uri -Headers $null -Body $null -ExpectedPathNotFound
-	if ($response.StatusCode -eq 404) { return [pscustomobject]@{ Missing = $true; Transport = $transport; Relative = $relative; Uri = $uri; ETag = ''; Marker = $null } }
-	if ($response.Class -cne 'Ok' -or -not (script:Test-PaxWatermarkFabricFilesToken -Value $response.ETag)) { throw 'The Delta recovery marker could not be read with a valid concurrency token.' }
-	$marker = [Text.Encoding]::UTF8.GetString([byte[]]$response.Bytes) | ConvertFrom-Json -ErrorAction Stop
-	if ($marker.Version -cne '2.0' -or $marker.Kind -cne 'DeltaTables' -or [string]::IsNullOrWhiteSpace($marker.SetId)) { throw 'The Delta recovery marker is invalid; table publication is blocked.' }
-	return [pscustomobject]@{ Missing = $false; Transport = $transport; Relative = $relative; Uri = $uri; ETag = [string]$response.ETag; Marker = $marker }
-}
 
-function script:Start-PaxDeltaRecoveryMarker {
-	param([psobject]$Member, [string]$WorkDirectory)
-	$current = script:Get-PaxDeltaRecoveryMarker -Member $Member
-	if (-not $current.Missing) {
-		if ($current.Marker.SetId -cne $Member.SetId -or $current.Marker.IntentHash -cne $Member.IntentHash) { throw 'This Delta set recovery marker has changed; its identity must match the selected checkpoint.' }
-		return
-	}
-	$directory = $current.Relative.Substring(0, $current.Relative.LastIndexOf('/'))
-	$directoryUri = script:Get-PaxWatermarkFabricFilesUri -Transport $current.Transport.Target -RelativePath $directory -Query 'resource=directory'
-	$created = script:Invoke-PaxWatermarkFabricFilesRequestWithRecovery -Transport $current.Transport.Target -Method PUT -Uri $directoryUri -Headers @{ 'If-None-Match' = '*' } -Body $null -ExpectedDirectoryExists
-	if ($created.Class -cne 'Ok' -and $created.StatusCode -notin @(409,412)) { throw 'The owned Delta recovery directory could not be prepared.' }
-	$path = Join-Path $WorkDirectory 'delta-pending-marker.json'
-	[IO.File]::WriteAllText($path, (@{ Version = '2.0'; Kind = 'DeltaTables'; SetId = $Member.SetId; IntentHash = $Member.IntentHash; RunTimestamp = [string]$global:ScriptRunTimestamp } | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
-	$sent = script:Write-PaxWatermarkFabricFilesObject -Transport $current.Transport.Target -RelativePath $current.Relative -Bytes ([IO.File]::ReadAllBytes($path)) -CreateHeaders @{ 'If-None-Match' = '*' }
-	if (-not $sent.Committed) { throw 'Exclusive Delta recovery intent could not be persisted; no table may be written.' }
-	$observed = script:Get-PaxDeltaRecoveryMarker -Member $Member
-	if ($observed.Missing -or $observed.Marker.SetId -cne $Member.SetId -or $observed.Marker.IntentHash -cne $Member.IntentHash) { throw 'Delta recovery intent failed readback; no table may be written.' }
-}
 
-function script:Complete-PaxDeltaRecoveryMarker {
-	param([psobject]$Member)
-	$current = script:Get-PaxDeltaRecoveryMarker -Member $Member
-	if ($current.Missing) { return }
-	if ($current.Marker.SetId -cne $Member.SetId -or $current.Marker.IntentHash -cne $Member.IntentHash) { throw 'A foreign or changed Delta recovery marker will not be removed.' }
-	$removed = script:Invoke-PaxWatermarkFabricFilesRequestWithRecovery -Transport $current.Transport.Target -Method DELETE -Uri $current.Uri -Headers @{ 'If-Match' = $current.ETag } -Body $null
-	if ($removed.Class -cne 'Ok') { throw 'Conditional Delta marker cleanup failed; resume must reconcile the accepted set.' }
-}
 
-function script:Invoke-PaxDeltaTableSetPublication {
-	param([object[]]$Entries, [string]$StageRoot, [psobject]$Python, [string]$BearerToken = '', [object[]]$ProducerMembers = @())
-	$priorContext = $script:PaxDeltaPublicationContext
-	try {
-		$script:PaxDeltaPublicationContext = [pscustomobject]@{ Python = $Python; BearerToken = $BearerToken; Recovering = (Test-Path -LiteralPath (Join-Path $StageRoot '.pax_delta_set_state.json')) }
-		$state = script:New-PaxDeltaPublicationState -Entries $Entries -StageRoot $StageRoot -Python $Python -BearerToken $BearerToken
-		if (-not $script:PaxCompleteSetPublicationStates) { $script:PaxCompleteSetPublicationStates = @{} }
-		$script:PaxCompleteSetPublicationStates[(Join-Path $StageRoot '.pax_delta_set_state.json')] = $state
-		if (-not $script:PaxDeltaPublicationContext.Recovering -and $ProducerMembers.Count -gt 0) {
-			$producerRoot = Join-Path $StageRoot 'producers'
-			[void][IO.Directory]::CreateDirectory($producerRoot)
-			$frozenProducers = [Collections.Generic.List[object]]::new()
-			foreach ($producer in $ProducerMembers) {
-				$source = [IO.Path]::GetFullPath([string]$producer.CandidatePath)
-				$sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256 -ErrorAction Stop).Hash
-				$frozenPath = Join-Path $producerRoot ('producer_{0}.csv' -f $frozenProducers.Count)
-				Copy-Item -LiteralPath $source -Destination $frozenPath -ErrorAction Stop
-				if ((Get-FileHash -LiteralPath $frozenPath -Algorithm SHA256).Hash -cne $sourceHash -or (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -cne $sourceHash) { throw 'A producer changed while its complete-set recovery copy was being frozen.' }
-				[void]$frozenProducers.Add([pscustomobject]@{
-					Name = $producer.Name; Dashboard = $producer.Dashboard; DataType = $producer.DataType
-					CandidatePath = $source; DestinationPath = $producer.DestinationPath; PublicationId = $producer.PublicationId
-					ProtectionExpectation = $producer.ProtectionExpectation; FrozenPath = $frozenPath; SourceSha256 = $sourceHash
-					WriteIntent = [string]$producer.WriteIntent
-				})
-				if (@($Entries | Where-Object { [IO.Path]::GetFullPath($_.SourcePath) -ieq $source }).Count -eq 0) {
-					$parent = if ($script:DestParentUrl -and $script:DestParentUrl.ContainsKey([string]$producer.DataType)) { [string]$script:DestParentUrl[[string]$producer.DataType] } else { [string]$script:RemoteOutputUrl }
-					if ($parent -notlike 'https://*onelake*' -or $parent -notmatch '/Files(/|$)') { throw 'A mixed complete-set producer has no Fabric Files destination.' }
-					if ($script:PaxMultiDashboardEnabled -and $producer.Dashboard -in @('AIO','M365','ValueLens','CoworkAdoption') -and $producer.Name -notlike 'Shared:*') { $parent = $parent.TrimEnd('/') + '/' + $producer.Dashboard }
-					$destination = if ($producer.DestinationPath) { [string]$producer.DestinationPath } else { $source }
-					$leaf = [IO.Path]::GetFileName($destination)
-					$measurement = script:Measure-PaxWatermarkCsvArtifact -Path $frozenPath -AllowCandidateLeaf
-					if (-not $measurement.Valid) { throw 'A Files producer is unreadable; the complete set remains unchanged.' }
-					$originalPath = Join-Path $producerRoot ('original_{0}.csv' -f $frozenProducers.Count)
-					$originalMeasurement = $null
-					try { Get-RemoteFile-OneLake -RelativeName $leaf -DestinationPath $originalPath -ParentOverride $parent -ErrorAction Stop }
-					catch {
-						$status = 0
-						try { $status = [int]$_.Exception.Response.StatusCode } catch { }
-						if ($status -ne 404) { throw }
-						if (Test-Path -LiteralPath $originalPath) { Remove-Item -LiteralPath $originalPath -Force -ErrorAction Stop }
-					}
-					if (Test-Path -LiteralPath $originalPath -PathType Leaf) {
-						$originalMeasurement = script:Measure-PaxWatermarkCsvArtifact -Path $originalPath -AllowCandidateLeaf
-						if (-not $originalMeasurement.Valid -or $measurement.DataRowCount -le 0 -or ($producer.WriteIntent -notin @('Snapshot','UsersSnapshot') -and $measurement.DataRowCount -lt $originalMeasurement.DataRowCount)) { throw 'A Files candidate is empty or would shrink existing history; no member may be published.' }
-					}
-					$identity = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($parent.TrimEnd('/') + '/' + $leaf)))
-					if (@($state.Members | Where-Object PublicationId -CEQ ('File_' + $identity)).Count -gt 0) { throw 'Distinct file producers collide on one destination.' }
-					$state.Members += [pscustomobject]@{
-						Kind = 'CsvFile'; SetId = $state.SetId; IntentHash = ''; Name = $producer.Name; TableName = ''
-						Dashboard = $producer.Dashboard; DataType = $producer.DataType; SourceIdentity = $producer.Name
-						PublicationId = 'File_' + $identity; TargetUri = $parent.TrimEnd('/') + '/' + $leaf; Tier = 'Fabric'; RemoteParent = $parent
-						Leaf = $leaf; StageLeaf = ('.pax_multiappend_{0}_{1}.paxsetcandidate' -f $global:ScriptRunTimestamp, $identity)
-						CandidatePath = $frozenPath; DestinationPath = $destination; SourceSha256 = $sourceHash
-						CandidateMeasurement = $measurement; OriginalPath = $originalPath; OriginalMeasurement = $originalMeasurement
-						DeltaCandidatePath = ''; DeltaOriginalPath = ''; CandidateSnapshotSha256 = ''; OriginalSnapshotSha256 = ''; CsvHeader = @()
-						WriteIntent = [string]$producer.WriteIntent; ProtectRowCount = ($producer.WriteIntent -notin @('Snapshot','UsersSnapshot'))
-					}
-				}
-			}
-			$state.ProducerMembers = $frozenProducers.ToArray()
-			$state.RequiredIds = @($state.Members.PublicationId | Sort-Object)
-			$state.IntentHash = script:Get-PaxDeltaIntentHash -State $state
-			foreach ($member in $state.Members) { $member.IntentHash = $state.IntentHash }
-		}
-		foreach ($producer in $state.ProducerMembers) {
-			if (-not $producer.FrozenPath -or -not (Test-Path -LiteralPath $producer.FrozenPath -PathType Leaf) -or (Get-FileHash -LiteralPath $producer.FrozenPath -Algorithm SHA256).Hash -cne $producer.SourceSha256) { throw 'A frozen producer is missing or changed; recovery cannot replay processing.' }
-		}
-		if ($state.Status -eq 'Accepted') {
-			foreach ($member in $state.Members) {
-				if (-not (script:Test-PaxMultiDashboardDestination -Member $member -Expected $member.CandidateMeasurement -Leaf $member.Leaf)) { throw 'An accepted Delta set no longer matches its recorded versions; replay is blocked.' }
-			}
-			script:Complete-PaxMultiDashboardRecoveryMarkers -Members $state.Members -WorkDirectory $StageRoot
-			return [pscustomobject]@{ Accepted = $true; Code = 'RecoveredAcceptedDeltaSet' }
-		}
-		return (script:Invoke-PaxMultiDashboardAppendPublication -Members $state.Members -Roster @{} -StageRoot $StageRoot -RequiredIds $state.RequiredIds -DeltaState $state)
-	}
-	finally { $script:PaxDeltaPublicationContext = $priorContext }
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 function script:New-PaxDeltaProducerEntries {
 	param([Parameter(Mandatory)][object[]]$Members)
@@ -31997,23 +34310,13 @@ try:
     # non-empty value later in the file fails conversion, and text that merely looks like
     # a date becomes a timezone-aware timestamp whose rendering no longer matches the
     # source. Declaring string up front avoids both and reproduces the source text exactly.
-    read_options = pacsv.ReadOptions(block_size=8 * 1024 * 1024)
     with open(in_csv, 'r', encoding='utf-8-sig', newline='') as header_handle:
         cols = next(csv.reader(header_handle), [])
     if not cols:
         print('Convert-CsvToDelta: the input CSV has no header row', file=sys.stderr)
         sys.exit(6)
     safe_cols = _sanitize_col_names(cols)
-    # Keyed by the source name, so a repeated or blank header name resolves to the same
-    # string declaration rather than reintroducing inference for that column.
-    column_types = {}
-    for raw_name in cols:
-        column_types[raw_name] = pa.string()
-    src_reader = pacsv.open_csv(
-        in_csv,
-        read_options=read_options,
-        convert_options=pacsv.ConvertOptions(strings_can_be_null=False, column_types=column_types),
-    )
+    src_reader = pax_strict_arrow_reader(in_csv, cols)
     target_schema = pa.schema([pa.field(sc, pa.string()) for sc in safe_cols])
     counter = [0]
     def _string_batches():
@@ -32042,6 +34345,7 @@ except Exception as e:
     print(f'Convert-CsvToDelta: write failed: {e}', file=sys.stderr)
     sys.exit(4)
 "@
+	$inlinePy = (script:Get-PaxStrictArrowCsvReaderPython) + $inlinePy
 	$env:PAX_DELTA_IN   = $InputCsv
 	$env:PAX_DELTA_OUT  = $TargetUri
 	$env:PAX_DELTA_MODE = $Mode
@@ -34243,15 +36547,10 @@ function Get-RemoteFile-SharePoint {
 		if (-not $ResolvedInputItem.IsFile -or [string]::IsNullOrWhiteSpace([string]$ResolvedInputItem.DriveId) -or [string]::IsNullOrWhiteSpace([string]$ResolvedInputItem.ItemId)) {
 			throw 'SharePoint input download requires a resolved file identity.'
 		}
-		$inputUri = 'https://graph.microsoft.com/v1.0/drives/{0}/items/{1}/content' -f [Uri]::EscapeDataString($ResolvedInputItem.DriveId), [Uri]::EscapeDataString($ResolvedInputItem.ItemId)
 		$graphToken = Get-GraphAccessToken
 		if (-not $graphToken) { throw 'SharePoint input download requires a Microsoft Graph access token.' }
-		try {
-			Invoke-WebRequest -Uri $inputUri -Method GET -Headers @{ Authorization = "Bearer $graphToken" } -OutFile $DestinationPath -UseBasicParsing -ErrorAction Stop | Out-Null
-		}
-		catch {
-			throw 'SharePoint resolved input download failed. Verify file access; collection will not continue with an unverified input.'
-		}
+		$downloadTarget = script:New-PaxSharePointPublicationTarget -DriveId $ResolvedInputItem.DriveId -FolderPath '' -InputItemId $ResolvedInputItem.ItemId -InputItemName ([string]$ResolvedInputItem.Name)
+		script:Save-PaxSharePointVerifiedDownload -Target $downloadTarget -RelativePath $RelativeName -DestinationPath $DestinationPath
 		return
 	}
 	if ($ParentOverride) {
@@ -34276,7 +36575,9 @@ function Get-RemoteFile-SharePoint {
 	$graphToken = Get-GraphAccessToken
 	if (-not $graphToken) { throw "Get-RemoteFile-SharePoint: no Microsoft Graph access token available." }
 	try {
-		Invoke-WebRequest -Uri $dlUri -Method GET -Headers @{ Authorization = "Bearer $graphToken" } -OutFile $DestinationPath -UseBasicParsing -ErrorAction Stop | Out-Null
+		$downloadTarget = script:New-PaxSharePointPublicationTarget -DriveId $resolved.DriveId -FolderPath $resolved.FolderPath
+		$downloadPath = script:Get-PaxSharePointPublicationObjectPath -Target $downloadTarget -Leaf $RelativeName
+		script:Save-PaxSharePointVerifiedDownload -Target $downloadTarget -RelativePath $downloadPath -DestinationPath $DestinationPath
 	}
 	catch {
 		# Name what was actually requested, then re-throw the ORIGINAL exception unchanged so every
@@ -34292,6 +36593,233 @@ function Get-RemoteFile-SharePoint {
 			Write-LogHost ("  Leaf      : '{0}'" -f $RelativeName) -ForegroundColor Yellow
 		}
 		throw
+	}
+}
+
+function script:Throw-PaxSharePointTransferFailure {
+	param([int]$StatusCode, [string]$FailureKind)
+	if (-not ('PaxSharePointTransferException' -as [type])) {
+		Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Net;
+using System.Net.Http;
+public sealed class PaxSharePointTransferException : IOException {
+    public HttpResponseMessage Response { get; private set; }
+    public string FailureKind { get; private set; }
+    public PaxSharePointTransferException(int status,string kind) : base("SharePoint transfer refused: " + kind + " (HTTP " + status + "). No partial download was admitted.") {
+        FailureKind=kind;
+        if(status>=100) Response=new HttpResponseMessage((HttpStatusCode)status);
+    }
+}
+'@ -ErrorAction Stop
+	}
+	throw [PaxSharePointTransferException]::new($StatusCode, $FailureKind)
+}
+
+function script:Assert-PaxSharePointDownloadVersion {
+	param([psobject]$Opening, [psobject]$Observed)
+	if (-not $Observed.Observed) { script:Throw-PaxSharePointTransferFailure -StatusCode ([int]$Observed.StatusCode) -FailureKind 'MetadataUnverified' }
+	if ($Observed.ItemId -cne $Opening.ItemId -or $Observed.ParentId -cne $Opening.ParentId -or
+		[long]$Observed.Length -ne [long]$Opening.Length -or $Observed.ETag -cne $Opening.ETag -or $Observed.CTag -cne $Opening.CTag) {
+		script:Throw-PaxSharePointTransferFailure -StatusCode 409 -FailureKind 'RemoteVersionChanged'
+	}
+}
+
+function script:Initialize-PaxDownloadUnixSecurity {
+	if ('PaxDownloadUnixSecurity' -as [type]) { return }
+	Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+public sealed class PaxDownloadUnixSecurity {
+	[DllImport("libc",SetLastError=true,EntryPoint="fstat")] static extern int Stat(int fd,IntPtr data);
+	[DllImport("libc",SetLastError=true,EntryPoint="fstat64")] static extern int Stat64(int fd,IntPtr data);
+	[DllImport("libc",SetLastError=true,EntryPoint="fstat$INODE64")] static extern int DarwinStat(int fd,IntPtr data);
+	[DllImport("libc",SetLastError=true)] static extern int fchmod(int fd,uint mode);
+	[DllImport("libc",SetLastError=true)] static extern int fchown(int fd,uint owner,uint group);
+	[DllImport("libc",SetLastError=true,EntryPoint="flistxattr")] static extern IntPtr ListLinux(int fd,byte[] buffer,UIntPtr size);
+	[DllImport("libc",SetLastError=true,EntryPoint="fgetxattr")] static extern IntPtr GetLinux(int fd,string name,byte[] buffer,UIntPtr size);
+	[DllImport("libc",SetLastError=true,EntryPoint="fsetxattr")] static extern int SetLinux(int fd,string name,byte[] buffer,UIntPtr size,int flags);
+	[DllImport("libc",SetLastError=true,EntryPoint="fremovexattr")] static extern int RemoveLinux(int fd,string name);
+	[DllImport("libc",SetLastError=true,EntryPoint="flistxattr")] static extern IntPtr ListDarwin(int fd,byte[] buffer,UIntPtr size,int options);
+	[DllImport("libc",SetLastError=true,EntryPoint="fgetxattr")] static extern IntPtr GetDarwin(int fd,string name,byte[] buffer,UIntPtr size,uint position,int options);
+	[DllImport("libc",SetLastError=true,EntryPoint="fsetxattr")] static extern int SetDarwin(int fd,string name,byte[] buffer,UIntPtr size,uint position,int options);
+	[DllImport("libc",SetLastError=true,EntryPoint="fremovexattr")] static extern int RemoveDarwin(int fd,string name,int options);
+	[DllImport("libc",SetLastError=true)] static extern IntPtr acl_get_fd_np(int fd,int type);
+	[DllImport("libc",SetLastError=true)] static extern int acl_set_fd_np(int fd,IntPtr acl,int type);
+	[DllImport("libc",SetLastError=true)] static extern IntPtr acl_to_text(IntPtr acl,out IntPtr length);
+	[DllImport("libc",SetLastError=true)] static extern int acl_free(IntPtr value);
+	static readonly bool Darwin=RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
+	readonly uint owner,group,mode;
+	readonly SortedDictionary<string,byte[]> attributes;
+	readonly string aclText;
+	PaxDownloadUnixSecurity(uint uid,uint gid,uint permissions,SortedDictionary<string,byte[]> values,string acl) {owner=uid;group=gid;mode=permissions;attributes=values;aclText=acl;}
+	static IOException Failure(string operation) {return new IOException("Download security preparation failed: "+operation+".",new Win32Exception(Marshal.GetLastWin32Error()));}
+	static int Descriptor(FileStream stream) {return checked((int)stream.SafeFileHandle.DangerousGetHandle().ToInt64());}
+	static bool SecurityAttribute(string name) {return name=="system.posix_acl_access" || name.StartsWith("security.",StringComparison.Ordinal) || name=="com.apple.macl";}
+	static IntPtr List(int fd,byte[] data) {return Darwin?ListDarwin(fd,data,(UIntPtr)(ulong)(data==null?0:data.Length),0):ListLinux(fd,data,(UIntPtr)(ulong)(data==null?0:data.Length));}
+	static byte[] GetAttribute(int fd,string name) {
+		long length=(Darwin?GetDarwin(fd,name,null,UIntPtr.Zero,0,0):GetLinux(fd,name,null,UIntPtr.Zero)).ToInt64();
+		if(length<0)throw Failure("read access attribute");
+		byte[] data=new byte[checked((int)length)];
+		long read=(Darwin?GetDarwin(fd,name,data,(UIntPtr)(ulong)data.Length,0,0):GetLinux(fd,name,data,(UIntPtr)(ulong)data.Length)).ToInt64();
+		if(read!=length)throw Failure("verify access attribute length");
+		return data;
+	}
+	static SortedDictionary<string,byte[]> Attributes(int fd) {
+		var result=new SortedDictionary<string,byte[]>(StringComparer.Ordinal);
+		long length=List(fd,null).ToInt64();
+		if(length<0) {int error=Marshal.GetLastWin32Error();if(error==95 || error==45)return result;throw Failure("list access attributes");}
+		if(length==0)return result;
+		byte[] data=new byte[checked((int)length)];
+		if(List(fd,data).ToInt64()!=length)throw Failure("verify access attribute inventory");
+		foreach(string name in System.Text.Encoding.UTF8.GetString(data).Split('\0'))if(SecurityAttribute(name))result.Add(name,GetAttribute(fd,name));
+		return result;
+	}
+	static string DarwinAcl(int fd) {
+		if(!Darwin)return "";
+		IntPtr acl=acl_get_fd_np(fd,256);
+		if(acl==IntPtr.Zero)throw Failure("read access ACL");
+		try {IntPtr length;IntPtr text=acl_to_text(acl,out length);if(text==IntPtr.Zero)throw Failure("describe access ACL");try{return Marshal.PtrToStringAnsi(text,checked((int)length.ToInt64()));}finally{acl_free(text);}}
+		finally {acl_free(acl);}
+	}
+	public static PaxDownloadUnixSecurity Capture(string path) {
+		using(var stream=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete))return Capture(stream);
+	}
+	public static PaxDownloadUnixSecurity Capture(FileStream stream) {
+		int fd=Descriptor(stream);IntPtr data=Marshal.AllocHGlobal(512);
+		try {
+			int status=Darwin?DarwinStat(fd,data):(IntPtr.Size==4?Stat64(fd,data):Stat(fd,data));
+			if(status!=0)throw Failure("read owner group and mode");
+			int modeOffset=Darwin?4:(RuntimeInformation.ProcessArchitecture==Architecture.X64?24:16);
+			int ownerOffset=Darwin?16:(RuntimeInformation.ProcessArchitecture==Architecture.X64?28:24);
+			uint permissions=Darwin?(uint)(ushort)Marshal.ReadInt16(data,modeOffset):unchecked((uint)Marshal.ReadInt32(data,modeOffset));
+			uint uid=unchecked((uint)Marshal.ReadInt32(data,ownerOffset));uint gid=unchecked((uint)Marshal.ReadInt32(data,ownerOffset+4));
+			return new PaxDownloadUnixSecurity(uid,gid,permissions&4095,Attributes(fd),DarwinAcl(fd));
+		}finally{Marshal.FreeHGlobal(data);}
+	}
+	public string Fingerprint {
+		get {string value=owner+":"+group+":"+mode+":"+aclText;foreach(var entry in attributes)value+="|"+entry.Key+":"+Convert.ToBase64String(entry.Value);return value;}
+	}
+	public void Prepare(FileStream stream,string originalPath) {
+		int fd=Descriptor(stream);var current=Capture(stream);
+		if(fchmod(fd,0)!=0)throw Failure("restrict empty staging file");
+		if((current.owner!=owner || current.group!=group) && fchown(fd,owner,group)!=0)throw Failure("preserve staging owner and group");
+		if(fchmod(fd,mode)!=0)throw Failure("preserve staging mode");
+		var stagedAttributes=Attributes(fd);
+		foreach(var entry in stagedAttributes)if(!attributes.ContainsKey(entry.Key)) {
+			int status=Darwin?RemoveDarwin(fd,entry.Key,0):RemoveLinux(fd,entry.Key);
+			if(status!=0)throw Failure("remove unintended inherited access attribute");
+		}
+		foreach(var entry in attributes) {
+			byte[] existing;
+			if(stagedAttributes.TryGetValue(entry.Key,out existing) && Convert.ToBase64String(existing)==Convert.ToBase64String(entry.Value))continue;
+			int status=Darwin?SetDarwin(fd,entry.Key,entry.Value,(UIntPtr)(ulong)entry.Value.Length,0,0):SetLinux(fd,entry.Key,entry.Value,(UIntPtr)(ulong)entry.Value.Length,0);
+			if(status!=0)throw Failure("preserve staging access attribute");
+		}
+		if(Darwin)using(var original=new FileStream(originalPath,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete)) {
+			IntPtr acl=acl_get_fd_np(Descriptor(original),256);if(acl==IntPtr.Zero)throw Failure("read original access ACL");
+			try{if(acl_set_fd_np(fd,acl,256)!=0)throw Failure("preserve staging access ACL");}finally{acl_free(acl);}
+		}
+		if(Capture(stream).Fingerprint!=Fingerprint)throw new IOException("Download staging security did not match the existing destination.");
+	}
+}
+'@ -ErrorAction Stop
+}
+
+function script:Save-PaxSharePointVerifiedDownload {
+	param([Parameter(Mandatory)][psobject]$Target, [Parameter(Mandatory)][string]$RelativePath, [Parameter(Mandatory)][string]$DestinationPath)
+	$opening = script:Read-PaxSharePointPublicationMetadata -Target $Target -RelativePath $RelativePath
+	if (-not $opening.Observed) { script:Throw-PaxSharePointTransferFailure -StatusCode ([int]$opening.StatusCode) -FailureKind 'DownloadMetadataUnverified' }
+	$destination = [IO.Path]::GetFullPath($DestinationPath)
+	$destinationExisted = [IO.File]::Exists($destination)
+	$partial = $destination + '.paxdownload.' + [guid]::NewGuid().ToString('N') + '.tmp'
+	$stream = $null
+	$destinationSecurity = $null
+	$unixSecurity = $null
+	$retainVerifiedCandidate = $false
+	$sha = [Security.Cryptography.SHA256]::Create()
+	$position = [long]0
+	$capability = $opening
+	$lastProgress = [datetime]::UtcNow
+	try {
+		if ($IsWindows -and $destinationExisted) {
+			$sections = [Security.AccessControl.AccessControlSections]::Access -bor [Security.AccessControl.AccessControlSections]::Owner -bor [Security.AccessControl.AccessControlSections]::Group
+			$destinationSecurity = [IO.FileSystemAclExtensions]::GetAccessControl([IO.FileInfo]::new($destination), $sections)
+			$stream = [IO.FileSystemAclExtensions]::Create([IO.FileInfo]::new($partial), [IO.FileMode]::CreateNew, [Security.AccessControl.FileSystemRights]::Write, [IO.FileShare]::None, 4096, [IO.FileOptions]::None, $destinationSecurity)
+		}
+		else {
+			if (-not $IsWindows -and $destinationExisted) {
+				script:Initialize-PaxDownloadUnixSecurity
+				$unixSecurity = [PaxDownloadUnixSecurity]::Capture($destination)
+			}
+			$stream = [IO.File]::Open($partial, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+			if ($unixSecurity) { $unixSecurity.Prepare($stream, $destination) }
+		}
+		while ($position -lt [long]$opening.Length) {
+			$want = [int][Math]::Min([long]4194304, [long]$opening.Length - $position)
+			$chunk = $null
+			for ($refresh = 0; $refresh -le 2; $refresh++) {
+				$factory = if ($Target.PSObject.Properties['DownloadHttpClientFactory']) { $Target.DownloadHttpClientFactory } else { $null }
+				$chunk = script:Invoke-PaxSharePointAnonymousRange -DownloadUri $capability.DownloadUri -Offset $position -Count $want -TotalLength ([long]$opening.Length) -HttpClientFactory $factory
+				if ([int]$chunk.StatusCode -notin @(401,403) -or $refresh -eq 2) { break }
+				$capability = script:Read-PaxSharePointPublicationMetadata -Target $Target -RelativePath $RelativePath
+				script:Assert-PaxSharePointDownloadVersion -Opening $opening -Observed $capability
+			}
+			$expectedRange = 'bytes {0}-{1}/{2}' -f $position, ($position + $want - 1), $opening.Length
+			if ($null -eq $chunk -or [int]$chunk.StatusCode -ne 206 -or $chunk.ContentRange -cne $expectedRange -or
+				[long]$chunk.ContentLength -ne $want -or $chunk.Bytes.Length -ne $want) {
+				script:Throw-PaxSharePointTransferFailure -StatusCode ([int]$chunk.StatusCode) -FailureKind 'DownloadRangeUnverified'
+			}
+			$stream.Write($chunk.Bytes, 0, $want)
+			[void]$sha.TransformBlock($chunk.Bytes, 0, $want, $null, 0)
+			$position += [long]$want
+			if (([datetime]::UtcNow - $lastProgress).TotalSeconds -ge 30) {
+				Write-LogHost ("SharePoint history download verified {0:N0} of {1:N0} bytes." -f $position, $opening.Length) -ForegroundColor DarkGray
+				$lastProgress = [datetime]::UtcNow
+			}
+		}
+		$stream.Flush($true)
+		if ($unixSecurity) { $unixSecurity.Prepare($stream, $destination) }
+		$stream.Dispose(); $stream = $null
+		[void]$sha.TransformFinalBlock((New-Object byte[] 0), 0, 0)
+		$expectedHash = [BitConverter]::ToString($sha.Hash).Replace('-', '')
+		if ((Get-Item -LiteralPath $partial).Length -ne [long]$opening.Length -or (Get-FileHash -LiteralPath $partial -Algorithm SHA256).Hash -cne $expectedHash) {
+			script:Throw-PaxSharePointTransferFailure -StatusCode 0 -FailureKind 'LocalDownloadReadbackMismatch'
+		}
+		$closing = script:Read-PaxSharePointPublicationMetadata -Target $Target -RelativePath $RelativePath
+		script:Assert-PaxSharePointDownloadVersion -Opening $opening -Observed $closing
+		$retainVerifiedCandidate = $true
+		$backup = $partial + '.prior'
+		try {
+			if ($unixSecurity -and [PaxDownloadUnixSecurity]::Capture($destination).Fingerprint -cne $unixSecurity.Fingerprint) { throw [IO.IOException]::new('Download destination security changed before admission.') }
+			if ($destinationSecurity) {
+				$currentSecurity = [IO.FileSystemAclExtensions]::GetAccessControl([IO.FileInfo]::new($destination), $sections)
+				if ($currentSecurity.GetSecurityDescriptorSddlForm($sections) -cne $destinationSecurity.GetSecurityDescriptorSddlForm($sections)) { throw [IO.IOException]::new('Download destination security changed before admission.') }
+				[IO.File]::Replace($partial, $destination, $backup, $false)
+			}
+			elseif ($destinationExisted) { [IO.File]::Replace($partial, $destination, $backup, $false) }
+			else { [IO.File]::Move($partial, $destination) }
+			$retainVerifiedCandidate = $false
+		}
+		catch {
+			if (-not [IO.File]::Exists($destination) -and [IO.File]::Exists($backup)) { [IO.File]::Move($backup, $destination) }
+			Write-LogHost ('SharePoint download admission was not confirmed. Preserve the destination and verified recovery material: {0}' -f $partial) -ForegroundColor Red
+			throw
+		}
+		if ([IO.File]::Exists($backup)) {
+			try { [IO.File]::Delete($backup) }
+			catch { Write-LogHost ('Verified download admitted; the protected prior-file recovery copy remains: {0}' -f $backup) -ForegroundColor Yellow }
+		}
+		Write-LogHost ("SharePoint history download complete and verified: {0:N0} bytes." -f $position) -ForegroundColor DarkGray
+	}
+	finally {
+		if ($stream) { $stream.Dispose() }
+		$sha.Dispose()
+		if (-not $retainVerifiedCandidate -and [IO.File]::Exists($partial)) { [IO.File]::Delete($partial) }
 	}
 }
 
@@ -35177,7 +37705,7 @@ function Invoke-EmbeddedProcessor {
 				[void](script:Assert-PaxUsersProtectionOutput -Path $usersProtectedOutput)
 			}
 			else {
-			$usersProof = script:New-PaxSourceVerifiedUsersRecord -SourcePath $usersReferencePath -CandidatePath $usersProtectedOutput -SourceSha256 (Get-FileHash -LiteralPath $usersReferencePath -Algorithm SHA256 -ErrorAction Stop).Hash -ProcessedUsers
+			$usersProof = script:New-PaxSourceVerifiedUsersRecord -SourcePath $usersReferencePath -CandidatePath $usersProtectedOutput -SourceSha256 (Get-FileHash -LiteralPath $usersReferencePath -Algorithm SHA256 -ErrorAction Stop).Hash -ProcessedUsers -PythonExe $PythonExe -LauncherArgs $LauncherArgs
 			$usersFactOutput = Join-Path ([string]$ProcessorArgs[$outputArgument + 1]) ('{0}_Interactions.csv' -f [System.IO.Path]::GetFileNameWithoutExtension($usersActivityPath))
 			$usersIdentityEvidence | Add-Member -NotePropertyName FactSha256 -NotePropertyValue $(if (Test-Path -LiteralPath $usersFactOutput -PathType Leaf) { (Get-FileHash -LiteralPath $usersFactOutput -Algorithm SHA256 -ErrorAction Stop).Hash } else { $null })
 			if ($null -eq $script:PaxProcessedUsersIdentityEvidence) {
@@ -42449,7 +44977,9 @@ function script:New-PaxSharePointPublicationTarget {
 		[AllowNull()][scriptblock]$RequestOperation,
 		[int]$RetryBudgetSeconds = 900,
 		[AllowNull()][scriptblock]$SleepOperation,
-		[AllowNull()][scriptblock]$DownloadRequestOperation
+		[AllowNull()][scriptblock]$DownloadRequestOperation,
+		[string]$InputItemId,
+		[string]$InputItemName
 	)
 	if ([string]::IsNullOrWhiteSpace($DriveId)) { throw 'A SharePoint publication target requires a drive identity.' }
 	$graphOperation = if ($RequestOperation) { $RequestOperation } else {
@@ -42494,6 +45024,8 @@ function script:New-PaxSharePointPublicationTarget {
 		RetryBudgetSeconds = $RetryBudgetSeconds
 		SleepOperation     = $SleepOperation
 		DownloadRequestOperation = $DownloadRequestOperation
+		InputItemId        = $InputItemId
+		InputItemName      = $InputItemName
 	}
 }
 
@@ -42565,7 +45097,9 @@ function script:Read-PaxSharePointPublicationMetadata {
 		[Parameter(Mandatory)][string]$RelativePath
 	)
 	$result = [ordered]@{ Observed = $false; Missing = $false; StatusCode = 0; Reason = 'item metadata was not proven'; ItemId = ''; ParentId = ''; Length = [long]0; ETag = ''; CTag = ''; DownloadUri = '' }
-	$uri = (script:Get-PaxSharePointPublicationObjectUri -Target $Target -RelativePath $RelativePath).TrimEnd(':')
+	$inputItemId = if ($Target.PSObject.Properties['InputItemId']) { [string]$Target.InputItemId } else { '' }
+	$uri = if ($inputItemId) { 'https://graph.microsoft.com/v1.0/drives/{0}/items/{1}' -f [Uri]::EscapeDataString([string]$Target.DriveId), [Uri]::EscapeDataString($inputItemId) }
+		else { (script:Get-PaxSharePointPublicationObjectUri -Target $Target -RelativePath $RelativePath).TrimEnd(':') }
 	$response = script:Invoke-PaxWatermarkFabricFilesRequestWithRecovery -Transport $Target -Method 'GET' -Uri $uri -Headers $null -Body $null
 	$result.StatusCode = [int]$response.StatusCode
 	if ($result.StatusCode -eq 404) { $result.Missing = $true; $result.Reason = 'the exact item metadata is absent'; return [pscustomobject]$result }
@@ -42608,15 +45142,21 @@ function script:Read-PaxSharePointPublicationMetadata {
 			if (-not $parent.TryGetProperty($name, [ref]$value) -or $value.ValueKind -ne [System.Text.Json.JsonValueKind]::String -or [string]::IsNullOrWhiteSpace($value.GetString())) { throw 'invalid parent metadata' }
 			$parentValues[$name] = $value.GetString()
 		}
-		$normalized = script:Resolve-PaxWatermarkFabricFilesRelativePath -RemotePath $RelativePath
-		if (-not $normalized.Valid) { throw 'invalid intended path' }
-		$segments = @($normalized.Segments)
-		$expectedParent = if ($segments.Count -gt 1) { ($segments[0..($segments.Count - 2)] -join '/') } else { '' }
-		$parentMatch = [regex]::Match([string]$parentValues.path, '^/drive/root:(?<path>/.*)?$|^/drives/[^/]+/root:(?<path>/.*)?$')
-		if (-not $parentMatch.Success -or
-			$parentValues.driveId -cne [string]$Target.DriveId -or
-			$values.name -cne [string]$segments[-1] -or
-			[Uri]::UnescapeDataString($parentMatch.Groups['path'].Value).Trim('/') -cne $expectedParent) { throw 'item identity mismatch' }
+		if ($inputItemId) {
+			if ($values.id -cne $inputItemId -or $parentValues.driveId -cne [string]$Target.DriveId -or
+				($Target.InputItemName -and $values.name -cne [string]$Target.InputItemName)) { throw 'resolved item identity mismatch' }
+		}
+		else {
+			$normalized = script:Resolve-PaxWatermarkFabricFilesRelativePath -RemotePath $RelativePath
+			if (-not $normalized.Valid) { throw 'invalid intended path' }
+			$segments = @($normalized.Segments)
+			$expectedParent = if ($segments.Count -gt 1) { ($segments[0..($segments.Count - 2)] -join '/') } else { '' }
+			$parentMatch = [regex]::Match([string]$parentValues.path, '^/drive/root:(?<path>/.*)?$|^/drives/[^/]+/root:(?<path>/.*)?$')
+			if (-not $parentMatch.Success -or
+				$parentValues.driveId -cne [string]$Target.DriveId -or
+				$values.name -cne [string]$segments[-1] -or
+				[Uri]::UnescapeDataString($parentMatch.Groups['path'].Value).Trim('/') -cne $expectedParent) { throw 'item identity mismatch' }
+		}
 		$download = $null
 		if (-not [Uri]::TryCreate($values['@microsoft.graph.downloadUrl'], [UriKind]::Absolute, [ref]$download) -or
 			$download.Scheme -cne 'https' -or -not $download.IsDefaultPort -or $download.UserInfo -or $download.Fragment -or $download.IsLoopback -or
@@ -42634,16 +45174,18 @@ function script:Read-PaxSharePointPublicationMetadata {
 	return [pscustomobject]$result
 }
 
-function script:Invoke-PaxSharePointAnonymousRange {
+function script:Invoke-PaxSharePointAnonymousRangeOnce {
 	param(
 		[Parameter(Mandatory)][string]$DownloadUri,
 		[Parameter(Mandatory)][long]$Offset,
 		[Parameter(Mandatory)][ValidateRange(1,4194304)][int]$Count,
 		[Parameter(Mandatory)][long]$TotalLength,
-		[AllowNull()][scriptblock]$HttpClientFactory
+		[AllowNull()][scriptblock]$HttpClientFactory,
+		[ValidateRange(1,120)][int]$TimeoutSeconds = 60
 	)
-	$result = [ordered]@{ StatusCode = 0; ContentRange = ''; ContentLength = [long](-1); Bytes = [byte[]]@() }
+	$result = [ordered]@{ StatusCode = 0; ContentRange = ''; ContentLength = [long](-1); Bytes = [byte[]]@(); FailureKind = 'ResponseRejected'; RetryAfterSeconds = [long]0 }
 	$handler = $null; $client = $null; $request = $null; $response = $null; $stream = $null
+	$deadline = $null
 	try {
 		$uri = $null
 		if ($Offset -lt 0 -or $TotalLength -le 0 -or $Offset -gt ($TotalLength - $Count) -or
@@ -42664,32 +45206,68 @@ function script:Invoke-PaxSharePointAnonymousRange {
 		$client.DefaultRequestHeaders.Clear()
 		$request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Get, $uri)
 		$request.Headers.Range = [System.Net.Http.Headers.RangeHeaderValue]::new($Offset, $Offset + $Count - 1)
-		$response = $client.SendAsync($request, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+		$deadline = [Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds($TimeoutSeconds))
+		$response = $client.SendAsync($request, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead, $deadline.Token).GetAwaiter().GetResult()
 		$result.StatusCode = [int]$response.StatusCode
+		if ($response.Headers.RetryAfter) {
+			if ($null -ne $response.Headers.RetryAfter.Delta) { $result.RetryAfterSeconds = [long][Math]::Max(0, [Math]::Ceiling($response.Headers.RetryAfter.Delta.TotalSeconds)) }
+			elseif ($null -ne $response.Headers.RetryAfter.Date) { $result.RetryAfterSeconds = [long][Math]::Max(0, [Math]::Ceiling(($response.Headers.RetryAfter.Date - [DateTimeOffset]::UtcNow).TotalSeconds)) }
+		}
 		if ($response.Content.Headers.ContentRange) { $result.ContentRange = [string]$response.Content.Headers.ContentRange }
 		if ($null -ne $response.Content.Headers.ContentLength) { $result.ContentLength = [long]$response.Content.Headers.ContentLength }
 		$expectedRange = 'bytes {0}-{1}/{2}' -f $Offset, ($Offset + $Count - 1), $TotalLength
 		if ($result.StatusCode -ne 206 -or $result.ContentRange -cne $expectedRange -or $result.ContentLength -ne $Count) { return [pscustomobject]$result }
 		$stream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+		$result.FailureKind = 'InvalidBodyLength'
 		$buffer = New-Object byte[] ($Count + 1)
 		$total = 0
 		while ($total -lt $buffer.Length) {
-			$read = $stream.Read($buffer, $total, $buffer.Length - $total)
+			$read = $stream.ReadAsync($buffer, $total, $buffer.Length - $total, $deadline.Token).GetAwaiter().GetResult()
 			if ($read -le 0) { break }
 			$total += $read
 		}
 		if ($total -ne $Count) { return [pscustomobject]$result }
 		$result.Bytes = New-Object byte[] $Count
 		[Buffer]::BlockCopy($buffer, 0, $result.Bytes, 0, $Count)
+		$result.FailureKind = ''
 	}
-	catch { $result.Bytes = [byte[]]@() }
+	catch { $result.Bytes = [byte[]]@(); $result.FailureKind = 'AnonymousTransport' }
 	finally {
 		if ($stream) { $stream.Dispose() }
 		if ($response) { $response.Dispose() }
 		if ($request) { $request.Dispose() }
 		if ($client) { $client.Dispose() } elseif ($handler) { $handler.Dispose() }
+		if ($deadline) { $deadline.Dispose() }
 	}
 	return [pscustomobject]$result
+}
+
+function script:Invoke-PaxSharePointAnonymousRange {
+	param(
+		[Parameter(Mandatory)][string]$DownloadUri,
+		[Parameter(Mandatory)][long]$Offset,
+		[Parameter(Mandatory)][ValidateRange(1,4194304)][int]$Count,
+		[Parameter(Mandatory)][long]$TotalLength,
+		[AllowNull()][scriptblock]$HttpClientFactory,
+		[ValidateRange(1,120)][int]$TimeoutSeconds = 60,
+		[ValidateRange(0,900)][int]$RetryBudgetSeconds = 120,
+		[AllowNull()][scriptblock]$SleepOperation
+	)
+	$waited = [long]0
+	for ($attempt = 1; $attempt -le 4; $attempt++) {
+		$result = script:Invoke-PaxSharePointAnonymousRangeOnce -DownloadUri $DownloadUri -Offset $Offset -Count $Count -TotalLength $TotalLength -HttpClientFactory $HttpClientFactory -TimeoutSeconds $TimeoutSeconds
+		$retryable = $result.FailureKind -ceq 'AnonymousTransport' -or [int]$result.StatusCode -in @(429,500,502,503,504)
+		if ($result.Bytes.Length -eq $Count -or -not $retryable) { return $result }
+		if ($attempt -lt 4) {
+			$wait = [long][Math]::Max(1, [long]$result.RetryAfterSeconds)
+			if (($waited + $wait) -gt $RetryBudgetSeconds) { $result.FailureKind = 'RetryBudgetExhausted'; return $result }
+			Write-LogFile ("SharePoint anonymous range retry {0}/4 at offset {1}, HTTP {2}; no failed response bytes were admitted." -f $attempt, $Offset, $result.StatusCode) -Level 'WARNING'
+			if ($SleepOperation) { & $SleepOperation $wait } else { Start-Sleep -Seconds $wait }
+			$waited += $wait
+		}
+	}
+	$result.FailureKind = 'RetryAttemptsExhausted'
+	return $result
 }
 
 function script:Read-PaxSharePointPublicationObject {
@@ -42698,13 +45276,15 @@ function script:Read-PaxSharePointPublicationObject {
 		[Parameter(Mandatory)][string]$RelativePath,
 		[Parameter(Mandatory)][string]$Structure
 	)
-	$outcome = [ordered]@{ Observed = $false; Reason = $null; Length = [long]0; Sha256 = $null; HeaderDigest = $null; RecordCount = $null }
+	$outcome = [ordered]@{ Observed = $false; Reason = $null; FailureKind = $null; Length = [long]0; Sha256 = $null; HeaderDigest = $null; RecordCount = $null }
 	$opening = script:Read-PaxSharePointPublicationMetadata -Target $Target -RelativePath $RelativePath
 	if (-not $opening.Observed) {
-		$outcome.Reason = 'the destination did not identify the exact file for readback'
+		$outcome.FailureKind = if ($opening.Missing) { 'MetadataMissing' } elseif ([int]$opening.StatusCode -in @(401,403)) { 'MetadataDenied' } elseif ([int]$opening.StatusCode -ne 200) { 'MetadataUnavailable' } else { 'MetadataShapeOrIdentityUnverified' }
+		$outcome.Reason = 'SharePoint readback refused: {0}; status={1}.' -f $outcome.FailureKind, [int]$opening.StatusCode
 		return [pscustomobject]$outcome
 	}
 	$declared = [long]$opening.Length
+	$capability = $opening
 	$memberProfile = script:New-PaxRemoteMemberProfile -Structure $Structure
 	$completed = $false
 	try {
@@ -42713,16 +45293,30 @@ function script:Read-PaxSharePointPublicationObject {
 		while ($position -lt $declared) {
 			$want = [long][Math]::Min([int64]$chunkSize, $declared - $position)
 			$downloadOp = if ($Target.PSObject.Properties['DownloadRequestOperation']) { $Target.DownloadRequestOperation } else { $null }
-			$chunk = if ($downloadOp) { & $downloadOp $opening.DownloadUri $position ([int]$want) $declared }
-				else { script:Invoke-PaxSharePointAnonymousRange -DownloadUri $opening.DownloadUri -Offset $position -Count ([int]$want) -TotalLength $declared }
+			$chunk = $null
+			for ($refresh = 0; $refresh -le 2; $refresh++) {
+				$factory = if ($Target.PSObject.Properties['DownloadHttpClientFactory']) { $Target.DownloadHttpClientFactory } else { $null }
+				$chunk = if ($downloadOp) { & $downloadOp $capability.DownloadUri $position ([int]$want) $declared }
+					else { script:Invoke-PaxSharePointAnonymousRange -DownloadUri $capability.DownloadUri -Offset $position -Count ([int]$want) -TotalLength $declared -HttpClientFactory $factory }
+				if ([int]$chunk.StatusCode -notin @(401,403) -or $refresh -eq 2) { break }
+				$capability = script:Read-PaxSharePointPublicationMetadata -Target $Target -RelativePath $RelativePath
+				script:Assert-PaxSharePointDownloadVersion -Opening $opening -Observed $capability
+			}
+			if ($chunk -and $chunk.PSObject.Properties['FailureKind'] -and $chunk.FailureKind -in @('RetryAttemptsExhausted','RetryBudgetExhausted')) {
+				$outcome.FailureKind = 'AnonymousRetryExhausted'
+				$outcome.Reason = 'SharePoint readback refused: AnonymousRetryExhausted.'
+				return [pscustomobject]$outcome
+			}
 			$expectedRange = 'bytes {0}-{1}/{2}' -f $position, ($position + $want - 1), $declared
 			if ($null -eq $chunk -or [int]$chunk.StatusCode -ne 206 -or [string]$chunk.ContentRange -cne $expectedRange -or [long]$chunk.ContentLength -ne $want) {
-				$outcome.Reason = 'the anonymous download did not prove the exact requested byte range'
+				$outcome.FailureKind = if ([int]$chunk.StatusCode -in @(401,403)) { 'CapabilityDenied' } elseif ([int]$chunk.StatusCode -in @(0,429,500,502,503,504)) { 'AnonymousRetryExhausted' } else { 'RangeProofInvalid' }
+				$outcome.Reason = 'SharePoint readback refused: {0}; status={1}.' -f $outcome.FailureKind, [int]$chunk.StatusCode
 				return [pscustomobject]$outcome
 			}
 			$bytes = [byte[]]$chunk.Bytes
 			if ($bytes.Length -ne [int]$want) {
-				$outcome.Reason = 'the destination returned a different number of bytes than the range that was asked for'
+				$outcome.FailureKind = 'RangeLengthMismatch'
+				$outcome.Reason = 'SharePoint readback refused: RangeLengthMismatch.'
 				return [pscustomobject]$outcome
 			}
 			script:Add-PaxRemoteMemberProfileBytes -Profile $memberProfile -Buffer $bytes -Count $bytes.Length
@@ -42730,22 +45324,26 @@ function script:Read-PaxSharePointPublicationObject {
 		}
 		$closing = script:Read-PaxSharePointPublicationMetadata -Target $Target -RelativePath $RelativePath
 		if (-not $closing.Observed) {
-			$outcome.Reason = 'the destination did not re-identify the file after anonymous readback'
+			$outcome.FailureKind = 'ClosingMetadataUnverified'
+			$outcome.Reason = 'SharePoint readback refused: ClosingMetadataUnverified; status={0}.' -f [int]$closing.StatusCode
 			return [pscustomobject]$outcome
 		}
 		if ($closing.ItemId -cne $opening.ItemId -or $closing.ParentId -cne $opening.ParentId -or
 			[long]$closing.Length -ne $declared -or $closing.ETag -cne $opening.ETag -or $closing.CTag -cne $opening.CTag) {
-			$outcome.Reason = 'the member at the destination changed while it was being read back'
+			$outcome.FailureKind = 'RemoteVersionChanged'
+			$outcome.Reason = 'SharePoint readback refused: RemoteVersionChanged.'
 			return [pscustomobject]$outcome
 		}
 		$measured = script:Complete-PaxRemoteMemberProfile -Profile $memberProfile
 		$completed = $true
 		if (-not [bool]$measured.Valid) {
-			$outcome.Reason = 'the member at the destination does not resolve as the structure its contract declares'
+			$outcome.FailureKind = 'StructureInvalid'
+			$outcome.Reason = 'SharePoint readback refused: StructureInvalid.'
 			return [pscustomobject]$outcome
 		}
 		if ([long]$measured.Length -ne $declared) {
-			$outcome.Reason = 'fewer bytes were read back than the destination declared'
+			$outcome.FailureKind = 'LengthMismatch'
+			$outcome.Reason = 'SharePoint readback refused: LengthMismatch.'
 			return [pscustomobject]$outcome
 		}
 		$outcome.Observed = $true
@@ -42756,7 +45354,10 @@ function script:Read-PaxSharePointPublicationObject {
 		return [pscustomobject]$outcome
 	}
 	catch {
-		$outcome.Reason = 'the exact SharePoint metadata and anonymous byte readback could not be proven'
+		$readbackFailure = $_.Exception
+		while ($readbackFailure.InnerException) { $readbackFailure = $readbackFailure.InnerException }
+		$outcome.FailureKind = if ($readbackFailure.PSObject.Properties['FailureKind']) { [string]$readbackFailure.FailureKind } else { 'ReadbackFailed' }
+		$outcome.Reason = 'SharePoint readback refused: {0}.' -f $outcome.FailureKind
 		return [pscustomobject]$outcome
 	}
 	finally { if (-not $completed) { [void](script:Complete-PaxRemoteMemberProfile -Profile $memberProfile) } }
@@ -49796,101 +52397,9 @@ $script:CheckpointLockStream    = $null
 $script:CheckpointLockPath      = $null
 $script:CheckpointLockStaleTtl  = [TimeSpan]::FromMinutes(10)
 
-function script:Acquire-CheckpointLock {
-	param(
-		[Parameter(Mandatory)][string]$CheckpointPath
-	)
-	$CheckpointPath = script:Resolve-PaxRunCleanupFileSystemPath -Path $CheckpointPath
-	$lockPath = "$CheckpointPath.lock"
 
-	# Inspect any existing lock for stale-takeover eligibility BEFORE attempting open.
-	if (Test-Path -LiteralPath $lockPath -PathType Leaf) {
-		$existing = $null
-		try { $existing = Get-Content -LiteralPath $lockPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop } catch {}
-		$stale = $false
-		$reason = ''
-		if (-not $existing) {
-			$stale = $true; $reason = 'unreadable lock file (corrupt or empty)'
-		}
-		elseif ($existing.host -eq [System.Net.Dns]::GetHostName()) {
-			# Same-host: definitive PID check.
-			$alive = $false
-			try { $alive = [bool](Get-Process -Id ([int]$existing.pid) -ErrorAction Stop) } catch { $alive = $false }
-			if (-not $alive) { $stale = $true; $reason = "owning PID $($existing.pid) is no longer running on this host" }
-		}
-		else {
-			# Foreign host: fall back to age-based TTL.
-			try {
-				$startedValue = $existing.started
-				if ($startedValue -is [datetime]) {
-					$startedText = $startedValue.ToString('o', [System.Globalization.CultureInfo]::InvariantCulture)
-				}
-				else {
-					$startedText = [string]$startedValue
-				}
-				$parsedStarted = [datetime]::MinValue
-				if (-not [datetime]::TryParseExact($startedText, 'o', [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind, [ref]$parsedStarted)) {
-					throw 'Checkpoint lock timestamp is not in round-trip format.'
-				}
-				$startedUtc = if ($parsedStarted.Kind -eq [System.DateTimeKind]::Unspecified) {
-					[datetime]::SpecifyKind($parsedStarted, [System.DateTimeKind]::Utc)
-				}
-				else {
-					$parsedStarted.ToUniversalTime()
-				}
-				$age = [datetime]::UtcNow - $startedUtc
-				if ($age -gt $script:CheckpointLockStaleTtl) {
-					$stale = $true
-					$reason = "foreign-host lock from $($existing.host) is older than $($script:CheckpointLockStaleTtl.TotalMinutes) min (age $([int]$age.TotalMinutes) min)"
-				}
-			} catch { $stale = $true; $reason = 'foreign-host lock has unparseable timestamp' }
-		}
 
-		if ($stale) {
-			Write-LogHost "  Checkpoint lock at $lockPath is stale ($reason); taking over." -ForegroundColor Yellow
-			try { Remove-Item -LiteralPath $lockPath -Force -ErrorAction Stop } catch {
-				throw "G-9: Could not remove stale checkpoint lock at $lockPath`: $($_.Exception.Message)"
-			}
-		}
-		else {
-			$ownerDesc = if ($existing) { "pid=$($existing.pid) host=$($existing.host) started=$($existing.started)" } else { '(unknown owner)' }
-			throw "G-9: Another PAX run is using this checkpoint ($ownerDesc). Refusing to start. If you know the other run is dead, delete the lock file manually: $lockPath"
-		}
-	}
 
-	# Open the lock file exclusively (CreateNew + FileShare.None). Hold the stream for the lifetime of the run.
-	try {
-		$stream = [System.IO.File]::Open($lockPath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
-	}
-	catch {
-		throw "G-9: Failed to acquire checkpoint lock at $lockPath`: $($_.Exception.Message)"
-	}
-
-	# Stamp the lock with our identity so other replicas can do stale detection later.
-	$payload = @{
-		pid          = $PID
-		host         = [System.Net.Dns]::GetHostName()
-		started      = (Get-Date).ToUniversalTime().ToString('o')
-		runTimestamp = $global:ScriptRunTimestamp
-	} | ConvertTo-Json -Compress
-	$bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
-	$stream.Write($bytes, 0, $bytes.Length)
-	$stream.Flush()
-
-	$script:CheckpointLockStream = $stream
-	$script:CheckpointLockPath   = $lockPath
-}
-
-function script:Release-CheckpointLock {
-	if ($script:CheckpointLockStream) {
-		try { $script:CheckpointLockStream.Dispose() } catch {}
-		$script:CheckpointLockStream = $null
-	}
-	if ($script:CheckpointLockPath -and (Test-Path -LiteralPath $script:CheckpointLockPath)) {
-		try { Remove-Item -LiteralPath $script:CheckpointLockPath -Force -ErrorAction SilentlyContinue } catch {}
-	}
-	$script:CheckpointLockPath = $null
-}
 
 function Save-CheckpointToDisk {
 	<#
@@ -49960,46 +52469,7 @@ function Save-CheckpointToDisk {
 	}
 }
 
-function Move-PaxFileOverwriteAtomic {
-	<#
-	.SYNOPSIS
-		Same-directory overwrite-rename that keeps the DESTINATION path continuously
-		present, with a bounded retry for transient Windows sharing failures.
-	.DESCRIPTION
-		[System.IO.File]::Move(..., overwrite) maps to MoveFileEx with
-		MOVEFILE_REPLACE_EXISTING - one directory-entry replacement, so the destination
-		path never disappears. That is the property a checkpoint swap needs and that
-		neither remove-then-move nor [System.IO.File]::Replace provides: both rename or
-		delete the destination BEFORE putting the replacement in place, leaving a window
-		in which an interruption exposes no file at all.
 
-		MoveFileEx can transiently fail while another agent (indexer, antivirus scan, a
-		just-closed reader) still holds the destination open, so a bounded retry with a
-		short backoff is applied. Every attempt is a COMPLETE replacement: a failed
-		attempt leaves the destination holding its previous content - never nothing - so
-		retrying is always safe. The last failure is rethrown when the budget is
-		exhausted so callers fail closed instead of proceeding on an unproven swap.
-	#>
-	[CmdletBinding()]
-	param(
-		[Parameter(Mandatory)] [string] $SourcePath,
-		[Parameter(Mandatory)] [string] $DestinationPath,
-		[int] $MaxAttempts = 10,
-		[int] $BackoffMilliseconds = 25
-	)
-	$attempt = 0
-	while ($true) {
-		try {
-			[System.IO.File]::Move($SourcePath, $DestinationPath, $true)
-			return
-		}
-		catch {
-			$attempt++
-			if ($attempt -ge $MaxAttempts) { throw }
-			Start-Sleep -Milliseconds $BackoffMilliseconds
-		}
-	}
-}
 
 function Save-CheckpointStrict {
 	<#
@@ -50421,211 +52891,9 @@ function Save-Checkpoint {
 	}
 }
 
-function Test-CheckpointCompatibility {
-	<#
-	.SYNOPSIS
-		Validates that a parsed checkpoint can safely be resumed by this script version.
-	.DESCRIPTION
-		Defends against three failure modes:
-		  1. Legacy integer `version` outside the supported range (1..2).
-		  2. `checkpointSchemaVersion` from a FUTURE major release — warned but allowed
-		     when within the same major (forward-compat best effort), rejected on major
-		     mismatch.
-		  3. `compatibilityMinimumVersion` higher than the running script version — hard
-		     reject (the checkpoint explicitly says this script is too old).
-		The check is intentionally conservative: it never silently up/down-converts the
-		structure on disk, and it always emits actionable recovery guidance.
-	.OUTPUTS
-		$true  -> safe to resume.
-		$false -> incompatible; caller must abort the resume.
-	#>
-	param(
-		[Parameter(Mandatory)] $CheckpointData,
-		[Parameter(Mandatory)] [string]$RunningScriptVersion
-	)
 
-	# 1) Legacy integer version range (preserves prior behaviour).
-	if (-not $CheckpointData.version -or [int]$CheckpointData.version -lt 1 -or [int]$CheckpointData.version -gt 2) {
-		Write-LogHost "ERROR: Unsupported checkpoint legacy version: $($CheckpointData.version). Supported range is 1..2." -ForegroundColor Red
-		Write-LogHost "  Recovery: start a fresh run without -Resume, or use a checkpoint produced by PAX 1.11.x." -ForegroundColor Yellow
-		return $false
-	}
 
-	# 2/3) New structured fields are OPTIONAL (older checkpoints predate them). When
-	# present, they are authoritative.
-	$schemaVer  = [string]$CheckpointData.checkpointSchemaVersion
-	$minVerStr  = [string]$CheckpointData.compatibilityMinimumVersion
-	$createdBy  = [string]$CheckpointData.createdByVersion
 
-	try { $running = [version]$RunningScriptVersion } catch { $running = $null }
-	try { $minVer  = if ($minVerStr) { [version]$minVerStr } else { $null } } catch { $minVer = $null }
-	try { $created = if ($createdBy) { [version]$createdBy } else { $null } } catch { $created = $null }
-
-	if ($minVer -and $running -and $running -lt $minVer) {
-		Write-LogHost "ERROR: Checkpoint requires PAX >= $minVerStr but running version is $RunningScriptVersion." -ForegroundColor Red
-		Write-LogHost "  Recovery: upgrade PAX to a version >= $minVerStr or start a fresh run without -Resume." -ForegroundColor Yellow
-		return $false
-	}
-
-	if ($schemaVer) {
-		# Parse the schema version. Only the leading "major.minor" pair gates compatibility.
-		$parts = $schemaVer.Split('.')
-		$schemaMajor = 0; [void][int]::TryParse($parts[0], [ref]$schemaMajor)
-		if ($schemaMajor -gt 2) {
-			Write-LogHost "ERROR: Checkpoint schema major version $schemaMajor is newer than this script supports (max major 2)." -ForegroundColor Red
-			Write-LogHost "  Recovery: upgrade PAX or start a fresh run without -Resume." -ForegroundColor Yellow
-			return $false
-		}
-	}
-
-	# Created-by drift is informational only (not all script edits change the on-disk shape).
-	if ($created -and $running -and $created -gt $running) {
-		Write-LogHost "  [WARN] Checkpoint was produced by PAX $createdBy; running PAX $RunningScriptVersion is older. Resume will proceed but newer fields may be ignored." -ForegroundColor Yellow
-	}
-
-	return $true
-}
-
-function Read-Checkpoint {
-	<#
-	.SYNOPSIS
-		Loads and validates a checkpoint file.
-	.PARAMETER CheckpointPath
-		Path to the checkpoint JSON file.
-	.OUTPUTS
-		$true if valid and loaded, $false if invalid.
-	#>
-	param(
-		[Parameter(Mandatory)]
-		[string]$CheckpointPath
-	)
-	$script:PaxVerifiedResumeCheckpoint = $null
-	
-	try {
-		# Keep one selected FileSystem identity through read, restore and startup locking.
-		$CheckpointPath = script:Resolve-PaxRunCleanupFileSystemPath -Path $CheckpointPath
-		if (-not (Test-Path -LiteralPath $CheckpointPath)) {
-			Write-LogHost "ERROR: Checkpoint file not found: $CheckpointPath" -ForegroundColor Red
-			return $false
-		}
-		$data = Get-Content -LiteralPath $CheckpointPath -Raw | ConvertFrom-Json -AsHashtable
-		
-		# Validate version (supports version 1 and 2)
-		if (-not $data.version -or $data.version -gt 2) {
-			Write-LogHost "ERROR: Unsupported checkpoint version: $($data.version). This script supports versions 1-2." -ForegroundColor Red
-			return $false
-		}
-
-		# Structured compatibility check (schema version,
-		# compatibilityMinimumVersion, createdByVersion). Hard-rejects checkpoints from
-		# the future or from releases that explicitly require a newer PAX.
-		if (-not (Test-CheckpointCompatibility -CheckpointData $data -RunningScriptVersion $ScriptVersion)) {
-			return $false
-		}
-		
-		# Validate required fields
-		if (-not $data.runTimestamp -or -not $data.outputFiles -or -not $data.partitions) {
-			Write-LogHost "ERROR: Checkpoint file is missing required fields" -ForegroundColor Red
-			return $false
-		}
-		if ($data.outputFiles.privateRecovery) {
-			$data = script:Restore-PaxPrivateCheckpointRecovery -CheckpointPath $CheckpointPath -Data $data
-		}
-		
-		# Get output directory from checkpoint path
-		$outputDir = Split-Path $CheckpointPath -Parent
-		$partialCsvPath = Join-Path $outputDir $data.outputFiles.partialCsv
-		
-		# Note: We don't require _PARTIAL.csv to exist - the actual data is in .pax_incremental/*.jsonl files
-		# The _PARTIAL.csv is only created when merging at completion, or may not exist yet
-		
-		# Check for incremental save data if there are completed partitions
-		$completedPartitions = @($data.partitionStates.PSObject.Properties | Where-Object { $_.Value.state -eq 'Completed' })
-		if ($completedPartitions.Count -gt 0) {
-			$incrementalDir = Join-Path $outputDir ".pax_incremental"
-			$hasIncrementalData = $false
-			$incrementalRecordCount = 0
-			
-			if (Test-Path $incrementalDir) {
-				$jsonlFiles = Get-ChildItem -Path $incrementalDir -Filter "*.jsonl" -ErrorAction SilentlyContinue
-				if ($jsonlFiles -and $jsonlFiles.Count -gt 0) {
-					$hasIncrementalData = $true
-					# Count records in files
-					foreach ($file in $jsonlFiles) {
-						$incrementalRecordCount += (Get-Content $file.FullName | Measure-Object -Line).Lines
-					}
-				}
-			}
-			
-			$expectedRecords = ($completedPartitions | ForEach-Object { $_.Value.recordCount } | Measure-Object -Sum).Sum
-			
-			if (-not $hasIncrementalData) {
-				Write-LogHost ""
-				Write-LogHost "════════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
-				Write-LogHost "  WARNING: INCREMENTAL DATA MISSING" -ForegroundColor Red
-				Write-LogHost "════════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
-				Write-LogHost ""
-				Write-LogHost "  Checkpoint shows $($completedPartitions.Count) completed partition(s) with ~$expectedRecords records," -ForegroundColor Yellow
-				Write-LogHost "  but the .pax_incremental folder is missing or empty." -ForegroundColor Yellow
-				Write-LogHost ""
-				Write-LogHost "  Expected location: $incrementalDir" -ForegroundColor White
-				Write-LogHost ""
-				Write-LogHost "  If you continue, data from completed partitions will be LOST." -ForegroundColor Red
-				Write-LogHost "  The remaining partitions will be re-queried, but previous data cannot be recovered." -ForegroundColor Red
-				Write-LogHost ""
-				Write-LogHost "  OPTIONS:" -ForegroundColor Cyan
-				Write-LogHost "    1. Restore the .pax_incremental folder from backup (if available)" -ForegroundColor White
-				Write-LogHost "    2. Start a fresh run without -Resume (will re-query all partitions)" -ForegroundColor White
-				Write-LogHost "    3. Continue anyway and accept data loss from completed partitions" -ForegroundColor White
-				Write-LogHost ""
-				Write-LogHost "════════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
-				Write-LogHost ""
-
-				# G-6 noninteractive guard: a noninteractive host (container, ACA Job, scheduled
-				# task, CI runner) cannot answer a Read-Host. The original code would hang
-				# forever on stdin. Fail-fast with a clear message that points at the only
-				# two correct recoveries (restore the incremental folder, or start fresh).
-				if (script:Test-IsNonInteractive) {
-					Write-LogHost "  Noninteractive host detected (no console available to confirm data loss)." -ForegroundColor Red
-					Write-LogHost "  Resume aborted to prevent silent data loss." -ForegroundColor Red
-					Write-LogHost "  Recovery: restore the .pax_incremental folder from backup OR re-run without -Resume." -ForegroundColor Yellow
-					return $false
-				}
-
-				$response = Read-Host "Continue with potential data loss? (yes/no)"
-				if ($response -notmatch '^y(es)?$') {
-					Write-LogHost "Resume cancelled. Consider starting a fresh run." -ForegroundColor Yellow
-					return $false
-				}
-				Write-LogHost "Continuing with resume despite missing incremental data..." -ForegroundColor Yellow
-			} elseif ($incrementalRecordCount -lt ($expectedRecords * 0.9)) {
-				# Warn if incremental count is significantly less than expected (allow 10% variance for counting differences)
-				Write-LogHost ""
-				Write-LogHost "  [WARN] Incremental data may be incomplete:" -ForegroundColor Yellow
-				Write-LogHost "         Checkpoint expects ~$expectedRecords records from completed partitions" -ForegroundColor Yellow
-				Write-LogHost "         Found $incrementalRecordCount records in .pax_incremental" -ForegroundColor Yellow
-				Write-LogHost ""
-			}
-		}
-		
-		# Load into script scope
-		$script:CheckpointPath = $CheckpointPath
-		$script:CheckpointData = $data
-		$script:PartialOutputPath = $partialCsvPath
-		$script:IsResumeMode = $true
-		$script:PaxVerifiedResumeCheckpoint = @{
-			Path = $CheckpointPath
-			RunTimestamp = [string]$data.runTimestamp
-			OperationId = [string]$data.operationId
-		}
-		
-		return $true
-	}
-	catch {
-		Write-LogHost "ERROR: Failed to parse checkpoint file: $($_.Exception.Message)" -ForegroundColor Red
-		return $false
-	}
-}
 
 function Find-Checkpoints {
 	<#
@@ -50775,19 +53043,7 @@ function script:Test-PaxRunCleanupReady {
 	return $true
 }
 
-function script:Resolve-PaxRunCleanupFileSystemPath {
-	param([Parameter(Mandatory)][string]$Path)
-	if ($Path -match '^[a-zA-Z][a-zA-Z0-9+.-]*://') {
-		throw 'Recovery cleanup requires a FileSystem path, not a remote URL.'
-	}
-	$provider = $null
-	$drive = $null
-	$resolved = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path, [ref]$provider, [ref]$drive)
-	if ($null -eq $provider -or $provider.Name -cne 'FileSystem') {
-		throw 'Recovery cleanup does not support this provider; a FileSystem path is required.'
-	}
-	return $resolved
-}
+
 
 function script:Assert-PaxPrivateCheckpointRecovery {
 	param([Parameter(Mandatory)][string]$Directory, [Parameter(Mandatory)][string]$Path,
@@ -51683,6 +53939,27 @@ function Merge-IncrementalSaves {
 	return $mergedCount
 }
 
+function New-PaxGraphIncrementalFailure {
+	param([Parameter(Mandatory)]$Failure, [string]$Stage, [string]$Code)
+	$exception = $Failure.Exception
+	if ($exception.Data.Contains('PaxGraphFailureClass')) {
+		$class = [string]$exception.Data['PaxGraphFailureClass']
+		$stageValue = [string]$exception.Data['PaxGraphFailureStage']
+		$hresult = [int]$exception.Data['PaxGraphFailureHResult']
+	}
+	else {
+		while ($exception.InnerException) { $exception = $exception.InnerException }
+		$class = $exception.GetType().FullName
+		$stageValue = $Stage
+		$hresult = [int]$exception.HResult
+	}
+	$failure = [IO.IOException]::new(("{0}: stage={1}; class={2}; hresult={3}. Retained source data was not admitted as a complete export." -f $Code, $stageValue, $class, $hresult))
+	$failure.Data['PaxGraphFailureClass'] = $class
+	$failure.Data['PaxGraphFailureStage'] = $stageValue
+	$failure.Data['PaxGraphFailureHResult'] = $hresult
+	return $failure
+}
+
 function Merge-IncrementalSaves-Streaming {
 	<#
 	.SYNOPSIS
@@ -51767,6 +54044,7 @@ function Merge-IncrementalSaves-Streaming {
 	# Track seen RecordIds for deduplication (seed with any in-memory RecordIds already written to CSV)
 	$seenIds = if ($ExcludeRecordIds) { New-Object System.Collections.Generic.HashSet[string] ($ExcludeRecordIds) } else { New-Object System.Collections.Generic.HashSet[string] }
 	$duplicatesSkipped = 0
+	$failureStage = 'source-selection'
 	
 	foreach ($file in $files) {
 		$filesProcessed++
@@ -51775,6 +54053,7 @@ function Merge-IncrementalSaves-Streaming {
 		try {
 			# Open CSV writer on first file with data
 			if (-not $headerWritten) {
+				$failureStage = 'csv-open'
 				Open-CsvWriter -Path $OutputFile -Columns $Columns
 				$headerWritten = $true
 			}
@@ -51784,11 +54063,18 @@ function Merge-IncrementalSaves-Streaming {
 			$fileRecords = 0
 			
 			# Use StreamReader instead of Get-Content pipeline for ~5-10x faster file reading
-			$reader = [System.IO.StreamReader]::new($file.FullName, [System.Text.Encoding]::UTF8)
-			while ($null -ne ($line = $reader.ReadLine())) {
+			$failureStage = 'source-open'
+			$reader = [System.IO.StreamReader]::new($file.FullName, [System.Text.UTF8Encoding]::new($false, $true))
+			while ($true) {
+				$failureStage = 'source-read'
+				$line = $reader.ReadLine()
+				if ($null -eq $line) { break }
 				if (-not [string]::IsNullOrWhiteSpace($line)) {
 					try {
-						$record = $line | ConvertFrom-Json
+						$failureStage = 'row-json'
+						$record = $line | ConvertFrom-Json -ErrorAction Stop
+						if ($null -eq $record -or $record -isnot [pscustomobject]) { throw [IO.InvalidDataException]::new('A retained Graph row is not a JSON object.') }
+						$failureStage = 'row-normalization'
 						
 						# Deduplicate by RecordId
 						$recordId = $null
@@ -51846,12 +54132,13 @@ function Merge-IncrementalSaves-Streaming {
 						
 						# Write batch when full
 						if ($batch.Count -ge $batchSize) {
+							$failureStage = 'csv-write'
 							Write-CsvRows -Rows $batch -Columns $Columns
 							$totalMerged += $batch.Count
 							$batch.Clear()
 						}
 					} catch {
-						throw 'GRAPH_INCREMENTAL_ROW_INVALID: refusing a partial streaming export.'
+						throw (New-PaxGraphIncrementalFailure -Failure $_ -Stage $failureStage -Code 'GRAPH_INCREMENTAL_ROW_INVALID')
 					}
 				}
 			}
@@ -51860,6 +54147,7 @@ function Merge-IncrementalSaves-Streaming {
 			
 			# Flush remaining batch for this file
 			if ($batch.Count -gt 0) {
+				$failureStage = 'csv-write'
 				Write-CsvRows -Rows $batch -Columns $Columns
 				$totalMerged += $batch.Count
 				$batch.Clear()
@@ -51882,17 +54170,22 @@ function Merge-IncrementalSaves-Streaming {
 			}
 			
 		} catch {
+			$originalFailure = $_
 			# Ensure StreamReader is disposed on error to release file handle
 			if ($reader) { try { $reader.Dispose() } catch {} ; $reader = $null }
-			if ($headerWritten) { Close-CsvWriter; $headerWritten = $false }
+			if ($headerWritten) { try { Close-CsvWriter -ThrowOnFailure } catch { }; $headerWritten = $false }
 			$script:HadTerminalFailures = $true
-			throw 'GRAPH_INCREMENTAL_STREAM_FAILED: retained partition data could not be exported completely.'
+			throw (New-PaxGraphIncrementalFailure -Failure $originalFailure -Stage $failureStage -Code 'GRAPH_INCREMENTAL_STREAM_FAILED')
 		}
 	}
 	
 	# Close CSV writer
 	if ($headerWritten) {
-		Close-CsvWriter
+		try { Close-CsvWriter -ThrowOnFailure }
+		catch {
+			$script:HadTerminalFailures = $true
+			throw (New-PaxGraphIncrementalFailure -Failure $_ -Stage 'csv-finalize' -Code 'GRAPH_INCREMENTAL_STREAM_FAILED')
+		}
 	}
 	
 	# Final stats
@@ -58572,7 +60865,16 @@ function Open-CsvWriter {
 	}
 	$script:PAX_CsvWriter.WriteLine(($escapedCols -join ','))
 }
-function Close-CsvWriter { if ($script:PAX_CsvWriter) { try { $script:PAX_CsvWriter.Flush(); $script:PAX_CsvWriter.Dispose() } catch {}; Remove-Variable PAX_CsvWriter -Scope Script -ErrorAction SilentlyContinue } }
+function Close-CsvWriter {
+	param([switch]$ThrowOnFailure)
+	if ($script:PAX_CsvWriter) {
+		$failure = $null
+		try { $script:PAX_CsvWriter.Flush() } catch { $failure = $_ }
+		try { $script:PAX_CsvWriter.Dispose() } catch { if ($null -eq $failure) { $failure = $_ } }
+		Remove-Variable PAX_CsvWriter -Scope Script -ErrorAction SilentlyContinue
+		if ($failure -and $ThrowOnFailure) { throw $failure }
+	}
+}
 function Write-CsvRows {
 	param([System.Collections.IEnumerable]$Rows, [string[]]$Columns)
 	if (-not $Rows) { return }
@@ -59185,7 +61487,7 @@ else {
 	Write-LogHost "  API Method:       REST-based audit log queries" -ForegroundColor White
 	Write-LogHost "  Module:           Microsoft.Graph.Security" -ForegroundColor White
 	Write-LogHost "  Authentication:   $Auth (OAuth 2.0)" -ForegroundColor White
-	$parallelStatus = if ($PSVersionTable.PSVersion.Major -ge 7) { "AVAILABLE (PowerShell 7+)" } else { "LIMITED (PowerShell 5.1 detected)" }
+	$parallelStatus = if ($PSVersionTable.PSVersion.Major -ge 7) { "AVAILABLE (PowerShell 7+)" } else { "UNSUPPORTED HOST (PowerShell 7 required)" }
 	Write-LogHost "  Parallel Support: $parallelStatus" -ForegroundColor Green
 
 	# ---- Auth Context summary ----
@@ -60695,6 +62997,7 @@ try {
 		# Resume mode is standalone - only auth-related parameters allowed
 		$allowedWithResume = @(
 			'Resume',
+			'ResumeRequest',
 			'RemainingArgs',
 			'Force',
 			'UserIds',
@@ -68913,7 +71216,11 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 					Write-CsvRows -Rows $batch -Columns $fastPathColumns
 					$batch.Clear()
 				}
-				Close-CsvWriter
+				try { Close-CsvWriter -ThrowOnFailure }
+				catch {
+					$script:HadTerminalFailures = $true
+					throw (New-PaxGraphIncrementalFailure -Failure $_ -Stage 'csv-memory-finalize' -Code 'GRAPH_INCREMENTAL_STREAM_FAILED')
+				}
 				$csvWriter = $false
 				
 				# Clear in-memory collection to free RAM before streaming merge
@@ -68986,7 +71293,14 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 				# Append streaming temp to main temp (skip header line from streaming file)
 				if ((Test-Path $streamingTemp) -and $streamedCount -gt 0) {
 					Write-LogHost "  Combining in-memory and streamed data..." -ForegroundColor DarkGray
-					Get-Content $streamingTemp | Select-Object -Skip 1 | Add-Content $exportTemp
+					try {
+						Get-Content $streamingTemp -ErrorAction Stop | Select-Object -Skip 1 | Add-Content $exportTemp -ErrorAction Stop
+					}
+					catch {
+						$script:HadTerminalFailures = $true
+						$combineStage = if ($_.InvocationInfo.MyCommand.Name -eq 'Get-Content') { 'csv-combine-read' } else { 'csv-combine-write' }
+						throw (New-PaxGraphIncrementalFailure -Failure $_ -Stage $combineStage -Code 'GRAPH_INCREMENTAL_STREAM_FAILED')
+					}
 					Remove-Item $streamingTemp -Force -ErrorAction SilentlyContinue
 				}
 				$totalStreamedRecords = $inMemoryCount + $streamedCount
@@ -69027,7 +71341,11 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 			
 			# Move temp file to final output
 			if (Test-Path $exportTemp) {
-				Move-Item -Path $exportTemp -Destination $OutputFile -Force
+				try { Move-Item -Path $exportTemp -Destination $OutputFile -Force -ErrorAction Stop }
+				catch {
+					$script:HadTerminalFailures = $true
+					throw (New-PaxGraphIncrementalFailure -Failure $_ -Stage 'csv-promote' -Code 'GRAPH_INCREMENTAL_STREAM_FAILED')
+				}
 			}
 			
 			$fastPathElapsed = (Get-Date) - $fastPathStart
@@ -70637,331 +72955,23 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 		}
 		return [pscustomobject]@{ Arguments = $arguments.ToArray(); AuditOnlyCsv = $auditOnly }
 	}
-	function script:Get-PaxMultiDashboardRemoteTransport {
-		param([psobject]$Member)
-		if ($Member.Tier -eq 'SharePoint') {
-			$resolved = Resolve-SharePointTarget -Url $Member.RemoteParent
-			$target = script:New-PaxSharePointPublicationTarget -DriveId $resolved.DriveId -FolderPath $resolved.FolderPath
-			return (script:New-PaxRemotePublicationTransport -Kind 'SharePoint' -Target $target)
-		}
-		if ($Member.Tier -eq 'Fabric') {
-			$resolved = Resolve-FabricTarget -Url $Member.RemoteParent
-			$target = script:New-PaxFabricFilesPublicationTarget -FilesystemBase $resolved.FilesystemBase -Item $resolved.ItemFull -FilesRoot $resolved.FilesPath
-			return (script:New-PaxRemotePublicationTransport -Kind 'FabricFiles' -Target $target)
-		}
-		throw 'A remote multi-dashboard member has an unsupported destination.'
-	}
+	
 
-	function script:Send-PaxMultiDashboardMember {
-		param([psobject]$Member, [string]$Path, [string]$Leaf)
-		if ($Member.PSObject.Properties['Kind'] -and $Member.Kind -eq 'DeltaTable' -and $Leaf -in @($Member.Leaf, $Member.StageLeaf)) {
-			if ($Leaf -eq $Member.StageLeaf) {
-				if ((Get-FileHash -LiteralPath $Member.CandidatePath -Algorithm SHA256).Hash -cne $Member.SourceSha256 -or (Get-FileHash -LiteralPath $Member.DeltaCandidatePath -Algorithm SHA256).Hash -cne $Member.CandidateSnapshotSha256) { throw 'A frozen Delta candidate changed before publication.' }
-				return
-			}
-			$marker = script:Get-PaxDeltaRecoveryMarker -Member $Member
-			if ($marker.Missing -or $marker.Marker.SetId -cne $Member.SetId -or $marker.Marker.IntentHash -cne $Member.IntentHash) { throw 'Delta recovery ownership changed before the canonical commit.' }
-			$result = script:Invoke-PaxDeltaPublicationMember -Operation Publish -Member $Member
-			$Member.PublishedObservation = $result.Observation
-			return
-		}
-		if ($Member.Tier -eq 'Local') { throw 'Remote member send cannot publish a local member.' }
-		if ($Member.Tier -eq 'SharePoint') { Send-FileToSharePoint -LocalPath $Path -RemoteFileName $Leaf -ParentOverride $Member.RemoteParent }
-		else { Send-FileToOneLake -LocalPath $Path -RemoteFileName $Leaf -ParentOverride $Member.RemoteParent }
-	}
+	
 
-	function script:Test-PaxMultiDashboardDestination {
-		param([psobject]$Member, [psobject]$Expected, [string]$Leaf)
-		if ($Member.PSObject.Properties['Kind'] -and $Member.Kind -eq 'DeltaTable') {
-			if ($Leaf -eq $Member.StageLeaf) {
-				return ((Get-FileHash -LiteralPath $Member.CandidatePath -Algorithm SHA256).Hash -ceq $Member.SourceSha256 -and (Get-FileHash -LiteralPath $Member.DeltaCandidatePath -Algorithm SHA256).Hash -ceq $Member.CandidateSnapshotSha256)
-			}
-			$result = script:Invoke-PaxDeltaPublicationMember -Operation Observe -Member $Member
-			if ($Expected -and $Expected.Role -eq 'Candidate') {
-				if ($Member.PublishedObservation -and $result.Observation -and $Member.PublishedObservation.Version -ne $result.Observation.Version) { return $false }
-				if ($result.Published) { $Member.PublishedObservation = $result.Observation }
-				return [bool]$result.Published
-			}
-			return [bool]($result.Original -or $result.Restored -or ($script:PaxDeltaPublicationContext.Recovering -and $result.Published))
-		}
-		if ($Member.Tier -eq 'Local') {
-			if (-not $Expected) { return (-not (Test-Path -LiteralPath $Member.DestinationPath)) }
-			$actual = script:Measure-PaxWatermarkCsvArtifact -Path $Member.DestinationPath -AllowCandidateLeaf
-			return ($actual.Valid -and $actual.Sha256 -ceq $Expected.Sha256 -and $actual.ByteLength -eq $Expected.ByteLength)
-		}
-		$transport = script:Get-PaxMultiDashboardRemoteTransport -Member $Member
-		$rel = & $transport.ResolvePath $transport.Target $Leaf
-		if (-not $Expected) {
-			if ($Member.Tier -eq 'SharePoint') {
-				$metadata = script:Read-PaxSharePointPublicationMetadata -Target $transport.Target -RelativePath $rel
-				return ([bool]$metadata.Missing -and [int]$metadata.StatusCode -eq 404)
-			}
-			$uri = script:Get-PaxWatermarkFabricFilesUri -Transport $transport.Target -RelativePath $rel
-			$head = script:Invoke-PaxWatermarkFabricFilesRequestWithRecovery -Transport $transport.Target -Method 'HEAD' -Uri $uri -Headers $null -Body $null
-			return ([int]$head.StatusCode -eq 404)
-		}
-		$proof = & $transport.ReadObject $transport.Target $rel 'CsvWithHeader'
-		return ($null -ne $Expected -and $proof.Observed -and $proof.Sha256 -ceq $Expected.Sha256 -and $proof.Length -eq $Expected.ByteLength)
-	}
+	
 
-	function script:Save-PaxMultiDashboardAppendState {
-		param([psobject]$State, [string]$Path)
-		if (-not $script:PaxCompleteSetPublicationStates) { $script:PaxCompleteSetPublicationStates = @{} }
-		$script:PaxCompleteSetPublicationStates[$Path] = $State
-		$temp = $Path + '.tmp'
-		$text = $State | ConvertTo-Json -Depth 12
-		[IO.File]::WriteAllText($temp, $text, [Text.UTF8Encoding]::new($false))
-		$null = [IO.File]::ReadAllText($temp) | ConvertFrom-Json -ErrorAction Stop
-		if ($State.PSObject.Properties['Kind'] -and $State.Kind -eq 'DeltaTables') {
-			$durable = [IO.File]::Open($temp, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
-			try { $durable.Flush($true) } finally { $durable.Dispose() }
-		}
-		Move-PaxFileOverwriteAtomic -SourcePath $temp -DestinationPath $Path
-		if ($script:CheckpointEnabled -and $script:CheckpointData) {
-			$checkpointKey = if ($State.PSObject.Properties['Kind'] -and $State.Kind -eq 'DeltaTables') { 'deltaTableSet' } else { 'multiDashboardAppend' }
-			$script:CheckpointData[$checkpointKey] = @{ statePath = $Path; state = [string]$State.Status; runTimestamp = [string]$State.RunTimestamp }
-			$null = Save-CheckpointStrict
-		}
-	}
+	
 
-	function script:Get-PaxMultiDashboardRecoveryMarker {
-		param([psobject]$Member, [string]$WorkDirectory)
-		if ([string]$global:ScriptRunTimestamp -cnotmatch '^\d{8}_\d{6}$') { throw 'An append recovery marker requires a valid selected run timestamp.' }
-		$markerLeaf = '.pax_multiappend_{0}_pending.paxrecovery' -f $global:ScriptRunTimestamp
-		$path = Join-Path $WorkDirectory 'remote-recovery-marker.json'
-		if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force -ErrorAction Stop }
-		try {
-			if ($Member.Tier -eq 'SharePoint') { Get-RemoteFile-SharePoint -RelativeName $markerLeaf -DestinationPath $path -ParentOverride $Member.RemoteParent -ExpectedNotFound -ErrorAction Stop }
-			else { Get-RemoteFile-OneLake -RelativeName $markerLeaf -DestinationPath $path -ParentOverride $Member.RemoteParent -ExpectedPathNotFound -ErrorAction Stop }
-		}
-		catch {
-			$status = 0
-			try { $status = [int]$_.Exception.Response.StatusCode } catch { }
-			if (($Member.Tier -eq 'SharePoint' -and $status -eq 404) -or ($Member.Tier -eq 'Fabric' -and $_.Exception.Data['PaxExpectedPathNotFound'] -eq $true)) { return $null }
-			throw 'The multi-dashboard recovery marker could not be read; publication is blocked.'
-		}
-		return ([IO.File]::ReadAllText($path) | ConvertFrom-Json -ErrorAction Stop)
-	}
+	
 
-	function script:Complete-PaxMultiDashboardRecoveryMarkers {
-		param([object[]]$Members, [string]$WorkDirectory)
-		$seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-		foreach ($member in $Members) {
-			if ($member.Tier -eq 'Local') { continue }
-			if ($member.PSObject.Properties['Kind'] -and $member.Kind -eq 'DeltaTable') {
-				if ($seen.Add([string]$member.RemoteParent)) { script:Complete-PaxDeltaRecoveryMarker -Member $member }
-				continue
-			}
-			if ($member.StageLeaf) {
-				$transport = script:Get-PaxMultiDashboardRemoteTransport -Member $member
-				$stageRel = & $transport.ResolvePath $transport.Target $member.StageLeaf
-				$null = & $transport.RemoveObject $transport.Target @($stageRel) '.paxsetcandidate'
-			}
-			if (-not $seen.Add([string]$member.RemoteParent)) { continue }
-			$marker = script:Get-PaxMultiDashboardRecoveryMarker -Member $member -WorkDirectory $WorkDirectory
-			if (-not $marker) { continue }
-			if ([string]$marker.RunTimestamp -cne [string]$global:ScriptRunTimestamp) { throw 'A recovery marker belongs to another append run; it cannot be removed.' }
-			$transport = script:Get-PaxMultiDashboardRemoteTransport -Member $member
-			$rel = & $transport.ResolvePath $transport.Target ('.pax_multiappend_{0}_pending.paxrecovery' -f $global:ScriptRunTimestamp)
-			$null = & $transport.RemoveObject $transport.Target @($rel) '.paxrecovery'
-			if (script:Get-PaxMultiDashboardRecoveryMarker -Member $member -WorkDirectory $WorkDirectory) { throw 'This run recovery marker could not be cleared; resume this checkpoint to reconcile its publication.' }
-		}
-	}
+	
 
-	function script:Restore-PaxMultiDashboardAppendSet {
-		param([psobject]$State, [string]$StatePath)
-		$State.Status = 'RestorePending'
-		script:Save-PaxMultiDashboardAppendState -State $State -Path $StatePath
-		$failures = [System.Collections.Generic.List[string]]::new()
-		foreach ($member in $State.Members) {
-			try {
-				if ($member.PSObject.Properties['Kind'] -and $member.Kind -eq 'DeltaTable') {
-					$result = script:Invoke-PaxDeltaPublicationMember -Operation Restore -Member $member
-					$member.RestoredObservation = $result.Observation
-					$member.RecoveryCode = if ($result.Restored) { 'OriginalDataRestored' } else { [string]$result.Code }
-					script:Save-PaxMultiDashboardAppendState -State $State -Path $StatePath
-					if (-not $result.Restored) { throw 'A newly created Delta table remains visible. Its frozen complete set must be resumed; the table will not be deleted.' }
-					continue
-				}
-				# A later run may have published since this checkpoint stopped. Never
-				# restore its old snapshot over data outside this run's frozen pair.
-				if (script:Test-PaxMultiDashboardDestination -Member $member -Expected $member.OriginalMeasurement -Leaf $member.Leaf) { continue }
-				if (-not (script:Test-PaxMultiDashboardDestination -Member $member -Expected $member.CandidateMeasurement -Leaf $member.Leaf)) { throw 'The append destination changed outside this checkpoint; its current data will not be restored or removed.' }
-				if (-not $member.OriginalMeasurement) {
-					if ($member.Tier -eq 'Local') {
-						if (Test-Path -LiteralPath $member.DestinationPath -PathType Leaf) { Remove-Item -LiteralPath $member.DestinationPath -Force -ErrorAction Stop }
-						if (Test-Path -LiteralPath $member.DestinationPath) { throw 'A new destination could not be removed.' }
-					}
-					else {
-						$transport = script:Get-PaxMultiDashboardRemoteTransport -Member $member
-						$rel = & $transport.ResolvePath $transport.Target $member.Leaf
-						$null = & $transport.RemoveObject $transport.Target @($rel) $member.Leaf
-						if (-not (script:Test-PaxMultiDashboardDestination -Member $member -Expected $null -Leaf $member.Leaf)) { throw 'A new remote destination could not be proven absent.' }
-					}
-				}
-				else {
-					$original = script:Measure-PaxWatermarkCsvArtifact -Path $member.OriginalPath -AllowCandidateLeaf
-					if (-not $original.Valid -or $original.Sha256 -cne $member.OriginalMeasurement.Sha256) { throw 'Frozen original history is unavailable or changed.' }
-					if ($member.Tier -eq 'Local') {
-						$restore = $member.OriginalPath + '.restore'
-						Copy-Item -LiteralPath $member.OriginalPath -Destination $restore -Force -ErrorAction Stop
-						[void](script:Publish-PaxPurviewNamedOutputSet -Members @([pscustomobject]@{ Name = $member.Name; CandidatePath = $restore; DestinationPath = $member.DestinationPath }))
-					}
-					else { script:Send-PaxMultiDashboardMember -Member $member -Path $member.OriginalPath -Leaf $member.Leaf }
-					if (-not (script:Test-PaxMultiDashboardDestination -Member $member -Expected $member.OriginalMeasurement -Leaf $member.Leaf)) { throw 'Restored history could not be independently read back.' }
-				}
-			}
-			catch {
-				if ($member.PSObject.Properties['Kind'] -and $member.Kind -eq 'DeltaTable') { Write-LogHost ("Delta recovery is pending for '{0}': {1}" -f $member.Name, $_.Exception.Message) -ForegroundColor Red }
-				[void]$failures.Add([string]$member.Name)
-			}
-		}
-		if ($failures.Count -gt 0) {
-			$script:RollupProcessorFailed = $true
-			$script:HadTerminalFailures = $true
-			throw 'This checkpoint restoration is indeterminate or conflicts with changed destination data. Its recovery material is retained and its replay, publication and watermark advancement are blocked; unrelated runs do not require its recovery.'
-		}
-		$State.Status = 'Restored'
-		script:Save-PaxMultiDashboardAppendState -State $State -Path $StatePath
-		script:Complete-PaxMultiDashboardRecoveryMarkers -Members $State.Members -WorkDirectory (Split-Path $StatePath -Parent)
-	}
+	
 
-	function script:Resolve-PaxMultiDashboardAppendRecovery {
-		param([string]$BaseDirectory, [string]$StageRoot, [string[]]$Dashboards)
-		$currentPath = Join-Path $StageRoot '.pax_multiappend_state.json'
-		$savedPath = if ($script:CheckpointData -and $script:CheckpointData.multiDashboardAppend) { [string]$script:CheckpointData.multiDashboardAppend.statePath } else { '' }
-		if ($savedPath -and -not (Test-Path -LiteralPath $savedPath -PathType Leaf)) { throw 'Multi-dashboard recovery material named by the checkpoint is unavailable; publication and additive replay are blocked.' }
-		# The selected checkpoint is authoritative; sibling runs are not dependencies.
-		$paths = @(
-			if ($savedPath) { $savedPath }
-			elseif (Test-Path -LiteralPath $currentPath -PathType Leaf) { $currentPath }
-		)
-		foreach ($path in $paths) {
-			$state = [IO.File]::ReadAllText($path) | ConvertFrom-Json -ErrorAction Stop
-			if ($state.Version -cne '1.0' -or $state.Status -notin @('Prepared','Publishing','RestorePending','Restored','Accepted')) { throw 'Unrecognized multi-dashboard recovery state; publication is blocked.' }
-			$thisRun = ([string]$state.RunTimestamp -ceq [string]$global:ScriptRunTimestamp)
-			if (-not $thisRun) { throw 'The append recovery state does not belong to the selected checkpoint run.' }
-			$memberships = @($state.Members | ForEach-Object Dashboard | Sort-Object -Unique)
-			if (($memberships -join ',') -ine ((@($Dashboards | Sort-Object -Unique)) -join ',')) { throw 'Multi-dashboard recovery cannot change dashboard membership.' }
-			if ($state.Status -eq 'Accepted') {
-				foreach ($member in $state.Members) {
-					if (-not (script:Test-PaxMultiDashboardDestination -Member $member -Expected $member.CandidateMeasurement -Leaf $member.Leaf)) { throw 'An accepted append set no longer matches its checkpoint. Additive replay is blocked.' }
-					if ($member.Tier -ne 'Local') {
-						[void][IO.Directory]::CreateDirectory((Split-Path $member.DestinationPath -Parent))
-						Copy-Item -LiteralPath $member.CandidatePath -Destination $member.DestinationPath -Force -ErrorAction Stop
-					}
-				}
-				script:Complete-PaxMultiDashboardRecoveryMarkers -Members $state.Members -WorkDirectory (Split-Path $path -Parent)
-				return [pscustomobject]@{ Accepted = $true; Members = @($state.Members) }
-			}
-			if ($state.Status -eq 'Prepared') {
-				# No canonical mutation was authorized. In particular, a stale-opening-state
-				# refusal must never "restore" over an unrelated writer's newer history.
-				$state.Status = 'Restored'
-				script:Save-PaxMultiDashboardAppendState -State $state -Path $path
-				script:Complete-PaxMultiDashboardRecoveryMarkers -Members $state.Members -WorkDirectory (Split-Path $path -Parent)
-			}
-			elseif ($state.Status -ne 'Restored') { script:Restore-PaxMultiDashboardAppendSet -State $state -StatePath $path }
-			else { script:Complete-PaxMultiDashboardRecoveryMarkers -Members $state.Members -WorkDirectory (Split-Path $path -Parent) }
-		}
-		return [pscustomobject]@{ Accepted = $false; Members = @() }
-	}
+	
 
-	function script:Invoke-PaxMultiDashboardAppendPublication {
-		param([object[]]$Members, [hashtable]$Roster, [string]$StageRoot, [string[]]$RequiredIds, [psobject]$DeltaState)
-		$ids = @($Members | ForEach-Object PublicationId | Sort-Object -Unique)
-		if (($ids -join ',') -cne ((@($RequiredIds | Sort-Object -Unique)) -join ',') -or $ids.Count -ne $Members.Count) { throw 'The candidate set does not match the complete intended publication roster.' }
-		$statePath = Join-Path $StageRoot $(if ($DeltaState) { '.pax_delta_set_state.json' } else { '.pax_multiappend_state.json' })
-		$prepared = [System.Collections.Generic.List[object]]::new()
-		foreach ($member in $Members) {
-			if ($DeltaState) { [void]$prepared.Add($member); continue }
-			$type = ([string]$member.Name -split ':', 2)[1]
-			$history = $Roster[[string]$member.Dashboard][$type]
-			$tier = if ($script:DestTier.ContainsKey($member.DataType)) { [string]$script:DestTier[$member.DataType] } else { 'Local' }
-			$baseParent = if ($script:DestParentUrl.ContainsKey($member.DataType)) { [string]$script:DestParentUrl[$member.DataType] } else { [string]$script:RemoteOutputUrl }
-			$dashboardFolder = if ($member.PSObject.Properties['Folder']) { [string]$member.Folder } else { [string]$member.Dashboard }
-			$parent = if ($tier -ne 'Local') { if ($dashboardFolder) { '{0}/{1}' -f $baseParent.TrimEnd('/'), $dashboardFolder } else { $baseParent } } else { '' }
-			if ($history) { $parent = [string]$history.RemoteParent }
-			$originalPath = if ($history) { [string]$history.ExistingPath } else { '' }
-			$originalMeasurement = if ($history) { $history.OriginalMeasurement } else { $null }
-			if (-not $history -and (Test-Path -LiteralPath $member.DestinationPath)) { throw 'A non-append output would replace an existing local member; select its append target or use a new output location.' }
-			$measurement = script:Measure-PaxWatermarkCsvArtifact -Path $member.CandidatePath -AllowCandidateLeaf
-			if (-not $measurement.Valid -or $measurement.DataRowCount -le 0) { throw 'A complete-set candidate is unreadable or empty.' }
-			[void]$prepared.Add([pscustomobject]@{
-				Name = [string]$member.Name; Dashboard = [string]$member.Dashboard; DataType = [string]$member.DataType; PublicationId = [string]$member.PublicationId
-				Tier = $tier; RemoteParent = $parent; Leaf = [IO.Path]::GetFileName($member.DestinationPath)
-				CandidatePath = [string]$member.CandidatePath; DestinationPath = [string]$member.DestinationPath
-				CandidateMeasurement = $measurement; OriginalPath = $originalPath; OriginalMeasurement = $originalMeasurement
-				StageLeaf = ('.pax_multiappend_{0}_{1}.paxsetcandidate' -f $global:ScriptRunTimestamp, $prepared.Count)
-			})
-		}
-		$state = if ($DeltaState) { $DeltaState } else { [pscustomobject]@{ Version = '1.0'; RunTimestamp = [string]$global:ScriptRunTimestamp; Status = 'Prepared'; Members = $prepared.ToArray() } }
-		script:Save-PaxMultiDashboardAppendState -State $state -Path $statePath
-		$markerPath = Join-Path $StageRoot 'pending-marker.json'
-		[IO.File]::WriteAllText($markerPath, (@{ Version = '1.0'; RunTimestamp = [string]$global:ScriptRunTimestamp } | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
-		$markerParents = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-		foreach ($member in $prepared) {
-			if ($member.Tier -eq 'Local' -or -not $markerParents.Add([string]$member.RemoteParent)) { continue }
-			if ($member.PSObject.Properties['Kind'] -and $member.Kind -eq 'DeltaTable') { script:Start-PaxDeltaRecoveryMarker -Member $member -WorkDirectory $StageRoot; continue }
-			$marker = script:Get-PaxMultiDashboardRecoveryMarker -Member $member -WorkDirectory $StageRoot
-			if ($marker -and [string]$marker.RunTimestamp -cne [string]$global:ScriptRunTimestamp) { throw 'The append recovery marker does not belong to the selected checkpoint run.' }
-			script:Send-PaxMultiDashboardMember -Member $member -Path $markerPath -Leaf ('.pax_multiappend_{0}_pending.paxrecovery' -f $global:ScriptRunTimestamp)
-			$marker = script:Get-PaxMultiDashboardRecoveryMarker -Member $member -WorkDirectory $StageRoot
-			if (-not $marker -or [string]$marker.RunTimestamp -cne [string]$global:ScriptRunTimestamp) { throw 'The append recovery marker failed readback; no canonical member was promoted.' }
-		}
-		foreach ($member in $prepared) {
-			if ($member.Tier -eq 'Local') { continue }
-			script:Send-PaxMultiDashboardMember -Member $member -Path $member.CandidatePath -Leaf $member.StageLeaf
-			if (-not (script:Test-PaxMultiDashboardDestination -Member $member -Expected $member.CandidateMeasurement -Leaf $member.StageLeaf)) { throw 'A staged dashboard candidate failed destination readback; no canonical member was promoted.' }
-		}
-		foreach ($member in $prepared) {
-			if (-not (script:Test-PaxMultiDashboardDestination -Member $member -Expected $member.OriginalMeasurement -Leaf $member.Leaf)) { throw 'An original dashboard destination changed after preflight; no canonical member was promoted.' }
-		}
-		$state.Status = 'Publishing'
-		script:Save-PaxMultiDashboardAppendState -State $state -Path $statePath
-		try {
-			foreach ($member in $prepared) {
-				if ($member.Tier -ne 'Local') {
-					if (-not (script:Test-PaxMultiDashboardDestination -Member $member -Expected $member.OriginalMeasurement -Leaf $member.Leaf)) { throw 'An original dashboard destination changed before its canonical promotion.' }
-					script:Send-PaxMultiDashboardMember -Member $member -Path $member.CandidatePath -Leaf $member.Leaf
-					if ($DeltaState) { script:Save-PaxMultiDashboardAppendState -State $state -Path $statePath }
-				}
-			}
-			$localMembers = @(foreach ($member in @($prepared | Where-Object Tier -eq 'Local')) {
-				# The existing publisher consumes its candidate; preserve the frozen candidate
-				# for interrupted-run reconciliation until acceptance is durable.
-				$publicationCopy = $member.CandidatePath + '.publish'
-				Copy-Item -LiteralPath $member.CandidatePath -Destination $publicationCopy -Force -ErrorAction Stop
-				[pscustomobject]@{ Name = $member.Name; CandidatePath = $publicationCopy; DestinationPath = $member.DestinationPath }
-			})
-			if ($localMembers.Count -gt 0) {
-				$localResult = script:Publish-PaxPurviewNamedOutputSet -Members $localMembers
-				if (-not $localResult.Accepted) { throw 'The local complete-set publisher refused the candidate set.' }
-			}
-			foreach ($member in $prepared) {
-				if (-not (script:Test-PaxMultiDashboardDestination -Member $member -Expected $member.CandidateMeasurement -Leaf $member.Leaf)) { throw 'A canonical dashboard member failed destination readback.' }
-			}
-			$state.Status = 'Accepted'
-			script:Save-PaxMultiDashboardAppendState -State $state -Path $statePath
-		}
-		catch {
-			if ($DeltaState) { Write-LogHost ("Delta complete-set publication failed: {0}" -f $_.Exception.Message) -ForegroundColor Red }
-			script:Restore-PaxMultiDashboardAppendSet -State $state -StatePath $statePath
-			throw 'Multi-dashboard publication failed; every original destination was restored and independently verified. No watermark may advance.'
-		}
-		# Remote acceptance is proven above. Only now install the verified local readback
-		# representation used by the existing watermark and protection registries.
-		foreach ($member in @($prepared | Where-Object Tier -ne 'Local')) {
-			[void][IO.Directory]::CreateDirectory((Split-Path $member.DestinationPath -Parent))
-			Copy-Item -LiteralPath $member.CandidatePath -Destination $member.DestinationPath -Force -ErrorAction Stop
-			if ($DeltaState) { continue }
-			$transport = script:Get-PaxMultiDashboardRemoteTransport -Member $member
-			$rel = & $transport.ResolvePath $transport.Target $member.StageLeaf
-			$null = & $transport.RemoveObject $transport.Target @($rel) '.paxsetcandidate'
-		}
-		script:Complete-PaxMultiDashboardRecoveryMarkers -Members $prepared.ToArray() -WorkDirectory $StageRoot
-		return [pscustomobject]@{ Accepted = $true; Code = 'CompleteDestinationSetProven'; Reason = '' }
-	}
+	
 
 	function script:Invoke-PaxCoworkProducer {
 		param(
@@ -72254,7 +74264,12 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 							Write-LogHost  "Rollup:   -> Requested append output NOT completed this run (completed with gaps, exit 40)." -ForegroundColor Red
 							if ($_raWantUsers) { Write-LogHost ("Rollup:   -> Target left UNCHANGED this run: {0}" -f $(if ($script:AppendRaw.ContainsKey('UserInfo') -and $script:AppendRaw['UserInfo']) { $script:AppendRaw['UserInfo'] } else { $AppendUserInfo })) -ForegroundColor Yellow }
 							if ($_raWantFact) { Write-LogHost ("Rollup:   -> Target left UNCHANGED this run: {0}" -f $(if ($script:AppendRaw.ContainsKey('Purview') -and $script:AppendRaw['Purview']) { $script:AppendRaw['Purview'] } else { $AppendFile })) -ForegroundColor Yellow }
-							Write-LogHost  "Rollup:   -> Do NOT merge this run into the target: restore a known-clean target, or establish a validated re-baseline, and resolve the UserKey conflicts first." -ForegroundColor Yellow
+							if ($rollupAccelResult.Reason -like 'io-error*') {
+								Write-LogHost 'Rollup:   -> File I/O failure does not establish a UserKey conflict. Keep the unchanged targets and retained output; resolve the reported I/O condition before retrying. Do not merge or replace targets manually.' -ForegroundColor Yellow
+							}
+							else {
+								Write-LogHost  "Rollup:   -> Do NOT merge this run into the target: restore a known-clean target, or establish a validated re-baseline, and resolve the UserKey conflicts first." -ForegroundColor Yellow
+							}
 						}
 					}
 				}
