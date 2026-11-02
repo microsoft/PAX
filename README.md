@@ -34,7 +34,7 @@ A prerelease build is **not** the released product. The current released version
 
 <sub>Click the file name above to download the script directly.</sub>
 
-<sub>**SHA256:** `151B837577DC5741DE49C7468C60C2E87EE3661A4D99699084770EE6B2203B94`</sub>
+<sub>**SHA256:** `AE5B00EDCC9A77B722ACFE4C452A56401DF93BC8DCE677F779387A599F370AA5`</sub>
 
 <sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261101-14.ps1 -Algorithm SHA256`</sub>
 
@@ -45,6 +45,7 @@ A prerelease build is **not** the released product. The current released version
 <details>
 <summary><strong>Updates in this preview</strong></summary>
 
+- **Newer installed recovery dependencies are accepted:** pyarrow 25.0.1 and deltalake 1.6.3 are minimum stable versions, not exact-version pins. Both publication-only prerequisite checks accept newer stable releases without installing, upgrading or downgrading packages. This does not claim that every future package combination has been qualified.
 - **Recover directly from the original checkpoint:** `-ResumePublishOnly -Resume <original-checkpoint-path>` builds its own recovery plan from supported retained files, current managed identity and read-only destination observations. No hand-built manifest, manually supplied hashes/counts or separate preparation helper is required. Existing destination snapshots need explicit `-ApproveExistingSnapshot` after reviewing the displayed plan; unrelated or changed targets remain protected.
 - **Finish eligible Fabric publications without starting over:** publication-only recovery reuses completed AIO/ValueLens outputs, raw exports, augmented Users and Agent 365 snapshots. It does not collect audit data, refresh directory/catalog data or repeat dashboard rollups. Ordinary Resume is unchanged; `-PublishRecoveryManifest` remains optional advanced input.
 - **Multiline and large CSV values:** both CSV-to-Delta conversion paths use strict logical-record-aware reading, preserving quoted line breaks, Unicode, empty strings and literal values. Malformed quoting, inconsistent row widths and values beyond the qualified bounds are refused, not silently skipped or altered.
@@ -98,7 +99,7 @@ These are the net changes from the current production release to this **v2.0.0 p
 ### Upgrade checklist
 
 - **Publication-only recovery is opt-in, not ordinary Resume.** Supply `-ResumePublishOnly` and the explicit original `-Resume` checkpoint path. PAX derives its plan; you do not author a manifest. It supports retained initial AIO + ValueLens Fabric Tables snapshots with raw exports, UserHistory On and complete directory/Agent snapshots, not append, watermark or de-identified recovery. Existing destination snapshots require review of the displayed plan and a repeat of the same command with `-ApproveExistingSnapshot`; it reuses the saved plan and proofs rather than recollecting or rolling up again. No scope, authentication or destination overrides, checkpoint auto-selection or `-Force` fallback are accepted. `-PublishRecoveryManifest` remains optional advanced input.
-- **Check the recovery environment and working space.** Publication-only recovery requires Windows x64, PowerShell 7+, existing Python 3.10+ on PATH, pyarrow 25.0.1, deltalake 1.6.3 and Az.Accounts 2.12.0 to below 6.0.0. Dependencies are not installed by that path. The default scratch budget is 85% of current free space after a 10% reserve, with that reserve bounded to 1-8 GiB, and a 32 MiB safety margin; the default per-operation limit is 3600 seconds. `-RecoveryMaxScratchBytes`, `-RecoveryReserveBytes` and `-RecoveryOperationSeconds` can set explicit limits before the plan is saved. Existing input files remain in place; conversion and proofs still need working space.
+- **Check the recovery environment and working space.** Publication-only recovery requires Windows x64, PowerShell 7+, existing Python 3.10+ on PATH, stable pyarrow 25.0.1 or later, stable deltalake 1.6.3 or later and Az.Accounts 2.12.0 to below 6.0.0. Dependencies are not installed by that path. The default scratch budget is 85% of current free space after a 10% reserve, with that reserve bounded to 1-8 GiB, and a 32 MiB safety margin; the default per-operation limit is 3600 seconds. `-RecoveryMaxScratchBytes`, `-RecoveryReserveBytes` and `-RecoveryOperationSeconds` can set explicit limits before the plan is saved. Existing input files remain in place; conversion and proofs still need working space.
 - **Use PowerShell 7.0 or later for every mode.** Windows PowerShell 5.1 is unsupported; `-UseEOM` remains available under PowerShell 7.
 - **Remove retired switches** from scheduled jobs and saved commands: `-ExplodeArrays`, `-ExplodeDeep`, `-ExportWorkbook` and `-RAWInputCSV` are refused before sign-in.
 - **Unattended rollup runs** need an explicit `-Dashboard` or `-Force`; otherwise PAX asks which dashboard to build.

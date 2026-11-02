@@ -41,7 +41,7 @@
 		UserHistory On, UserInfo + Agent365, non-append/non-watermark/non-deidentified,
 		ManagedIdentity and original GUID OneLake Tables destination.
 		Requires Windows x64, PowerShell 7+, existing Python 3.10+ on PATH,
-		pyarrow 25.0.1, deltalake 1.6.3 and preinstalled Az.Accounts 2.12.0 to <6.0.0.
+		pyarrow 25.0.1 or later, deltalake 1.6.3 or later and preinstalled Az.Accounts 2.12.0 to <6.0.0.
 		All raw, processed .withaudit Users, Agent aliases and independently timestamped status outputs are
 		required. PAX generates and retains its run-bound recovery plan from the selected
 		checkpoint, current file proofs, managed identity and read-only target observations.
@@ -3137,8 +3137,8 @@ function script:New-PaxAutomaticRecoveryPlan {
 		$script:ROLLUP_PYTHON_MIN_MAJOR=3;$script:ROLLUP_PYTHON_MIN_MINOR=10
 		$python=Resolve-PythonExe
 		if (-not $python -or -not $python.Path) { throw 'An existing Python interpreter is required; no installation was attempted.' }
-		try {$null=script:Invoke-PaxPublishRecoveryProcess -Python $python -Code 'import importlib.metadata as m; assert m.version("pyarrow")=="25.0.1"; assert m.version("deltalake")=="1.6.3"' -ReadOnly}
-		catch {throw 'Publish-only recovery requires existing pyarrow 25.0.1 and deltalake 1.6.3; no dependency installation or authentication was attempted.'}
+		try {$null=script:Invoke-PaxPublishRecoveryProcess -Python $python -Code 'import pyarrow, deltalake; import importlib.metadata as m; import re; assert tuple(map(int,re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\.post\d+)?(?:\+[A-Za-z0-9._-]+)?",m.version("pyarrow")).groups())) >= (25,0,1); assert tuple(map(int,re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\.post\d+)?(?:\+[A-Za-z0-9._-]+)?",m.version("deltalake")).groups())) >= (1,6,3)' -ReadOnly}
+		catch {throw 'Publish-only recovery requires importable stable pyarrow 25.0.1 or later and deltalake 1.6.3 or later; no dependency installation or authentication was attempted.'}
 		$root=Split-Path $checkpoint -Parent
 		$drive=[IO.DriveInfo]::new([IO.Path]::GetPathRoot($root))
 		$reserve=if($ReserveBytes){$ReserveBytes}else{[long][math]::Max([double]1GB,[math]::Min([double]8GB,$drive.AvailableFreeSpace*0.1))}
@@ -3314,8 +3314,8 @@ function script:Invoke-PaxResumePublishOnly {
 	$script:ROLLUP_PYTHON_MIN_MINOR = 10
 	$python = Resolve-PythonExe
 	if (-not $python -or -not $python.Path) { throw 'An existing PAX Python interpreter is required; no installation was attempted.' }
-	try { $null = script:Invoke-PaxPublishRecoveryProcess -Python $python -Code 'import pyarrow, deltalake; import importlib.metadata as m; assert m.version("deltalake")=="1.6.3"; assert m.version("pyarrow")=="25.0.1"' -ReadOnly }
-	catch { throw 'Publish-only recovery requires existing qualified pyarrow 25.0.1 and deltalake 1.6.3; no dependency installation was attempted.' }
+	try { $null = script:Invoke-PaxPublishRecoveryProcess -Python $python -Code 'import pyarrow, deltalake; import importlib.metadata as m; import re; assert tuple(map(int,re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\.post\d+)?(?:\+[A-Za-z0-9._-]+)?",m.version("pyarrow")).groups())) >= (25,0,1); assert tuple(map(int,re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\.post\d+)?(?:\+[A-Za-z0-9._-]+)?",m.version("deltalake")).groups())) >= (1,6,3)' -ReadOnly }
+	catch { throw 'Publish-only recovery requires importable stable pyarrow 25.0.1 or later and deltalake 1.6.3 or later; no dependency installation was attempted.' }
 	$manifest = script:Get-PaxPublishRecoveryManifest -CheckpointPath $checkpoint -ManifestPath $manifestPath -Python $python
 	foreach ($source in $manifest.Sources) { $null = script:Assert-PaxPublishRecoveryPath -Path $source.FullPath }
 	$stageRoot = Join-Path (Split-Path $checkpoint -Parent) ('.pax_publish_recovery_' + $manifest.RunTimestamp + '_' + $manifest.RecoveryId)
