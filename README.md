@@ -34,7 +34,7 @@ A prerelease build is **not** the released product. The current released version
 
 <sub>Click the file name above to download the script directly.</sub>
 
-<sub>**SHA256:** `1138AF113CE389AAE6904145DD453DB3D9251E79504E9BCEF9E2CBAA991C7996`</sub>
+<sub>**SHA256:** `C97AB467B1FA834F8D3D4121C59C50DC14BF394E87067F32E8B354BB935BF168`</sub>
 
 <sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261101-14.ps1 -Algorithm SHA256`</sub>
 
@@ -45,6 +45,7 @@ A prerelease build is **not** the released product. The current released version
 <details>
 <summary><strong>Updates in this preview</strong></summary>
 
+- **SharePoint paths with spaces are addressed correctly:** supplied-file downloads and multi-dashboard publication/readback decode resolved folder URL segments once before the Graph metadata path is encoded. Encoded CSV filenames are also decoded once for staging. The existing resolver/cache representation and recovery identities remain unchanged. Missing-file diagnostics name the metadata URI actually used, rather than a separately constructed content URL. Genuine missing files, access failures, mismatched identities, changed versions and unverified downloads still stop the run; no permissions, security or readback checks are bypassed. Existing saved exports can be reused without another collection; processing and append must still complete.
 - **Recovery target checks use Windows HTTPS validation:** the recovery-only target-presence probe now uses normal Windows/.NET certificate and hostname validation instead of a separate Python/OpenSSL certificate policy. Only an authoritative `404 PathNotFound` establishes absence; existing non-Delta targets, permission failures, redirects and unverifiable responses remain blocked. Completed per-source/profile receipt validators are unchanged; current source locks, hashes and matching bindings are still required. Safe refusal codes retain the HTTP status when available. This correction does not require discarding retained inputs or recovery state, and does not establish completed customer recovery.
 - **Newer installed recovery dependencies are accepted:** pyarrow 25.0.1 and deltalake 1.6.3 are minimum stable versions, not exact-version pins. Both publication-only prerequisite checks accept newer stable releases without installing, upgrading or downgrading packages. This does not claim that every future package combination has been qualified.
 - **Recover directly from the original checkpoint:** `-ResumePublishOnly -Resume <original-checkpoint-path>` builds its own recovery plan from supported retained files, current managed identity and read-only destination observations. No hand-built manifest, manually supplied hashes/counts or separate preparation helper is required. Existing destination snapshots need explicit `-ApproveExistingSnapshot` after reviewing the displayed plan; unrelated or changed targets remain protected.

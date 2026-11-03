@@ -4908,7 +4908,7 @@ function script:Get-PaxMultiDashboardRemoteTransport {
 		param([psobject]$Member)
 		if ($Member.Tier -eq 'SharePoint') {
 			$resolved = Resolve-SharePointTarget -Url $Member.RemoteParent
-			$target = script:New-PaxSharePointPublicationTarget -DriveId $resolved.DriveId -FolderPath $resolved.FolderPath
+			$target = script:New-PaxSharePointPublicationTarget -DriveId $resolved.DriveId -FolderPath $resolved.FolderPath -UrlEncodedFolderPath
 			return (script:New-PaxRemotePublicationTransport -Kind 'SharePoint' -Target $target)
 		}
 		if ($Member.Tier -eq 'Fabric') {
@@ -36790,9 +36790,6 @@ function Get-RemoteFile-SharePoint {
 		if (-not $script:SPResolved) { $script:SPResolved = Resolve-SharePointTarget -Url $script:RemoteOutputUrl }
 		$resolved = $script:SPResolved
 	}
-	$relName   = [System.Uri]::EscapeDataString($RelativeName)
-	$relPath  = if ($resolved.FolderPath) { "$($resolved.FolderPath)/$relName" } else { $relName }
-	$dlUri    = "https://graph.microsoft.com/v1.0/drives/$($resolved.DriveId)/root:/${relPath}:/content"
 	# Stream the response body straight to disk. The Graph SDK's
 	# Invoke-MgGraphRequest -OutputFilePath buffers the ENTIRE body in memory before
 	# writing it out, so a large append target (roughly 1 GB or more) exceeds the
@@ -36804,9 +36801,11 @@ function Get-RemoteFile-SharePoint {
 	# first-run / not-found classification is unchanged.
 	$graphToken = Get-GraphAccessToken
 	if (-not $graphToken) { throw "Get-RemoteFile-SharePoint: no Microsoft Graph access token available." }
+	$metadataUri = ''
 	try {
-		$downloadTarget = script:New-PaxSharePointPublicationTarget -DriveId $resolved.DriveId -FolderPath $resolved.FolderPath
+		$downloadTarget = script:New-PaxSharePointPublicationTarget -DriveId $resolved.DriveId -FolderPath $resolved.FolderPath -UrlEncodedFolderPath
 		$downloadPath = script:Get-PaxSharePointPublicationObjectPath -Target $downloadTarget -Leaf $RelativeName
+		$metadataUri = (script:Get-PaxSharePointPublicationObjectUri -Target $downloadTarget -RelativePath $downloadPath).TrimEnd(':')
 		script:Save-PaxSharePointVerifiedDownload -Target $downloadTarget -RelativePath $downloadPath -DestinationPath $DestinationPath
 	}
 	catch {
@@ -36817,7 +36816,7 @@ function Get-RemoteFile-SharePoint {
 		$spStatusText = if ($spStatus) { [string]$spStatus } else { 'unknown' }
 		if (-not ($ExpectedNotFound -and $spStatus -eq 404)) {
 			Write-LogHost ("SharePoint download failed (HTTP {0})." -f $spStatusText) -ForegroundColor Red
-			Write-LogHost ("  Requested : {0}" -f $dlUri) -ForegroundColor Yellow
+			if ($metadataUri) { Write-LogHost ("  Metadata request : {0}" -f $metadataUri) -ForegroundColor Yellow }
 			Write-LogHost ("  Drive     : {0}" -f $resolved.DriveId) -ForegroundColor Yellow
 			Write-LogHost ("  Folder    : '{0}'" -f $resolved.FolderPath) -ForegroundColor Yellow
 			Write-LogHost ("  Leaf      : '{0}'" -f $RelativeName) -ForegroundColor Yellow
@@ -45209,9 +45208,23 @@ function script:New-PaxSharePointPublicationTarget {
 		[AllowNull()][scriptblock]$SleepOperation,
 		[AllowNull()][scriptblock]$DownloadRequestOperation,
 		[string]$InputItemId,
-		[string]$InputItemName
+		[string]$InputItemName,
+		[switch]$UrlEncodedFolderPath
 	)
 	if ([string]::IsNullOrWhiteSpace($DriveId)) { throw 'A SharePoint publication target requires a drive identity.' }
+	# Resolved URL paths are encoded; direct callers already supply literal names.
+	# Keep the resolver/cache representation unchanged for existing recovery identities.
+	if ($UrlEncodedFolderPath -and -not [string]::IsNullOrEmpty($FolderPath)) {
+		$segments = @($FolderPath.Trim('/') -split '/' | ForEach-Object {
+			$segment = [Uri]::UnescapeDataString($_)
+			if ([string]::IsNullOrEmpty($segment) -or $segment -in @('.', '..') -or
+				$segment -match '[\\/:\x00-\x1F\x7F]' -or $segment -cne $segment.Trim()) {
+				throw 'SharePoint folder URL contains an invalid or traversing path segment.'
+			}
+			$segment
+		})
+		$FolderPath = $segments -join '/'
+	}
 	$graphOperation = if ($RequestOperation) { $RequestOperation } else {
 		{
 			param([string]$RequestMethod, [string]$RequestUri, $RequestHeaders, [byte[]]$RequestBody)
@@ -63110,6 +63123,13 @@ function script:Resolve-DirectoryCsvInput {
 		return @{ Tier = 'Local'; LocalPath = $raw; Leaf = $leaf; Parent = (Split-Path -Path $raw -Parent); Staged = $false }
 	}
 	$parent    = $raw.Substring(0, $raw.Length - $leaf.Length).TrimEnd('/', '\')
+	if ($tier -eq 'SharePoint') {
+		$leaf = [Uri]::UnescapeDataString($leaf)
+		if ($leaf -notmatch '(?i)\.csv$' -or $leaf -match '[\\/]' -or
+			$leaf.IndexOfAny([IO.Path]::GetInvalidFileNameChars()) -ge 0) {
+			throw ("-{0} URL must name a valid CSV file." -f $SwitchName)
+		}
+	}
 	$localPath = Join-Path $ScratchDir ('{0}{1}' -f $ScratchPrefix, $leaf)
 	if ($tier -eq 'SharePoint') {
 		Get-RemoteFile-SharePoint -RelativeName $leaf -DestinationPath $localPath -ParentOverride $parent -ErrorAction Stop
