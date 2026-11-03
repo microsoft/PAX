@@ -2631,7 +2631,7 @@ function script:Invoke-PaxPublishRecoveryProcess {
 		$errorText = $stderr.GetAwaiter().GetResult()
 		if ($process.ExitCode -ne 0) {
 			# CSV and identity validation report aggregate codes, never offending values.
-			if ($errorText -cmatch 'PAX_RECOVERY_[A-Z_]+|PAX_CSV_[A-Z_]+') { throw ('Recovery helper refused: {0}; phase={1}; elapsed={2:F1}s; limit={3:F1}s' -f $Matches[0],$Phase,$timer.Elapsed.TotalSeconds,$seconds) }
+			if ($errorText -cmatch 'PAX_RECOVERY_[A-Z0-9_]+|PAX_CSV_[A-Z0-9_]+') { throw ('Recovery helper refused: {0}; phase={1}; elapsed={2:F1}s; limit={3:F1}s' -f $Matches[0],$Phase,$timer.Elapsed.TotalSeconds,$seconds) }
 			throw ('Recovery helper failed with exit {0}; phase={1}; elapsed={2:F1}s; limit={3:F1}s; no unverified set is accepted.' -f $process.ExitCode,$Phase,$timer.Elapsed.TotalSeconds,$seconds)
 		}
 		Write-Host ('PAX recovery {0}: completed; elapsed={1:F1}s' -f $Phase,$timer.Elapsed.TotalSeconds)
@@ -3853,16 +3853,37 @@ def open_table():
 		if os.environ.get("PAX_RECOVERY_ROOT"):
 			if uri.startswith("abfss://"):
 				from urllib.parse import urlsplit
-				from urllib.request import Request,urlopen
-				from urllib.error import HTTPError
+				import subprocess
 				target=urlsplit(uri);workspace,host=target.netloc.split("@",1)
 				url="https://"+host+"/"+workspace+target.path
+				head_host=os.environ.get("PAX_RECOVERY_HEAD_HOST")
+				head_command=os.environ.get("PAX_RECOVERY_HEAD_COMMAND")
+				if not head_host or not head_command:
+					raise ValueError("PAX_RECOVERY_TARGET_PRESENCE_TRANSPORT")
+				# Use the existing Windows/.NET HTTPS policy, not Python's additional
+				# OpenSSL strict-X509 policy. Certificate/hostname checks remain enabled.
+				head_environment=os.environ.copy()
+				head_environment["PAX_RECOVERY_HEAD_URI"]=url
 				try:
-					with urlopen(Request(url,method="HEAD",headers={"Authorization":"Bearer "+token,"x-ms-version":"2021-06-08"}),timeout=60):
-						raise ValueError("PAX_RECOVERY_NONDELTA_TARGET")
-				except HTTPError as error:
-					if error.code!=404 or error.headers.get("x-ms-error-code")!="PathNotFound":
-						raise ValueError("PAX_RECOVERY_TARGET_PRESENCE")
+					head=subprocess.run([head_host,"-NoLogo","-NoProfile","-NonInteractive",
+						"-EncodedCommand",head_command],env=head_environment,capture_output=True,
+						text=True,encoding="utf-8",timeout=65,check=False)
+				except subprocess.TimeoutExpired:
+					raise ValueError("PAX_RECOVERY_TARGET_PRESENCE_TIMEOUT") from None
+				if head.returncode:
+					failure=re.search(r"PAX_RECOVERY_TARGET_PRESENCE_[A-Z0-9_]+",head.stderr)
+					raise ValueError(failure.group(0) if failure else "PAX_RECOVERY_TARGET_PRESENCE_TRANSPORT")
+				try:
+					presence=json.loads(head.stdout)
+				except json.JSONDecodeError:
+					raise ValueError("PAX_RECOVERY_TARGET_PRESENCE_RESPONSE") from None
+				if (not isinstance(presence,dict) or set(presence)!={"StatusCode","PathNotFound"}
+						or type(presence["StatusCode"]) is not int or type(presence["PathNotFound"]) is not bool):
+					raise ValueError("PAX_RECOVERY_TARGET_PRESENCE_RESPONSE")
+				if 200<=presence["StatusCode"]<300:
+					raise ValueError("PAX_RECOVERY_NONDELTA_TARGET")
+				if presence["StatusCode"]!=404 or not presence["PathNotFound"]:
+					raise ValueError("PAX_RECOVERY_TARGET_PRESENCE_HTTP_"+str(presence["StatusCode"]))
 			elif Path(uri).exists():
 				raise ValueError("PAX_RECOVERY_NONDELTA_TARGET")
 		return None
@@ -4126,7 +4147,31 @@ except Exception as error:
 '@
 	$inlinePy = (script:Get-PaxStrictArrowCsvReaderPython) + $inlinePy
 	if ($script:PaxPublishRecoveryContext) {
-		$environment = @{ PAX_DELTA_MEMBER_TOKEN = $BearerToken }
+		$headCommand = @'
+$ErrorActionPreference='Stop'
+$handler=[Net.Http.HttpClientHandler]::new()
+$handler.AllowAutoRedirect=$false
+$client=[Net.Http.HttpClient]::new($handler)
+$client.Timeout=[TimeSpan]::FromSeconds(60)
+$request=[Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Head,$env:PAX_RECOVERY_HEAD_URI)
+$request.Headers.Authorization=[Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer',$env:PAX_DELTA_MEMBER_TOKEN)
+$request.Headers.Add('x-ms-version','2021-06-08')
+try {
+ $response=$client.SendAsync($request).GetAwaiter().GetResult()
+ try {
+  $values=$null
+  $errorCode=if($response.Headers.TryGetValues('x-ms-error-code',[ref]$values)){[string]::Join(',',@($values))}else{''}
+  [Console]::Out.WriteLine((@{StatusCode=[int]$response.StatusCode;PathNotFound=($errorCode -ceq 'PathNotFound')}|ConvertTo-Json -Compress))
+ } finally {$response.Dispose()}
+} catch {
+ $kind=$_.Exception.GetBaseException().GetType().Name.ToUpperInvariant()
+ [Console]::Error.WriteLine('PAX_RECOVERY_TARGET_PRESENCE_'+$kind)
+ exit 1
+} finally {$request.Dispose();$client.Dispose();$handler.Dispose()}
+'@
+		$environment = @{ PAX_DELTA_MEMBER_TOKEN = $BearerToken
+			PAX_RECOVERY_HEAD_HOST = (Get-Process -Id $PID -ErrorAction Stop).Path
+			PAX_RECOVERY_HEAD_COMMAND = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($headCommand)) }
 		$expiry = if ($recoveryToken) { $recoveryToken.ExpiresUtc } else { [datetime]::MaxValue }
 		$result = script:Invoke-PaxPublishRecoveryProcess -Python $Python -Code $inlinePy -Arguments @($requestPath) -Environment $environment -ExpiresUtc $expiry -Phase ('Delta-'+$Operation+'-'+$Member.TableName)
 		return ($result | ConvertFrom-Json -ErrorAction Stop)

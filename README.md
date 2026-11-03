@@ -34,7 +34,7 @@ A prerelease build is **not** the released product. The current released version
 
 <sub>Click the file name above to download the script directly.</sub>
 
-<sub>**SHA256:** `AD4E8864FC8A0DC498F7C4550BE59A5BEEA9A581D70074B752ECE6A2DFC3EE86`</sub>
+<sub>**SHA256:** `1138AF113CE389AAE6904145DD453DB3D9251E79504E9BCEF9E2CBAA991C7996`</sub>
 
 <sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261101-14.ps1 -Algorithm SHA256`</sub>
 
@@ -45,6 +45,7 @@ A prerelease build is **not** the released product. The current released version
 <details>
 <summary><strong>Updates in this preview</strong></summary>
 
+- **Recovery target checks use Windows HTTPS validation:** the recovery-only target-presence probe now uses normal Windows/.NET certificate and hostname validation instead of a separate Python/OpenSSL certificate policy. Only an authoritative `404 PathNotFound` establishes absence; existing non-Delta targets, permission failures, redirects and unverifiable responses remain blocked. Completed per-source/profile receipt validators are unchanged; current source locks, hashes and matching bindings are still required. Safe refusal codes retain the HTTP status when available. This correction does not require discarding retained inputs or recovery state, and does not establish completed customer recovery.
 - **Newer installed recovery dependencies are accepted:** pyarrow 25.0.1 and deltalake 1.6.3 are minimum stable versions, not exact-version pins. Both publication-only prerequisite checks accept newer stable releases without installing, upgrading or downgrading packages. This does not claim that every future package combination has been qualified.
 - **Recover directly from the original checkpoint:** `-ResumePublishOnly -Resume <original-checkpoint-path>` builds its own recovery plan from supported retained files, current managed identity and read-only destination observations. No hand-built manifest, manually supplied hashes/counts or separate preparation helper is required. Existing destination snapshots need explicit `-ApproveExistingSnapshot` after reviewing the displayed plan; unrelated or changed targets remain protected.
 - **Finish eligible Fabric publications without starting over:** publication-only recovery reuses completed AIO/ValueLens outputs, raw exports, augmented Users and Agent 365 snapshots. It does not collect audit data, refresh directory/catalog data or repeat dashboard rollups. Ordinary Resume is unchanged; `-PublishRecoveryManifest` remains optional advanced input.
@@ -116,7 +117,7 @@ These are the net changes from the current production release to this **v2.0.0 p
 
 ```powershell
 $ErrorActionPreference = 'Stop'
-$pwsh = (Get-Command pwsh -CommandType Application -ErrorAction Stop).Source
+$pwsh = (Get-Command pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 & $pwsh -NoLogo -NoProfile -NonInteractive -File 'C:\PAX\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261101-14.ps1' -ResumePublishOnly -Resume 'C:\PAX\output\.pax_checkpoint_YYYYMMDD_HHMMSS.json'
 $paxExitCode = $LASTEXITCODE
 if ($paxExitCode -ne 0) {
