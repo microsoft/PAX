@@ -4,7 +4,7 @@
 
 **Portable Audit eXporter (PAX) · Purview Audit Log Processor**
 
-**v2.0.0 prerelease 20261105-15**
+**v2.0.0 prerelease 20261110-16**
 
 **Preview build — not a production release.**
 
@@ -30,23 +30,24 @@ A prerelease build is **not** the released product. The current released version
 <tr>
 <td>
 
-### [PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261105-15.ps1](https://github.com/microsoft/PAX/releases/download/purview-v2.0.0-prerelease-20261105-15/PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261105-15.ps1)
+### [PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261110-16.ps1](https://github.com/microsoft/PAX/releases/download/purview-v2.0.0-prerelease-20261110-16/PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261110-16.ps1)
 
 <sub>Click the file name above to download the script directly.</sub>
 
-<sub>**SHA256:** `F9E1F90D486D179190226CC163075E73CC01DAEA4A9FC08945EB6A03B76E82AD`</sub>
+<sub>**SHA256:** `ECE52162A2DC0E9B563FA37DD3CEE5339ED1E637C47366D2AE5314452805512F`</sub>
 
-<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261105-15.ps1 -Algorithm SHA256`</sub>
+<sub>Verify your download with `Get-FileHash .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261110-16.ps1 -Algorithm SHA256`</sub>
 
 </td>
 </tr>
 </table>
 
-The previous script, [prerelease 14](prerelease_archive/PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261101-14.ps1), is retained unchanged in `prerelease_archive`. It is the only archived script on this branch.
+The previous script, [prerelease 15](prerelease_archive/PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261105-15.ps1), is retained unchanged in `prerelease_archive`. It is the only archived script on this branch.
 
 <details>
 <summary><strong>Updates in this preview</strong></summary>
 
+- **Larger AIO and ValueLens CSV fields:** PR16 configures the shared processor's CSV field limit before reading directory, licensing, history or audit inputs. This prevents Python's default 131,072-character limit from stopping either dashboard on larger fields. Fast and disk-backed processing use the same 134,217,728-character per-field limit, including de-identification verification. No new switch or dependency is required; existing logical-record byte guards, parsing rules and reject accounting are unchanged.
 - **Scoped explicit-date Delta append:** PR15 adds a history-to-CSV bridge for existing AIO and ValueLens Delta tables together with `-UserHistory On`. It reads version-pinned complete histories, restores their known canonical headers and uses the existing history/key reconciliation before verified full-set publication. It does not enable Tables Watermark, blind row append, automatic historical license reconstruction or a general checkpoint migration.
 - **Frozen-set append recovery:** interrupted PR15 dated appends can complete their original frozen set or restore verified originals through the original local checkpoint. Recovery reacquires the original managed identity, verifies ownership and refuses foreign changes. Before the first canonical table write, PAX prints and logs fully quoted Complete/Restore commands with the actual script and checkpoint paths.
 - **SharePoint paths with spaces are addressed correctly:** supplied-file downloads and multi-dashboard publication/readback decode resolved folder URL segments once before the Graph metadata path is encoded. Encoded CSV filenames are also decoded once for staging. The existing resolver/cache representation and recovery identities remain unchanged. Missing-file diagnostics name the metadata URI actually used, rather than a separately constructed content URL. Genuine missing files, access failures, mismatched identities, changed versions and unverified downloads still stop the run; no permissions, security or readback checks are bypassed. Existing saved exports can be reused without another collection; processing and append must still complete.
@@ -99,7 +100,7 @@ To restore its verified originals instead:
 
 `Complete` is the default action and is refused once restoration has begun. `Restore` is for an interrupted, unaccepted set, never an accepted publication. This route does not adopt an old failed seed, an arbitrary append checkpoint, relocated files, a remote-mirror checkpoint or a hand-authored seed recovery manifest. It verifies frozen roster, intent, artifact hashes, catalog, table identities, versions and marker ownership before any recovery write. Foreign changes and missing or contradictory evidence remain refusals.
 
-**Validation status:** 36 offline controller, real process-exit, ownership/refusal and recovery-command cases passed on the reviewed candidate. The packaged script retains that executable code; only the misleading cached-sign-in wording in its recovery help was corrected. This is not live managed-identity/Fabric end-to-end or customer-scale qualification.
+**PR15 validation status:** 36 offline controller, real process-exit, ownership/refusal and recovery-command cases passed on the reviewed PR15 candidate. PR16 retains that executable recovery code unchanged. This is not live managed-identity/Fabric end-to-end or customer-scale qualification.
 
 **Start with a controlled manual trial.** Protect existing reporting data with a verified backup or isolated validation destination, confirm the selected tables and any previous recovery state are consistent, and keep unattended scheduling paused until the result is reviewed. Check all selected physical tables, row counts, retained keys and date coverage; a wrapper's green status is not proof of accepted publication. A short collection window can still require reading and verifying the complete retained history.
 
@@ -131,6 +132,7 @@ These are the net changes from the current production release to this **v2.0.0 p
 
 ### Highlights
 
+- **Process larger AIO and ValueLens fields.** The rollup CSV reader initializes its supported field limit before every input stage instead of relying on Python's smaller default.
 - **Recover completed Fabric work.** Eligible publication-only recovery finishes saving retained outputs without another audit pull, directory/catalog refresh or dashboard rollup.
 - **Handle difficult CSV text.** Fabric conversion preserves quoted multiline and large values within explicit qualified bounds, with strict structural checks.
 - **Several dashboards from one collection.** `-Dashboard AIO,M365,ValueLens,CoworkAdoption` produces every requested data set from one collection, including the new **Cowork Adoption** inputs, and append works across those histories.
@@ -223,6 +225,8 @@ Keep the original checkpoint, retained CSVs and recovery directories in place. D
 
 <details>
 <summary><strong>Protecting existing data</strong></summary>
+
+**Consistent large-field handling for AIO and ValueLens.** The shared dashboard processor's CSV reader uses a 134,217,728-character per-field limit in both fast and disk-backed modes. The limit is established before directory, licensing, retained-history and audit reads, and the processed-Users verifier no longer changes it to an effectively unlimited value. Quoted multiline fields and Unicode are preserved without truncation or field-limit workarounds that skip rows. This correction does not change existing logical-record UTF-8 byte guards or ordinary parsing/reject behavior. It does not complete an earlier failed dashboard run automatically: preserve retained exports and history, and do not treat publication-only recovery as a way to regenerate missing rollups.
 
 **Retained sources and complete recovery intent stay fixed.** Publication-only recovery keeps the original checkpoint and CSVs unchanged, binds its generated or explicitly supplied plan and full eight-table roster to an owned journal and verifies source hashes across the operation. It retains temporal UserKeys, licensing observations and augmented Users rather than rebuilding them. Read-only target observations are frozen before approval; version/content fences refuse subsequent unrelated destination changes. Accepted replay verifies the stored result without another table commit; interrupted publication retains the existing restoration and potentially-modified-state safeguards. No missing member, malformed record or unknown source is silently substituted.
 

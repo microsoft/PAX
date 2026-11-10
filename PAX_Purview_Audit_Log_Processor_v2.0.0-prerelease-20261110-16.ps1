@@ -1,5 +1,5 @@
-# Portable Audit eXporter (PAX) - Purview Audit Log Processor
-# Script Version: v2.0.0 - Prerelease - 2026-11-01-14
+﻿# Portable Audit eXporter (PAX) - Purview Audit Log Processor
+# Script Version: v2.0.0 - Prerelease - 2026-11-10-16
 # Requirements: PowerShell 7.0 or later for every mode, including -UseEOM (serial Exchange Online Management mode).
 # Default Activity Type: CopilotInteraction (captures ALL M365 Copilot usage including all M365 apps and Teams meetings)
 <#
@@ -35,6 +35,25 @@
 	  tenant DLP / sensitivity labels as appropriate.
 
 .DESCRIPTION
+	New dated Tables append requires -Auth ManagedIdentity. System-assigned identity,
+		or the user-assigned client ID selected by AZURE_CLIENT_ID, is bootstrapped and
+		bound to its tenant/object/client identity before collection. Frozen recovery
+		reacquires that exact identity without relying on cached Az sign-in context.
+		Other auth profiles have no freeze-bound unattended credential source in this
+		new path and are refused before collection; their existing PR14 modes are unchanged.
+
+	Dated Delta append interruption recovery (not retained seed recovery):
+		-ResumePublishOnly -Resume "E:\pax\.pax_checkpoint_<run>.json"
+		-DeltaAppendRecoveryAction Complete (default) or Restore.
+		Requires the original local checkpoint and its DatedDeltaAppendV1 frozen journal,
+		all owned frozen artifacts, unchanged catalog/table identities and owned markers.
+		Reacquires the frozen managed identity without relying on cached Az sign-in
+		context. No interactive sign-in, collection, reprocessing, manifest override or
+		generic cleanup. Recovery advances only the durable local set journal; the
+		selected checkpoint and artifacts are retained.
+		Restore is for an interrupted/unaccepted set, never an accepted publication.
+		Tables are committed sequentially, not cross-table atomically.
+
 	Retained publication recovery:
 		-ResumePublishOnly -Resume "E:\pax\.pax_checkpoint_<run>.json"
 		Explicit opt-in only: legacy 11/13 initial RollupPlusRaw, AIO + ValueLens,
@@ -2145,6 +2164,12 @@ param(
 	[Parameter(Mandatory = $false)]
 	[switch]$ResumePublishOnly,
 
+	# Only for a checkpoint containing a frozen DatedDeltaAppendV1 set.
+	# Complete reuses frozen candidates; Restore reinstates every verified original.
+	[Parameter(Mandatory = $false)]
+	[ValidateSet('Complete','Restore')]
+	[string]$DeltaAppendRecoveryAction = 'Complete',
+
 	# An exact Resume alias prevents PowerShell interpreting -Resume as an
 	# abbreviation of ResumePublishOnly. Its optional positional path is normalized below.
 	[Parameter(Mandatory = $false)]
@@ -3447,7 +3472,7 @@ function script:Invoke-PaxResumePublishOnly {
 	.PARAMETER ManifestPath
 		Optional advanced expectation manifest; omitted for ordinary retained-output recovery.
 	.EXAMPLE
-		& .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261101-14.ps1 -ResumePublishOnly -Resume C:\PAX\.pax_checkpoint_20260101_120000.json
+		& .\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261110-16.ps1 -ResumePublishOnly -Resume C:\PAX\.pax_checkpoint_20260101_120000.json
 		Derive and validate the saved run's plan without collection or processing.
 	#>
 	param([Parameter(Mandatory)][string]$CheckpointPath, [string]$ManifestPath,[switch]$ApproveExistingSnapshot,[long]$MaxScratchBytes=0,[long]$ReserveBytes=0,[int]$OperationSeconds=0)
@@ -3466,6 +3491,14 @@ function script:Invoke-PaxResumePublishOnly {
 	$azureEnvironment=script:Get-PaxPublishRecoveryStorageToken -EnvironmentOnly
 	Write-Host ('PAX recovery environment: PowerShell={0}; architecture={1}; Python={2}; pyarrow={3}; deltalake={4}; Az.Accounts={5}' -f $azureEnvironment.PowerShellVersion,$azureEnvironment.ProcessArchitecture,$pythonEnvironment.Python,$pythonEnvironment.PyArrow,$pythonEnvironment.DeltaLake,$azureEnvironment.AzAccountsVersion)
 	Write-Host ('PAX recovery environment paths: Python={0}; Az.Accounts={1}' -f $pythonEnvironment.Path,$azureEnvironment.AzAccountsPath)
+	$datedEnvelopePath = script:Assert-PaxPublishRecoveryPath -Path $CheckpointPath
+	if (Test-Path -LiteralPath $datedEnvelopePath -PathType Leaf) {
+		$datedEnvelope = [IO.File]::ReadAllText($datedEnvelopePath) | ConvertFrom-Json -ErrorAction Stop
+		if (@($datedEnvelope.parameters.appendFile, $datedEnvelope.parameters.appendUserInfo, $datedEnvelope.parameters.appendAgent365Info |
+			Where-Object { [string]$_ -match '^https://[^/]*onelake\.dfs\.fabric\.microsoft\.com/.+/Tables/' }).Count) {
+			throw 'Publish-only recovery cannot authorize the new dated Tables append contract. Preserve its checkpoint, frozen complete set and markers for separately reviewed recovery.'
+		}
+	}
 	$automaticPlan=-not $ManifestPath
 	if($automaticPlan){$ManifestPath=script:New-PaxAutomaticRecoveryPlan -CheckpointPath $CheckpointPath -ApproveExistingSnapshot:$ApproveExistingSnapshot -MaxScratchBytes $MaxScratchBytes -ReserveBytes $ReserveBytes -OperationSeconds $OperationSeconds}
 	$checkpoint = script:Assert-PaxPublishRecoveryPath -Path $CheckpointPath
@@ -3667,7 +3700,7 @@ def pax_strict_arrow_reader(path, columns):
 function script:Invoke-PaxDeltaMemberOperation {
 	[CmdletBinding()]
 	param(
-		[Parameter(Mandatory)][ValidateSet('Prepare','PrepareCandidate','PrepareOriginal','VerifyCandidate','VerifyOriginal','Observe','Publish','Restore')][string]$Operation,
+		[Parameter(Mandatory)][ValidateSet('Inspect','Export','Prepare','PrepareCandidate','PrepareOriginal','VerifyCandidate','VerifyOriginal','Observe','Publish','Restore')][string]$Operation,
 		[Parameter(Mandatory)][psobject]$Member,
 		[Parameter(Mandatory)][string]$WorkDirectory,
 		[Parameter(Mandatory)][psobject]$Python,
@@ -3707,10 +3740,15 @@ function script:Invoke-PaxDeltaMemberOperation {
 		else { $BearerToken = '' }
 	}
 	elseif ([string]$Member.TargetUri -match '^(?:abfss|https)://') {
-		$requestMethod = if ($Operation -eq 'Observe') { 'GET' } else { 'PUT' }
+		$requestMethod = if ($Operation -in @('Inspect','Export','Observe')) { 'GET' } else { 'PUT' }
 		script:Assert-PaxEffectiveFabricDestinations -RequestUri ([string]$Member.TargetUri) -RequestMethod $requestMethod -BearerToken $BearerToken
 	}
 	$requestPath = Join-Path $WorkDirectory 'delta-member-request.json'
+	if ($Member.PSObject.Properties['HistoryMeasurement']) {
+		$null = script:Assert-PaxPublishRecoveryPath -Path $WorkDirectory -Directory
+		$null = script:Assert-PaxPublishRecoveryPath -Path $requestPath
+		if ((Test-Path -LiteralPath $requestPath) -and (Get-Item -LiteralPath $requestPath -Force).LinkType) { throw 'A dated Delta work artifact must not be a link.' }
+	}
 	[IO.File]::WriteAllText($requestPath, (@{ operation = $Operation; member = $Member; localSnapshotVerified = $localSnapshotVerified } | ConvertTo-Json -Depth 20 -Compress), [Text.UTF8Encoding]::new($false))
 	$inlinePy = @'
 import csv, hashlib, json, os, re, sqlite3, sys, tempfile
@@ -3936,6 +3974,8 @@ def observe(table, snapshot=None, reference=None):
 					batch_readahead=1,fragment_readahead=1,use_threads=False)
 	proof = measure(batches(), schema, snapshot)
 	proof["Version"] = table.version()
+	if member.get("HistoryMeasurement"):
+		proof["TableId"] = table.metadata().id
 	history = table.history(1)[0]
 	proof["Commit"] = {key: history.get(key) for key in
 					   ("paxSet", "paxMember", "paxAction", "paxOriginalVersion", "paxExpectedVersion", "paxContent")}
@@ -4018,6 +4058,68 @@ def run():
 		expected = member["CandidateMeasurement"] if candidate else member["OriginalMeasurement"]
 		verified_snapshot(path, digest, expected)
 		return {"VerifiedSha256":digest}
+	if operation in ("Inspect", "Export"):
+		table = open_table()
+		if table is None:
+			return {"Exists": False, "TableVersion": -1, "OriginalMeasurement": None}
+		version, table_id = table.version(), table.metadata().id
+		if operation == "Inspect":
+			return {"Exists": True, "TableVersion": version, "TableId": table_id}
+		if (type(member.get("ExpectedVersion")) is not int or member["ExpectedVersion"] != version
+				or member.get("ExpectedTableId") != table_id):
+			raise ValueError("Delta append history changed before its version-pinned export.")
+		table = DeltaTable(uri, version=version, storage_options=options)
+		dataset = table.to_pyarrow_dataset()
+		declarations = member["LegacyColumnNames"]
+		if (not isinstance(declarations, list) or not declarations
+				or not all(isinstance(name, str) and name.strip() for name in declarations)):
+			raise ValueError("The canonical Delta history column declarations are unavailable.")
+		projection = {}
+		for name in declarations:
+			physical = re.sub(r"[ ,;{}()\n\t=]", "_", name)
+			if physical in projection and projection[physical] != name:
+				raise ValueError("The canonical Delta history column declarations collide.")
+			projection[physical] = name
+		stored_header = table.history(1)[0].get("paxCsvHeader")
+		columns = json.loads(stored_header) if stored_header is not None else [
+			projection.get(name) for name in dataset.schema.names]
+		if (not isinstance(columns, list) or not columns
+				or any(not isinstance(name, str) or name not in declarations for name in columns)
+				or len({name.casefold() for name in columns}) != len(columns)):
+			raise ValueError("Delta history has unknown or ambiguous canonical CSV headers.")
+		physical = [re.sub(r"[ ,;{}()\n\t=]", "_", name) for name in columns]
+		if (len(set(physical)) != len(physical) or len(physical) != len(dataset.schema.names)
+				or set(physical) != set(dataset.schema.names)):
+			raise ValueError("Delta history column projection is not bijective.")
+		schema = pa.schema([dataset.schema.field(name) for name in physical])
+		if any(kind != "string" for _, kind, _ in logical_schema(schema)):
+			raise ValueError("Delta append history must use the existing PAX string schema.")
+		export_path = Path(member["ExportPath"])
+		descriptor, staged_path = tempfile.mkstemp(prefix=export_path.name + ".paxhistory_", dir=export_path.parent)
+		try:
+			with os.fdopen(descriptor, "w", encoding="utf-8-sig", newline="") as handle:
+				writer = csv.writer(handle, quoting=csv.QUOTE_ALL, lineterminator="\r\n")
+				writer.writerow(columns)
+				def export_batches():
+					for batch in dataset.scanner(columns=physical, batch_size=65536).to_batches():
+						if any(column.null_count for column in batch.columns):
+							raise ValueError("Null Delta history values cannot be losslessly reconciled through CSV.")
+						writer.writerows(zip(*(column.to_pylist() for column in batch.columns)))
+						yield batch
+				proof = measure(export_batches(), schema)
+				handle.flush()
+				os.fsync(handle.fileno())
+			latest = open_table()
+			if latest is None or latest.version() != version or latest.metadata().id != table_id:
+				raise ValueError("Delta append history changed during retained input export.")
+			proof["Version"], proof["TableId"] = version, table_id
+			checksum = file_hash(staged_path)
+			os.replace(staged_path, export_path)
+			return {"Exists": True, "TableVersion": version, "OriginalMeasurement": proof,
+					"CsvPath": str(export_path), "CsvSha256": checksum, "CsvHeader": columns}
+		finally:
+			if os.path.exists(staged_path):
+				os.unlink(staged_path)
 	if operation in ("Prepare", "PrepareCandidate"):
 		if file_hash(member["CandidatePath"]) != member["SourceSha256"]:
 			raise ValueError("The frozen source CSV changed.")
@@ -4034,8 +4136,14 @@ def run():
 		if operation == "PrepareCandidate":
 			return {"CandidateMeasurement": candidate, "CandidateSnapshotSha256": file_hash(member["DeltaCandidatePath"]), "CsvHeader": columns}
 		table = open_table()
-		original = observe(table, member["DeltaOriginalPath"] if table is not None else None)
+		history = member.get("HistoryMeasurement")
+		original = observe(table, member["DeltaOriginalPath"] if table is not None else None, reference=history)
 		if original:snapshot_layout(member["DeltaOriginalPath"])
+		if "HistoryMeasurement" in member and (not history or not original
+				or original["Version"] != history.get("Version") or not same_data(original, history)
+				or table.metadata().id != history.get("TableId")):
+			verification_failure("The retained Delta append input changed; the target is left untouched.",
+							 ["history-version-or-logical-data"])
 		def reject_candidate(reason):
 			table_name = re.sub(r"[^A-Za-z0-9_]", "_", member["TableName"])
 			mode = member.get("WriteIntent", "HistoryAppend" if member["ProtectRowCount"] else "Snapshot")
@@ -4069,6 +4177,9 @@ def run():
 			if candidate["DataRowCount"] == 0 and original["DataRowCount"] > 0:
 				raise ValueError("PAX_RECOVERY_EMPTY_REPLACEMENT")
 		return {"OriginalMeasurement": original, "OriginalSnapshotSha256": file_hash(member["DeltaOriginalPath"]) if original else None}
+	if "HistoryMeasurement" in member and (table is None or
+			table.metadata().id != member["HistoryMeasurement"].get("TableId")):
+		verification_failure("The retained Delta table identity changed.", ["history-table-id"])
 	original, candidate = member["OriginalMeasurement"], member["CandidateMeasurement"]
 	# History chooses a comparison layout, never authority: owned() still requires
 	# all tags, the version fence and a complete logical-data proof.
@@ -4114,7 +4225,13 @@ def run():
 	metadata = {"paxSet": member["SetId"], "paxMember": member["PublicationId"], "paxAction": action,
 				"paxOriginalVersion": original["Version"] if original else -1,
 				"paxExpectedVersion": expected_version, "paxContent": expected["Sha256"]}
+	if action == "Publish" and "HistoryMeasurement" in member:
+		if table.metadata().id != member["HistoryMeasurement"]["TableId"]:
+			verification_failure("The retained Delta table identity changed.", ["history-table-id"])
+		metadata["paxCsvHeader"] = json.dumps(member["CsvHeader"], ensure_ascii=False, separators=(",", ":"))
 	pinned = DeltaTable(uri, version=expected_version, storage_options=options) if expected_version >= 0 else uri
+	if "HistoryMeasurement" in member and pinned.metadata().id != member["HistoryMeasurement"]["TableId"]:
+		verification_failure("The pinned Delta table identity changed.", ["history-table-id"])
 	data = pa.RecordBatchReader.from_batches(parquet.schema_arrow, parquet_batches(parquet,expected))
 	writer_options={}
 	if os.environ.get("PAX_RECOVERY_ROOT"):
@@ -4218,6 +4335,7 @@ function script:New-PaxDeltaPublicationState {
 	$roster = @($Entries | Sort-Object TargetUri, SourceIdentity, SourcePath | ForEach-Object {
 		$item = [ordered]@{ TargetUri = [string]$_.TargetUri; SourceIdentity = [string]$_.SourceIdentity; SourcePath = [IO.Path]::GetFullPath($_.SourcePath); Dashboard = [string]$_.Dashboard; DataType = [string]$_.DataType; ProtectRowCount = [bool]$_.ProtectRowCount; AuthoritativeProducer = [bool]($_.PSObject.Properties['AuthoritativeProducer'] -and $_.AuthoritativeProducer) }
 		if ($_.PSObject.Properties['WriteIntent']) { $item.WriteIntent = [string]$_.WriteIntent }
+		if ($_.PSObject.Properties['HistoryMeasurement']) { $item.HistoryMeasurement = $_.HistoryMeasurement }
 		if ($borrowSources) { $item.SourcePolicy = 'BorrowedReadOnlyV1'; $item.SourceSha256 = [string]$_.SourceSha256 }
 		if ($_.PSObject.Properties['OriginalExpectation']) { $item.OriginalExpectation = $_.OriginalExpectation }
 		$item
@@ -4302,6 +4420,7 @@ function script:New-PaxDeltaPublicationState {
 				if ($canonical) { continue }
 			}
 			if ($entry.PSObject.Properties['WriteIntent']) { $member | Add-Member -NotePropertyName WriteIntent -NotePropertyValue ([string]$entry.WriteIntent) }
+			if ($entry.PSObject.Properties['HistoryMeasurement']) { $member | Add-Member -NotePropertyName HistoryMeasurement -NotePropertyValue $entry.HistoryMeasurement }
 			$proof = script:Invoke-PaxDeltaMemberOperation -Operation Prepare -Member $member -WorkDirectory $memberDirectory -Python $Python -BearerToken $BearerToken
 			foreach ($property in @('CandidateMeasurement','OriginalMeasurement','CandidateSnapshotSha256','OriginalSnapshotSha256','CsvHeader')) { $member.$property = $proof.$property }
 			if ($script:PaxPublishRecoveryContext) {
@@ -4355,15 +4474,33 @@ function script:Get-PaxDeltaIntentHash {
 				$item.SourceBaselineKind = [string]$_.SourceBaselineKind
 			}
 			if ($_.PSObject.Properties['OriginalExpectation']) { $item.OriginalExpectation = $_.OriginalExpectation }
+			if ($_.PSObject.Properties['HistoryMeasurement']) { $item.HistoryMeasurement = $_.HistoryMeasurement }
 			$item
 		})
 	}
+	if ($State.PSObject.Properties['DatedAppend']) { $manifest.DatedAppend = $State.DatedAppend }
 	return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes(($manifest | ConvertTo-Json -Depth 20 -Compress))))
 }
 
 function script:Invoke-PaxDeltaPublicationMember {
 	param([string]$Operation, [psobject]$Member)
 	if (-not $script:PaxDeltaPublicationContext) { throw 'The Delta publication context is unavailable.' }
+	if ($Operation -in @('Observe','Publish','Restore') -and $Member.PSObject.Properties['HistoryMeasurement'] -and $script:PaxDatedDeltaAppend) {
+		$history = $script:PaxDatedDeltaAppend.Tables[[string]$Member.TableName]
+		if (-not $history) { throw 'The publishing member is not in the dated append contract.' }
+		$catalog = script:Get-PaxDeltaAppendCatalogProof -TableUrl $history.TableUrl
+		if ($catalog.TargetUri -cne $history.Catalog.TargetUri -or $catalog.Fingerprint -cne $history.Catalog.Fingerprint) { throw 'The append table catalog changed before member publication; complete-set recovery is required.' }
+		if ($Operation -in @('Publish','Restore')) {
+			$marker = script:Get-PaxDeltaRecoveryMarker -Member $Member
+			if (-not $marker.Missing) {
+				if ($marker.Marker.SetId -cne $Member.SetId -or $marker.Marker.IntentHash -cne $Member.IntentHash -or $marker.Marker.RunTimestamp -cne $global:ScriptRunTimestamp) { throw 'Dated Delta publication/recovery marker ownership changed.' }
+			}
+			elseif ($Operation -eq 'Publish' -or -not (script:Invoke-PaxDeltaPublicationMember -Operation Observe -Member $Member).Original) {
+				throw 'A Delta write cannot proceed without its selected ownership marker.'
+			}
+		}
+	}
+	if ($Member.PSObject.Properties['HistoryMeasurement']) { $script:PaxDeltaPublicationContext.BearerToken = Get-FabricStorageToken }
 	$workDirectory = Split-Path $Member.CandidatePath -Parent
 	if ($Member.PSObject.Properties['SourcePolicy']) {
 		if ($Member.SourcePolicy -cne 'BorrowedReadOnlyV1' -or -not $Member.OwnedWorkDirectory -or
@@ -4479,6 +4616,12 @@ function script:Invoke-PaxDeltaTableSetPublication {
 					ProtectionExpectation = $producer.ProtectionExpectation; FrozenPath = $frozenPath; SourceSha256 = $sourceHash
 					WriteIntent = [string]$producer.WriteIntent
 				})
+				if ($script:PaxDatedDeltaAppendRequested) {
+					$entry = @($Entries | Where-Object { $_.Producer.Name -ceq $producer.Name -and $_.SourcePath -ceq $source })
+					if ($entry.Count -ne 1) { throw 'A dated producer has no unique frozen table binding.' }
+					$frozenEntry = $entry[0] | ConvertTo-Json -Depth 20 -Compress | ConvertFrom-Json
+					$frozenProducers[$frozenProducers.Count-1] | Add-Member -NotePropertyName DatedEntry -NotePropertyValue $frozenEntry
+				}
 				if (@($Entries | Where-Object { [IO.Path]::GetFullPath($_.SourcePath) -ieq $source }).Count -eq 0) {
 					$parent = if ($script:DestParentUrl -and $script:DestParentUrl.ContainsKey([string]$producer.DataType)) { [string]$script:DestParentUrl[[string]$producer.DataType] } else { [string]$script:RemoteOutputUrl }
 					if ($parent -notlike 'https://*onelake*' -or $parent -notmatch '/Files(/|$)') { throw 'A mixed complete-set producer has no Fabric Files destination.' }
@@ -4515,9 +4658,15 @@ function script:Invoke-PaxDeltaTableSetPublication {
 				}
 			}
 			$state.ProducerMembers = $frozenProducers.ToArray()
+			if ($script:PaxDatedDeltaAppendRequested) {
+				$state | Add-Member -NotePropertyName DatedAppend -NotePropertyValue (script:New-PaxDatedDeltaFrozenContract -State $state -StageRoot $StageRoot)
+			}
 			$state.RequiredIds = @($state.Members.PublicationId | Sort-Object)
 			$state.IntentHash = script:Get-PaxDeltaIntentHash -State $state
 			foreach ($member in $state.Members) { $member.IntentHash = $state.IntentHash }
+		}
+		if ($state.PSObject.Properties['DatedAppend']) {
+			$null = script:Assert-PaxDatedDeltaFrozenState -State $state -CheckpointPath $script:CheckpointPath -StageRoot $StageRoot
 		}
 		foreach ($producer in $state.ProducerMembers) {
 			if (-not $producer.FrozenPath -or -not (Test-Path -LiteralPath $producer.FrozenPath -PathType Leaf) -or (script:Get-PaxDeltaSourceHash -LiteralPath $producer.FrozenPath -Algorithm SHA256).Hash -cne $producer.SourceSha256) { throw 'A frozen producer is missing or changed; recovery cannot replay processing.' }
@@ -4552,7 +4701,7 @@ function script:Acquire-CheckpointLock {
 	if (Test-Path -LiteralPath $lockPath -PathType Leaf) {
 		$existing = $null
 		try { $existing = Get-Content -LiteralPath $lockPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop } catch {}
-		if ($script:PaxPublishRecoveryContext -and (-not $existing -or $existing.runTimestamp -cne $global:ScriptRunTimestamp -or
+		if (($script:PaxPublishRecoveryContext -or $script:PaxDatedDeltaRecoveryActive) -and (-not $existing -or $existing.runTimestamp -cne $global:ScriptRunTimestamp -or
 			$existing.host -cne [System.Net.Dns]::GetHostName() -or -not $existing.pid -or [int64]$existing.pid -le 0)) {
 			throw 'PAX_RECOVERY_CHECKPOINT_LOCK: an unreadable, foreign-host or foreign-run lock requires independent ownership review; it was not removed.'
 		}
@@ -4979,6 +5128,13 @@ function script:Test-PaxMultiDashboardDestination {
 
 function script:Save-PaxMultiDashboardAppendState {
 		param([psobject]$State, [string]$Path)
+		if ($State.PSObject.Properties['DatedAppend']) {
+			if ((script:Assert-PaxPublishRecoveryPath -Path $Path) -cne (Join-Path $State.DatedAppend.StageRoot '.pax_delta_set_state.json')) { throw 'Dated Delta journal escaped its owned stage.' }
+			foreach ($artifact in @($Path,($Path + '.tmp'))) {
+				$null = script:Assert-PaxPublishRecoveryPath -Path $artifact
+				if ((Test-Path -LiteralPath $artifact) -and (Get-Item -LiteralPath $artifact -Force).LinkType) { throw 'A dated Delta journal must not be a link.' }
+			}
+		}
 		if (-not $script:PaxCompleteSetPublicationStates) { $script:PaxCompleteSetPublicationStates = @{} }
 		$script:PaxCompleteSetPublicationStates[$Path] = $State
 		$temp = $Path + '.tmp'
@@ -4993,6 +5149,11 @@ function script:Save-PaxMultiDashboardAppendState {
 		if ($script:CheckpointEnabled -and $script:CheckpointData) {
 			$checkpointKey = if ($State.PSObject.Properties['Kind'] -and $State.Kind -eq 'DeltaTables') { 'deltaTableSet' } else { 'multiDashboardAppend' }
 			$script:CheckpointData[$checkpointKey] = @{ statePath = $Path; state = [string]$State.Status; runTimestamp = [string]$State.RunTimestamp }
+			if ($State.PSObject.Properties['DatedAppend']) {
+				$script:CheckpointData[$checkpointKey].contract = 'DatedDeltaAppendV1'
+				$script:CheckpointData[$checkpointKey].setId = $State.SetId
+				$script:CheckpointData[$checkpointKey].intentHash = $State.IntentHash
+			}
 			$null = Save-CheckpointStrict
 		}
 	}
@@ -5193,6 +5354,7 @@ function script:Invoke-PaxMultiDashboardAppendPublication {
 		$state.Status = 'Publishing'
 		if ($script:PaxPublishRecoveryContext) { $null = script:Assert-PaxPublishRecoveryBudget -BeforePublication }
 		script:Save-PaxMultiDashboardAppendState -State $state -Path $statePath
+		if ($state.PSObject.Properties['DatedAppend']) { script:Write-PaxDatedDeltaRecoveryGuidance -State $state -StatePath $statePath }
 		try {
 			foreach ($member in $prepared) {
 				if ($member.Tier -ne 'Local') {
@@ -5240,8 +5402,353 @@ function script:Invoke-PaxMultiDashboardAppendPublication {
 
 
 # PAX14_EARLY_PUBLISH_DISPATCH
+function script:Write-PaxDatedDeltaRecoveryGuidance {
+	param([Parameter(Mandatory)][psobject]$State,[Parameter(Mandatory)][string]$StatePath)
+	$checkpoint = script:Assert-PaxPublishRecoveryPath -Path ([string]$State.DatedAppend.CheckpointPath)
+	$journal = script:Assert-PaxPublishRecoveryPath -Path $StatePath
+	$cp = Get-Content -LiteralPath $checkpoint -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+	$saved = Get-Content -LiteralPath $journal -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+	if ($State.Status -cne 'Publishing' -or $saved.Status -cne 'Publishing' -or
+		$cp.deltaTableSet.contract -cne 'DatedDeltaAppendV1' -or $cp.deltaTableSet.statePath -cne $journal -or
+		$cp.deltaTableSet.setId -cne $State.SetId -or $saved.SetId -cne $State.SetId -or
+		$cp.deltaTableSet.intentHash -cne $State.IntentHash -or $saved.IntentHash -cne $State.IntentHash -or
+		$saved.DatedAppend.CheckpointPath -cne $checkpoint -or
+		(script:Get-PaxDeltaIntentHash -State $saved) -cne $State.IntentHash) {
+		throw 'Recovery commands require the matching durably saved local checkpoint and frozen publication journal; no canonical write was authorized.'
+	}
+	if ([string]::IsNullOrWhiteSpace([string]$script:PaxDatedDeltaProductPath)) { throw 'The actual PR15 script path is unavailable; no canonical write was authorized.' }
+	$product = [IO.Path]::GetFullPath([string]$script:PaxDatedDeltaProductPath)
+	if (-not (Test-Path -LiteralPath $product -PathType Leaf)) { throw 'The actual PR15 script path is missing; no canonical write was authorized.' }
+	$quotedProduct = "'{0}'" -f $product.Replace("'", "''")
+	$quotedCheckpoint = "'{0}'" -f $checkpoint.Replace("'", "''")
+	Write-LogHost 'Frozen dated Delta recovery instructions (not an acceptance or success claim):' -ForegroundColor Yellow
+	Write-LogHost 'Publication is sequential. After interruption the set may remain MIXED until Complete or Restore is independently verified. Preserve the original local checkpoint, frozen stage/artifacts and markers.' -ForegroundColor Yellow
+	Write-LogHost 'Run ONE command below after interruption. Foreign state is refused, never bypassed; do not delete markers, recollect, or supply auth overrides or a manual manifest.' -ForegroundColor Yellow
+	Write-LogHost 'Complete the original frozen set (refused once restoration has begun):' -ForegroundColor Yellow
+	Write-LogHost ("& {0} -ResumePublishOnly -Resume {1} -DeltaAppendRecoveryAction Complete" -f $quotedProduct,$quotedCheckpoint) -ForegroundColor Yellow
+	Write-LogHost 'Restore the original complete set (refused after acceptance):' -ForegroundColor Yellow
+	Write-LogHost ("& {0} -ResumePublishOnly -Resume {1} -DeltaAppendRecoveryAction Restore" -f $quotedProduct,$quotedCheckpoint) -ForegroundColor Yellow
+}
+
+function script:Get-PaxDatedDeltaMemberBinding {
+	param([object[]]$Members)
+	$rows = @($Members | ForEach-Object {
+		'{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}' -f $_.Name, $_.CanonicalTableName, [IO.Path]::GetFullPath([string]$_.CandidatePath),
+			(Get-FileHash -LiteralPath $_.CandidatePath -Algorithm SHA256 -ErrorAction Stop).Hash, [bool]$_.AuthoritativeProducer,
+			$_.DestinationPath,$_.Dashboard,$_.DataType
+	} | Sort-Object)
+	return $rows -join "`n"
+}
+
+function script:Assert-PaxDatedDeltaAuthProfile {
+	param([string]$AuthMode = [string]$Auth, [psobject]$Profile = $script:PaxDatedDeltaAuthProfile, [switch]$RequireBound)
+	if ($AuthMode -ne 'ManagedIdentity') {
+		throw 'New dated Tables append requires -Auth ManagedIdentity (system-assigned or AZURE_CLIENT_ID user-assigned). Other profiles have no freeze-bound unattended credential source for cold recovery and are unsupported in this new path; prior PR14 modes are unchanged.'
+	}
+	if (-not $Profile) {
+		if ($RequireBound) { throw 'The frozen dated append managed identity profile is missing.' }
+		$selector = [string]$env:AZURE_CLIENT_ID
+		if ($selector) {
+			$id = [guid]::Empty
+			if (-not [guid]::TryParse($selector,[ref]$id)) { throw 'AZURE_CLIENT_ID must be a managed identity client GUID for new dated Tables append.' }
+			$selector = $id.ToString('D')
+		}
+		$Profile = [pscustomobject][ordered]@{
+			Version='DatedManagedIdentityV1'; Mode='ManagedIdentity'
+			SelectorKind=$(if ($selector) { 'UserAssigned' } else { 'SystemAssigned' })
+			ManagedIdentityClientId=$selector; TenantId=''; PrincipalObjectId=''; TokenClientId=''
+		}
+	}
+	$fields = @('Version','Mode','SelectorKind','ManagedIdentityClientId','TenantId','PrincipalObjectId','TokenClientId')
+	if ((@($Profile.PSObject.Properties.Name | Sort-Object) -join ',') -cne (($fields | Sort-Object) -join ',') -or
+		$Profile.Version -cne 'DatedManagedIdentityV1' -or $Profile.Mode -cne 'ManagedIdentity' -or
+		$Profile.SelectorKind -cnotin @('SystemAssigned','UserAssigned')) { throw 'The dated append authentication profile is unsupported or malformed.' }
+	foreach ($field in $fields) { if ($Profile.$field -isnot [string]) { throw 'The dated append authentication profile requires canonical string fields.' } }
+	if (($Profile.SelectorKind -ceq 'SystemAssigned' -and $Profile.ManagedIdentityClientId) -or
+		($Profile.SelectorKind -ceq 'UserAssigned' -and -not $Profile.ManagedIdentityClientId)) { throw 'The dated managed identity selector changed.' }
+	foreach ($field in @('ManagedIdentityClientId','TenantId','PrincipalObjectId','TokenClientId')) {
+		if (-not $Profile.$field) { continue }
+		$id = [guid]::Empty
+		if (-not [guid]::TryParse([string]$Profile.$field,[ref]$id) -or $id.ToString('D') -cne [string]$Profile.$field) { throw 'The dated managed identity profile contains an invalid identity GUID.' }
+	}
+	$bound = @('TenantId','PrincipalObjectId','TokenClientId' | Where-Object { $Profile.$_ }).Count
+	if (($bound -ne 0 -and $bound -ne 3) -or ($RequireBound -and $bound -ne 3) -or
+		($Profile.SelectorKind -ceq 'UserAssigned' -and $bound -eq 3 -and $Profile.TokenClientId -cne $Profile.ManagedIdentityClientId)) {
+		throw 'The dated managed identity principal binding is incomplete or conflicts with its selector.'
+	}
+	return $Profile
+}
+
+function script:Confirm-PaxDatedDeltaIdentity {
+	param([Parameter(Mandatory)][psobject]$Identity)
+	$profile = script:Assert-PaxDatedDeltaAuthProfile
+	foreach ($field in @('TenantId','PrincipalObjectId','TokenClientId')) {
+		$id = [guid]::Empty
+		if (-not [guid]::TryParse([string]$Identity.$field,[ref]$id) -or $id.ToString('D') -cne [string]$Identity.$field) { throw 'Managed identity bootstrap returned an invalid principal proof.' }
+		if ($profile.$field -and $profile.$field -cne $Identity.$field) { throw 'Managed identity bootstrap returned a different principal than the frozen dated append profile.' }
+	}
+	if ($profile.SelectorKind -ceq 'UserAssigned' -and $Identity.TokenClientId -cne $profile.ManagedIdentityClientId) { throw 'Managed identity bootstrap returned a different user-assigned identity.' }
+	if ($Identity.AuthMethod -cne 'ManagedIdentity') { throw 'Dated append requires an actual managed identity bootstrap, not a cached or forged context.' }
+	foreach ($field in @('TenantId','PrincipalObjectId','TokenClientId')) { $profile.$field = [string]$Identity.$field }
+	$script:PaxDatedDeltaAuthProfile = $profile
+}
+
+function script:New-PaxDatedDeltaFrozenContract {
+	param($State, [string]$StageRoot)
+	if (-not $script:CheckpointEnabled -or -not $script:CheckpointPath -or -not $script:CheckpointData) {
+		throw 'Dated Delta append requires its durable local checkpoint before any table may be written.'
+	}
+	$checkpoint = Assert-PaxPublishRecoveryPath -Path $script:CheckpointPath
+	$root = Split-Path -Parent $checkpoint
+	$expected = Join-Path (Join-Path $root ".pax_multidashboard_$($State.RunTimestamp)") '.pax_delta'
+	if ([IO.Path]::GetFullPath($StageRoot) -cne $expected) { throw 'Dated Delta append stage is not owned by the selected checkpoint.' }
+	return [pscustomobject][ordered]@{
+		Version = 'DatedDeltaAppendV1'
+		AuthProfile = ((script:Assert-PaxDatedDeltaAuthProfile -RequireBound) | ConvertTo-Json -Compress | ConvertFrom-Json)
+		CheckpointPath = $checkpoint
+		RunRoot = $root
+		StageRoot = $expected
+		Dashboards = @('AIO','ValueLens')
+		Tables = @($script:PaxDatedDeltaAppend.Tables.Keys | Sort-Object | ForEach-Object {
+			$t = $script:PaxDatedDeltaAppend.Tables[$_]
+			[pscustomobject][ordered]@{ TableName = $_; TableUrl = $t.TableUrl; Catalog = $t.Catalog }
+		})
+		QuarantinedPaths = @($script:PaxDatedDeltaQuarantinedPaths | Sort-Object)
+	}
+}
+
+function script:Assert-PaxDatedDeltaFrozenState {
+	param($State, [string]$CheckpointPath, [string]$StageRoot)
+	$c = $State.DatedAppend
+	if (-not $c -or $c.Version -cne 'DatedDeltaAppendV1' -or
+		$State.Version -cne '2.0' -or $State.Kind -cne 'DeltaTables' -or
+		$State.Status -notin @('Prepared','Publishing','Accepted','RestorePending','Restored')) { throw 'Not a supported frozen dated Delta publication set.' }
+	$checkpoint = Assert-PaxPublishRecoveryPath -Path $CheckpointPath
+	$root = Split-Path -Parent $checkpoint
+	$expected = Join-Path (Join-Path $root ".pax_multidashboard_$($State.RunTimestamp)") '.pax_delta'
+	if ($c.CheckpointPath -cne $checkpoint -or $c.RunRoot -cne $root -or $c.StageRoot -cne $expected -or
+		[IO.Path]::GetFullPath($StageRoot) -cne $expected -or ($c.Dashboards -join ',') -cne 'AIO,ValueLens') { throw 'Frozen dated Delta ownership/path contract changed.' }
+	if ([string]$State.RunTimestamp -notmatch '^\d{8}_\d{6}$' -or $State.SetId -cnotmatch '^Delta_[a-f0-9]{32}$') { throw 'Frozen dated Delta run identity changed.' }
+	if ($State.IntentHash -cne (Get-PaxDeltaIntentHash -State $State)) { throw 'Frozen dated Delta intent changed.' }
+	$null = script:Assert-PaxDatedDeltaAuthProfile -AuthMode ManagedIdentity -Profile $c.AuthProfile -RequireBound
+	$directories = [Collections.Generic.Queue[string]]::new()
+	$directories.Enqueue((Assert-PaxPublishRecoveryPath -Path $expected -Directory))
+	while ($directories.Count) {
+		foreach ($item in (Get-ChildItem -LiteralPath $directories.Dequeue() -Force -ErrorAction Stop)) {
+			if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $item.LinkType) { throw 'The frozen dated Delta stage contains a link/reparse point.' }
+			if ($item.PSIsContainer) { $directories.Enqueue($item.FullName) }
+		}
+	}
+	$names = @($c.Tables | ForEach-Object { [string]$_.TableName } | Sort-Object)
+	$required = @('AIO_CopilotInteractions','AIO_Users','ValueLens_CopilotInteractions','ValueLens_Users')
+	if ('CopilotInteractions_Raw' -in $names -or 'Entra_Users_Raw' -in $names) { $required += @('CopilotInteractions_Raw','Entra_Users_Raw') }
+	if ('Agent365' -in $names -or 'Agent365_Status' -in $names) { $required += @('Agent365','Agent365_Status') }
+	if (($names -join "`n") -cne (($required | Sort-Object) -join "`n") -or $State.Members.Count -ne $names.Count) { throw 'Frozen dated Delta selected table family is incomplete or ambiguous.' }
+	$roster = @($State.ProducerMembers.DatedEntry | Sort-Object TargetUri, SourceIdentity, SourcePath | ForEach-Object {
+		$item = [ordered]@{ TargetUri=[string]$_.TargetUri; SourceIdentity=[string]$_.SourceIdentity; SourcePath=[IO.Path]::GetFullPath($_.SourcePath); Dashboard=[string]$_.Dashboard; DataType=[string]$_.DataType; ProtectRowCount=[bool]$_.ProtectRowCount; AuthoritativeProducer=[bool]$_.AuthoritativeProducer }
+		$item.WriteIntent = [string]$_.WriteIntent
+		$item.HistoryMeasurement = $_.HistoryMeasurement
+		$item
+	})
+	$roster = ConvertTo-Json -InputObject $roster -Depth 8 -Compress
+	if ($roster -cne $State.RosterText -or
+		(($State.Members.PublicationId | Sort-Object) -join "`n") -cne (($State.RequiredIds | Sort-Object) -join "`n")) { throw 'Frozen dated Delta roster changed.' }
+	$files = [Collections.Generic.List[string]]::new()
+	foreach ($t in $c.Tables) {
+		if ([string]::IsNullOrWhiteSpace($t.Catalog.Fingerprint) -or $t.TableUrl -notmatch '/Tables(?:/[^/]+)?/[^/]+$') { throw 'Missing frozen catalog identity.' }
+		$m = @($State.Members | Where-Object { $_.TableName -ceq $t.TableName })
+		if ($m.Count -ne 1 -or $m[0].TargetUri -cne $t.Catalog.TargetUri) { throw 'Frozen catalog and member roster disagree.' }
+		$m = $m[0]
+		$id = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes([string]$m.TargetUri)))
+		if ($m.PublicationId -cne ('Table_' + $id) -or $m.RemoteParent -cne (($t.TableUrl -split '/Tables',2)[0] + '/Files/.pax_delta_recovery') -or
+			$m.SetId -cne $State.SetId -or $m.IntentHash -cne $State.IntentHash -or $m.Kind -cne 'DeltaTable' -or $m.Tier -cne 'Fabric' -or
+			-not $m.OriginalMeasurement -or -not $m.HistoryMeasurement -or [string]::IsNullOrWhiteSpace($m.HistoryMeasurement.TableId) -or
+			$m.OriginalMeasurement.TableId -cne $m.HistoryMeasurement.TableId -or $m.OriginalMeasurement.Version -ne $m.HistoryMeasurement.Version -or
+			$m.OriginalMeasurement.Sha256 -cne $m.HistoryMeasurement.Sha256 -or $m.OriginalMeasurement.DataRowCount -ne $m.HistoryMeasurement.DataRowCount -or
+			($m.OriginalMeasurement.Schema | ConvertTo-Json -Depth 12 -Compress) -cne ($m.HistoryMeasurement.Schema | ConvertTo-Json -Depth 12 -Compress)) {
+			throw 'Frozen dated Delta table/history identity changed.'
+		}
+		$memberRoot = Join-Path $expected $id
+		foreach ($pair in @(@('CandidatePath','source_0.csv'),@('DeltaCandidatePath','candidate_0.parquet'),@('DeltaOriginalPath','original_0.parquet'))) {
+			$p = Assert-PaxPublishRecoveryPath -Path ([string]$m.($pair[0]))
+			if ($p -cne (Join-Path $memberRoot $pair[1]) -or -not (Test-Path -LiteralPath $p -PathType Leaf)) { throw 'Frozen Delta artifact escaped its owned stage or is missing.' }
+			$files.Add($p)
+		}
+		if ($m.SourceSha256 -cne (Get-FileHash -LiteralPath $m.CandidatePath -Algorithm SHA256).Hash) { throw 'Frozen Delta CSV candidate changed.' }
+	}
+	$i = 0
+	foreach ($p in $State.ProducerMembers) {
+		$e = $p.DatedEntry
+		$physical = @($State.Members | Where-Object { $_.TargetUri -ceq $e.TargetUri })
+		if ($physical.Count -ne 1 -or $e.TableName -cne $physical[0].TableName -or $e.MarkerParent -cne $physical[0].RemoteParent -or
+			$p.Name -cne $e.Producer.Name -or $p.CandidatePath -cne $e.SourcePath -or $p.Dashboard -cne $e.Dashboard -or $p.DataType -cne $e.DataType -or
+			$e.WriteIntent -cne 'HistoryAppend' -or -not $e.ProtectRowCount -or
+			($e.HistoryMeasurement | ConvertTo-Json -Depth 12 -Compress) -cne ($physical[0].HistoryMeasurement | ConvertTo-Json -Depth 12 -Compress)) { throw 'Frozen producer identity changed.' }
+		$source = Assert-PaxPublishRecoveryPath -Path ([string]$p.FrozenPath)
+		if ($source -cne (Join-Path (Join-Path $expected 'producers') "producer_$i.csv") -or
+			$p.SourceSha256 -cne (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash) { throw 'Frozen producer artifact changed or escaped its owned stage.' }
+		$files.Add($source)
+		foreach ($path in @($p.CandidatePath,$p.DestinationPath) | Where-Object { $_ }) {
+			$full = Assert-PaxPublishRecoveryPath -Path ([string]$path)
+			if (-not $full.StartsWith($root + [IO.Path]::DirectorySeparatorChar,[StringComparison]::Ordinal) -or
+				[IO.Path]::GetExtension($full) -notin @('.csv','.paxcandidate')) { throw 'Frozen producer output escaped its owned run directory.' }
+			if ((Test-Path -LiteralPath $full) -and (Get-Item -LiteralPath $full -Force).LinkType) { throw 'A frozen producer output must not be a link.' }
+		}
+		$i++
+	}
+	foreach ($m in $State.Members) {
+		$aliases = @($State.ProducerMembers | Where-Object { $_.DatedEntry.TargetUri -ceq $m.TargetUri })
+		$shared = $m.TableName -cin @('CopilotInteractions_Raw','Entra_Users_Raw','Agent365','Agent365_Status')
+		if ($aliases.Count -eq 0 -or ($shared -and @($aliases | Where-Object { $_.DatedEntry.AuthoritativeProducer }).Count -ne 1) -or
+			(-not $shared -and $aliases.Count -ne 1) -or @($aliases | Where-Object { $_.SourceSha256 -cne $m.SourceSha256 }).Count -ne 0 -or
+			$m.DestinationPath -cnotin @($aliases.CandidatePath)) { throw 'Frozen producer candidate agreement changed.' }
+	}
+	return $files.ToArray()
+}
+
+function script:Import-PaxDatedDeltaRecoveryFunctions {
+	param([Parameter(Mandatory)][string]$ProductPath)
+	$script:PaxDatedDeltaProductPath = [IO.Path]::GetFullPath($ProductPath)
+	$errors = $null; $tokens = $null
+	$ast = [Management.Automation.Language.Parser]::ParseFile($ProductPath,[ref]$tokens,[ref]$errors)
+	if ($errors.Count) { throw 'The recovery product could not be parsed.' }
+	$definitions = @{}
+	foreach ($f in $ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] },$true)) {
+		$name = $f.Name -replace '^script:',''
+		if (-not $definitions.ContainsKey($name)) { $definitions[$name] = @() }
+		$definitions[$name] += $f
+	}
+	$queue = [Collections.Generic.Queue[string]]::new()
+	$queue.Enqueue('Invoke-PaxDatedDeltaAppendRecovery')
+	$seen = @{}
+	while ($queue.Count) {
+		$name = $queue.Dequeue()
+		if ($seen.ContainsKey($name)) { continue }
+		$seen[$name] = $true
+		if (-not $definitions.ContainsKey($name) -or $definitions[$name].Count -ne 1) { throw "Ambiguous recovery dependency: $name" }
+		$f = $definitions[$name][0]
+		foreach ($cmd in $f.Body.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] },$true)) {
+			$called = [string]$cmd.GetCommandName() -replace '^script:',''
+			if ($called -and $definitions.ContainsKey($called)) { $queue.Enqueue($called) }
+		}
+		# Import declarations from this product only; never execute its top-level collection path.
+		$text = $f.Extent.Text -replace '^function\s+(?:script:)?','function script:'
+		. ([scriptblock]::Create($text))
+	}
+}
+
+function script:Invoke-PaxDatedDeltaAppendRecovery {
+	param([Parameter(Mandatory)][string]$CheckpointPath,[ValidateSet('Complete','Restore')][string]$Action = 'Complete')
+	$checkpoint = Assert-PaxPublishRecoveryPath -Path $CheckpointPath
+	$held = [Collections.Generic.List[IDisposable]]::new()
+	$oldEnabled = $script:CheckpointEnabled
+	$ownsLock = $false
+	$ScriptVersion = '2.0.0'
+	$script:PaxDatedDeltaRecoveryActive = $true
+	try {
+		$held.Add([IO.File]::Open($checkpoint,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+		if (-not (Read-Checkpoint -CheckpointPath $checkpoint -PublicationOnly)) { throw 'The selected checkpoint is invalid.' }
+		$cp = $script:CheckpointData
+		if ($cp.deltaTableSet.contract -cne 'DatedDeltaAppendV1') { throw 'The selected checkpoint has no recoverable frozen dated Delta set.' }
+		$global:ScriptRunTimestamp = [string]$cp.runTimestamp
+		$root = Split-Path -Parent $checkpoint
+		if ((Split-Path -Leaf $checkpoint) -cne ".pax_checkpoint_$($cp.runTimestamp).json") { throw 'The selected checkpoint filename does not own this run.' }
+		$stage = Join-Path (Join-Path $root ".pax_multidashboard_$($cp.runTimestamp)") '.pax_delta'
+		$statePath = Assert-PaxPublishRecoveryPath -Path ([string]$cp.deltaTableSet.statePath)
+		if ($statePath -cne (Join-Path $stage '.pax_delta_set_state.json')) { throw 'The selected checkpoint does not own the frozen journal.' }
+		$null = Assert-PaxPublishRecoveryPath -Path ($checkpoint + '.lock')
+		if ((Test-Path -LiteralPath ($checkpoint + '.lock')) -and (Get-Item -LiteralPath ($checkpoint + '.lock') -Force).LinkType) { throw 'A dated Delta checkpoint lock must not be a link.' }
+		Acquire-CheckpointLock -CheckpointPath $checkpoint
+		$ownsLock = $true
+		$state = Get-Content -LiteralPath $statePath -Raw -ErrorAction Stop | ConvertFrom-Json
+		if ($state.RunTimestamp -cne $cp.runTimestamp -or $state.SetId -cne $cp.deltaTableSet.setId -or
+			$state.IntentHash -cne $cp.deltaTableSet.intentHash) { throw 'The checkpoint and frozen publication identity disagree.' }
+		$paths = @(Assert-PaxDatedDeltaFrozenState -State $state -CheckpointPath $checkpoint -StageRoot $stage)
+		foreach ($path in ($paths | Sort-Object -Unique)) {
+			$held.Add([IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+		}
+		$null = Assert-PaxDatedDeltaFrozenState -State $state -CheckpointPath $checkpoint -StageRoot $stage
+		$script:CheckpointEnabled = $false # The selected checkpoint remains immutable; its durable journal records progress.
+		$script:Auth = 'ManagedIdentity'
+		$script:PaxDatedDeltaAuthProfile = script:Assert-PaxDatedDeltaAuthProfile -AuthMode ManagedIdentity -Profile $state.DatedAppend.AuthProfile -RequireBound
+		$script:PaxFabricApiTokenCache = $null
+		$script:AzAuthState = @{ Token=$null; ExpiresOn=$null; AcquiredAt=$null; LastRefresh=$null; LastRefreshAttempt=$null; RefreshCount=0; AuthMethod=$null }
+		$script:PaxDatedDeltaAppend = [pscustomobject]@{ Tables = @{} }
+		foreach ($t in $state.DatedAppend.Tables) { $script:PaxDatedDeltaAppend.Tables[$t.TableName] = $t }
+		$script:PaxDeltaTableSetPending = $true
+		$script:PaxDatedDeltaAppendRequested = $true
+		$script:PaxDatedDeltaResidualPublicationBlocked = $true
+		$python = Resolve-PaxDeltaPythonExe
+		$token = Get-FabricStorageToken
+		$script:PaxDeltaPublicationContext = [pscustomobject]@{ Python=$python; BearerToken=$token; Recovering=$true }
+		foreach ($m in $state.Members) {
+			$null = Invoke-PaxDeltaPublicationMember -Member $m -Operation VerifyCandidate
+			$null = Invoke-PaxDeltaPublicationMember -Member $m -Operation VerifyOriginal
+		}
+		$observed = @()
+		foreach ($m in $state.Members) {
+			$o = Invoke-PaxDeltaPublicationMember -Operation Observe -Member $m
+			if (-not $o.Original -and -not $o.Published -and -not $o.Restored) { throw 'A selected Delta destination changed outside this frozen set.' }
+			if (($o.Published -and $o.Observation.Version -ne ([long]$m.HistoryMeasurement.Version + 1)) -or
+				($o.Restored -and $o.Observation.Version -ne ([long]$m.HistoryMeasurement.Version + 2)) -or
+				($o.Published -and $m.PublishedObservation -and $o.Observation.Version -ne $m.PublishedObservation.Version) -or
+				(($o.Original -or $o.Restored) -and $m.RestoredObservation -and $o.Observation.Version -ne $m.RestoredObservation.Version) -or
+				($state.Status -eq 'Accepted' -and (-not $o.Published -or -not $m.PublishedObservation)) -or
+				($state.Status -eq 'Restored' -and ((-not $o.Original -and -not $o.Restored) -or -not $m.RestoredObservation))) {
+				throw 'A dated Delta destination no longer matches its durable acknowledged version/terminal receipt.'
+			}
+			$observed += $o
+		}
+		foreach ($m in ($state.Members | Group-Object RemoteParent | ForEach-Object { $_.Group[0] })) {
+			$marker = Get-PaxDeltaRecoveryMarker -Member $m
+			$body = $marker.Marker
+			if (-not $marker.Missing) {
+				if ($body.Version -cne '2.0' -or $body.Kind -cne 'DeltaTables' -or $body.SetId -cne $state.SetId -or
+					$body.IntentHash -cne $state.IntentHash -or $body.RunTimestamp -cne $state.RunTimestamp) { throw 'The selected recovery marker has foreign ownership.' }
+			}
+			elseif (($state.Status -notin @('Prepared','Accepted','Restored')) -or
+				($state.Status -eq 'Prepared' -and @($observed | Where-Object { -not $_.Original }).Count) -or
+				($state.Status -eq 'Accepted' -and @($observed | Where-Object { -not $_.Published }).Count) -or
+				($state.Status -eq 'Restored' -and @($observed | Where-Object { -not $_.Original -and -not $_.Restored }).Count)) {
+				throw 'A nonterminal/mixed dated Delta set lost its ownership marker.'
+			}
+			Assert-PaxDeltaAppendNoRecoveryMarkers -TableParent (($m.RemoteParent -replace '/Files/.pax_delta_recovery$','') + '/Tables') -AllowedMarkerNames @($marker.Relative.Substring($marker.Relative.LastIndexOf('/')+1))
+		}
+		if ($Action -eq 'Complete' -and $state.Status -eq 'RestorePending') { throw 'This frozen set has pending restoration; select Restore.' }
+		if ($Action -eq 'Restore' -and $state.Status -eq 'Accepted') { throw 'An accepted publication cannot be retroactively restored.' }
+		if ($Action -eq 'Complete' -and $state.Status -eq 'Restored') { throw 'This frozen set was restored; a new dated append must recollect in a new run.' }
+		if ($Action -eq 'Restore' -and $state.Status -eq 'Restored') {
+			Complete-PaxMultiDashboardRecoveryMarkers -Members $state.Members -WorkDirectory $stage
+		}
+		elseif ($Action -eq 'Restore') {
+			Restore-PaxMultiDashboardAppendSet -State $state -StatePath $statePath
+		}
+		else {
+			if ($state.Status -eq 'Accepted') {
+				if (@($observed | Where-Object { -not $_.Published }).Count) { throw 'The accepted frozen destination set changed.' }
+				Complete-PaxMultiDashboardRecoveryMarkers -Members $state.Members -WorkDirectory $stage
+			}
+			else {
+				$null = Invoke-PaxMultiDashboardAppendPublication -Members $state.Members -Roster @{} -StageRoot $stage -RequiredIds $state.RequiredIds -DeltaState $state
+			}
+			if ($state.Status -ne 'Accepted') { throw 'The selected frozen set was not accepted.' }
+		}
+		$script:PaxDeltaTableSetPending = $false
+		$script:PaxDeltaTableSetAccepted = $state.Status -eq 'Accepted'
+		$script:PaxDatedDeltaAcceptedSet = if ($state.Status -eq 'Accepted') { [pscustomobject]@{ SetId=$state.SetId; IntentHash=$state.IntentHash } } else { $null }
+		return [pscustomobject]@{ Accepted=($state.Status -eq 'Accepted'); Restored=($state.Status -eq 'Restored'); DatedAppend=$true; RequiredCount=$state.Members.Count }
+	}
+	finally {
+		if ($ownsLock) { Release-CheckpointLock }
+		for ($i=$held.Count-1;$i -ge 0;$i--) { $held[$i].Dispose() }
+		$script:CheckpointEnabled = $oldEnabled
+		$script:PaxDatedDeltaRecoveryActive = $false
+		$script:PaxDeltaPublicationContext = $null
+	}
+}
+
 if ($ResumePublishOnly) {
-	$allowed = @('ResumePublishOnly','ResumeRequest','PublishRecoveryManifest','ApproveExistingSnapshot','RecoveryMaxScratchBytes','RecoveryReserveBytes','RecoveryOperationSeconds','RemainingArgs','StartDate','Verbose','Debug','ErrorAction','WarningAction','InformationAction','ErrorVariable','WarningVariable','InformationVariable','OutVariable','OutBuffer','PipelineVariable')
+	$allowed = @('ResumePublishOnly','ResumeRequest','DeltaAppendRecoveryAction','PublishRecoveryManifest','ApproveExistingSnapshot','RecoveryMaxScratchBytes','RecoveryReserveBytes','RecoveryOperationSeconds','RemainingArgs','StartDate','Verbose','Debug','ErrorAction','WarningAction','InformationAction','ErrorVariable','WarningVariable','InformationVariable','OutVariable','OutBuffer','PipelineVariable')
 	$invalid = @($PSBoundParameters.Keys | Where-Object { $_ -notin $allowed })
 	# PowerShell binds the path following a Resume switch to the first positional
 	# parameter. Accept that spelling only as an explicit checkpoint path, never a date override.
@@ -5252,9 +5759,22 @@ if ($ResumePublishOnly) {
 		throw 'Publish-only recovery requires -ResumePublishOnly -Resume <explicit original checkpoint>. PAX generates its recovery plan; -PublishRecoveryManifest is optional advanced input. Force, checkpoint auto-selection, scope/auth/destination overrides and ordinary collection options are unsupported; no fallback was attempted.'
 	}
 	try {
-		$result = script:Invoke-PaxResumePublishOnly -CheckpointPath $selectedCheckpoint -ManifestPath $PublishRecoveryManifest -ApproveExistingSnapshot:$ApproveExistingSnapshot -MaxScratchBytes $RecoveryMaxScratchBytes -ReserveBytes $RecoveryReserveBytes -OperationSeconds $RecoveryOperationSeconds
-		if (-not $result.Accepted) { throw 'The complete eight-table recovery set was not accepted.' }
-		Microsoft.PowerShell.Utility\Write-Host ('Publish-only recovery accepted: all eight tables independently verified; originals and owned recovery journal retained. Peak owned scratch bytes: {0}.' -f $result.PeakScratchBytes)
+		$selectedPath = script:Assert-PaxPublishRecoveryPath -Path $selectedCheckpoint
+		$selectedEnvelope = [IO.File]::ReadAllText($selectedPath) | ConvertFrom-Json -ErrorAction Stop
+		$dated = $selectedEnvelope.deltaTableSet.contract -ceq 'DatedDeltaAppendV1'
+		if ($dated) {
+			if (@('PublishRecoveryManifest','ApproveExistingSnapshot','RecoveryMaxScratchBytes','RecoveryReserveBytes','RecoveryOperationSeconds' | Where-Object { $PSBoundParameters.ContainsKey($_) }).Count) { throw 'Dated Delta recovery uses its selected frozen checkpoint, not seed approval/manifest/budget parameters.' }
+			script:Import-PaxDatedDeltaRecoveryFunctions -ProductPath $PSCommandPath
+			$result = script:Invoke-PaxDatedDeltaAppendRecovery -CheckpointPath $selectedPath -Action $DeltaAppendRecoveryAction
+			if (-not $result.Accepted -and -not $result.Restored) { throw 'The selected frozen dated Delta set was not completed or restored.' }
+			Microsoft.PowerShell.Utility\Write-Host ("Frozen dated Delta set {0}: {1} tables independently verified. Checkpoint, journal and artifacts retained." -f $DeltaAppendRecoveryAction,$result.RequiredCount)
+		}
+		else {
+			if ($PSBoundParameters.ContainsKey('DeltaAppendRecoveryAction')) { throw '-DeltaAppendRecoveryAction requires a DatedDeltaAppendV1 checkpoint; the seed recovery contract is unchanged.' }
+			$result = script:Invoke-PaxResumePublishOnly -CheckpointPath $selectedCheckpoint -ManifestPath $PublishRecoveryManifest -ApproveExistingSnapshot:$ApproveExistingSnapshot -MaxScratchBytes $RecoveryMaxScratchBytes -ReserveBytes $RecoveryReserveBytes -OperationSeconds $RecoveryOperationSeconds
+			if (-not $result.Accepted) { throw 'The complete eight-table recovery set was not accepted.' }
+			Microsoft.PowerShell.Utility\Write-Host ('Publish-only recovery accepted: all eight tables independently verified; originals and owned recovery journal retained. Peak owned scratch bytes: {0}.' -f $result.PeakScratchBytes)
+		}
 	}
 	catch {
 		Microsoft.PowerShell.Utility\Write-Host 'Publish-only recovery failed. Original retained inputs were not consumed; any owned recovery journal remains authoritative. No ordinary Resume, collection, processing or generic cleanup was invoked.' -ForegroundColor Red
@@ -5263,6 +5783,7 @@ if ($ResumePublishOnly) {
 	return
 }
 if ($PSBoundParameters.ContainsKey('PublishRecoveryManifest')) { throw '-PublishRecoveryManifest is supported only with explicit -ResumePublishOnly; no ordinary-mode fallback was attempted.' }
+if ($PSBoundParameters.ContainsKey('DeltaAppendRecoveryAction')) { throw '-DeltaAppendRecoveryAction requires -ResumePublishOnly -Resume <explicit local checkpoint>.' }
 if (@('ApproveExistingSnapshot','RecoveryMaxScratchBytes','RecoveryReserveBytes','RecoveryOperationSeconds'|Where-Object{$PSBoundParameters.ContainsKey($_)}).Count) { throw 'Recovery approval/budget parameters require -ResumePublishOnly; no ordinary-mode fallback was attempted.' }
 if ($ResumeRequest -and $PSBoundParameters.ContainsKey('StartDate') -and -not $RemainingArgs) {
 	$RemainingArgs = @('-Resume',[string]$StartDate)
@@ -11962,7 +12483,7 @@ $m365UsageActivityBundle = @(
 # Script version constant (must appear after param/help to keep param() valid as first executable block)
 $ScriptVersion = '2.0.0'
 $ScriptReleaseType = 'Prerelease'
-$ScriptReleaseDate = '2026-11-01-14'
+$ScriptReleaseDate = '2026-11-10-16'
 
 function Invoke-PaxVersionCheck {
 	# Informational, non-blocking, failure-isolated version check against the public PAX repo.
@@ -13753,6 +14274,15 @@ $fabricItemSeg     = '(?:[^/]+\.Lakehouse|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA
 $fabricRootPattern = "^https://([a-z0-9-]+-)?onelake\.dfs\.fabric\.microsoft\.com/[^/]+/$fabricItemSeg(/Tables(/[A-Za-z_][A-Za-z0-9_]*)?|/Files(/.+)?)?/?`$"
 $fabricFilesPattern = "^https://([a-z0-9-]+-)?onelake\.dfs\.fabric\.microsoft\.com/[^/]+/$fabricItemSeg/Files(/.+)?/?`$"
 
+function script:Test-PaxTablesAppendTarget {
+	param([AllowNull()][AllowEmptyString()][string]$Value)
+	$target = $null
+	return ([uri]::TryCreate($Value, [UriKind]::Absolute, [ref]$target) -and $target.Scheme -eq 'https' -and
+		$target.Host -ieq 'onelake.dfs.fabric.microsoft.com' -and $target.IsDefaultPort -and
+		-not $target.UserInfo -and -not $target.Query -and -not $target.Fragment -and
+		$target.AbsolutePath -cmatch '^/[^/]+/(?:[^/]+\.Lakehouse|[0-9a-fA-F-]{36})/Tables/(?:[A-Za-z_][A-Za-z0-9_]*/)?[A-Za-z_][A-Za-z0-9_]*(?:\.csv)?$')
+}
+
 function script:Get-PathTier {
 	param([string]$Value, [string]$SwitchName, [switch]$AllowFabricFilesOnly)
 	if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
@@ -13774,6 +14304,7 @@ function script:Get-PathTier {
 			$script:GenericFatal = $true
 			exit 1
 		}
+		if ($SwitchName -in @('AppendFile','AppendUserInfo','AppendAgent365Info') -and (script:Test-PaxTablesAppendTarget -Value $v)) { return 'Fabric' }
 		if ($v -match $fabricRootPattern) { return 'Fabric' }
 		Write-Host ("ERROR: -{0} URL is not a recognized SharePoint or Fabric Lakehouse destination." -f $SwitchName) -ForegroundColor Red
 		Write-Host ("       Provided: {0}" -f $v) -ForegroundColor Yellow
@@ -13859,6 +14390,39 @@ foreach ($as in $appendSwitches) {
 	} else {
 		# Relative filename — tier deferred to the -OutputPath* side (or local default).
 		$script:AppendIsRemote[$as.Key] = $false
+	}
+}
+
+$script:PaxDatedDeltaAppendRequested = @($appendSwitches | Where-Object { $_.Bound -and (script:Test-PaxTablesAppendTarget -Value $_.Value) }).Count -gt 0
+if ($script:PaxDatedDeltaAppendRequested) {
+	$script:PaxDatedDeltaAuthProfile = script:Assert-PaxDatedDeltaAuthProfile -Profile $null
+	$script:PaxDatedDeltaProductPath = $PSCommandPath
+	$script:PaxFabricApiTokenCache = $null
+	# Admission quarantines ALL dated CSVs, even if initialization or a dashboard later fails.
+	$script:PaxDatedDeltaQuarantinedPaths = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+	$script:PaxDatedDeltaResidualPublicationBlocked = $true
+	if ($PurviewInputFile) { throw 'Dated Tables append requires checkpoint-backed collection; supplied-input Tables append is not supported in this release.' }
+}
+if ($script:PaxDatedDeltaAppendRequested) {
+	if ($Watermark) { throw '-Watermark cannot be used with a Fabric Tables (Delta) append target.' }
+	if (-not $script:PaxMultiDashboardEnabled -or @($script:PaxRequestedDashboards).Count -ne 2 -or
+		@($script:PaxRequestedDashboards | Where-Object { $_ -notin @('AIO','ValueLens') }).Count -or
+		-not ($Rollup -or $RollupPlusRaw) -or $IncludeM365Usage -or $UserHistory -ne 'On' -or
+		-not $PSBoundParameters.ContainsKey('StartDate') -or -not $PSBoundParameters.ContainsKey('EndDate') -or
+		[string]::IsNullOrWhiteSpace($StartDate) -or [string]::IsNullOrWhiteSpace($EndDate) -or $StartDate -eq '*' -or $EndDate -eq '*') {
+		throw 'Fabric Tables append in this prerelease requires -Dashboard AIO,ValueLens, -Rollup or -RollupPlusRaw, -UserHistory On and explicit UTC -StartDate/-EndDate.'
+	}
+	if ($ResumeRequest -or $ResumePublishOnly -or $script:PaxDeidEnabled) {
+		throw 'Dated Tables append starts a new explicit-date run; ordinary Resume and protected history are unsupported. For an interrupted frozen set use -ResumePublishOnly -Resume <explicit local checkpoint>, optionally -DeltaAppendRecoveryAction Restore. Preserve its checkpoint, artifacts and markers.'
+	}
+	foreach ($pair in @(@('Purview',@('AIO_CopilotInteractions','ValueLens_CopilotInteractions')), @('UserInfo',@('AIO_Users','ValueLens_Users')), @('Agent365Info',@('Agent365')))) {
+		$key = [string]$pair[0]
+		if ($key -eq 'Agent365Info' -and -not ($IncludeAgent365Info -or $AppendAgent365Info)) { continue }
+		$selected = [string]$script:AppendRaw[$key]
+		if (-not (script:Test-PaxTablesAppendTarget -Value $selected) -or
+			$pair[1] -cnotcontains ([IO.Path]::GetFileName($selected) -creplace '\.csv$','')) {
+			throw ("Dated Tables append requires the canonical existing {0} Tables member via its -Append* switch; no folder, CSV seed or inferred target is accepted." -f $key)
+		}
 	}
 }
 
@@ -13949,6 +14513,11 @@ $script:DestParentUrl = @{}
 $script:NormalizeFolderUrl = {
 	param([string]$u)
 	if ([string]::IsNullOrWhiteSpace($u)) { return $u }
+	if (script:Test-PaxTablesAppendTarget -Value $u) {
+		foreach ($appendValue in $script:AppendRaw.Values) {
+			if ([string]$appendValue -ceq $u) { return $u.Substring(0, $u.LastIndexOf('/')) }
+		}
+	}
 	if ($u -match '/[^/]+\.(csv|log|xlsx|json|parquet|txt)$') {
 		return ($u -replace '/[^/]+\.[A-Za-z0-9]+$','')
 	}
@@ -15670,7 +16239,7 @@ if (($IncludeAgent365Info -or $OnlyAgent365Info)) {
 # beta is the single compatibility fallback. No auth-mode is rejected up-front for Agent 365.
 
 # Validate AppendFile has proper filename format
-if ($AppendFile) {
+if ($AppendFile -and -not (script:Test-PaxTablesAppendTarget -Value $AppendFile)) {
 	# Check if it's a directory path (ends with slash/backslash or has no extension)
 	if ($AppendFile -match '[\\/]$') {
 		Write-Host "ERROR: -AppendFile must specify a filename, not a directory path" -ForegroundColor Red
@@ -17151,6 +17720,17 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+CSV_FIELD_SIZE_LIMIT = 134217728
+
+
+def _configure_csv_field_size_limit() -> None:
+    """Apply the supported per-field character limit in this Python process."""
+    csv.field_size_limit(CSV_FIELD_SIZE_LIMIT)
+
+
+_configure_csv_field_size_limit()
+
+
 try:
     import orjson
 
@@ -17615,14 +18195,8 @@ def _processed_users_expected_token(value, kind, salt, domain):
 
 
 def verify_processed_users(source, candidate, source_sha256, salt, domain):
+    _configure_csv_field_size_limit()
     original_candidate = _processed_users_digest(candidate)
-    limit = sys.maxsize
-    while True:
-        try:
-            csv.field_size_limit(limit)
-            break
-        except OverflowError:
-            limit //= 10
     count = 0
     with open(source, encoding="utf-8-sig", newline="") as identified, open(candidate, encoding="utf-8-sig", newline="") as protected:
         original_rows = csv.reader(identified, strict=True)
@@ -20940,6 +21514,7 @@ def run_processor(
     history_effective_date: str = "",
     history_users_target: str | None = None,
 ) -> dict[str, Any]:
+    _configure_csv_field_size_limit()
     start_time = time.perf_counter()
     selected_rollup_path = _select_rollup_path(purview_csv, profile, quiet)
     stats: dict[str, Any] = {
@@ -33878,6 +34453,8 @@ function script:Invoke-PaxAzTokenIsolated {
 		and the token is returned only through the child's standard output.
 	#>
 	param([Parameter(Mandatory)][string]$ResourceUrl)
+	$datedProfile = $null
+	if ($script:PaxDatedDeltaAppendRequested) { $datedProfile = script:Assert-PaxDatedDeltaAuthProfile }
 	$childScript = @'
 $ErrorActionPreference = 'Stop'
 try {
@@ -33888,6 +34465,24 @@ try {
 	# A subscription picker would wait for input nobody can see; OneLake needs no subscription.
 	try { Update-AzConfig -LoginExperienceV2 Off -Scope Process -WarningAction SilentlyContinue | Out-Null } catch { }
 	$tag = 'Interactive'
+	$dated = $null
+	if ($env:PAX_AZ_DATED_MI_PROFILE) {
+		$dated = $env:PAX_AZ_DATED_MI_PROFILE | ConvertFrom-Json -ErrorAction Stop
+		if ($dated.Version -cne 'DatedManagedIdentityV1' -or $dated.Mode -cne 'ManagedIdentity' -or $env:PAX_AZ_AUTH -ne 'ManagedIdentity') { throw 'Invalid frozen managed identity authentication profile.' }
+		$env:AZURE_CLIENT_ID = [string]$dated.ManagedIdentityClientId
+		# Never adopt a cached user, service principal, other MI, or stale context.
+		if ($dated.SelectorKind -ceq 'UserAssigned' -and $dated.ManagedIdentityClientId) {
+			Connect-AzAccount -Identity -AccountId ([string]$dated.ManagedIdentityClientId) -SkipContextPopulation -Scope Process -ErrorAction Stop | Out-Null
+		}
+		elseif ($dated.SelectorKind -ceq 'SystemAssigned' -and -not $dated.ManagedIdentityClientId) {
+			Connect-AzAccount -Identity -SkipContextPopulation -Scope Process -ErrorAction Stop | Out-Null
+		}
+		else { throw 'Invalid frozen managed identity selector.' }
+		$ctx = Get-AzContext -ErrorAction Stop
+		if (-not $ctx.Account -or $ctx.Account.Type -cne 'ManagedService') { throw 'Managed identity bootstrap did not establish the requested identity context.' }
+		$tag = 'ManagedIdentity'
+	}
+	else {
 	$ctx = Get-AzContext -ErrorAction SilentlyContinue
 	if (-not $ctx) {
 		if ($env:PAX_AZ_AUTH -eq 'Silent') {
@@ -33907,12 +34502,33 @@ try {
 	}
 	elseif ($ctx.Account -and $ctx.Account.Type -eq 'ManagedService') { $tag = 'ManagedIdentity' }
 	elseif ($ctx.Account -and $ctx.Account.Type -eq 'ServicePrincipal') { $tag = 'AppRegistration' }
+	}
 	$t = Get-AzAccessToken -ResourceUrl $env:PAX_AZ_RESOURCE -ErrorAction Stop
 	$tok = if ($t.Token -is [System.Security.SecureString]) { [System.Net.NetworkCredential]::new('', $t.Token).Password } else { [string]$t.Token }
+	$datedIdentity = $null
+	if ($dated) {
+		$parts = $tok.Split('.')
+		if ($parts.Count -ne 3 -or $tok.Length -gt 1048576) { throw 'Managed identity token has no usable principal claims.' }
+		$body = $parts[1].Replace('-','+').Replace('_','/')
+		$body = $body.PadRight($body.Length + ((4 - $body.Length % 4) % 4),'=')
+		$claims = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($body)) | ConvertFrom-Json -ErrorAction Stop
+		if ($claims.appid -and $claims.azp -and $claims.appid -ne $claims.azp) { throw 'Managed identity token has ambiguous client claims.' }
+		$client = if ($claims.appid) { [string]$claims.appid } else { [string]$claims.azp }
+		$datedIdentity = [ordered]@{ AuthMethod='ManagedIdentity'; TenantId=[string]$claims.tid; PrincipalObjectId=[string]$claims.oid; TokenClientId=$client }
+		foreach ($field in @('TenantId','PrincipalObjectId','TokenClientId')) {
+			$id = [guid]::Empty
+			if (-not [guid]::TryParse([string]$datedIdentity[$field],[ref]$id)) { throw 'Managed identity token has invalid principal claims.' }
+			$datedIdentity[$field] = $id.ToString('D')
+			if ($dated.$field -and $dated.$field -cne $datedIdentity[$field]) { throw 'Managed identity bootstrap returned a different principal than the frozen dated append profile.' }
+		}
+		if ($dated.SelectorKind -ceq 'UserAssigned' -and $datedIdentity.TokenClientId -cne $dated.ManagedIdentityClientId) { throw 'Managed identity bootstrap returned a different user-assigned identity.' }
+	}
 	$exp = if ($t.ExpiresOn -is [System.DateTimeOffset]) { $t.ExpiresOn.UtcDateTime }
 		elseif ($t.ExpiresOn -is [datetime]) { if ($t.ExpiresOn.Kind -eq [System.DateTimeKind]::Utc) { $t.ExpiresOn } else { $t.ExpiresOn.ToUniversalTime() } }
 		else { ([datetime]$t.ExpiresOn).ToUniversalTime() }
-	$payload = @{ ok = $true; token = $tok; expiresUtc = $exp.ToString('o'); authMethod = $tag } | ConvertTo-Json -Compress
+	$result = @{ ok = $true; token = $tok; expiresUtc = $exp.ToString('o'); authMethod = $tag }
+	if ($datedIdentity) { $result.DatedIdentity = $datedIdentity }
+	$payload = $result | ConvertTo-Json -Compress
 }
 catch { $payload = @{ ok = $false; error = [string]$_.Exception.Message } | ConvertTo-Json -Compress }
 [Console]::Out.WriteLine('PAXAZRESULT:' + [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($payload)))
@@ -33927,6 +34543,7 @@ catch { $payload = @{ ok = $false; error = [string]$_.Exception.Message } | Conv
 		PAX_AZ_TENANT   = [string]$script:TenantId
 		PAX_AZ_CLIENT   = [string]$script:ClientId
 		PAX_AZ_SECRET   = [string]$script:ClientSecret
+		PAX_AZ_DATED_MI_PROFILE = $(if ($datedProfile) { $datedProfile | ConvertTo-Json -Depth 4 -Compress } else { '' })
 	}
 	try {
 		foreach ($k in $childEnv.Keys) { [System.Environment]::SetEnvironmentVariable($k, $childEnv[$k], 'Process') }
@@ -33951,6 +34568,7 @@ catch { $payload = @{ ok = $false; error = [string]$_.Exception.Message } | Conv
 		throw $helperError
 	}
 	if ([string]::IsNullOrWhiteSpace([string]$result.token)) { throw 'The Az.Accounts token helper returned an empty token.' }
+	if ($datedProfile) { script:Confirm-PaxDatedDeltaIdentity -Identity $result.DatedIdentity }
 	# Newer JSON readers already return DateTime; stringifying it would lose its UTC kind.
 	$expiresUtc = if ($result.expiresUtc -is [datetime]) { $result.expiresUtc.ToUniversalTime() }
 		else { ([datetime]::Parse([string]$result.expiresUtc, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)).ToUniversalTime() }
@@ -34273,6 +34891,231 @@ function script:Get-PaxRawOutputStatusLine {
 
 
 
+function script:Get-PaxDeltaAppendCanonicalColumns {
+	param([Parameter(Mandatory)][string]$TableName)
+	$provenance = @('Date_Added','Latest_Append_Date','In_Latest_Append')
+	if ($TableName -cin @('AIO_CopilotInteractions','ValueLens_CopilotInteractions')) {
+		$grain = @('UserKey','InteractionDate','AgentId','AgentName','AppHost','Environment','License Status','Context_Type','Behavior_Category',
+			'Behavior_Enriched','AI_Model','Is_Sensitive','Autonomy_Pattern','AppIdentity_AppId','AISystemPlugin_Name','ThreadId')
+		$carried = @('CreationDate','WeekStart','MonthStart','UserMonthKey','Has license','Resource_Count','SensitivityLabelId',
+			'AccessedResource_Type','AccessedResource_Action','AccessedResource_SiteUrl','AccessedResource_SensitivityLabelId',
+			'AppIdentity_DisplayName','AISystemPlugin_Id','ModelTransparencyDetails_ModelName','Agent_TitleID','Message_isPrompt',
+			'Behavior_Source','Value_Outcome','ActivityDate')
+		if ($TableName -ceq 'AIO_CopilotInteractions') { return $grain + @('Message_Id') + $carried + @('User_Id_Normalized','Message_Id_Raw','ThreadId_Raw') + $provenance }
+		return $grain + @('Is_Agent_Activity','Web_Grounded_Signal','Workflow_Action','Message_Id') + $carried +
+			@('Audit_UserId','Audit_UserId_Normalized','Agent Filter','Agent Publish Status','Behavior_Enriched_Full','Usage_Mode','Expertise_Role',
+			'Efficiency_Breakdown','Human_Baseline_Min','Behavior_Plausible','Delegation_Event_Key','Message_Id_Raw','ThreadId_Raw') + $provenance
+	}
+	if ($TableName -cin @('AIO_Users','ValueLens_Users')) {
+		$columns = @($EntraUsersHeader) + @('PersonId','Organization','JobTitle','Has license','UserKey','PersonId_Normalized','License Status',
+			'TotalEmployees','EffectiveDate','DisplayName','Country','Email','Organization_Id','Manager_UserKey','OrgLevel','HierarchyPath',
+			'TopOfChain_UserKey','IsManager','DirectReports','TotalReports') + $provenance
+		foreach ($level in 0..14) { $columns += @("Level${level}_UserKey","Level${level}_Name") }
+		return $columns
+	}
+	if ($TableName -ceq 'Entra_Users_Raw') { return @($EntraUsersHeader) + $provenance }
+	if ($TableName -ceq 'CopilotInteractions_Raw') { return @('RecordId','CreationDate','RecordType','Operation','UserId','AuditData','AssociatedAdminUnits','AssociatedAdminUnitsNames') + $provenance }
+	if ($TableName -ceq 'Agent365_Status') { return @('Title ID','List Completeness','Detail Completeness','Row Build Status') + $provenance }
+	if ($TableName -ceq 'Agent365') {
+		$agentAst = (Get-Command ConvertTo-Agent365Row -CommandType Function -ErrorAction Stop).ScriptBlock.Ast
+		$rows = @($agentAst.FindAll({ param($node)
+			$node -is [Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -ceq '$row' -and
+			$node.Right.Extent.Text.StartsWith('[PSCustomObject][ordered]@{', [StringComparison]::Ordinal)
+		}, $true))
+		if ($rows.Count -ne 1) { throw 'The canonical Agent365 row schema is unavailable or ambiguous.' }
+		$literals = @($rows[0].Right.FindAll({ param($node) $node -is [Management.Automation.Language.HashtableAst] }, $true))
+		if ($literals.Count -ne 1) { throw 'The canonical Agent365 column schema is ambiguous.' }
+		return @($literals[0].KeyValuePairs | ForEach-Object { [string]$_.Item1.SafeGetValue() }) + $provenance
+	}
+	throw 'The selected table has no supported canonical append schema.'
+}
+
+function script:Get-PaxDeltaAppendCatalogProof {
+	param([Parameter(Mandatory)][string]$TableUrl)
+	$resolved = script:Resolve-PaxFabricTableTarget -TargetUri $TableUrl
+	$physical = [uri]$resolved
+	$parts = @($physical.AbsolutePath.Trim('/') -split '/')
+	$apiRoot = 'https://api.fabric.microsoft.com/v1/workspaces/{0}/lakehouses/{1}' -f $physical.UserInfo, $parts[0]
+	$metadata = script:Invoke-PaxFabricApiRequest -Uri $apiRoot
+	if ($null -eq $metadata -or [string]$metadata.type -cne 'Lakehouse' -or $null -eq $metadata.properties) { throw 'The append lakehouse metadata could not be verified.' }
+	$hasSchema = $metadata.properties.PSObject.Properties.Name -contains 'defaultSchema'
+	$declaredParts = @(([uri]$TableUrl).AbsolutePath.Trim('/') -split '/')
+	if (($hasSchema -and ($parts.Count -ne 4 -or [string]::IsNullOrWhiteSpace([string]$metadata.properties.defaultSchema))) -or
+		(-not $hasSchema -and ($parts.Count -ne 3 -or $declaredParts.Count -ne 4))) {
+		throw 'The selected append schema conflicts with the physical lakehouse namespace; no dbo fallback is permitted.'
+	}
+	if ($hasSchema -and $declaredParts.Count -eq 4 -and $parts[2] -cne [string]$metadata.properties.defaultSchema) { throw 'The append default schema changed during resolution.' }
+	$matches = [Collections.Generic.List[object]]::new()
+	$seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+	$next = $apiRoot + '/tables'
+	while ($next) {
+		if (-not $seen.Add($next) -or $seen.Count -gt 10000 -or
+			-not $next.StartsWith($apiRoot + '/tables', [StringComparison]::Ordinal)) { throw 'The append table catalog pagination is invalid.' }
+		$page = script:Invoke-PaxFabricApiRequest -Uri $next
+		if ($page.PSObject.Properties.Name -contains 'data') { $items = $page.data } else { $items = $page.value }
+		if ($null -eq $items -or $items -isnot [array]) { throw 'The append table catalog response is malformed.' }
+		foreach ($entry in $items) {
+			$location = ([string]$entry.location).TrimEnd('/')
+			if ($location -ceq $resolved.TrimEnd('/')) { [void]$matches.Add($entry) }
+		}
+		$next = [string]$page.continuationUri
+		if (-not $next -and $page.continuationToken) { throw 'The append table catalog has an unsupported continuation token without a URI.' }
+	}
+	if ($matches.Count -ne 1 -or [string]$matches[0].format -ine 'delta' -or
+		[string]$matches[0].name -cnotin @($parts[-1], (($parts | Select-Object -Skip 2) -join '.'))) {
+		throw 'The existing Delta table is missing or ambiguous in the lakehouse catalog, or its physical location/name/format conflicts.'
+	}
+	return [pscustomobject]@{
+		TargetUri = $resolved
+		Fingerprint = (@($hasSchema, [string]$metadata.properties.defaultSchema, [string]$matches[0].name,
+			[string]$matches[0].type, [string]$matches[0].format, ([string]$matches[0].location).TrimEnd('/')) | ConvertTo-Json -Compress)
+	}
+}
+
+function script:Assert-PaxDeltaAppendNoRecoveryMarkers {
+	param([Parameter(Mandatory)][string]$TableParent,[string[]]$AllowedMarkerNames = @())
+	$root = script:Resolve-PaxOneLakeDeltaUri -TargetUri ($TableParent.TrimEnd('/') + '/__pax_append_probe')
+	$uri = [uri]$root
+	$item = ($uri.AbsolutePath.Trim('/') -split '/')[0]
+	$directory = $item + '/Files/.pax_delta_recovery'
+	$base = 'https://onelake.dfs.fabric.microsoft.com/' + $uri.UserInfo
+	$continuation = ''
+	do {
+		$listUri = $base + '?resource=filesystem&directory=' + [uri]::EscapeDataString($directory) + '&recursive=false&maxResults=200'
+		if ($continuation) { $listUri += '&continuation=' + [uri]::EscapeDataString($continuation) }
+		try { $response = Invoke-FabricWebRequest -Uri $listUri -Method GET -ExpectedPathNotFound }
+		catch {
+			if (-not $continuation -and $_.Exception.Data['PaxExpectedPathNotFound'] -eq $true) { return }
+			throw
+		}
+		$page = [string]$response.Content | ConvertFrom-Json -ErrorAction Stop
+		if ($null -eq $page.paths -or $page.paths -isnot [array]) { throw 'The Delta recovery-marker inventory is malformed.' }
+		foreach ($entry in $page.paths) {
+			if ([string]::IsNullOrWhiteSpace([string]$entry.name)) { throw 'The Delta recovery-marker inventory contains an unnamed item.' }
+			if ($script:PaxDatedDeltaRecoveryActive -and [string]$entry.name -cin @($AllowedMarkerNames | ForEach-Object { $directory + '/' + $_ })) { continue }
+			if ([string]$entry.name -match '(?i)pending|paxrecovery') { throw 'Existing Delta recovery intent blocks this NEW dated append. Preserve the checkpoint and markers; do not resume a failed seed or delete its evidence.' }
+		}
+		$continuation = [string]$response.Headers['x-ms-continuation']
+	} while ($continuation)
+}
+
+function script:Initialize-PaxDatedDeltaAppend {
+	param([Parameter(Mandatory)][string]$LocalBaseDirectory)
+	if ($script:PaxDatedDeltaAppend) { return }
+	$python = script:Resolve-PaxDeltaPythonExe -AllowAutoInstall
+	if (-not $python -or -not (Install-DeltalakeIfMissing -PythonExe $python.Path -LauncherArgs $python.Args)) { throw 'The verified Delta runtime is unavailable for retained append history.' }
+	$historyRoot = Join-Path $LocalBaseDirectory '.pax_dated_delta_history'
+	[void][IO.Directory]::CreateDirectory($historyRoot)
+	$context = [pscustomobject]@{ Root = $historyRoot; Python = $python; Tables = @{}; Roster = @{} }
+	$declarations = [Collections.Generic.List[object]]::new()
+	foreach ($dashboard in $script:PaxRequestedDashboards) {
+		foreach ($role in @('Fact','Users')) {
+			$type = if ($role -eq 'Fact') { 'Purview' } else { 'UserInfo' }
+			$name = $dashboard + $(if ($role -eq 'Fact') { '_CopilotInteractions' } else { '_Users' })
+			[void]$declarations.Add([pscustomobject]@{ TableName = $name; Dashboard = $dashboard; Role = $role; DataType = $type })
+		}
+	}
+	if ($RollupPlusRaw) {
+		[void]$declarations.Add([pscustomobject]@{ TableName = 'CopilotInteractions_Raw'; Dashboard = 'Shared'; Role = 'RawPurview'; DataType = 'Purview' })
+		[void]$declarations.Add([pscustomobject]@{ TableName = 'Entra_Users_Raw'; Dashboard = 'Shared'; Role = 'RawUsers'; DataType = 'UserInfo' })
+	}
+	if ($AppendAgent365Info) {
+		foreach ($name in @('Agent365','Agent365_Status')) { [void]$declarations.Add([pscustomobject]@{ TableName = $name; Dashboard = 'Shared'; Role = $name; DataType = 'Agent365Info' }) }
+	}
+	foreach ($parent in @($declarations | ForEach-Object { [string]$script:DestParentUrl[$_.DataType] } | Sort-Object -Unique)) {
+		script:Assert-PaxDeltaAppendNoRecoveryMarkers -TableParent $parent
+	}
+	foreach ($declaration in $declarations) {
+		$name = [string]$declaration.TableName
+		$url = ([string]$script:DestParentUrl[$declaration.DataType]).TrimEnd('/') + '/' + $name
+		$catalog = script:Get-PaxDeltaAppendCatalogProof -TableUrl $url
+		$member = [pscustomobject]@{ TargetUri = $catalog.TargetUri; TableName = $name }
+		$version = script:Invoke-PaxDeltaMemberOperation -Operation Inspect -Member $member -WorkDirectory $historyRoot -Python $python -BearerToken (Get-FabricStorageToken)
+		if (-not $version.Exists) { throw ("Existing append history is missing: {0}." -f $name) }
+		$exportPath = Join-Path $historyRoot ($name + '.csv')
+		$member | Add-Member -NotePropertyName ExpectedVersion -NotePropertyValue $version.TableVersion
+		$member | Add-Member -NotePropertyName ExpectedTableId -NotePropertyValue $version.TableId
+		$member | Add-Member -NotePropertyName ExportPath -NotePropertyValue $exportPath
+		$member | Add-Member -NotePropertyName LegacyColumnNames -NotePropertyValue @(script:Get-PaxDeltaAppendCanonicalColumns -TableName $name)
+		$proof = script:Invoke-PaxDeltaMemberOperation -Operation Export -Member $member -WorkDirectory $historyRoot -Python $python -BearerToken (Get-FabricStorageToken)
+		if (-not $proof.Exists -or -not (Test-Path -LiteralPath $exportPath -PathType Leaf) -or
+			(Get-FileHash -LiteralPath $exportPath).Hash -cne $proof.CsvSha256) { throw 'The version-pinned retained Delta history could not be verified.' }
+		$context.Tables[$name] = [pscustomobject]@{ TableUrl = $url; Catalog = $catalog; Proof = $proof; Path = $exportPath; Declaration = $declaration }
+	}
+	foreach ($dashboard in $script:PaxRequestedDashboards) {
+		$members = @{}
+		foreach ($role in @('Fact','Users','Agent365Info')) {
+			if ($role -eq 'Agent365Info' -and -not $AppendAgent365Info) { continue }
+			$name = switch ($role) { 'Fact' { $dashboard + '_CopilotInteractions' } 'Users' { $dashboard + '_Users' } default { 'Agent365' } }
+			$history = $context.Tables[$name]
+			$target = [pscustomobject]@{ Tier = 'Fabric'; Leaf = ($name + '.csv'); ExistingPath = $history.Path;
+				DestinationPath = (Join-Path (Join-Path $LocalBaseDirectory $dashboard) ($name + '.csv'));
+				RemoteParent = [string]$script:DestParentUrl[$history.Declaration.DataType] }
+			$measurement = script:Measure-PaxWatermarkCsvArtifact -Path $target.ExistingPath
+			if (-not $measurement.Valid -or $measurement.DataRowCount -le 0) { throw 'The retained Delta append history is empty or unreadable.' }
+			$required = switch ($role) { 'Fact' { @('UserKey','Message_Id_Raw','Message_Id','ThreadId_Raw') } 'Users' { @('UserKey','PersonId_Normalized','Has license','License Status','EffectiveDate') } default { @('Title ID') } }
+			foreach ($column in $required) { if ($measurement.Header -cnotcontains $column) { throw 'The retained Delta append business schema is incompatible.' } }
+			if ($role -eq 'Users') { [void](script:Assert-PaxUsersTemporalAppendShape -Path $target.ExistingPath -UserHistory $UserHistory) }
+			Assert-PaxDeidAppendConsistency -Targets @(@{ Path = [string]$target.ExistingPath; Label = "$dashboard $role" }) -IsRollup $true
+			$target | Add-Member -NotePropertyName OriginalMeasurement -NotePropertyValue $measurement
+			$members[$role] = $target
+		}
+		$integrity = Test-PaxUserKeyReferentialIntegrity -CandidateUsersCsv $members.Users.ExistingPath -CandidateFactCsv $members.Fact.ExistingPath -AllowTemporalUserKeys
+		if (-not $integrity.Passed) { throw 'The retained Delta Fact/Users pair failed temporal identity integrity; the complete set is withheld.' }
+		$context.Roster[$dashboard] = $members
+	}
+	$script:PaxDatedDeltaAppend = $context
+	$script:PaxDeltaTableSetPending = $true
+}
+
+function script:Assert-PaxDatedDeltaAppendFence {
+	if (-not $script:PaxDatedDeltaAppend) { return }
+	foreach ($history in $script:PaxDatedDeltaAppend.Tables.Values) {
+		$catalog = script:Get-PaxDeltaAppendCatalogProof -TableUrl $history.TableUrl
+		if ($catalog.TargetUri -cne $history.Catalog.TargetUri -or $catalog.Fingerprint -cne $history.Catalog.Fingerprint) { throw 'The retained append catalog or physical schema changed; the complete set is withheld.' }
+		if ((Get-FileHash -LiteralPath $history.Path).Hash -cne $history.Proof.CsvSha256) { throw 'A retained append history export changed during processing.' }
+	}
+	foreach ($parent in @($script:PaxDatedDeltaAppend.Tables.Values | ForEach-Object { [string]$script:DestParentUrl[$_.Declaration.DataType] } | Sort-Object -Unique)) {
+		script:Assert-PaxDeltaAppendNoRecoveryMarkers -TableParent $parent
+	}
+}
+
+function script:Complete-PaxDatedDeltaAppendMembers {
+	param([Parameter(Mandatory)][object[]]$Members, [Parameter(Mandatory)][string]$StageRoot)
+	if (-not $script:PaxDatedDeltaAppend) { return ,$Members }
+	$seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+	foreach ($member in $Members) {
+		$role = ([string]$member.Name -split ':',2)[-1]
+		$name = switch ($role) {
+			'Fact' { [string]$member.Dashboard + '_CopilotInteractions' }
+			'Users' { [string]$member.Dashboard + '_Users' }
+			'RawPurview' { 'CopilotInteractions_Raw' }
+			'RawUsers' { 'Entra_Users_Raw' }
+			'Agent365Info' { 'Agent365' }
+			'Agent365Status' { 'Agent365_Status' }
+			default { throw 'An undeclared producer cannot join the dated Delta append contract.' }
+		}
+		if (-not $script:PaxDatedDeltaAppend.Tables.ContainsKey($name)) { throw 'A required producer was not selected and verified as existing append history.' }
+		$history = $script:PaxDatedDeltaAppend.Tables[$name]
+		if ($role -in @('RawPurview','RawUsers','Agent365Status')) {
+			if ($script:PaxDatedDeltaQuarantinedPaths) { [void]$script:PaxDatedDeltaQuarantinedPaths.Add([IO.Path]::GetFullPath([string]$member.CandidatePath)) }
+			$merged = Join-Path $StageRoot ($name + '.paxcandidate')
+			$key = switch ($role) { 'RawPurview' { 'RecordId' } 'RawUsers' { 'userPrincipalName' } default { 'Title ID' } }
+			$null = Merge-FactCsv -TargetFactCsv $history.Path -CurrentFactCsv $member.CandidatePath -OutputPath $merged -KeyColumn $key
+			$member | Add-Member -NotePropertyName DatedAppendSourcePath -NotePropertyValue ([string]$member.CandidatePath)
+			$member.CandidatePath = $merged
+		}
+		$member | Add-Member -Force -NotePropertyName CanonicalTableName -NotePropertyValue $name
+		$member | Add-Member -Force -NotePropertyName WriteIntent -NotePropertyValue 'HistoryAppend'
+		[void]$seen.Add($name)
+	}
+	if ($seen.Count -ne $script:PaxDatedDeltaAppend.Tables.Count) { throw 'The dated Delta append set is incomplete; no member may be published.' }
+	script:Assert-PaxDatedDeltaAppendFence
+	$script:PaxDatedDeltaAppend | Add-Member -Force -NotePropertyName PublicationStageRoot -NotePropertyValue (Join-Path $StageRoot '.pax_delta')
+	$script:PaxDatedDeltaAppend | Add-Member -Force -NotePropertyName PublicationBinding -NotePropertyValue (script:Get-PaxDatedDeltaMemberBinding -Members $Members)
+	return ,$Members
+}
+
 function script:New-PaxDeltaProducerEntries {
 	param([Parameter(Mandatory)][object[]]$Members)
 	$entries = [Collections.Generic.List[object]]::new()
@@ -34323,14 +35166,30 @@ function script:New-PaxDeltaProducerEntries {
 			WriteIntent = $intent; ProtectRowCount = ($intent -eq 'HistoryAppend'); AuthoritativeProducer = $authority
 			Producer = [pscustomobject]@{ Name = $member.Name; Dashboard = $member.Dashboard; DataType = $dataType; CandidatePath = $source; DestinationPath = $member.DestinationPath; PublicationId = $member.PublicationId; ProtectionExpectation = $member.ProtectionExpectation }
 		})
+		if ($script:PaxDatedDeltaAppend) {
+			$history = $script:PaxDatedDeltaAppend.Tables[$tableName]
+			if (-not $history -or $history.Catalog.TargetUri -cne $target) { throw 'A dated Delta producer changed its verified append target.' }
+			$entries[$entries.Count - 1] | Add-Member -NotePropertyName HistoryMeasurement -NotePropertyValue $history.Proof.OriginalMeasurement
+		}
 	}
 	return , $entries.ToArray()
 }
 
 function script:Invoke-PaxProductionDeltaSet {
 	param([Parameter(Mandatory)][object[]]$Members, [Parameter(Mandatory)][string]$StageRoot)
+	if ($script:PaxDatedDeltaAppendRequested) {
+		if (-not $script:PaxDatedDeltaAppend -or $script:PaxDatedDeltaAppend.PublicationStarted -or
+			[IO.Path]::GetFullPath($StageRoot) -cne $script:PaxDatedDeltaAppend.PublicationStageRoot -or
+			(script:Get-PaxDatedDeltaMemberBinding -Members $Members) -cne $script:PaxDatedDeltaAppend.PublicationBinding) {
+			throw 'Dated Delta append permits only its once-selected, reconciled complete set. Residual/day-only publication is quarantined.'
+		}
+		$script:PaxDatedDeltaAppend | Add-Member -Force -NotePropertyName PublicationStarted -NotePropertyValue $true
+	}
 	try {
 	$entries = script:New-PaxDeltaProducerEntries -Members $Members
+	if ($script:PaxDatedDeltaAppendRequested -and @($entries.TargetUri | Sort-Object -Unique).Count -ne $script:PaxDatedDeltaAppend.Tables.Count) {
+		throw 'The dated Delta publication no longer contains every selected physical table.'
+	}
 	if ($entries.Count -eq 0) { return [pscustomobject]@{ Accepted = $true; Code = 'NoTableDestinations'; Entries = @() } }
 	$script:PaxDeltaTableSetPending = $true
 	foreach ($entry in $entries) {
@@ -34354,12 +35213,19 @@ function script:Invoke-PaxProductionDeltaSet {
 	if (-not $token) { throw 'The Delta storage token is unavailable; the complete set remains pending.' }
 	$result = script:Invoke-PaxDeltaTableSetPublication -Entries $entries -StageRoot $StageRoot -Python $python -BearerToken $token -ProducerMembers $Members
 	if (-not $result.Accepted) { throw 'The complete Delta set was not accepted.' }
+	if ($script:PaxDatedDeltaAppendRequested) {
+		$acceptedState = $script:PaxCompleteSetPublicationStates[(Join-Path $StageRoot '.pax_delta_set_state.json')]
+		if (-not $acceptedState -or $acceptedState.Status -cne 'Accepted' -or
+			$acceptedState.IntentHash -cne (script:Get-PaxDeltaIntentHash -State $acceptedState)) { throw 'The dated Delta accepted result is not bound to its exact frozen set.' }
+		$script:PaxDatedDeltaAcceptedSet = [pscustomobject]@{ SetId=$acceptedState.SetId; IntentHash=$acceptedState.IntentHash }
+	}
 	foreach ($target in @($entries.TargetUri | Sort-Object -Unique)) {
 		Write-LogHost ("  -> Delta table published: {0}" -f $target) -ForegroundColor DarkGray
 	}
 	if (-not $script:PaxDeltaPublishedSourcePaths) { $script:PaxDeltaPublishedSourcePaths = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase) }
 	foreach ($member in $Members) {
 		[void]$script:PaxDeltaPublishedSourcePaths.Add([IO.Path]::GetFullPath($member.CandidatePath))
+		if ($member.PSObject.Properties['DatedAppendSourcePath']) { [void]$script:PaxDeltaPublishedSourcePaths.Add([IO.Path]::GetFullPath($member.DatedAppendSourcePath)) }
 		if ($member.DestinationPath) {
 			[void][IO.Directory]::CreateDirectory((Split-Path $member.DestinationPath -Parent))
 			Copy-Item -LiteralPath $member.CandidatePath -Destination $member.DestinationPath -Force -ErrorAction Stop
@@ -34390,6 +35256,9 @@ function script:Resolve-PaxProductionDeltaRecovery {
 	$statePath = [string]$script:CheckpointData.deltaTableSet.statePath
 	if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) { throw 'The checkpoint Delta set is missing; recovery cannot replay mutable outputs.' }
 	$state = [IO.File]::ReadAllText($statePath) | ConvertFrom-Json -ErrorAction Stop
+	if (@($state.Members | Where-Object { $_.PSObject.Properties['HistoryMeasurement'] }).Count -gt 0 -and -not $script:PaxDatedDeltaAppend) {
+		throw 'Ordinary Resume cannot replay dated Delta append. Select -ResumePublishOnly -Resume <explicit local checkpoint>, optionally -DeltaAppendRecoveryAction Restore; preserve the frozen complete set and markers.'
+	}
 	if ($state.RunTimestamp -cne [string]$global:ScriptRunTimestamp -or $state.Kind -cne 'DeltaTables' -or $state.IntentHash -cne (script:Get-PaxDeltaIntentHash -State $state)) { throw 'The checkpoint Delta set failed identity verification.' }
 	$entries = @($state.RosterText | ConvertFrom-Json -ErrorAction Stop)
 	$python = Resolve-PaxDeltaPythonExe -AllowAutoInstall
@@ -34479,6 +35348,7 @@ function Convert-CsvToDelta {
 		[Parameter(Mandatory)] [string]   $PythonExe,
 		[Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $LauncherArgs
 	)
+	if ($script:PaxDatedDeltaResidualPublicationBlocked) { throw 'Individual Delta conversion is quarantined for dated append; only its frozen complete-set publisher may write Tables.' }
 	if (-not (Test-Path -LiteralPath $InputCsv -PathType Leaf)) {
 		Write-LogHost (script:Format-PaxOneLakeFailure -Cause "Convert-CsvToDelta: input CSV not found: '$InputCsv'") -ForegroundColor Red
 		return $false
@@ -37704,6 +38574,11 @@ function Invoke-OutputUpload {
 		# -OutputPathUserInfo / -OutputPathAgent365Info / -OutputPathLog routing.
 		[string] $ParentOverride
 	)
+	if ($script:PaxDatedDeltaResidualPublicationBlocked -and
+		([IO.Path]::GetExtension($LocalPath) -in @('.csv','.paxcandidate') -or
+			($script:PaxDatedDeltaQuarantinedPaths -and $script:PaxDatedDeltaQuarantinedPaths.Contains([IO.Path]::GetFullPath($LocalPath))))) {
+		throw 'Dated Delta append CSVs are quarantined from individual uploads; only the frozen complete-set publisher may publish them.'
+	}
 	if ($script:PaxDeidEnabled) {
 		$expectedUsers = script:Get-PaxUsersProtectionExpectation -Path $LocalPath
 		if ($null -ne $expectedUsers) {
@@ -40066,6 +40941,11 @@ function script:Get-PaxMultiDashboardCatchupGuidance {
 function script:Assert-PaxMultiDashboardCatchup {
 	param([string]$AppendTarget, [string]$LocalBaseDirectory)
 	if (-not $script:PaxMultiDashboardEnabled -or [string]::IsNullOrWhiteSpace($AppendTarget)) { return }
+	if (($AppendTarget -match '^https://[^/]*onelake\.dfs\.fabric\.microsoft\.com/.+/Tables/') -and -not $script:PaxDatedDeltaAppendRequested) { throw 'Tables append requires a NEW explicit-date run; an older checkpoint cannot authorize this contract.' }
+	if ($script:PaxDatedDeltaAppendRequested) {
+		script:Initialize-PaxDatedDeltaAppend -LocalBaseDirectory $LocalBaseDirectory
+		return
+	}
 	$observations = @(foreach ($name in $script:PaxRequestedDashboards) {
 		$leaves = @(script:Get-PaxMultiDashboardHistoryLeaves -DashboardName $name -DataType Purview -AppendTarget $AppendTarget -LocalBaseDirectory $LocalBaseDirectory -Inspect)
 		script:Get-PaxMultiDashboardAppendFamily -DashboardName $name -DataType Purview -SelectorLeaf ([IO.Path]::GetFileName($AppendTarget)) -AvailableLeaves $leaves -Inspect
@@ -60557,6 +61437,11 @@ $script:AzAuthState = @{
 	RefreshCount       = 0
 	AuthMethod         = $null   # 'ManagedIdentity' | 'AppRegistration' | 'Interactive'
 }
+if ($script:PaxDatedDeltaAppendRequested) {
+	# Pin the actual MI principal through the normal isolated bootstrap before collection.
+	$null = Get-FabricStorageToken
+	$null = script:Assert-PaxDatedDeltaAuthProfile -RequireBound
+}
 
 # Checkpoint/Resume state for long-running operations
 $script:CheckpointPath = $null              # Path to checkpoint JSON file
@@ -73094,6 +73979,10 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 	}
 	function script:New-PaxMultiDashboardAppendRoster {
 		param([object[]]$Plan, [hashtable]$Selectors, [hashtable]$BaseDirectories, [string]$StageRoot, [string]$UserHistory)
+		if ($script:PaxDatedDeltaAppendRequested) {
+			if (-not $script:PaxDatedDeltaAppend) { throw 'The complete dated Delta history set was not verified before collection.' }
+			return $script:PaxDatedDeltaAppend.Roster
+		}
 		$roster = @{}
 		$destinations = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 		foreach ($pass in $Plan) {
@@ -73280,6 +74169,11 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 			$script:RollupEntraLocalPath
 		} else {
 			Join-Path $multiBaseOutputDir (& $script:GetRollupRawEntraBasename)
+		}
+		if ($script:PaxDatedDeltaAppendRequested) {
+			foreach ($path in @($multiPurviewCsv,$multiEntraCsv,$agentResult.CsvPath,$agentResult.StatusPath) | Where-Object { $_ }) {
+				[void]$script:PaxDatedDeltaQuarantinedPaths.Add([IO.Path]::GetFullPath([string]$path))
+			}
 		}
 		$multiUserPaths = script:Resolve-DataTypePaths -DataType 'UserInfo' -DefaultBasename (& $script:GetEffectiveEntraBasename)
 		$multiUserBaseDir = if ($multiUserPaths -and $multiUserPaths.Tier -eq 'Local' -and $multiUserPaths.EffectiveDir) { [string]$multiUserPaths.EffectiveDir } else { $multiBaseOutputDir }
@@ -73701,6 +74595,11 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 						if (-not ($multiPlan.Name -contains 'M365')) { [void]$multiDeltaMembers.Add([pscustomobject]@{ Name = 'Shared:RawUsers'; Dashboard = $script:PaxPrimaryDashboard; DataType = 'UserInfo'; CandidatePath = $multiEntraCsv; LogicalStem = 'Entra_Users_Raw'; AuthoritativeProducer = $true }) }
 					}
 					if ($agentResult -and $agentResult.StatusPath) { [void]$multiDeltaMembers.Add([pscustomobject]@{ Name = 'Shared:Agent365Status'; Dashboard = $script:PaxPrimaryDashboard; DataType = 'Agent365Info'; CandidatePath = $agentResult.StatusPath; LogicalStem = 'Agent365_Status'; AuthoritativeProducer = $true }) }
+					if ($script:PaxDatedDeltaAppendRequested) {
+						$multiDatedMembers = script:Complete-PaxDatedDeltaAppendMembers -Members $multiDeltaMembers.ToArray() -StageRoot $multiStageRoot
+						$multiDeltaMembers.Clear()
+						foreach ($multiDatedMember in $multiDatedMembers) { [void]$multiDeltaMembers.Add($multiDatedMember) }
+					}
 					$multiDeltaResult = script:Invoke-PaxProductionDeltaSet -Members $multiDeltaMembers.ToArray() -StageRoot (Join-Path $multiStageRoot '.pax_delta')
 					if ($script:PurviewSourceState -eq 'ByodActive' -and $RollupPlusRaw) { [void]$script:PaxDeltaPublishedSourcePaths.Add([IO.Path]::GetFullPath($OutputFile)) }
 				}
@@ -76335,6 +77234,8 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 				}
 				$remainingDeltaMembers = [Collections.Generic.List[object]]::new()
 				foreach ($uploadFile in $uploadCandidates) {
+					if ($script:PaxDatedDeltaResidualPublicationBlocked -and
+						($uploadFile.Extension -ieq '.csv' -or ($script:PaxDatedDeltaQuarantinedPaths -and $script:PaxDatedDeltaQuarantinedPaths.Contains([IO.Path]::GetFullPath($uploadFile.FullName))))) { continue }
 					if ($script:PaxDeltaPublishedSourcePaths -and $script:PaxDeltaPublishedSourcePaths.Contains([IO.Path]::GetFullPath($uploadFile.FullName))) { continue }
 					if ($script:PaxDeltaFailedSourcePaths -and $script:PaxDeltaFailedSourcePaths.Contains([IO.Path]::GetFullPath($uploadFile.FullName))) { continue }
 					if ($script:PaxMultiAppendOwnsPublication -and $script:PaxMultiAppendOwnedPaths -and $script:PaxMultiAppendOwnedPaths.Contains([IO.Path]::GetFullPath($uploadFile.FullName))) { continue }
@@ -76458,6 +77359,7 @@ Write-Output "[403-MAX] Partition $idx/$tot - Max transient 403 poll retries exc
 					}
 				}
 				if ($remainingDeltaMembers.Count -gt 0) {
+					if ($script:PaxDatedDeltaResidualPublicationBlocked) { throw 'Residual Delta publication is forbidden for dated append, whether its complete set succeeded or failed.' }
 					$remainingDeltaResult = script:Invoke-PaxProductionDeltaSet -Members $remainingDeltaMembers.ToArray() -StageRoot (Join-Path $uploadDir ('.pax_delta_outputs_' + $global:ScriptRunTimestamp))
 					if (-not $remainingDeltaResult.Accepted) { throw 'The remaining declared output set was not accepted.' }
 				}
