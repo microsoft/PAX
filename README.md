@@ -1,30 +1,38 @@
-﻿<div align="center">
+﻿<a id="before-you-run-it"></a>
 
-# PAX — Prerelease Preview
+## Please read before you run it
 
-**Portable Audit eXporter (PAX) · Purview Audit Log Processor**
+> [!IMPORTANT]
+> **This is a preview, not a production-qualified build.** Validation includes targeted synthetic and native local coverage and limited live AIO/ValueLens SharePoint and Fabric run reviews, not complete end-to-end qualification across supported modes and destinations.
 
-**v2.0.0 prerelease 20261110-16**
-
-**Preview build — not a production release.**
-
-[Download](#download) · [Before you run it](#before-you-run-it) · [What's changed](#whats-changed) · [Upgrade checklist](#upgrade-checklist) · [Known limits](#good-to-know) · [Report a problem](#report-a-problem)
-
-</div>
-
----
-
-## What this branch is
-
-This branch holds **early preview builds** of the PAX Purview Audit Log Processor — versions published ahead of general release so that real-world feedback can shape them *before* they ship to everyone. Anyone who finds this branch is welcome to use what's here; it simply isn't advertised alongside the released version.
+This branch holds **early preview builds** of the PAX Purview Audit Log Processor, published ahead of general release so that real-world feedback can shape them before they ship to everyone. Anyone who finds this branch is welcome to use what's here; it simply isn't advertised alongside the released version.
 
 A prerelease build is **not** the released product. The current released version always lives on the [`release`](https://github.com/microsoft/PAX/tree/release) branch, and that is what you should use for anything you depend on day to day.
+
+- **Check the results against your own tenant** before relying on them, sharing them, or publishing them to a dashboard. Confirm row counts, dates and included people.
+- **Keep a copy of anything important.** Use a new output folder or destination rather than the files your reporting depends on.
+- **Preserve recovery material.** Resume needs the checkpoint and its matching saved data. Missing, changed, contradictory or unverifiable completion evidence stops the run; do not edit a checkpoint to make it pass.
+- **Recovery is not de-identified output.** With `-Deidentify`, preserve the checkpoint's owner-only local recovery directory alongside its saved data. Recovery stops if private permissions cannot be enforced. Fabric's existing resume mirror contains identified recovery data too; local private permissions do not establish remote access protection.
+- **Treat pending restoration as potentially changed data.** A failure after replacement begins can leave a partially updated destination. Preserve the checkpoint, candidates, originals and recovery markers. An unrelated fresh run does not depend on finishing an older checkpoint; an older resume cannot overwrite newer unrelated destination changes.
+- **Choose append to retain activity history.** A non-append Delta run publishes the requested snapshot, not a union with the existing table, and a valid snapshot may contain fewer rows.
+- **Keep preview outputs separate from production.** Behavior and file names may change before release. Do not assume checkpoints or histories can be opened by another version.
+- **Preview builds are tagged as pre-release, never as the latest release**, and are not linked from the main README.
 
 ---
 
 <a id="download"></a>
 
 ## Download
+
+**PAX Prerelease Preview**
+
+**Portable Audit eXporter (PAX) · Purview Audit Log Processor**
+
+**v2.0.0 prerelease 20261110-16**
+
+**Preview build, not a production release.**
+
+[Download](#download) · [Before you run it](#before-you-run-it) · [What's changed](#whats-changed) · [Upgrade checklist](#upgrade-checklist) · [Known limits](#good-to-know) · [Report a problem](#report-a-problem)
 
 <table>
 <tr>
@@ -44,84 +52,6 @@ A prerelease build is **not** the released product. The current released version
 
 The previous script, [prerelease 15](prerelease_archive/PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261105-15.ps1), is retained unchanged in `prerelease_archive`. It is the only archived script on this branch.
 
-<details>
-<summary><strong>Updates in this preview</strong></summary>
-
-- **Larger AIO and ValueLens CSV fields:** PR16 configures the shared processor's CSV field limit before reading directory, licensing, history or audit inputs. This prevents Python's default 131,072-character limit from stopping either dashboard on larger fields. Fast and disk-backed processing use the same 134,217,728-character per-field limit, including de-identification verification. No new switch or dependency is required; existing logical-record byte guards, parsing rules and reject accounting are unchanged.
-- **Scoped explicit-date Delta append:** PR15 adds a history-to-CSV bridge for existing AIO and ValueLens Delta tables together with `-UserHistory On`. It reads version-pinned complete histories, restores their known canonical headers and uses the existing history/key reconciliation before verified full-set publication. It does not enable Tables Watermark, blind row append, automatic historical license reconstruction or a general checkpoint migration.
-- **Frozen-set append recovery:** interrupted PR15 dated appends can complete their original frozen set or restore verified originals through the original local checkpoint. Recovery reacquires the original managed identity, verifies ownership and refuses foreign changes. Before the first canonical table write, PAX prints and logs fully quoted Complete/Restore commands with the actual script and checkpoint paths.
-- **SharePoint paths with spaces are addressed correctly:** supplied-file downloads and multi-dashboard publication/readback decode resolved folder URL segments once before the Graph metadata path is encoded. Encoded CSV filenames are also decoded once for staging. The existing resolver/cache representation and recovery identities remain unchanged. Missing-file diagnostics name the metadata URI actually used, rather than a separately constructed content URL. Genuine missing files, access failures, mismatched identities, changed versions and unverified downloads still stop the run; no permissions, security or readback checks are bypassed. Existing saved exports can be reused without another collection; processing and append must still complete.
-- **Recovery target checks use Windows HTTPS validation:** the recovery-only target-presence probe now uses normal Windows/.NET certificate and hostname validation instead of a separate Python/OpenSSL certificate policy. Only an authoritative `404 PathNotFound` establishes absence; existing non-Delta targets, permission failures, redirects and unverifiable responses remain blocked. Completed per-source/profile receipt validators are unchanged; current source locks, hashes and matching bindings are still required. Safe refusal codes retain the HTTP status when available. This correction does not require discarding retained inputs or recovery state, and does not establish completed customer recovery.
-- **Newer installed recovery dependencies are accepted:** pyarrow 25.0.1 and deltalake 1.6.3 are minimum stable versions, not exact-version pins. Both publication-only prerequisite checks accept newer stable releases without installing, upgrading or downgrading packages. This does not claim that every future package combination has been qualified.
-- **Recover directly from the original checkpoint:** `-ResumePublishOnly -Resume <original-checkpoint-path>` builds its own recovery plan from supported retained files, current managed identity and read-only destination observations. No hand-built manifest, manually supplied hashes/counts or separate preparation helper is required. Existing destination snapshots need explicit `-ApproveExistingSnapshot` after reviewing the displayed plan; unrelated or changed targets remain protected.
-- **Finish eligible Fabric publications without starting over:** publication-only recovery reuses completed AIO/ValueLens outputs, raw exports, augmented Users and Agent 365 snapshots. It does not collect audit data, refresh directory/catalog data or repeat dashboard rollups. Ordinary Resume is unchanged; `-PublishRecoveryManifest` remains optional advanced input.
-- **Multiline and large CSV values:** both CSV-to-Delta conversion paths use strict logical-record-aware reading, preserving quoted line breaks, Unicode, empty strings and literal values. Malformed quoting, inconsistent row widths and values beyond the qualified bounds are refused, not silently skipped or altered.
-- **Recovery without full CSV duplication or duplicate verification:** publication-only recovery locks retained sources in place and verifies current hashes, schemas, logical counts, temporal UserKeys and destination state. A successful full source proof is reused only after matching source locks, current hashes and its checkpoint/plan/validator bindings are established. Scratch and reserve budgets derive from free space, with optional explicit limits; Parquet and proof working space is still required.
-- **Bounded, resumable large local verification:** new automatic recovery plans allow **24 hours per local unit**, rather than one hour for an opaque ten-file job. `-RecoveryOperationSeconds` can set **60–604800 seconds (7 days)** before the plan is saved. Measurement and strict CSV proofs persist completed per-source receipts; temporal/license/UserKey RI persists completed per-profile receipts. Reuse requires current read locks, SHA256 hashes and matching checkpoint/run/path/role/validator/contracts, not file dates or unfinished SQLite. Interrupted or unreferenced work can still require repetition. Local Parquet preparation and snapshot verification use the same finite local limit; verified snapshots remain read-locked through their remote operation. Phase/role/member start, minute heartbeat and deadline messages contain no row values or credentials.
-- **Saved budgets and remote safeguards remain authoritative:** finalized plans keep their recorded capacity and runtime, including older one-hour plans; neither their hashes nor their limits are silently rewritten. An owned interrupted initial plan without finalized expectations can safely restart and reuse completed matching units. Lightweight prerequisite/envelope checks remain bounded to **120 seconds**. Remote observe/write/restore work remains limited to the lesser of the saved limit, **3600 seconds** and token lifetime minus **300 seconds**, refusing less than **60 seconds** of safe lifetime. Scratch/reserve checks include retained plan receipts and unfinished artifacts throughout recovery. These changes do not establish customer-scale performance or live managed-identity qualification.
-- **Fail-fast worker prerequisites:** before retained-file verification, recovery checks the executing Windows/x64 PowerShell host, actual 64-bit Python/package imports, and supported Az.Accounts discovery/import in a fresh process using that same host and account. Selected versions and paths are reported. This preflight does not sign in, acquire tokens, install packages or establish managed-identity/Fabric access; authentication still follows retained-source proof.
-- **Protocol-correct Fabric recovery markers:** marker append no longer sends conditional headers unsupported by the DFS API. Creation, flush, readback and deletion retain the required ownership and version checks.
-
-These targeted recovery and conversion changes are not a general checkpoint migration. Publication-only recovery requires a supported retained run; PAX generates and preserves its matching plan. Preserve the original files and never edit a checkpoint to force compatibility.
-
-</details>
-
-### Explicit-date Delta append and recovery
-
-The new path requires `-Auth ManagedIdentity`, `-Dashboard AIO,ValueLens`, `-Rollup` or `-RollupPlusRaw`, `-UserHistory On`, and both `-StartDate` and `-EndDate`. Its new fresh/recovery contract is limited to system-assigned or user-assigned managed identity so that a cold worker can recover using the same frozen identity without persisting credentials. Other sign-in methods remain available in their existing PR14 modes; this is not a script-wide managed-identity restriction.
-
-For user-assigned identity, set `AZURE_CLIENT_ID` to the intended client ID before the original run. PAX binds the selected identity's tenant, principal and client ID before collection. Recovery bootstraps that frozen identity; it does not depend on a cached Az sign-in or accept a replacement identity supplied at recovery time.
-
-Dates are UTC, start inclusive and end exclusive. For example, October 1 through October 2 collects October 1 UTC only. These dates limit new collection, not the amount of retained history that must be read, reconciled, snapshotted and verified.
-
-Use the existing canonical Tables selectors with `-AppendFile` and `-AppendUserInfo`. The selected lakehouse/schema must already contain `AIO_CopilotInteractions`, `AIO_Users`, `ValueLens_CopilotInteractions` and `ValueLens_Users`. Use the actual verified physical schema, not an assumed `dbo`. The script checks fresh catalog metadata and exact physical locations; missing, ambiguous or differently bound tables are refused rather than created.
-
-The executing identity needs Fabric lakehouse/table-catalog read access and OneLake history read/write access, in addition to the selected collection permissions. A successful storage-only operation does not establish access to the Fabric catalog APIs. Existing recovery markers are inspected; do not delete them to force admission.
-
-`-RollupPlusRaw` additionally requires existing `CopilotInteractions_Raw` and `Entra_Users_Raw` tables. Selecting `-AppendAgent365Info` additionally requires both existing `Agent365` and `Agent365_Status`. Only the complete selected output set can be accepted. A local CSV baseline and a separate Tables output are not a supported switch combination.
-
-Tables `-Watermark`, ordinary new-path `-Resume`, de-identification and additional dashboards are not admitted by this scoped bridge. Existing PR14 modes retain their prior entry points. Publication is sequential, not a cross-table atomic transaction. A failure can leave retained recovery material or partially changed tables: preserve the entire run and its markers; do not delete state, resume an unrelated failed seed, or force a fresh retry over unresolved changes.
-
-PR15 includes a separate selected frozen-set recovery route for its own typed dated-append checkpoint. It uses the original local checkpoint and original absolute staging paths, with no collection, directory/catalog refresh for data generation, dashboard rollup or candidate regeneration. It does read current catalog metadata and table state to verify ownership.
-
-**Use the exact recovery command printed in the original run's console and log.** PAX emits both commands only after the checkpoint and Publishing journal have been durably saved and verified, before the first canonical table write. Preserve that log together with the original checkpoint, frozen artifacts and markers. The examples below show the syntax only; replace the script and checkpoint paths with the actual local paths from that run.
-
-To complete that selected frozen set:
-
-```powershell
-& 'C:\PAX\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261105-15.ps1' -ResumePublishOnly -Resume 'C:\PAX\<original-run>\.pax_checkpoint_<run>.json' -DeltaAppendRecoveryAction Complete
-```
-
-To restore its verified originals instead:
-
-```powershell
-& 'C:\PAX\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261105-15.ps1' -ResumePublishOnly -Resume 'C:\PAX\<original-run>\.pax_checkpoint_<run>.json' -DeltaAppendRecoveryAction Restore
-```
-
-`Complete` is the default action and is refused once restoration has begun. `Restore` is for an interrupted, unaccepted set, never an accepted publication. This route does not adopt an old failed seed, an arbitrary append checkpoint, relocated files, a remote-mirror checkpoint or a hand-authored seed recovery manifest. It verifies frozen roster, intent, artifact hashes, catalog, table identities, versions and marker ownership before any recovery write. Foreign changes and missing or contradictory evidence remain refusals.
-
-**PR15 validation status:** 36 offline controller, real process-exit, ownership/refusal and recovery-command cases passed on the reviewed PR15 candidate. PR16 retains that executable recovery code unchanged. This is not live managed-identity/Fabric end-to-end or customer-scale qualification.
-
-**Start with a controlled manual trial.** Protect existing reporting data with a verified backup or isolated validation destination, confirm the selected tables and any previous recovery state are consistent, and keep unattended scheduling paused until the result is reviewed. Check all selected physical tables, row counts, retained keys and date coverage; a wrapper's green status is not proof of accepted publication. A short collection window can still require reading and verifying the complete retained history.
-
----
-
-<a id="before-you-run-it"></a>
-
-## Please read before you run it
-
-> [!IMPORTANT]
-> **This is a preview, not a production-qualified build.** Validation includes targeted synthetic and native local coverage and limited live AIO/ValueLens SharePoint and Fabric run reviews, not complete end-to-end qualification across supported modes and destinations.
-
-- **Check the results against your own tenant** before relying on them, sharing them, or publishing them to a dashboard. Confirm row counts, dates and included people.
-- **Keep a copy of anything important.** Use a new output folder or destination rather than the files your reporting depends on.
-- **Preserve recovery material.** Resume needs the checkpoint and its matching saved data. Missing, changed, contradictory or unverifiable completion evidence stops the run; do not edit a checkpoint to make it pass.
-- **Recovery is not de-identified output.** With `-Deidentify`, preserve the checkpoint's owner-only local recovery directory alongside its saved data. Recovery stops if private permissions cannot be enforced. Fabric's existing resume mirror contains identified recovery data too; local private permissions do not establish remote access protection.
-- **Treat pending restoration as potentially changed data.** A failure after replacement begins can leave a partially updated destination. Preserve the checkpoint, candidates, originals and recovery markers. An unrelated fresh run does not depend on finishing an older checkpoint; an older resume cannot overwrite newer unrelated destination changes.
-- **Choose append to retain activity history.** A non-append Delta run publishes the requested snapshot, not a union with the existing table, and a valid snapshot may contain fewer rows.
-- **Keep preview outputs separate from production.** Behavior and file names may change before release. Do not assume checkpoints or histories can be opened by another version.
-- **Preview builds are tagged as pre-release, never as the latest release**, and are not linked from the main README.
-
 ---
 
 <a id="whats-changed"></a>
@@ -133,6 +63,8 @@ These are the net changes from the current production release to this **v2.0.0 p
 ### Highlights
 
 - **Process larger AIO and ValueLens fields.** The rollup CSV reader initializes its supported field limit before every input stage instead of relying on Python's smaller default.
+- **Append to existing Delta histories.** The scoped AIO/ValueLens explicit-date bridge reads version-pinned history, preserves known headers and reconciles keys before complete-set publication with `-UserHistory On`.
+- **Recover a frozen dated append.** Eligible interrupted sets can complete or restore verified originals using their own checkpoint and original managed identity, with foreign changes refused.
 - **Recover completed Fabric work.** Eligible publication-only recovery finishes saving retained outputs without another audit pull, directory/catalog refresh or dashboard rollup.
 - **Handle difficult CSV text.** Fabric conversion preserves quoted multiline and large values within explicit qualified bounds, with strict structural checks.
 - **Several dashboards from one collection.** `-Dashboard AIO,M365,ValueLens,CoworkAdoption` produces every requested data set from one collection, including the new **Cowork Adoption** inputs, and append works across those histories.
@@ -209,6 +141,10 @@ Keep the original checkpoint, retained CSVs and recovery directories in place. D
 <details>
 <summary><strong>Speed and visible progress</strong></summary>
 
+**Bounded, resumable large local verification.** New automatic recovery plans allow **24 hours per local unit**, rather than one hour for an opaque ten-file job. `-RecoveryOperationSeconds` can set **60-604800 seconds (7 days)** before the plan is saved. Measurement and strict CSV proofs persist completed per-source receipts; temporal/license/UserKey referential-integrity checks persist completed per-profile receipts. Reuse requires current read locks, SHA256 hashes and matching checkpoint/run/path/role/validator/contracts, not file dates or unfinished SQLite. Interrupted or unreferenced work can still require repetition. Local Parquet preparation and snapshot verification use the same finite local limit; verified snapshots remain read-locked through their remote operation. Phase/role/member start, minute heartbeat and deadline messages contain no row values or credentials.
+
+**Saved budgets and remote safeguards remain authoritative.** Finalized plans keep their recorded capacity and runtime, including older one-hour plans; neither their hashes nor their limits are silently rewritten. An owned interrupted initial plan without finalized expectations can safely restart and reuse completed matching units. Lightweight prerequisite/envelope checks remain bounded to **120 seconds**. Remote observe/write/restore work remains limited to the lesser of the saved limit, **3600 seconds** and token lifetime minus **300 seconds**, refusing less than **60 seconds** of safe lifetime. Scratch/reserve checks include retained plan receipts and unfinished artifacts throughout recovery. These changes do not establish customer-scale performance or live managed-identity qualification.
+
 **Reuse completed CSVs instead of cloning datasets.** Publication-only recovery holds read-only locks on the original retained files and uses independently owned Parquet/proof working directories. It avoids the complete CSV staging and producer-replay copies, including during accepted replay. A successful full source proof is cached with its checkpoint, source, plan and validator bindings and reused only after the retained sources are locked and their current hashes match; changed receipts or inputs are refused. Strict checks still read the saved data; this is not an instantaneous upload or a zero-scratch operation. Scratch/reserve budgets derive from free space unless explicitly set, and runtime/token limits remain bounded. Invalid initial budgets leave no unowned plan artifacts that would obstruct a corrected retry.
 
 **Memory-aware rollup.** Jobs that fit the estimated budget use the in-memory Copilot rollup; larger jobs use disk-backed processing with the same output contract. The log identifies the path and budget. This bounds working buffers, not all process memory.
@@ -226,9 +162,9 @@ Keep the original checkpoint, retained CSVs and recovery directories in place. D
 <details>
 <summary><strong>Protecting existing data</strong></summary>
 
-**Consistent large-field handling for AIO and ValueLens.** The shared dashboard processor's CSV reader uses a 134,217,728-character per-field limit in both fast and disk-backed modes. The limit is established before directory, licensing, retained-history and audit reads, and the processed-Users verifier no longer changes it to an effectively unlimited value. Quoted multiline fields and Unicode are preserved without truncation or field-limit workarounds that skip rows. This correction does not change existing logical-record UTF-8 byte guards or ordinary parsing/reject behavior. It does not complete an earlier failed dashboard run automatically: preserve retained exports and history, and do not treat publication-only recovery as a way to regenerate missing rollups.
+**Consistent large-field handling for AIO and ValueLens.** PR16 configures the shared processor's CSV field limit before reading directory, licensing, retained-history or audit inputs, preventing Python's default 131,072-character limit from stopping either dashboard on larger fields. Fast and disk-backed processing use the same 134,217,728-character per-field limit, including processed-Users de-identification verification; the verifier no longer changes it to an effectively unlimited value. Quoted multiline fields and Unicode are preserved without truncation or field-limit workarounds that skip rows. No new switch or dependency is required. This correction does not change existing logical-record UTF-8 byte guards or ordinary parsing/reject behavior. It does not complete an earlier failed dashboard run automatically: preserve retained exports and history, and do not treat publication-only recovery as a way to regenerate missing rollups.
 
-**Retained sources and complete recovery intent stay fixed.** Publication-only recovery keeps the original checkpoint and CSVs unchanged, binds its generated or explicitly supplied plan and full eight-table roster to an owned journal and verifies source hashes across the operation. It retains temporal UserKeys, licensing observations and augmented Users rather than rebuilding them. Read-only target observations are frozen before approval; version/content fences refuse subsequent unrelated destination changes. Accepted replay verifies the stored result without another table commit; interrupted publication retains the existing restoration and potentially-modified-state safeguards. No missing member, malformed record or unknown source is silently substituted.
+**Retained sources and complete recovery intent stay fixed.** Publication-only recovery keeps the original checkpoint and CSVs unchanged, binds its generated or explicitly supplied plan and full eight-table roster to an owned journal and verifies current hashes, schemas, logical counts, temporal UserKeys and destination state. It retains licensing observations and augmented Users rather than rebuilding them. Read-only target observations are frozen before approval; version/content fences refuse subsequent unrelated destination changes. Accepted replay verifies the stored result without another table commit; interrupted publication retains the existing restoration and potentially-modified-state safeguards. No missing member, malformed record or unknown source is silently substituted.
 
 **Independent processed Users checks.** Verification follows the producer's Unicode normalization and existing de-identification tokens without changing salts, schemas, history keys or analytical rules. A failed isolation attempt is reported as a failure. The protection digest remains a logical-consistency check, not proof of authenticity.
 
@@ -251,7 +187,11 @@ Keep the original checkpoint, retained CSVs and recovery directories in place. D
 <details>
 <summary><strong>Collection, resume and run results</strong></summary>
 
+**Fail-fast worker prerequisites.** Before retained-file verification, recovery checks the executing Windows/x64 PowerShell host, actual 64-bit Python/package imports, and supported Az.Accounts discovery/import in a fresh process using that same host and account. Selected versions and paths are reported. This preflight does not sign in, acquire tokens, install packages or establish managed-identity/Fabric access; authentication still follows retained-source proof.
+
 **A separate no-collection recovery route.** Publication-only recovery is dispatched before ordinary sign-in, dependency installation, shard hydration, collection and processing. Its narrow supported contract is a non-append, non-watermark, non-deidentified initial AIO + ValueLens `-RollupPlusRaw` snapshot with retained UserHistory On inputs and managed-identity Fabric Tables output. Automatic planning verifies the original source contract before deriving file proofs, discovers the current storage identity through isolated managed-identity authentication and observes the eight destinations read-only. No directory, group or catalog query supplies recovery data. A missing or unsuitable saved set refuses explicitly; it never becomes a fresh export or a request to approve data loss. It does not turn every older checkpoint into a compatible resume.
+
+**Recover directly from the original checkpoint.** `-ResumePublishOnly -Resume <original-checkpoint-path>` builds its own recovery plan from supported retained files, current managed identity and read-only destination observations. No hand-built manifest, manually supplied hashes/counts or separate preparation helper is required. Existing destination snapshots need explicit `-ApproveExistingSnapshot` after reviewing the displayed plan; unrelated or changed targets remain protected. Eligible Fabric publications reuse completed AIO/ValueLens outputs, raw exports, augmented Users and Agent 365 snapshots without collecting audit data, refreshing directory/catalog data or repeating dashboard rollups. Ordinary Resume is unchanged; `-PublishRecoveryManifest` remains optional advanced input. These targeted recovery and conversion changes are not a general checkpoint migration. PAX generates and preserves its matching plan; preserve the original files and never edit a checkpoint to force compatibility.
 
 **Retained JSONL must complete cleanly.** Malformed or non-object records and read, write, flush, close, combine or final-publication failures refuse completion while preserving original files and recoverable shards. A healthy export retains the existing output semantics.
 
@@ -278,7 +218,53 @@ Keep the original checkpoint, retained CSVs and recovery directories in place. D
 <details>
 <summary><strong>SharePoint, OneDrive and Fabric destinations</strong></summary>
 
-**Strict multiline CSV-to-Delta conversion.** Delta preparation and the CSV conversion helper use explicit quoted-newline support with bounded logical-record sizing, rather than assuming records fit an arbitrary read block. String values, empty strings, Unicode and embedded CR/LF remain intact. Invalid structure is reported explicitly, without dropping rows or treating parsing as a successful upload. Recovery marker append follows the DFS protocol without unsupported conditional headers; marker creation, flush, readback and deletion retain their ownership/version checks.
+### Explicit-date Delta append and recovery
+
+PR15 adds a history-to-CSV bridge for existing AIO and ValueLens Delta tables together with `-UserHistory On`. It reads version-pinned complete histories, restores their known canonical headers and uses the existing history/key reconciliation before verified full-set publication. It does not enable Tables Watermark, blind row append, automatic historical license reconstruction or a general checkpoint migration.
+
+The new path requires `-Auth ManagedIdentity`, `-Dashboard AIO,ValueLens`, `-Rollup` or `-RollupPlusRaw`, `-UserHistory On`, and both `-StartDate` and `-EndDate`. Its new fresh/recovery contract is limited to system-assigned or user-assigned managed identity so that a cold worker can recover using the same frozen identity without persisting credentials. Other sign-in methods remain available in their existing PR14 modes; this is not a script-wide managed-identity restriction.
+
+For user-assigned identity, set `AZURE_CLIENT_ID` to the intended client ID before the original run. PAX binds the selected identity's tenant, principal and client ID before collection. Recovery bootstraps that frozen identity; it does not depend on a cached Az sign-in or accept a replacement identity supplied at recovery time.
+
+Dates are UTC, start inclusive and end exclusive. For example, October 1 through October 2 collects October 1 UTC only. These dates limit new collection, not the amount of retained history that must be read, reconciled, snapshotted and verified.
+
+Use the existing canonical Tables selectors with `-AppendFile` and `-AppendUserInfo`. The selected lakehouse/schema must already contain `AIO_CopilotInteractions`, `AIO_Users`, `ValueLens_CopilotInteractions` and `ValueLens_Users`. Use the actual verified physical schema, not an assumed `dbo`. The script checks fresh catalog metadata and exact physical locations; missing, ambiguous or differently bound tables are refused rather than created.
+
+The executing identity needs Fabric lakehouse/table-catalog read access and OneLake history read/write access, in addition to the selected collection permissions. A successful storage-only operation does not establish access to the Fabric catalog APIs. Existing recovery markers are inspected; do not delete them to force admission.
+
+`-RollupPlusRaw` additionally requires existing `CopilotInteractions_Raw` and `Entra_Users_Raw` tables. Selecting `-AppendAgent365Info` additionally requires both existing `Agent365` and `Agent365_Status`. Only the complete selected output set can be accepted. A local CSV baseline and a separate Tables output are not a supported switch combination.
+
+Tables `-Watermark`, ordinary new-path `-Resume`, de-identification and additional dashboards are not admitted by this scoped bridge. Existing PR14 modes retain their prior entry points. Publication is sequential, not a cross-table atomic transaction. A failure can leave retained recovery material or partially changed tables: preserve the entire run and its markers; do not delete state, resume an unrelated failed seed, or force a fresh retry over unresolved changes.
+
+PR15 includes a separate selected frozen-set recovery route for its own typed dated-append checkpoint. It uses the original local checkpoint and original absolute staging paths, with no collection, directory/catalog refresh for data generation, dashboard rollup or candidate regeneration. It does read current catalog metadata and table state to verify ownership. Interrupted eligible dated appends can complete their original frozen set or restore verified originals; recovery reacquires the original managed identity, verifies ownership and refuses foreign changes.
+
+**Use the exact recovery command printed in the original run's console and log.** PAX emits both commands only after the checkpoint and Publishing journal have been durably saved and verified, before the first canonical table write. Preserve that log together with the original checkpoint, frozen artifacts and markers. The examples below show the syntax only; replace the script and checkpoint paths with the actual local paths from that run.
+
+To complete that selected frozen set:
+
+```powershell
+& 'C:\PAX\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261105-15.ps1' -ResumePublishOnly -Resume 'C:\PAX\<original-run>\.pax_checkpoint_<run>.json' -DeltaAppendRecoveryAction Complete
+```
+
+To restore its verified originals instead:
+
+```powershell
+& 'C:\PAX\PAX_Purview_Audit_Log_Processor_v2.0.0-prerelease-20261105-15.ps1' -ResumePublishOnly -Resume 'C:\PAX\<original-run>\.pax_checkpoint_<run>.json' -DeltaAppendRecoveryAction Restore
+```
+
+`Complete` is the default action and is refused once restoration has begun. `Restore` is for an interrupted, unaccepted set, never an accepted publication. This route does not adopt an old failed seed, an arbitrary append checkpoint, relocated files, a remote-mirror checkpoint or a hand-authored seed recovery manifest. It verifies frozen roster, intent, artifact hashes, catalog, table identities, versions and marker ownership before any recovery write. Foreign changes and missing or contradictory evidence remain refusals.
+
+**Start with a controlled manual trial.** Protect existing reporting data with a verified backup or isolated validation destination, confirm the selected tables and any previous recovery state are consistent, and keep unattended scheduling paused until the result is reviewed. Check all selected physical tables, row counts, retained keys and date coverage; a wrapper's green status is not proof of accepted publication. A short collection window can still require reading and verifying the complete retained history.
+
+### Paths, conversion and transfers
+
+**SharePoint paths with spaces are addressed correctly.** Supplied-file downloads and multi-dashboard publication/readback decode resolved folder URL segments once before the Graph metadata path is encoded. Encoded CSV filenames are also decoded once for staging. The existing resolver/cache representation and recovery identities remain unchanged. Missing-file diagnostics name the metadata URI actually used, rather than a separately constructed content URL. Genuine missing files, access failures, mismatched identities, changed versions and unverified downloads still stop the run; no permissions, security or readback checks are bypassed. Existing saved exports can be reused without another collection; processing and append must still complete.
+
+**Recovery target checks use Windows HTTPS validation.** The recovery-only target-presence probe uses normal Windows/.NET certificate and hostname validation instead of a separate Python/OpenSSL certificate policy. Only an authoritative `404 PathNotFound` establishes absence; existing non-Delta targets, permission failures, redirects and unverifiable responses remain blocked. Completed per-source/profile receipt validators are unchanged; current source locks, hashes and matching bindings are still required. Safe refusal codes retain the HTTP status when available. This correction does not require discarding retained inputs or recovery state, and does not establish completed customer recovery.
+
+**Newer installed recovery dependencies are accepted.** pyarrow 25.0.1 and deltalake 1.6.3 are minimum stable versions, not exact-version pins. Both publication-only prerequisite checks accept newer stable releases without installing, upgrading or downgrading packages. This does not claim that every future package combination has been qualified.
+
+**Strict multiline CSV-to-Delta conversion.** Both Delta preparation and the CSV conversion helper use strict logical-record-aware reading and explicit quoted-newline support with bounded logical-record sizing, rather than assuming records fit an arbitrary read block. String values, empty strings, Unicode and embedded CR/LF remain intact. Malformed quoting, inconsistent row widths and values beyond the qualified bounds are refused, not silently skipped or altered or treated as a successful upload. Recovery marker append follows the DFS protocol without unsupported conditional headers; marker creation, flush, readback and deletion retain their ownership/version checks.
 
 **Verified history downloads and readback.** Interrupted SharePoint reads retry bounded exact byte ranges, refresh download access only for the same item/version, and verify the complete local file before admission. Replacement preserves existing local owner, group and access settings without deleting the destination or relaxing permissions. Failed admission retains verified recovery material; a competing new or changed destination is not overwritten. Complete-set readback distinguishes metadata, range, retry, structure, length, digest and changed-version refusals before accepting required AIO/ValueLens members.
 
@@ -371,6 +357,7 @@ Keep the original checkpoint, retained CSVs and recovery directories in place. D
 - **Retained initial-run recovery is deliberately narrow:** only supported retained schema 2.1.0 initial AIO + ValueLens `-RollupPlusRaw` contracts with raw exports, complete directory/Agent snapshots, retained UserHistory On inputs, managed identity and an original GUID OneLake Tables destination are admitted by this route. PAX generates its strict plan automatically, or accepts an optional advanced manifest; it is not general recovery for append, watermark, protected inputs or arbitrary older builds. PR15 dated appends instead use their own typed frozen-set contract described above. Where the supported legacy caller omitted the UserHistory setting from its saved parameters, automatic planning selects that known compatibility policy only with complete retained temporal proofs; the checkpoint is never rewritten to force compatibility.
 - **Conversion and working-space bounds:** logical CSV records are limited to 128 MiB. Publication-only recovery supports unpartitioned targets and refuses existing Parquet row groups larger than 256 MiB uncompressed before publication. Its scratch budget and free-space reserve are each at least 64 MiB, and each operation has an explicit 60-3600 second limit. Full source and destination proofs remain necessary; avoiding CSV copies does not eliminate Parquet, original-snapshot, SQLite or other proof working space, or guarantee fit on a particular disk.
 - **Live qualification boundary:** inherited retained-publication coverage against OneLake included eight-table publication, unchanged-version accepted replay, interrupted publication, verified restoration and saved recovery to acceptance. Live storage authentication used an existing delegated sign-in. Automatic no-manifest planning, identity discovery, capacity retry and proof reuse have local coverage, including real local Delta publication/replay; the automatic planner and managed-identity startup have not been qualified live together. PR15's new dated-append path has offline coverage, not live managed-identity/Fabric end-to-end acceptance. This does not establish customer-scale runtime, universal network/crash behavior or production readiness.
+- **PR15 dated-append validation status:** 36 offline controller, real process-exit, ownership/refusal and recovery-command cases passed on the reviewed PR15 candidate. PR16 retains that executable recovery code unchanged. This is not live managed-identity/Fabric end-to-end or customer-scale qualification.
 - **Windows temporary paths:** an overlong owned temporary path can stall Arrow initialization on Windows. Local native recovery qualification used short retained-run paths; it does not establish support for arbitrary long temporary paths. Preserve retained inputs in place and report an explicit path/runtime refusal rather than moving files or weakening guards to force recovery.
 - **Runtime support:** PowerShell 7.0 or later is required for all modes. Windows PowerShell 5.1 is unsupported; `-UseEOM` is retained under PowerShell 7.
 - **Graph SDK compatibility:** PAX uses installed Microsoft Graph PowerShell v2.25.0–v2.40.0, or installs v2.40.0 for the current user if none is available. It does not automatically upgrade the SDK; newer installations remain but are not selected. An incompatible version already loaded requires a fresh PowerShell window.
@@ -386,7 +373,7 @@ Keep the original checkpoint, retained CSVs and recovery directories in place. D
 
 ## Found a problem? Something look wrong?
 
-Please reach out — feedback is the point of a preview.
+Please reach out; feedback is the point of a preview.
 
 **[pax@microsoft.com](mailto:pax@microsoft.com)**
 
